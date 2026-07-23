@@ -10,10 +10,8 @@ import { type AutoResumeStoreShape, makeAutoResumeStore, type PendingResume } fr
 const pending = (threadId: string, o: Partial<PendingResume> = {}): PendingResume => ({
   threadId,
   resumeAtMs: 1_000,
-  triggerSignature: "five_hour:1000",
   reason: "five_hour",
   scheduledAtMs: 0,
-  attemptIndex: 0,
   baseline: { newestUserMessageId: "m1", latestTurnId: "t1" },
   ...o,
 });
@@ -45,23 +43,22 @@ describe("AutoResumeStore", () => {
   it("keeps one pending per thread (schedule replaces)", () =>
     withStore((store) =>
       Effect.gen(function* () {
-        yield* store.schedule(pending("thread-a", { triggerSignature: "s1" }));
-        yield* store.schedule(pending("thread-a", { triggerSignature: "s2", resumeAtMs: 9999 }));
+        yield* store.schedule(pending("thread-a", { resumeAtMs: 1 }));
+        yield* store.schedule(pending("thread-a", { resumeAtMs: 9999 }));
         const list = yield* store.listPending;
         assert.strictEqual(list.length, 1);
-        assert.strictEqual(list[0]!.triggerSignature, "s2");
+        assert.strictEqual(list[0]!.resumeAtMs, 9999);
       }),
     ));
 
-  it("recordFired clears pending, records the signature, and counts fired", () =>
+  it("recordFired clears pending and counts fired", () =>
     withStore((store) =>
       Effect.gen(function* () {
-        yield* store.schedule(pending("thread-a", { triggerSignature: "sig-1" }));
-        yield* store.recordFired("thread-a", 5_000, "sig-1");
+        yield* store.schedule(pending("thread-a"));
+        yield* store.recordFired("thread-a", 5_000);
 
         const record = yield* store.getThread("thread-a");
         assert.strictEqual(record.pending, null);
-        assert.strictEqual(record.lastFiredSignature, "sig-1");
 
         const since0 = yield* store.countFiredSince("thread-a", 0);
         assert.strictEqual(since0, 1);
@@ -77,13 +74,13 @@ describe("AutoResumeStore", () => {
       const path = NodePath.join(root, "state.json");
 
       const store1 = yield* makeAutoResumeStore(path);
-      yield* store1.schedule(pending("thread-a", { triggerSignature: "persisted" }));
+      yield* store1.schedule(pending("thread-a", { reason: "persisted" }));
 
       // A fresh store reading the same file should see the pending resume.
       const store2 = yield* makeAutoResumeStore(path);
       const list = yield* store2.listPending;
       assert.strictEqual(list.length, 1);
-      assert.strictEqual(list[0]!.triggerSignature, "persisted");
+      assert.strictEqual(list[0]!.reason, "persisted");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise));
 
   it("treats a missing state file as empty", () =>
@@ -93,4 +90,21 @@ describe("AutoResumeStore", () => {
         assert.strictEqual(list.length, 0);
       }),
     ));
+
+  it("treats a corrupt or version-mismatched state file as empty (does not crash boot)", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3x-state-" });
+
+      const garbagePath = NodePath.join(root, "garbage.json");
+      yield* fs.writeFileString(garbagePath, "{ not valid json ]");
+      const s1 = yield* makeAutoResumeStore(garbagePath);
+      assert.strictEqual((yield* s1.listPending).length, 0);
+
+      const versionPath = NodePath.join(root, "v2.json");
+      // A future schema version the current decoder does not accept (version is Literal(1)).
+      yield* fs.writeFileString(versionPath, '{"version":2,"threads":{}}');
+      const s2 = yield* makeAutoResumeStore(versionPath);
+      assert.strictEqual((yield* s2.listPending).length, 0);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise));
 });
