@@ -10,6 +10,8 @@
 #   exit 10 = upstream unchanged, nothing to do (no-op)
 #   exit 20 = rebase conflict (working tree restored, nothing pushed)
 #   exit 30 = rebase clean but verification failed (nothing pushed)
+#   exit 40 = rebase clean & verification green, but a fork patch was dropped during
+#            rebase (upstream likely absorbed it) -> needs review, nothing pushed
 #
 # Status file (default: ./t3x-sync-status.json) always written before exit.
 #
@@ -108,6 +110,12 @@ fi
 
 # --- verify ------------------------------------------------------------------
 if [[ "$SKIP_VERIFY" == 1 ]]; then
+  # A dropped patch must escalate even when the caller verifies separately: it means a
+  # fork commit silently vanished, which is never safe to auto-push.
+  if [[ -n "${DROPPED:-}" ]]; then
+    write_status daily dropped-patch "rebase clean; verification skipped; a fork patch was dropped"
+    exit 40
+  fi
   echo "→ SKIP_VERIFY set; rebase clean, leaving verification to caller"
   write_status daily rebased "rebase clean; verification skipped"
   exit 0
@@ -124,6 +132,15 @@ for script in $VERIFY; do
   fi
 done
 
-write_status daily ok "rebase clean and verification green${DROPPED:+ (WARNING: $DROPPED)}"
+# A green tree that dropped one of our own patches is still NOT safe to auto-push: the
+# fork lost a change and a human/agent must confirm the loss was intentional. Escalate
+# with a distinct code so the workflow opens an issue instead of pushing.
+if [[ -n "${DROPPED:-}" ]]; then
+  fail "escalating (exit 40): a fork patch was dropped during rebase; not auto-pushing"
+  write_status daily dropped-patch "rebase clean and verification green, but a fork patch was dropped: $DROPPED"
+  exit 40
+fi
+
+write_status daily ok "rebase clean and verification green"
 echo "✓ sync clean and verified"
 exit 0
