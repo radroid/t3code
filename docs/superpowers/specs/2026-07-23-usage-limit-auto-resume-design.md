@@ -39,9 +39,17 @@ upstream cost):**
 
 ## B1. Shape & hook point
 
-One new reactor following the exact pattern of the three existing reactors
-(`OrchestrationReactor`, `CheckpointReactor`, `ThreadDeletionReactor`): a `Services/`
-interface + a `Layers/` implementation, dependency-injected, started in a scoped fiber.
+One new reactor. **Revised after review:** the three existing reactors
+(`OrchestrationReactor`, `CheckpointReactor`, `ThreadDeletionReactor`) expose a
+`start()` method that is fanned out explicitly in `OrchestrationReactor.start()`
+(`Layers/OrchestrationReactor.ts:21-26`) and booted from `serverRuntimeStartup.ts:344` —
+both **upstream-owned** files. Following that pattern would add 2 more seams and break
+the "+2 lines" claim. So `AutoResumeReactor` instead **self-starts via
+`Effect.forkScoped` at layer-construction time inside `T3xLayerLive`**: merging the
+layer boots the supervisor with no external `.start()` call. Tradeoff: no explicit
+`drain()` — the supervisor fiber is torn down by scope closure on shutdown, which is
+fine for a background poller. This keeps the entire upstream footprint at the 2-line
+`server.ts` seam.
 
 ```
 apps/server/src/t3x/
@@ -59,43 +67,65 @@ Dependencies: `OrchestrationEngine` (to dispatch commands + read snapshot query)
 `ProjectionSnapshotQuery` (authoritative read model), `Clock` (testable time),
 filesystem via existing `atomicWrite.ts`.
 
-## B2. Detection — authoritative poll, not the lossy stream
+## B2. Detection — the structured `account.rate-limits.updated` event
 
-The read model (`OrchestrationThread`) exposes everything needed, untruncated:
+**Revised after review.** The original plan (poll the projection for `session.status
+=== "error"` / `lastError`) is **wrong**: verified against the Claude Agent SDK
+(`@anthropic-ai/claude-agent-sdk` v0.2.x), a usage-limit does **not** produce a failed
+turn. `SDKResultError.subtype` is only `error_during_execution | error_max_turns |
+error_max_budget_usd | error_max_structured_output_retries` — there is **no** rate-limit
+result subtype — so the projection often shows `status:"ready"`, `lastError:null` on a
+limit hit. Projection-error detection would silently never fire.
 
-- `session.status` ∈ {idle, starting, running, ready, interrupted, stopped, **error**}
-- `session.lastError` — `NullOr(TrimmedNonEmptyString)`, assigned straight from
-  `payload.errorMessage`/`payload.reason` with **no truncation**
-  (`ProviderRuntimeIngestion.ts:1409`)
-- `session.activeTurnId`, `session.providerName`
-- `latestTurn.state` ∈ {running, interrupted, completed, **error**}, `latestTurn.completedAt`
-- `archivedAt`, `deletedAt`, `settledOverride` — for guards
+The real signal is structured. The SDK emits an `SDKRateLimitEvent`:
 
-**The supervisor fiber ticks every 30s and calls `ProjectionSnapshotQuery.getSnapshot()`.**
-For each thread it finds where `session.status === "error"` (or `latestTurn.state ===
-"error"`), it runs `session.lastError` through `classifyLimitError`. Detection latency
-≤30s is irrelevant for a feature that then waits hours, and this path is **immune to
-event-delivery loss** — no second subscriber to the runtime PubSub, no event-tag
-guesswork.
-
-> Chosen over event subscription precisely because upstream flags the runtime stream as
-> lossy for extra subscribers. Polling the projection is the same reliability move
-> `CheckpointReactor` makes when it prefers domain events over runtime events.
-
-## B3. Classification — `classifyLimitError` (pure, fixture-tested)
-
-The **only** place that knows the vendor's message format, isolated so it's the single
-thing to update if wording rots.
-
-```
-classifyLimitError(text: string | null): { kind: "usage-limit"; resetAt: Date | null } | undefined
+```ts
+SDKRateLimitInfo = {
+  status: "allowed" | "allowed_warning" | "rejected";
+  resetsAt?: number;                      // epoch — exact reset time, no parsing
+  rateLimitType?: "five_hour" | "seven_day" | "seven_day_opus"
+                | "seven_day_sonnet" | "overage";
+  utilization?: number; ...
+}
 ```
 
-- Returns `undefined` for non-limit errors (auto-resume ignores them).
-- Matches known usage-limit wordings and `rate_limit_error` / 429 shapes.
-- Extracts a reset timestamp when present; returns `resetAt: null` when it can't parse
-  one (wording changed, message clipped) — **this is not a failure**, B4 handles it.
-- Table-driven tests over real limit-message samples + malformed inputs.
+`ClaudeAdapter` maps this to the runtime event `account.rate-limits.updated`
+(`ClaudeAdapter.ts:2906-2915`) with `payload.rateLimits` = the raw event, and every
+runtime event carries `threadId` + `provider` (`providerRuntime.ts` `ProviderRuntimeEventBase`).
+
+**Detection = subscribe once, at supervisor boot, to `providerService.streamEvents`**
+(held for the layer's lifetime). Filter `type === "account.rate-limits.updated"` and
+`provider === "claude"`. When `rate_limit_info.status === "rejected"`, capture
+`{ threadId, resetsAt, rateLimitType }` and schedule a resume at `resetsAt` (+ margin).
+
+Why this is reliable despite upstream's "lossy stream" caveat:
+
+- `runtimeEventPubSub` is `PubSub.unbounded` (`ProviderService.ts:215`) — it never drops
+  on backpressure. The caveat is a *subscription-timing* issue (`Stream.fromPubSub` only
+  sees events published after it subscribes). Subscribing **once at boot** and holding it
+  eliminates that.
+- Rate-limit status is emitted repeatedly and the `rejected` condition persists for the
+  whole window, so the mechanism is **self-correcting**: if a resume fires too early and
+  is still rejected, the SDK re-emits `rejected` → we reschedule with backoff.
+
+No projection poll for *detection*. (The poll survives only for the wake/guard re-check
+in B4/B5, where the read model genuinely is authoritative.)
+
+## B3. Classification — `classifyRateLimit` (pure, structured, fixture-tested)
+
+Structured decode, not string matching — far more robust than the original string
+classifier:
+
+```
+classifyRateLimit(rateLimits: unknown): { rejected: boolean; resetsAt: Date | null; rateLimitType: string | null } | undefined
+```
+
+- Defensively decodes the `payload.rateLimits` blob (reads `.rate_limit_info`).
+- Returns `undefined` when the blob isn't a recognizable rate-limit info object.
+- `resetsAt`: normalizes epoch seconds-vs-ms; returns `null` if absent — **not a
+  failure**, B4's backoff handles it.
+- Table-driven tests over real `SDKRateLimitInfo` shapes (rejected/allowed_warning/
+  allowed, five_hour vs seven_day, missing resetsAt, malformed blob → `undefined`).
 
 ## B4. Scheduling & durability
 
@@ -120,18 +150,36 @@ and `--resume <session_id>` are already handled by `ClaudeAdapter`
 (`ClaudeAdapter.ts:1455`), so **no provider work is needed** and a multi-hour idle (even
 if the session reaper kills the process) reattaches transparently.
 
-Guards — each cancels or blocks a pending resume:
+Guards — each cancels or blocks a pending resume. **Revised after review:** the full
+`OrchestrationThread` snapshot does **not** carry the shell-only derived fields
+(`latestUserMessageAt`, `pendingApprovalCount`, …). Guards must be recomputed from the
+`messages` and `activities` arrays that the full-thread snapshot *does* carry:
 
-- **User took over** — any manual message / interrupt / revert on the thread since the
-  resume was scheduled → clear the pending resume. Never fight the user.
-- **Awaiting input/approval** — turn ended asking the user something → do nothing
-  (the explicit v1 exclusion).
-- **Thread gone** — `deletedAt`/`archivedAt` set, or settled by hand.
+- **User took over** — recomputed by scanning `thread.messages` for the newest
+  `role:"user"` message and comparing its `createdAt`/id against the schedule time; also
+  scan `thread.activities` for interrupt/revert kinds after the schedule time. Any →
+  clear the pending resume. Never fight the user.
+- **Awaiting input/approval** — recomputed via an **open-blocking-request** scan over
+  `thread.activities` (`approval.requested`/`user-input.requested` with no later
+  `*.resolved` for the same `requestId`). This faithfully mirrors the private
+  `hasOpenBlockingRequest` in `decider.ts:57-80` (replicated in `guards.ts`, not
+  imported, to avoid a seam — recorded in SEAMS.md as a logic-mirror to keep in step).
+  Open request → do nothing (the explicit v1 exclusion).
+- **Thread gone** — `deletedAt`/`archivedAt` set, or `settledOverride === "settled"`.
 - **Provider gate** — only act on Claude threads in v1 (`session.providerName`).
 - **Caps** — max consecutive auto-resumes per thread (default 10) and max per rolling
   24h; on exhaustion, stop and say so rather than loop forever.
-- **Re-arm safety** — after a resume fires, don't re-detect the *same* error instance
-  (track the `lastError`/turn identity that triggered it).
+- **Re-arm safety** — track a trigger signature (`threadId` + `resetsAt` +
+  `rateLimitType`); the same rejection never reschedules twice. Only a *new* rejection
+  (different `resetsAt`) after a resume re-arms.
+
+**Wake race (review #4).** detect→schedule→(hours)→wake→dispatch has no
+optimistic-concurrency primitive (`thread.turn.start` carries no expected-version). The
+supervisor therefore **re-reads `getSnapshot()` immediately before dispatch** and
+re-runs every guard against the fresh snapshot, and additionally aborts if
+`session.updatedAt` or the newest user-message id changed since scheduling. This closes
+all but a sub-second residual race, which is documented and accepted (worst case: one
+redundant turn, which the user can interrupt).
 
 ## B6. Resume-prompt resolution (`config.ts`)
 
@@ -169,16 +217,19 @@ This is the entire patch against upstream code, and it does **not** grow when fe
 
 ## B9. Testing
 
-- `classifyLimitError`: table-driven fixtures (real limit wordings, 429 payloads,
-  malformed/clipped, non-limit errors → `undefined`).
+- `classifyRateLimit`: table-driven fixtures over real `SDKRateLimitInfo` shapes
+  (rejected/allowed_warning/allowed, five_hour vs seven_day, missing `resetsAt`, epoch
+  s-vs-ms, malformed blob → `undefined`).
 - Scheduling: `TestClock` drives the full detect → wait → wake → dispatch cycle;
   multi-hour waits verified in ms.
-- Guards: one case each — user-took-over, awaiting-approval, archived/deleted, caps
-  exhausted, non-Claude provider, backoff-when-resetAt-null.
-- Durability: state survives a simulated restart (rehydrate from JSON).
-- Integration: stub provider emits a usage-limit failure into the projection; assert a
-  single `thread.turn.start` is dispatched **only after** the clock passes `resumeAt`,
-  and not at all if a guard trips.
+- Guards: one case each — user-took-over (new message after schedule), awaiting-approval
+  (open blocking request in activities), archived/deleted/settled, caps exhausted,
+  non-Claude provider, backoff-when-resetAt-null, wake-race (snapshot changed before
+  dispatch → abort).
+- Durability: pending resumes survive a simulated restart (rehydrate from JSON).
+- Integration: feed a synthetic `account.rate-limits.updated` (status rejected) runtime
+  event through the reactor; assert a single `thread.turn.start` is dispatched **only
+  after** the clock passes `resumeAt`, and not at all if a guard trips.
 
 ## B10. Config surface (env / t3x settings, all optional)
 
@@ -190,7 +241,23 @@ This is the entire patch against upstream code, and it does **not** grow when fe
 Read once at layer construction; sensible defaults mean the feature works with zero
 configuration.
 
-## Open implementation detail (resolved during recon)
+## Review resolutions (adversarial review, 2026-07-23)
 
-The earlier "which domain event fires on turn failure" unknown is **moot**: there is no
-turn-failed domain event, so detection polls the projection (B2). No spike needed.
+All four findings from the adversarial review are incorporated above:
+
+1. **Detection existential risk (#1)** — CONFIRMED and fixed. A usage limit does not
+   produce a failed turn (SDK has no rate-limit result subtype), so projection-error
+   detection was wrong. Replaced with the structured `account.rate-limits.updated`
+   event keyed on `rate_limit_info.status === "rejected"` + `resetsAt` (B2/B3).
+2. **"+2 lines" false (#5)** — CONFIRMED. Sibling reactors need an explicit `.start()`
+   in upstream files. Fixed by self-starting via `Effect.forkScoped` at layer
+   construction (B1); footprint stays 2 lines.
+3. **Guards read non-existent fields (#4)** — CONFIRMED. Rewritten to recompute from
+   `messages`/`activities`, mirror `hasOpenBlockingRequest`, and re-read the snapshot
+   before dispatch to close the wake race (B5).
+4. **rerere-in-CI broken (#6)** — CONFIRMED for Project A; fixed in that spec (drop the
+   CI rr-cache sharing claim; rerere stays local where conflicts are actually resolved).
+
+Dispatching the resume (`thread.turn.start` from a reactor) was reviewed OK: it needs
+only `commandId`/`threadId`/`message`/`createdAt`, has no actor field, and the decider
+places no `session.status` guard on turn starts.
