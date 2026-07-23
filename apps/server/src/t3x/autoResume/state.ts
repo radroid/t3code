@@ -27,12 +27,9 @@ const FIRED_HISTORY_RETENTION_MS = 25 * 60 * 60_000; // a little over the 24h ca
 export const PendingResume = Schema.Struct({
   threadId: Schema.String,
   resumeAtMs: Schema.Number,
-  /** Dedupe key so the same rejection never reschedules twice. */
-  triggerSignature: Schema.String,
   /** Human-readable reason for the timeline activity (e.g. "five_hour window"). */
   reason: Schema.String,
   scheduledAtMs: Schema.Number,
-  attemptIndex: Schema.Number,
   baseline: Schema.Struct({
     newestUserMessageId: Schema.NullOr(Schema.String),
     latestTurnId: Schema.NullOr(Schema.String),
@@ -43,8 +40,6 @@ export type PendingResume = typeof PendingResume.Type;
 const ThreadRecord = Schema.Struct({
   pending: Schema.NullOr(PendingResume),
   firedAtMs: Schema.Array(Schema.Number),
-  /** Signature of the most recently fired resume — blocks re-arming the same rejection. */
-  lastFiredSignature: Schema.NullOr(Schema.String),
   /** Optional per-thread resume prompt override (settable by a future UI/CLI). */
   overridePrompt: Schema.NullOr(Schema.String),
 });
@@ -60,7 +55,6 @@ const EMPTY_STATE: AutoResumeState = { version: 1, threads: {} };
 const EMPTY_RECORD: ThreadRecord = {
   pending: null,
   firedAtMs: [],
-  lastFiredSignature: null,
   overridePrompt: null,
 };
 
@@ -71,12 +65,9 @@ export interface AutoResumeStoreShape {
   readonly getThread: (threadId: string) => Effect.Effect<ThreadRecord>;
   readonly schedule: (entry: PendingResume) => Effect.Effect<void>;
   readonly clearPending: (threadId: string) => Effect.Effect<void>;
-  /**
-   * Record that a resume fired: clears pending, appends to fired-history, and records
-   * the trigger signature so the same rejection cannot re-arm.
-   */
-  readonly recordFired: (threadId: string, atMs: number, signature: string) => Effect.Effect<void>;
-  /** How many resumes fired for a thread since `sinceMs` (for the 24h cap). */
+  /** Record that a resume fired: clears pending and appends to fired-history. */
+  readonly recordFired: (threadId: string, atMs: number) => Effect.Effect<void>;
+  /** How many resumes fired for a thread since `sinceMs` (for caps + backoff). */
   readonly countFiredSince: (threadId: string, sinceMs: number) => Effect.Effect<number>;
 }
 
@@ -166,7 +157,7 @@ export const makeAutoResumeStore = (
           };
         }),
 
-      recordFired: (threadId, atMs, signature) =>
+      recordFired: (threadId, atMs) =>
         mutate((state) => {
           const record = recordFor(state, threadId);
           return {
@@ -176,7 +167,6 @@ export const makeAutoResumeStore = (
               [threadId]: {
                 ...record,
                 pending: null,
-                lastFiredSignature: signature,
                 firedAtMs: pruneFired([...record.firedAtMs, atMs], atMs),
               },
             },

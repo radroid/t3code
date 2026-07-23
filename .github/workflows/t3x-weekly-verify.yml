@@ -67,7 +67,9 @@ jobs:
           TITLE="[t3x-sync] weekly full build failing"
           BODY="$(printf 'Weekly full build failed.\n\n**kind:** `weekly-build`\n**failed steps:**%s\n**run:** %s\n\nThis is advisory — it does not block the daily rebase. A green typecheck/lint/test can still hide a build regression; investigate when convenient.' "$FAILED_STEPS" "$RUN_URL")"
 
-          EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+          # `.[0].number` on an empty list prints literal "null"; `// empty` yields "" so
+          # the -n test correctly falls through to creating a fresh issue.
+          EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
           if [[ -n "$EXISTING" ]]; then
             gh issue comment "$EXISTING" --body "$BODY"
           else
