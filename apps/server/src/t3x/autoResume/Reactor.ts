@@ -135,14 +135,18 @@ const makeSupervisor = Effect.gen(function* () {
       const record = yield* store.getThread(threadId);
       const nowMs = yield* Clock.currentTimeMillis;
       const firedRecently = yield* store.countFiredSince(threadId, nowMs - BACKOFF_LOOKBACK_MS);
+      const firedInCapWindow = yield* store.countFiredSince(threadId, nowMs - CAP_WINDOW_MS);
 
       const plan = planSchedule({
         verdict,
         hasPending: record.pending !== null,
         nowMs,
         firedRecently,
+        firedInCapWindow,
         config,
       });
+      // A capped-out thread stops scheduling here (and stops posting "scheduled" notes)
+      // until its fires age out of the 24h window; all other skips are dedupe/no-op.
       if (plan.kind === "skip") return;
 
       const snapshot = yield* snapshotQuery.getSnapshot();

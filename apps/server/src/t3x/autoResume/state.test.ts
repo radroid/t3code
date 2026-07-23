@@ -107,4 +107,24 @@ describe("AutoResumeStore", () => {
       const s2 = yield* makeAutoResumeStore(versionPath);
       assert.strictEqual((yield* s2.listPending).length, 0);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise));
+
+  it("keeps a present-but-unreadable state file intact and runs in-memory (no clobber)", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3x-state-" });
+      // A directory at the state path is *present* but unreadable as a file (EISDIR). The
+      // store must not mistake this for a fresh/empty store and must not overwrite it —
+      // otherwise a transient read error on a real file would clobber valid durable state.
+      const dirPath = NodePath.join(root, "state-is-a-dir");
+      yield* fs.makeDirectory(dirPath);
+
+      const store = yield* makeAutoResumeStore(dirPath);
+      // Boot did not crash; scheduling still works in-memory this session.
+      yield* store.schedule(pending("thread-a"));
+      assert.strictEqual((yield* store.listPending).length, 1);
+
+      // The existing path was preserved (persistence suppressed → never clobbered).
+      const stat = yield* fs.stat(dirPath);
+      assert.strictEqual(stat.type, "Directory");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise));
 });
