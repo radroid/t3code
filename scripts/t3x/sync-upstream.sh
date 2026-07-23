@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+#
+# t3x upstream sync — rebase the fork's patch series onto upstream/main and verify.
+#
+# Implements the mechanical core of A4 (daily sync). Locally testable and reused by
+# .github/workflows/t3x-upstream-sync.yml. Writes a machine-readable status file and
+# uses exit codes so a caller (workflow or agent) can decide whether to push / escalate.
+#
+#   exit 0  = clean rebase, verification green  -> caller may push
+#   exit 10 = upstream unchanged, nothing to do (no-op)
+#   exit 20 = rebase conflict (working tree restored, nothing pushed)
+#   exit 30 = rebase clean but verification failed (nothing pushed)
+#
+# Status file (default: ./t3x-sync-status.json) always written before exit.
+#
+# Env:
+#   UPSTREAM_REMOTE   (default: upstream)
+#   UPSTREAM_BRANCH   (default: main)
+#   LOCAL_BRANCH      (default: main)
+#   RUN               command prefix for package scripts (default: "vp run")
+#   VERIFY            space-separated script names (default: "typecheck lint test")
+#   STATUS_FILE       (default: ./t3x-sync-status.json)
+#   SKIP_VERIFY=1     rebase only, skip verification (used by callers that verify separately)
+#
+set -uo pipefail
+
+UPSTREAM_REMOTE="${UPSTREAM_REMOTE:-upstream}"
+UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
+LOCAL_BRANCH="${LOCAL_BRANCH:-main}"
+RUN="${RUN:-vp run}"
+VERIFY="${VERIFY:-typecheck lint test}"
+STATUS_FILE="${STATUS_FILE:-./t3x-sync-status.json}"
+SKIP_VERIFY="${SKIP_VERIFY:-0}"
+
+# --- json status helper (no jq dependency) ----------------------------------
+json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$1"; }
+
+write_status() {
+  # args: kind result [detail]
+  local kind="$1" result="$2" detail="${3:-}"
+  {
+    printf '{\n'
+    printf '  "kind": "daily",\n'
+    printf '  "result": "%s",\n' "$result"
+    printf '  "upstream_range": %s,\n' "$(json_escape "${UPSTREAM_RANGE:-}")"
+    printf '  "upstream_head": %s,\n' "$(json_escape "${UPSTREAM_HEAD:-}")"
+    printf '  "conflicted_files": %s,\n' "$(json_escape "${CONFLICTED:-}")"
+    printf '  "culprit_commits": %s,\n' "$(json_escape "${CULPRITS:-}")"
+    printf '  "failing_step": %s,\n' "$(json_escape "${FAILING_STEP:-}")"
+    printf '  "dropped_patches": %s,\n' "$(json_escape "${DROPPED:-}")"
+    printf '  "patch_manifest": %s,\n' "$(json_escape "${MANIFEST:-}")"
+    printf '  "detail": %s\n' "$(json_escape "$detail")"
+    printf '}\n'
+  } >"$STATUS_FILE"
+}
+
+fail() { echo "ERROR: $*" >&2; }
+
+command -v git >/dev/null || { fail "git not found"; exit 1; }
+
+# --- fetch upstream ----------------------------------------------------------
+echo "→ fetching $UPSTREAM_REMOTE/$UPSTREAM_BRANCH"
+if ! git fetch "$UPSTREAM_REMOTE" "$UPSTREAM_BRANCH" --tags --quiet; then
+  FAILING_STEP="fetch"
+  write_status daily error "could not fetch $UPSTREAM_REMOTE/$UPSTREAM_BRANCH"
+  exit 1
+fi
+
+UPSTREAM_HEAD="$(git rev-parse "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH")"
+LOCAL_HEAD="$(git rev-parse "$LOCAL_BRANCH")"
+MERGE_BASE="$(git merge-base "$LOCAL_BRANCH" "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH")"
+
+# Patch manifest = commits on local not in upstream (before rebase).
+MANIFEST="$(git log --oneline "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || true)"
+
+# --- no-op if upstream hasn't advanced beyond our merge base ----------------
+if [[ "$MERGE_BASE" == "$UPSTREAM_HEAD" ]]; then
+  echo "→ upstream unchanged since last sync; nothing to do"
+  write_status daily noop "upstream/$UPSTREAM_BRANCH already merged"
+  exit 10
+fi
+
+UPSTREAM_RANGE="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" | head -100 || true)"
+PATCH_COUNT_BEFORE="$(git rev-list --count "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
+
+echo "→ rebasing $LOCAL_BRANCH ($PATCH_COUNT_BEFORE patch commits) onto $UPSTREAM_REMOTE/$UPSTREAM_BRANCH"
+git checkout -q "$LOCAL_BRANCH"
+
+if ! git rebase "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
+  CONFLICTED="$(git diff --name-only --diff-filter=U | sort -u | tr '\n' ' ')"
+  # Which upstream commits touched the conflicted files (the likely culprits).
+  if [[ -n "$CONFLICTED" ]]; then
+    # shellcheck disable=SC2086
+    CULPRITS="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" -- $CONFLICTED | head -40 || true)"
+  fi
+  git rebase --abort || true
+  fail "rebase conflict in: $CONFLICTED"
+  write_status daily conflict "rebase aborted; working tree restored"
+  exit 20
+fi
+
+# --- dropped-patch detection (A4 step 7) ------------------------------------
+PATCH_COUNT_AFTER="$(git rev-list --count "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
+if (( PATCH_COUNT_AFTER < PATCH_COUNT_BEFORE )); then
+  DROPPED="patch count dropped $PATCH_COUNT_BEFORE -> $PATCH_COUNT_AFTER (upstream likely absorbed a change); manifest before: $MANIFEST"
+  fail "$DROPPED"
+fi
+
+# --- verify ------------------------------------------------------------------
+if [[ "$SKIP_VERIFY" == 1 ]]; then
+  echo "→ SKIP_VERIFY set; rebase clean, leaving verification to caller"
+  write_status daily rebased "rebase clean; verification skipped"
+  exit 0
+fi
+
+for script in $VERIFY; do
+  echo "→ verify: $RUN $script"
+  # shellcheck disable=SC2086
+  if ! $RUN "$script"; then
+    FAILING_STEP="$script"
+    fail "verification step '$script' failed"
+    write_status daily verify-failed "rebase clean but '$script' failed"
+    exit 30
+  fi
+done
+
+write_status daily ok "rebase clean and verification green${DROPPED:+ (WARNING: $DROPPED)}"
+echo "✓ sync clean and verified"
+exit 0
