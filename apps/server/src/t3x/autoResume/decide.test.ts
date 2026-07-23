@@ -14,83 +14,81 @@ const rejected = (o: Partial<RateLimitVerdict> = {}): RateLimitVerdict => ({
 });
 
 describe("planSchedule", () => {
-  it("schedules at resetsAt + safety margin for a structured rejection", () => {
+  it("schedules at resetsAt + safety margin when the window opens in the future", () => {
     const plan = planSchedule({
       verdict: rejected({ resetsAtMs: 1_000_000 }),
-      pendingSignature: null,
-      lastFiredSignature: null,
-      nowMs: 0,
+      hasPending: false,
+      nowMs: 500_000,
       firedRecently: 0,
       config,
     });
     expect(plan.kind).toBe("schedule");
     if (plan.kind !== "schedule") return;
     expect(plan.resumeAtMs).toBe(1_000_000 + config.safetyMarginMs);
-    expect(plan.signature).toBe("five_hour:1000000");
   });
 
   it("skips a non-rejected verdict", () => {
-    const plan = planSchedule({
-      verdict: rejected({ rejected: false }),
-      pendingSignature: null,
-      lastFiredSignature: null,
-      nowMs: 0,
-      firedRecently: 0,
-      config,
-    });
-    expect(plan).toEqual({ kind: "skip", reason: "not-rejected" });
-  });
-
-  it("dedupes an identical pending or already-fired signature", () => {
-    const args = {
-      verdict: rejected({ resetsAtMs: 1_000_000 }),
-      nowMs: 0,
-      firedRecently: 0,
-      config,
-    } as const;
     expect(
-      planSchedule({ ...args, pendingSignature: "five_hour:1000000", lastFiredSignature: null }),
-    ).toEqual({
-      kind: "skip",
-      reason: "already-pending",
-    });
-    expect(
-      planSchedule({ ...args, pendingSignature: null, lastFiredSignature: "five_hour:1000000" }),
-    ).toEqual({
-      kind: "skip",
-      reason: "already-fired",
-    });
-  });
-
-  it("uses a DISTINCT signature per backoff attempt so the ladder can climb", () => {
-    const mk = (firedRecently: number) =>
       planSchedule({
-        verdict: rejected({ resetsAtMs: null }),
-        pendingSignature: null,
-        lastFiredSignature: `five_hour:backoff:${firedRecently - 1}`,
+        verdict: rejected({ rejected: false }),
+        hasPending: false,
         nowMs: 0,
-        firedRecently,
+        firedRecently: 0,
         config,
-      });
-    const first = mk(1);
-    expect(first.kind).toBe("schedule");
-    if (first.kind !== "schedule") return;
-    // distinct from the previous fired signature -> not deduped
-    expect(first.signature).toBe("five_hour:backoff:1");
-    // climbs the ladder: attempt index 1 -> 30m
-    expect(first.resumeAtMs).toBe(config.backoffLadderMs[1]);
+      }),
+    ).toEqual({ kind: "skip", reason: "not-rejected" });
+  });
+
+  it("skips when a resume is already pending (dedupes telemetry re-emits)", () => {
+    expect(
+      planSchedule({
+        verdict: rejected(),
+        hasPending: true,
+        nowMs: 0,
+        firedRecently: 0,
+        config,
+      }),
+    ).toEqual({ kind: "skip", reason: "already-pending" });
+  });
+
+  it("uses backoff from now when resetsAt is absent (offset applied to nowMs)", () => {
+    const nowMs = 1_000_000; // non-zero so the `nowMs +` term is actually exercised
+    const plan = planSchedule({
+      verdict: rejected({ resetsAtMs: null }),
+      hasPending: false,
+      nowMs,
+      firedRecently: 1,
+      config,
+    });
+    if (plan.kind !== "schedule") throw new Error("expected schedule");
+    expect(plan.resumeAtMs).toBe(nowMs + config.backoffLadderMs[1]!); // attempt 1 -> 30m
+  });
+
+  it("uses backoff from now when the reset time is already in the past (stale/persistent limit)", () => {
+    const nowMs = 2_000_000;
+    const plan = planSchedule({
+      verdict: rejected({ resetsAtMs: 1_000_000 }), // already passed
+      hasPending: false,
+      nowMs,
+      firedRecently: 2,
+      config,
+    });
+    if (plan.kind !== "schedule") throw new Error("expected schedule");
+    // Does NOT reuse the stale resetsAt; climbs the ladder (attempt 2 -> 60m cap) from now.
+    expect(plan.resumeAtMs).toBe(nowMs + config.backoffLadderMs[2]!);
   });
 
   it("caps the backoff ladder at its last rung", () => {
     const plan = planSchedule({
       verdict: rejected({ resetsAtMs: null }),
-      pendingSignature: null,
-      lastFiredSignature: null,
-      nowMs: 0,
+      hasPending: false,
+      nowMs: 5_000,
       firedRecently: 99,
       config,
     });
     if (plan.kind !== "schedule") throw new Error("expected schedule");
-    expect(plan.resumeAtMs).toBe(config.backoffLadderMs[config.backoffLadderMs.length - 1]);
+    expect(plan.resumeAtMs).toBe(
+      5_000 + config.backoffLadderMs[config.backoffLadderMs.length - 1]!,
+    );
   });
 });

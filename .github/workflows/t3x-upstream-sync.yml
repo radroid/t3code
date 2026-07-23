@@ -60,8 +60,13 @@ jobs:
         run: |
           TAG="t3x/last-good-$(date -u +%Y%m%d-%H%M%S)"
           git tag "$TAG"
-          git push origin "refs/tags/$TAG" || echo "::warning::could not push recovery tag $TAG"
-          echo "RECOVERY_TAG=$TAG" >> "$GITHUB_ENV"
+          # Only advertise the recovery tag if it actually reached origin. A local-only tag
+          # on this ephemeral runner is unrecoverable, so it must not appear in the issue.
+          if git push origin "refs/tags/$TAG"; then
+            echo "RECOVERY_TAG=$TAG" >> "$GITHUB_ENV"
+          else
+            echo "::warning::could not push recovery tag $TAG; it will not be advertised"
+          fi
 
       - name: Rebase + verify
         id: sync
@@ -81,8 +86,8 @@ jobs:
         if: steps.sync.outputs.code == '10'
         run: echo "::notice::upstream unchanged; nothing to sync"
 
-      - name: Escalate on conflict / failure
-        if: steps.sync.outputs.code == '20' || steps.sync.outputs.code == '30' || steps.sync.outputs.code == '1'
+      - name: Escalate on conflict / failure / dropped patch
+        if: steps.sync.outputs.code == '20' || steps.sync.outputs.code == '30' || steps.sync.outputs.code == '40' || steps.sync.outputs.code == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -95,7 +100,9 @@ jobs:
           BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\nThe daily Claude sync agent should pick this up (see docs/t3x/sync-agent-runbook.md).' \
             "$RESULT" "${RECOVERY_TAG:-none}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" "$STATUS")"
 
-          EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+          # `.[0].number` on an empty list prints literal "null"; `// empty` yields "" so
+          # the -n test correctly falls through to creating a fresh issue.
+          EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
           if [[ -n "$EXISTING" ]]; then
             gh issue comment "$EXISTING" --body "$BODY"
             echo "::notice::updated existing t3x-sync issue #$EXISTING"
