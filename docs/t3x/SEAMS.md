@@ -17,7 +17,21 @@ Everything else the fork adds lives in new, upstream-invisible files (`apps/**/t
 | Upstream file | Edit | Why unavoidable |
 |---|---|---|
 | `apps/server/src/server.ts` | +1 import of `T3xLayerLive`, +1 `Layer.provideMerge(T3xLayerLive)` | The root layer graph is composed here; a feature layer must be merged into it at exactly one point. All feature layers fan in through `t3x/index.ts`, so this seam stays 2 lines no matter how many features are added. |
-| `apps/server/src/serverRuntimeStartup.ts` | (only if a t3x reactor needs an explicit `.start()` — TBD by review) | Reactors that require an explicit start are kicked off here; see the auto-resume build for whether this row is needed. |
+
+> The auto-resume reactor **self-starts** via `Effect.forkScoped` at layer construction,
+> so — unlike the built-in reactors — it needs **no** `.start()` call in
+> `serverRuntimeStartup.ts` or `OrchestrationReactor.ts`. Those files stay untouched.
+
+## Logic mirrors (semantic dependencies, not code seams)
+
+These are upstream helpers whose logic the fork **replicates** (rather than imports, to
+avoid a code seam). They don't conflict during rebase, but if upstream changes the
+original's behavior the mirror can drift silently — the daily sync agent must diff these
+originals when they change.
+
+| Fork mirror | Mirrors upstream | Risk if upstream changes |
+|---|---|---|
+| `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`) | `decider.ts:57-80` (private, unexported) | Awaiting-approval guard could miss a new blocking-request activity kind and auto-resume into a prompt. |
 
 ## Web (`apps/web`)
 
