@@ -1,0 +1,76 @@
+# t3x weekly deep verification — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A5).
+# Runs the full monorepo build against the current fork main. Does NOT rebase and never
+# blocks the daily sync. On failure it escalates via the shared `t3x-sync` issue.
+#
+# NOTE: runs on ubuntu-latest — the fork has no access to upstream's blacksmith-* runners.
+name: t3x weekly verify (full build)
+
+on:
+  schedule:
+    - cron: "0 9 * * 0" # Sundays 09:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: t3x-weekly-verify
+  cancel-in-progress: true
+
+env:
+  SYNC_LABEL: t3x-sync
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Full build
+        id: build
+        run: |
+          set +e
+          FAILED=""
+          for step in build build:desktop; do
+            echo "→ vp run $step"
+            vp run "$step" || FAILED="$FAILED $step"
+          done
+          if [[ -n "$FAILED" ]]; then
+            echo "failed_steps=$FAILED" >> "$GITHUB_OUTPUT"
+            echo "code=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Escalate on build failure
+        if: steps.build.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED_STEPS: ${{ steps.build.outputs.failed_steps }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create "$SYNC_LABEL" --color B60205 --description "Upstream sync needs a human/agent" 2>/dev/null || true
+
+          TITLE="[t3x-sync] weekly full build failing"
+          BODY="$(printf 'Weekly full build failed.\n\n**kind:** `weekly-build`\n**failed steps:**%s\n**run:** %s\n\nThis is advisory — it does not block the daily rebase. A green typecheck/lint/test can still hide a build regression; investigate when convenient.' "$FAILED_STEPS" "$RUN_URL")"
+
+          EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [[ -n "$EXISTING" ]]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --label "$SYNC_LABEL" --body "$BODY"
+          fi
+          exit 1
