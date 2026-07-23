@@ -27,7 +27,7 @@ upstream cost):**
 ## Design principles
 
 - **No hard dependency on vendor string formats.** Parsing the reset time makes resume
-  *faster*, never *possible*. If parsing fails, bounded backoff still gets there.
+  _faster_, never _possible_. If parsing fails, bounded backoff still gets there.
 - **Detection must be reliable, not lossy.** The provider runtime event stream is a
   shared PubSub that upstream itself documents as unreliable for extra subscribers
   (`CheckpointReactor.ts:764`). Detection therefore reads the **authoritative
@@ -101,14 +101,14 @@ runtime event carries `threadId` + `provider` (`providerRuntime.ts` `ProviderRun
 Why this is reliable despite upstream's "lossy stream" caveat:
 
 - `runtimeEventPubSub` is `PubSub.unbounded` (`ProviderService.ts:215`) — it never drops
-  on backpressure. The caveat is a *subscription-timing* issue (`Stream.fromPubSub` only
+  on backpressure. The caveat is a _subscription-timing_ issue (`Stream.fromPubSub` only
   sees events published after it subscribes). Subscribing **once at boot** and holding it
   eliminates that.
 - Rate-limit status is emitted repeatedly and the `rejected` condition persists for the
   whole window, so the mechanism is **self-correcting**: if a resume fires too early and
   is still rejected, the SDK re-emits `rejected` → we reschedule with backoff.
 
-No projection poll for *detection*. (The poll survives only for the wake/guard re-check
+No projection poll for _detection_. (The poll survives only for the wake/guard re-check
 in B4/B5, where the read model genuinely is authoritative.)
 
 ## B3. Classification — `classifyRateLimit` (pure, structured, fixture-tested)
@@ -153,7 +153,7 @@ if the session reaper kills the process) reattaches transparently.
 Guards — each cancels or blocks a pending resume. **Revised after review:** the full
 `OrchestrationThread` snapshot does **not** carry the shell-only derived fields
 (`latestUserMessageAt`, `pendingApprovalCount`, …). Guards must be recomputed from the
-`messages` and `activities` arrays that the full-thread snapshot *does* carry:
+`messages` and `activities` arrays that the full-thread snapshot _does_ carry:
 
 - **User took over** — recomputed by scanning `thread.messages` for the newest
   `role:"user"` message and comparing its `createdAt`/id against the schedule time; also
@@ -169,17 +169,22 @@ Guards — each cancels or blocks a pending resume. **Revised after review:** th
 - **Provider gate** — only act on Claude threads in v1 (`session.providerName`).
 - **Caps** — max consecutive auto-resumes per thread (default 10) and max per rolling
   24h; on exhaustion, stop and say so rather than loop forever.
-- **Re-arm safety** — track a trigger signature (`threadId` + `resetsAt` +
-  `rateLimitType`); the same rejection never reschedules twice. Only a *new* rejection
-  (different `resetsAt`) after a resume re-arms.
+- **Re-arm safety** — at most **one pending resume per thread**: a fresh rejection while
+  one is already pending is ignored (`hasPending` short-circuits `planSchedule`). Repeated
+  rejections are spaced on a **backoff ladder** (15m → 30m → 60m, capped) rather than
+  deduped by an exact-match "trigger signature" — an earlier signature scheme was dropped
+  in review because it was fragile (three separate bugs) and did nothing the
+  one-pending-per-thread invariant plus backoff spacing don't do more simply. The attempt
+  is **reserved** (pending cleared + fire recorded) _before_ dispatch, so a failed dispatch
+  cannot tight-loop; only a genuinely new rejection event re-arms.
 
 **Wake race (review #4).** detect→schedule→(hours)→wake→dispatch has no
 optimistic-concurrency primitive (`thread.turn.start` carries no expected-version). The
-supervisor therefore **re-reads `getSnapshot()` immediately before dispatch** and
-re-runs every guard against the fresh snapshot, and additionally aborts if
-`session.updatedAt` or the newest user-message id changed since scheduling. This closes
-all but a sub-second residual race, which is documented and accepted (worst case: one
-redundant turn, which the user can interrupt).
+supervisor therefore **re-reads `getSnapshot()` immediately before each dispatch** (fresh
+per due item, not once per tick) and re-runs every guard against that snapshot, aborting
+if the newest user-message id or the latest turn id changed since scheduling (the captured
+baseline). This closes all but a sub-second residual race, which is documented and accepted
+(worst case: one redundant turn, which the user can interrupt).
 
 ## B6. Resume-prompt resolution (`config.ts`)
 
@@ -197,9 +202,9 @@ First match wins:
 The reactor appends to the existing thread timeline via the `thread.activity.append`
 command (`decider.ts:972`), tone `info`/`error`:
 
-- on detect: *"Usage limit reached. Auto-resume scheduled for 3:47 PM."*
-- on wake: *"Resuming now (attempt 2 of 10)."*
-- on cap: *"Auto-resume stopped after 10 attempts."*
+- on detect: _"Usage limit reached. Auto-resume scheduled for 3:47 PM."_
+- on wake: _"Resuming now (attempt 2 of 10)."_
+- on cap: _"Auto-resume stopped after 10 attempts."_
 
 Renders in the timeline that already exists → **v1 ships no `apps/web` changes, no
 contracts changes, no settings-schema changes.**
@@ -224,12 +229,18 @@ This is the entire patch against upstream code, and it does **not** grow when fe
   multi-hour waits verified in ms.
 - Guards: one case each — user-took-over (new message after schedule), awaiting-approval
   (open blocking request in activities), archived/deleted/settled, caps exhausted,
-  non-Claude provider, backoff-when-resetAt-null, wake-race (snapshot changed before
-  dispatch → abort).
-- Durability: pending resumes survive a simulated restart (rehydrate from JSON).
-- Integration: feed a synthetic `account.rate-limits.updated` (status rejected) runtime
-  event through the reactor; assert a single `thread.turn.start` is dispatched **only
-  after** the clock passes `resumeAt`, and not at all if a guard trips.
+  non-Claude provider, backoff-when-resetAt-null, thread-advanced (latest turn changed).
+- Scheduling (`planSchedule`): schedule at `resetsAt + margin`; skip when non-rejected;
+  skip when already pending; backoff from `now` when `resetsAt` is absent **or already in
+  the past** (stale limit); ladder caps at its last rung. Backoff uses a non-zero `now` so
+  the `now +` term is actually exercised.
+- Durability: pending resumes survive a simulated restart (rehydrate from JSON); a corrupt
+  or version-mismatched state file is treated as empty and never crashes boot.
+- Integration (`TestClock`, real store): feed a synthetic `account.rate-limits.updated`
+  (status rejected) event through the reactor; assert a single `thread.turn.start` fires
+  **only after** the clock passes `resumeAt`, none if the user takes over first, and — when
+  the resume dispatch itself fails — the attempt is still reserved (pending cleared, one
+  fire recorded) so it does **not** tight-loop.
 
 ## B10. Config surface (env / t3x settings, all optional)
 
@@ -261,3 +272,32 @@ All four findings from the adversarial review are incorporated above:
 Dispatching the resume (`thread.turn.start` from a reactor) was reviewed OK: it needs
 only `commandId`/`threadId`/`message`/`createdAt`, has no actor field, and the decider
 places no `session.status` guard on turn starts.
+
+### Second pass (deep adversarial review of the implementation)
+
+A second, deeper review of the built code surfaced ten confirmed findings; all are fixed:
+
+- **Signature-based dedup was fragile (three bugs: stale re-fire, missed re-arm, cross-run
+  collisions).** Removed the `triggerSignature`/`lastFiredSignature` machinery entirely.
+  The invariant is now **one pending resume per thread** + **backoff spacing**; re-arming
+  requires a genuinely new rejection event. Simpler and provably free of those three bugs.
+- **Wake race re-read once per tick, not per item.** `fireOne` now re-reads a **fresh**
+  `getSnapshot()` for each due item immediately before its own guard check + dispatch, so
+  a dispatch earlier in the same tick can't leave a later item guarded against stale state.
+- **A failed resume dispatch could tight-loop.** The attempt is now **reserved**
+  (`recordFired` clears pending + logs the fire) _before_ dispatch; a dispatch failure is
+  logged and does not retry until a new rejection arrives.
+- **Backoff ignored `now` and treated a past `resetsAt` as future.** `planSchedule` adds
+  the backoff offset to `now`, and only uses `resetsAt` when it is actually in the future;
+  a stale/past `resetsAt` falls back to the ladder.
+- **Corrupt/future-version state file could crash boot.** Decode failure and version
+  mismatch both fall back to empty state (unit-tested).
+- **`hasOpenBlockingRequest` mirror drift.** Verified byte-for-byte identical to the
+  current `decider.ts`, recorded as a logic-mirror seam in `docs/t3x/SEAMS.md`, and unit-
+  tested across all branches (open / resolved / stale-failure-clears / no-requestId).
+
+Project-A workflow findings from the same pass (fixed in the fork-sync spec + scripts):
+`gh issue list --jq '.[0].number'` prints literal `"null"` on an empty list → use
+`// empty`; a dropped fork patch during rebase must escalate (new **exit 40**) instead of
+force-pushing; the recovery tag is advertised only if its push to origin actually
+succeeded.

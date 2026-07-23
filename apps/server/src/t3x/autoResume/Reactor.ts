@@ -17,7 +17,6 @@
  */
 
 import type {
-  OrchestrationReadModel,
   OrchestrationThread,
   OrchestrationThreadActivityTone,
   ProviderRuntimeEvent,
@@ -139,8 +138,7 @@ const makeSupervisor = Effect.gen(function* () {
 
       const plan = planSchedule({
         verdict,
-        pendingSignature: record.pending?.triggerSignature ?? null,
-        lastFiredSignature: record.lastFiredSignature,
+        hasPending: record.pending !== null,
         nowMs,
         firedRecently,
         config,
@@ -154,10 +152,8 @@ const makeSupervisor = Effect.gen(function* () {
       yield* store.schedule({
         threadId,
         resumeAtMs: plan.resumeAtMs,
-        triggerSignature: plan.signature,
         reason: verdict.rateLimitType ?? "usage limit",
         scheduledAtMs: nowMs,
-        attemptIndex: firedRecently,
         baseline: captureBaseline(thread),
       });
 
@@ -171,8 +167,12 @@ const makeSupervisor = Effect.gen(function* () {
     });
 
   // --- wake -----------------------------------------------------------------
-  const fireOne = (pending: PendingResume, snapshot: OrchestrationReadModel, nowMs: number) =>
+  const fireOne = (pending: PendingResume, nowMs: number) =>
     Effect.gen(function* () {
+      // Re-read a FRESH snapshot per item, immediately before the guard check + dispatch,
+      // so every due thread is guarded against current state (not state captured before
+      // earlier dispatches in the same tick ran).
+      const snapshot = yield* snapshotQuery.getSnapshot();
       const thread = snapshot.threads.find((t) => t.id === pending.threadId);
       if (!thread) {
         yield* store.clearPending(pending.threadId);
@@ -203,10 +203,10 @@ const makeSupervisor = Effect.gen(function* () {
         return;
       }
 
-      // Reserve the attempt (clears pending + records signature) BEFORE dispatch so a
+      // Reserve the attempt (clears pending + records the fire) BEFORE dispatch so a
       // dispatch failure cannot tight-loop retry; a genuine re-limit re-arms via a new
-      // rejection event.
-      yield* store.recordFired(pending.threadId, nowMs, pending.triggerSignature);
+      // rejection event, spaced out on the backoff ladder.
+      yield* store.recordFired(pending.threadId, nowMs);
 
       const project = snapshot.projects.find((pr) => pr.id === thread.projectId);
       const workspaceRoot = project?.workspaceRoot ?? thread.worktreePath ?? null;
@@ -233,9 +233,7 @@ const makeSupervisor = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
     const pending = yield* store.listPending;
     const due = pending.filter((p) => p.resumeAtMs <= nowMs);
-    if (due.length === 0) return;
-    const snapshot = yield* snapshotQuery.getSnapshot();
-    yield* Effect.forEach(due, (p) => fireOne(p, snapshot, nowMs), { discard: true });
+    yield* Effect.forEach(due, (p) => fireOne(p, nowMs), { discard: true });
   });
 
   if (!config.enabled) {
