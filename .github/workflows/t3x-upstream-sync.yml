@@ -1,0 +1,120 @@
+# t3x daily upstream sync — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A4).
+# Rebases the fork's patch series onto pingdotgg/t3code, verifies, and pushes when green.
+# On conflict or red verification it pushes nothing and escalates via a `t3x-sync` issue.
+#
+# NOTE: runs on ubuntu-latest — the fork has no access to upstream's blacksmith-* runners.
+name: t3x upstream sync (daily)
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # daily 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rebase + verify but do not push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: t3x-upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/pingdotgg/t3code.git
+  SYNC_LABEL: t3x-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout fork main (full history)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # persist-credentials (default) lets the final push use GITHUB_TOKEN.
+
+      - name: Restore rerere cache
+        uses: actions/cache@v4
+        with:
+          path: .git/rr-cache
+          key: t3x-rr-cache-${{ github.run_id }}
+          restore-keys: |
+            t3x-rr-cache-
+
+      - name: Configure git + rerere
+        run: |
+          git config user.name "t3x-sync-bot"
+          git config user.email "t3x-sync-bot@users.noreply.github.com"
+          git config rerere.enabled true
+          git config rerere.autoupdate true
+          git remote add upstream "$UPSTREAM_URL" 2>/dev/null || git remote set-url upstream "$UPSTREAM_URL"
+          git remote set-url --push upstream DISABLE_PUSH_TO_UPSTREAM
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Tag pre-rebase last-good state
+        run: |
+          TAG="t3x/last-good-$(date -u +%Y%m%d-%H%M%S)"
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG" || echo "::warning::could not push recovery tag $TAG"
+          echo "RECOVERY_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Rebase + verify
+        id: sync
+        run: |
+          set +e
+          RUN="vp run" VERIFY="typecheck lint test" \
+            scripts/t3x/sync-upstream.sh
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Save rerere cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .git/rr-cache
+          key: t3x-rr-cache-${{ github.run_id }}
+
+      - name: Push (clean + not dry-run)
+        if: steps.sync.outputs.code == '0' && github.event.inputs.dry_run != 'true'
+        run: |
+          git push --force-with-lease origin main
+          echo "::notice::pushed rebased main to origin"
+
+      - name: Report clean no-op
+        if: steps.sync.outputs.code == '10'
+        run: echo "::notice::upstream unchanged; nothing to sync"
+
+      - name: Escalate on conflict / failure
+        if: steps.sync.outputs.code == '20' || steps.sync.outputs.code == '30' || steps.sync.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "$SYNC_LABEL" --color B60205 --description "Upstream sync needs a human/agent" 2>/dev/null || true
+
+          STATUS="$(cat t3x-sync-status.json 2>/dev/null || echo '{"result":"unknown"}')"
+          RESULT="$(echo "$STATUS" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("result","unknown"))' 2>/dev/null || echo unknown)"
+          TITLE="[t3x-sync] daily rebase needs attention ($RESULT)"
+
+          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\nThe daily Claude sync agent should pick this up (see docs/t3x/sync-agent-runbook.md).' \
+            "$RESULT" "${RECOVERY_TAG:-none}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" "$STATUS")"
+
+          EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [[ -n "$EXISTING" ]]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+            echo "::notice::updated existing t3x-sync issue #$EXISTING"
+          else
+            gh issue create --title "$TITLE" --label "$SYNC_LABEL" --body "$BODY"
+            echo "::notice::opened new t3x-sync issue"
+          fi
+          # Surface as a red run so it's visible in the Actions tab too.
+          exit 1
