@@ -29,9 +29,13 @@ upstream cost):**
 - **No hard dependency on vendor string formats.** Parsing the reset time makes resume
   _faster_, never _possible_. If parsing fails, bounded backoff still gets there.
 - **Detection must be reliable, not lossy.** The provider runtime event stream is a
-  shared PubSub that upstream itself documents as unreliable for extra subscribers
-  (`CheckpointReactor.ts:764`). Detection therefore reads the **authoritative
-  projection**, not that stream.
+  shared `PubSub.unbounded` (`ProviderService.ts:215`); upstream's "lossy" caveat
+  (`CheckpointReactor.ts:764`) is a _subscription-timing_ issue — `Stream.fromPubSub`
+  only sees events published after it subscribes. Detection therefore **subscribes once
+  at supervisor boot and holds it for the layer's lifetime**, which eliminates the timing
+  gap; the unbounded PubSub never drops on backpressure. The **projection** stays
+  authoritative for the wake-time guard re-check (B5), not for detection (B2 explains
+  why a usage limit produces no failed turn, so the projection can't detect it).
 - **Zero web-app / contracts / migration footprint in v1.** Visibility rides existing
   timeline activities; state is a plain atomic-written JSON file.
 
@@ -53,13 +57,14 @@ fine for a background poller. This keeps the entire upstream footprint at the 2-
 
 ```
 apps/server/src/t3x/
-  index.ts                          T3xLayerLive = Layer.mergeAll(AutoResumeReactorLive, …)
+  index.ts                          T3xLayerLive = AutoResumeReactorLive ∘ AutoResumeStoreLive
   autoResume/
-    Service.ts                      interface (Context.Service tag)
-    Reactor.ts                      supervisor loop: detect → schedule → resume
-    classifyLimitError.ts           pure: (text) => { kind, resetAt? } | undefined
-    state.ts                        durable pending-resume store (atomic JSON)
-    config.ts                       resume-prompt resolution
+    Reactor.ts                      self-starting supervisor: detect → schedule → resume
+    classifyRateLimit.ts            pure structured decode: (rateLimits) => verdict | undefined
+    decide.ts                       pure planSchedule: (verdict, hasPending, now, …) => plan
+    guards.ts                       pure guard predicates (baseline, cancelReason, …)
+    state.ts                        durable pending-resume store (atomic JSON; Context.Service)
+    config.ts                       env config + resume-prompt resolution
     *.test.ts
 ```
 
@@ -95,7 +100,8 @@ runtime event carries `threadId` + `provider` (`providerRuntime.ts` `ProviderRun
 
 **Detection = subscribe once, at supervisor boot, to `providerService.streamEvents`**
 (held for the layer's lifetime). Filter `type === "account.rate-limits.updated"` and
-`provider === "claude"`. When `rate_limit_info.status === "rejected"`, capture
+`provider === "claudeAgent"` (the Claude driver slug, `ClaudeAdapter.ts:96`). When
+`rate_limit_info.status === "rejected"`, capture
 `{ threadId, resetsAt, rateLimitType }` and schedule a resume at `resetsAt` (+ margin).
 
 Why this is reliable despite upstream's "lossy stream" caveat:
@@ -117,7 +123,8 @@ Structured decode, not string matching — far more robust than the original str
 classifier:
 
 ```
-classifyRateLimit(rateLimits: unknown): { rejected: boolean; resetsAt: Date | null; rateLimitType: string | null } | undefined
+classifyRateLimit(rateLimits: unknown):
+  { rejected: boolean; resetsAtMs: number | null; rateLimitType: string | null; status: string } | undefined
 ```
 
 - Defensively decodes the `payload.rateLimits` blob (reads `.rate_limit_info`).
@@ -131,14 +138,19 @@ classifyRateLimit(rateLimits: unknown): { rejected: boolean; resetsAt: Date | nu
 
 - A **single supervisor fiber**, not one sleeping fiber per thread. It re-derives all
   pending resumes from disk on boot, so a server restart mid-wait loses nothing.
-- State: a JSON file in the server data dir, written via existing `atomicWrite.ts`:
-  `threadId → { resumeAt, attempts, lastReason, promptSource, createdAt }`.
+- State: a versioned JSON file in the server state dir, written via existing
+  `atomicWrite.ts`, keyed by thread:
+  `threadId → { pending: { resumeAtMs, reason, scheduledAtMs, baseline } | null,
+firedAtMs: number[], overridePrompt: string | null }`. `firedAtMs` backs both the
+  24h cap and the backoff lookback. Mutations are serialized through a
+  `SynchronizedRef` and persisted atomically inside the critical section.
   **No DB migration** — the migration registry is upstream-owned; adding to it would
-  buy permanent conflict surface for something a ~40-line file does fine.
+  buy permanent conflict surface for something one small JSON file does fine.
 - Wait target:
-  - `resetAt` parsed → `resumeAt = resetAt + small safety margin`.
-  - `resetAt` null → **bounded exponential backoff**: 15m → 30m → 60m (cap). The window
-    reopens eventually and the resume lands.
+  - `resetsAt` present **and in the future** → `resumeAt = resetsAt + safety margin`.
+  - `resetsAt` absent **or already in the past** (stale/persistent limit) → **bounded
+    backoff ladder**: 15m → 30m → 60m (cap). The window reopens eventually and the resume
+    lands. A past `resetsAt` is never reused as the wait target.
 - Time via Effect `Clock`; tests drive multi-hour waits with `TestClock` in ms.
 - **One pending resume per thread, ever.**
 
@@ -244,10 +256,12 @@ This is the entire patch against upstream code, and it does **not** grow when fe
 
 ## B10. Config surface (env / t3x settings, all optional)
 
-- `T3X_AUTO_RESUME_ENABLED` (default true)
-- `T3X_AUTO_RESUME_POLL_MS` (default 30_000)
-- `T3X_AUTO_RESUME_MAX_ATTEMPTS` (default 10)
-- `T3X_AUTO_RESUME_SAFETY_MARGIN_MS` (default 60_000)
+- `T3X_AUTO_RESUME_ENABLED` (default `true`)
+- `T3X_AUTO_RESUME_POLL_MS` (default `30_000`)
+- `T3X_AUTO_RESUME_MAX_PER_24H` (default `10`)
+- `T3X_AUTO_RESUME_SAFETY_MARGIN_MS` (default `60_000`)
+- `T3X_AUTO_RESUME_BACKOFF_MS` — comma-separated ladder used when `resetsAt` is absent
+  (default `900000,1800000,3600000` = 15m/30m/60m; the last value is the cap)
 
 Read once at layer construction; sensible defaults mean the feature works with zero
 configuration.
