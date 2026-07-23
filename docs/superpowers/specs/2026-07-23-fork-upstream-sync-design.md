@@ -57,14 +57,14 @@ origin    https://github.com/radroid/t3code.git      (fetch + push)   ← the fo
   resolved once replays automatically on future rebases.
 
 > **rerere scope (corrected after review):** `.git/rr-cache` is untracked and never
-> pushed, and the daily CI job only *aborts* on conflict (it never resolves), so it
+> pushed, and the daily CI job only _aborts_ on conflict (it never resolves), so it
 > neither produces nor can consume shared resolutions. rerere therefore lives **purely
 > locally**, where the sync agent (A6) actually resolves conflicts — that is exactly
 > where the replay value is. The CI job does not attempt to cache or share `rr-cache`.
 
 > **Direct-commit discipline (corrected after review):** the daily force-push assumes
 > `main` only ever advances via the sync job or a fast-forward of merged `t3x/*`
-> branches. A local commit made *directly* on `main` (not via a feature branch) would be
+> branches. A local commit made _directly_ on `main` (not via a feature branch) would be
 > clobbered on the next green sync. Always branch; never commit straight to `main`.
 
 ## A2. Conflict-surface budget (the core discipline)
@@ -105,19 +105,26 @@ New file in an upstream-owned directory → conflicts with nothing. Triggers: da
 
 1. Checkout `origin/main`, full history.
 2. Fetch `upstream`. If `upstream/main` hasn't moved → exit no-op.
-3. Tag `t3x/last-good-<date>` and push the tag — pre-rebase state always recoverable.
+3. Tag `t3x/last-good-<date>` and push the tag — pre-rebase state recoverable. The tag is
+   advertised in the escalation issue **only if its push to origin actually succeeded** (a
+   local-only tag on an ephemeral CI runner is unrecoverable, so it is never surfaced).
 4. `git rebase upstream/main`. On conflict: `--abort`, record conflicted paths and the
    upstream commits that touched them.
 5. **Verify (daily depth):** `pnpm install --frozen-lockfile`, then `typecheck` +
    `lint` + server tests. (Full build is weekly — A5.)
-6. Outcome:
-   - **Green** → `git push --force-with-lease` to `origin/main`. Done, zero tokens spent.
-   - **Conflict or red** → push nothing to `main`. Open (or update) a single issue
-     labelled `t3x-sync` with a JSON status block: `kind: "daily"`, conflicted files,
+6. Outcome (driven by `scripts/t3x/sync-upstream.sh` exit codes; the push step fires
+   **only** on exit 0):
+   - **0 — green** → `git push --force-with-lease` to `origin/main`. Done, zero tokens.
+   - **10 — no-op** → upstream unchanged; nothing to do.
+   - **20 — conflict** / **30 — red verify** → push nothing. Open (or update) a single
+     issue labelled `t3x-sync` with a JSON status block: `kind: "daily"`, conflicted files,
      failing command, upstream commit range, current patch manifest.
-7. **Dropped-patch detector:** if a patch commit becomes empty during rebase (upstream
-   absorbed the change), report it loudly in the issue rather than letting it vanish
-   silently.
+   - **40 — dropped patch** → push nothing; escalate (see step 7).
+7. **Dropped-patch detector:** if one of the fork's own patch commits vanishes during
+   rebase (patch count drops — upstream likely absorbed an equivalent change), the script
+   exits **40** even when verification is green. This blocks the auto-push and opens the
+   `t3x-sync` issue so a human/agent confirms the loss was intentional before the fork
+   permanently drops the change — it never vanishes silently.
 
 > Force-push is safe here: `main` is `upstream/main` + a rebased patch series, and the
 > pre-rebase tag from step 3 plus `--force-with-lease` guard against clobbering.
@@ -156,13 +163,13 @@ Safe to re-run; detects already-applied state.
 
 ## Deliverables
 
-| Artifact | Path | Upstream conflict risk |
-|---|---|---|
-| Remote/rerere setup | `scripts/t3x/setup-fork.sh` | none (new file) |
-| Daily sync workflow | `.github/workflows/t3x-upstream-sync.yml` | none (new file) |
-| Weekly verify workflow | `.github/workflows/t3x-weekly-verify.yml` | none (new file) |
-| Seam ledger | `docs/t3x/SEAMS.md` | none (new file) |
-| Sync-agent runbook | `docs/t3x/sync-agent-runbook.md` | none (new file) |
+| Artifact               | Path                                      | Upstream conflict risk |
+| ---------------------- | ----------------------------------------- | ---------------------- |
+| Remote/rerere setup    | `scripts/t3x/setup-fork.sh`               | none (new file)        |
+| Daily sync workflow    | `.github/workflows/t3x-upstream-sync.yml` | none (new file)        |
+| Weekly verify workflow | `.github/workflows/t3x-weekly-verify.yml` | none (new file)        |
+| Seam ledger            | `docs/t3x/SEAMS.md`                       | none (new file)        |
+| Sync-agent runbook     | `docs/t3x/sync-agent-runbook.md`          | none (new file)        |
 
 **Total edits to upstream-owned files: zero.** (Project B adds the only 2-line seam.)
 
