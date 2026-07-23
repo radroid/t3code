@@ -83,7 +83,12 @@ if [[ "$MERGE_BASE" == "$UPSTREAM_HEAD" ]]; then
 fi
 
 UPSTREAM_RANGE="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" | head -100 || true)"
-PATCH_COUNT_BEFORE="$(git rev-list --count "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
+# --no-merges: a default `git rebase` flattens merge commits, so counting them would make
+# PATCH_COUNT_AFTER < BEFORE even when no real patch was dropped (e.g. a t3x PR merged into
+# fork main via GitHub's merge button) — a false "dropped patch" that would stall the sync
+# every day. Counting only non-merge commits is invariant across that flattening while
+# still catching a genuinely dropped patch (a real commit that upstream absorbed).
+PATCH_COUNT_BEFORE="$(git rev-list --count --no-merges "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
 
 echo "→ rebasing $LOCAL_BRANCH ($PATCH_COUNT_BEFORE patch commits) onto $UPSTREAM_REMOTE/$UPSTREAM_BRANCH"
 git checkout -q "$LOCAL_BRANCH"
@@ -102,9 +107,11 @@ if ! git rebase "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
 fi
 
 # --- dropped-patch detection (A4 step 7) ------------------------------------
-PATCH_COUNT_AFTER="$(git rev-list --count "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
+# Compare non-merge counts (see PATCH_COUNT_BEFORE above) so merge-flattening never
+# false-positives.
+PATCH_COUNT_AFTER="$(git rev-list --count --no-merges "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
 if (( PATCH_COUNT_AFTER < PATCH_COUNT_BEFORE )); then
-  DROPPED="patch count dropped $PATCH_COUNT_BEFORE -> $PATCH_COUNT_AFTER (upstream likely absorbed a change); manifest before: $MANIFEST"
+  DROPPED="non-merge patch count dropped $PATCH_COUNT_BEFORE -> $PATCH_COUNT_AFTER (upstream likely absorbed a change); manifest before: $MANIFEST"
   fail "$DROPPED"
 fi
 
