@@ -87,18 +87,40 @@ export const makeAutoResumeStore = (
     const fs = yield* FileSystem.FileSystem;
     const pathSvc = yield* Path.Path;
 
-    // Rehydrate; any missing/corrupt file starts empty (never fails boot).
-    const initial = yield* fs.readFileString(stateFilePath).pipe(
-      Effect.flatMap((contents) => decodeState(contents)),
-      Effect.orElseSucceed(() => EMPTY_STATE),
-    );
+    // Rehydrate. Boot never fails, but we must distinguish three cases so a *transient*
+    // read error (EACCES/EIO on a file that still holds valid state) is not mistaken for a
+    // fresh/empty store — otherwise the first mutation would persist an empty file over the
+    // still-valid one, permanently losing pending resumes + fired history:
+    //   - no file (fresh install)              -> empty, persistence ON
+    //   - present + parses                     -> use it,   persistence ON
+    //   - present + unparseable (corrupt/vN)   -> empty,    persistence ON (safe to replace)
+    //   - present + unreadable (I/O error)     -> empty,    persistence OFF (preserve file)
+    const fileExists = yield* fs.exists(stateFilePath).pipe(Effect.orElseSucceed(() => false));
+    let initial: AutoResumeState = EMPTY_STATE;
+    let persistEnabled = true;
+    if (fileExists) {
+      const contents = yield* fs.readFileString(stateFilePath).pipe(
+        Effect.map((c): string | null => c),
+        Effect.orElseSucceed(() => null),
+      );
+      if (contents === null) {
+        persistEnabled = false;
+        yield* Effect.logWarning(
+          "t3x auto-resume: state file present but unreadable; running in-memory only this session so the existing file is not overwritten",
+          { stateFilePath },
+        );
+      } else {
+        initial = yield* decodeState(contents).pipe(Effect.orElseSucceed(() => EMPTY_STATE));
+      }
+    }
 
     const ref = yield* SynchronizedRef.make<AutoResumeState>(initial);
 
     // FileSystem + Path are captured at construction and provided here so the store's
     // public methods carry no context requirement (R = never).
-    const persist = (state: AutoResumeState): Effect.Effect<void> =>
-      writeFileStringAtomically({
+    const persist = (state: AutoResumeState): Effect.Effect<void> => {
+      if (!persistEnabled) return Effect.void;
+      return writeFileStringAtomically({
         filePath: stateFilePath,
         contents: `${JSON.stringify(state)}\n`,
       }).pipe(
@@ -113,6 +135,7 @@ export const makeAutoResumeStore = (
           }),
         ),
       );
+    };
 
     const mutate = (f: (state: AutoResumeState) => AutoResumeState) =>
       SynchronizedRef.updateEffect(ref, (state) => {
