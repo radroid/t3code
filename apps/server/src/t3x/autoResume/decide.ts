@@ -18,7 +18,7 @@ export interface SchedulePlan {
 
 export interface SkipPlan {
   readonly kind: "skip";
-  readonly reason: "already-pending" | "not-rejected";
+  readonly reason: "already-pending" | "not-rejected" | "capped";
 }
 
 export interface PlanScheduleInput {
@@ -28,6 +28,8 @@ export interface PlanScheduleInput {
   readonly nowMs: number;
   /** Fires for this thread within the recent backoff window — drives the ladder. */
   readonly firedRecently: number;
+  /** Fires for this thread within the rolling 24h cap window. */
+  readonly firedInCapWindow: number;
   readonly config: AutoResumeConfig;
 }
 
@@ -37,8 +39,12 @@ export interface PlanScheduleInput {
  * Dedup is purely "one pending per thread": while a resume is pending we skip every
  * telemetry re-emit (no churn). Once a resume fires, its pending is cleared, so the next
  * rejection re-arms naturally — and because `firedRecently` has incremented, its resume
- * is spaced out on the backoff ladder rather than tight-looping. The 24h cap (enforced
- * at fire time) is the hard stop.
+ * is spaced out on the backoff ladder rather than tight-looping.
+ *
+ * The 24h cap is checked HERE (at schedule time) as well as at fire time. Checking it at
+ * schedule time stops a capped-out thread from re-scheduling — and re-posting a misleading
+ * "auto-resume scheduled" timeline note — on every subsequent rejection until the fires
+ * age out of the window. The fire-time check remains as defence-in-depth.
  *
  * Timing:
  *   - window opens in the future (`resetsAt > now`): wait until `resetsAt + margin`.
@@ -50,10 +56,11 @@ export interface PlanScheduleInput {
  * skip) or blocks re-arming a persistent limit. One-pending + backoff avoids both.
  */
 export function planSchedule(input: PlanScheduleInput): SchedulePlan | SkipPlan {
-  const { verdict, hasPending, nowMs, firedRecently, config } = input;
+  const { verdict, hasPending, nowMs, firedRecently, firedInCapWindow, config } = input;
 
   if (!verdict.rejected) return { kind: "skip", reason: "not-rejected" };
   if (hasPending) return { kind: "skip", reason: "already-pending" };
+  if (firedInCapWindow >= config.maxResumesPer24h) return { kind: "skip", reason: "capped" };
 
   const windowOpensInFuture = verdict.resetsAtMs !== null && verdict.resetsAtMs > nowMs;
   const resumeAtMs = windowOpensInFuture
