@@ -56,6 +56,17 @@ origin    https://github.com/radroid/t3code.git      (fetch + push)   ← the fo
 - Local git config: `rerere.enabled=true`, `rerere.autoupdate=true` so a conflict
   resolved once replays automatically on future rebases.
 
+> **rerere scope (corrected after review):** `.git/rr-cache` is untracked and never
+> pushed, and the daily CI job only *aborts* on conflict (it never resolves), so it
+> neither produces nor can consume shared resolutions. rerere therefore lives **purely
+> locally**, where the sync agent (A6) actually resolves conflicts — that is exactly
+> where the replay value is. The CI job does not attempt to cache or share `rr-cache`.
+
+> **Direct-commit discipline (corrected after review):** the daily force-push assumes
+> `main` only ever advances via the sync job or a fast-forward of merged `t3x/*`
+> branches. A local commit made *directly* on `main` (not via a feature branch) would be
+> clobbered on the next green sync. Always branch; never commit straight to `main`.
+
 ## A2. Conflict-surface budget (the core discipline)
 
 **Rule: your conflict surface is the set of upstream files you edit, and it is
@@ -92,8 +103,7 @@ Left alone they burn Actions minutes and email failures on every push.
 New file in an upstream-owned directory → conflicts with nothing. Triggers: daily
 `schedule` + `workflow_dispatch` (with a `dry_run` input).
 
-1. Checkout `origin/main`, full history. Restore `.git/rr-cache` from Actions cache so
-   **CI reuses conflict resolutions the user already taught it locally**.
+1. Checkout `origin/main`, full history.
 2. Fetch `upstream`. If `upstream/main` hasn't moved → exit no-op.
 3. Tag `t3x/last-good-<date>` and push the tag — pre-rebase state always recoverable.
 4. `git rebase upstream/main`. On conflict: `--abort`, record conflicted paths and the
@@ -101,8 +111,7 @@ New file in an upstream-owned directory → conflicts with nothing. Triggers: da
 5. **Verify (daily depth):** `pnpm install --frozen-lockfile`, then `typecheck` +
    `lint` + server tests. (Full build is weekly — A5.)
 6. Outcome:
-   - **Green** → `git push --force-with-lease` to `origin/main`. Save rerere cache.
-     Done, zero tokens spent.
+   - **Green** → `git push --force-with-lease` to `origin/main`. Done, zero tokens spent.
    - **Conflict or red** → push nothing to `main`. Open (or update) a single issue
      labelled `t3x-sync` with a JSON status block: `kind: "daily"`, conflicted files,
      failing command, upstream commit range, current patch manifest.

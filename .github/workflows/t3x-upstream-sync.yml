@@ -38,20 +38,14 @@ jobs:
           fetch-depth: 0
           # persist-credentials (default) lets the final push use GITHUB_TOKEN.
 
-      - name: Restore rerere cache
-        uses: actions/cache@v4
-        with:
-          path: .git/rr-cache
-          key: t3x-rr-cache-${{ github.run_id }}
-          restore-keys: |
-            t3x-rr-cache-
+      # NOTE: no rerere cache here on purpose. The CI job only aborts on conflict (it
+      # never resolves), so it neither produces nor consumes shared resolutions. rerere
+      # lives locally, where the sync agent actually resolves conflicts.
 
-      - name: Configure git + rerere
+      - name: Configure git
         run: |
           git config user.name "t3x-sync-bot"
           git config user.email "t3x-sync-bot@users.noreply.github.com"
-          git config rerere.enabled true
-          git config rerere.autoupdate true
           git remote add upstream "$UPSTREAM_URL" 2>/dev/null || git remote set-url upstream "$UPSTREAM_URL"
           git remote set-url --push upstream DISABLE_PUSH_TO_UPSTREAM
 
@@ -76,13 +70,6 @@ jobs:
           RUN="vp run" VERIFY="typecheck lint test" \
             scripts/t3x/sync-upstream.sh
           echo "code=$?" >> "$GITHUB_OUTPUT"
-
-      - name: Save rerere cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .git/rr-cache
-          key: t3x-rr-cache-${{ github.run_id }}
 
       - name: Push (clean + not dry-run)
         if: steps.sync.outputs.code == '0' && github.event.inputs.dry_run != 'true'
