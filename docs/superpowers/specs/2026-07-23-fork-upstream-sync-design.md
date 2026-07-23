@@ -121,10 +121,14 @@ New file in an upstream-owned directory → conflicts with nothing. Triggers: da
      failing command, upstream commit range, current patch manifest.
    - **40 — dropped patch** → push nothing; escalate (see step 7).
 7. **Dropped-patch detector:** if one of the fork's own patch commits vanishes during
-   rebase (patch count drops — upstream likely absorbed an equivalent change), the script
-   exits **40** even when verification is green. This blocks the auto-push and opens the
-   `t3x-sync` issue so a human/agent confirms the loss was intentional before the fork
-   permanently drops the change — it never vanishes silently.
+   rebase (upstream likely absorbed an equivalent change), the script exits **40** even
+   when verification is green. This blocks the auto-push and opens the `t3x-sync` issue so
+   a human/agent confirms the loss was intentional before the fork permanently drops the
+   change — it never vanishes silently. The count is taken over **non-merge commits**
+   (`git rev-list --count --no-merges`): a default rebase flattens merge commits, so
+   counting them would false-positive whenever fork `main` contains a merge (e.g. a t3x PR
+   merged via GitHub's button), stalling the sync every day; non-merge counting is
+   invariant across that flattening while still catching a genuinely absorbed patch.
 
 > Force-push is safe here: `main` is `upstream/main` + a rebased patch series, and the
 > pre-rebase tag from step 3 plus `--force-with-lease` guard against clobbering.

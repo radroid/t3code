@@ -146,6 +146,10 @@ firedAtMs: number[], overridePrompt: string | null }`. `firedAtMs` backs both th
   `SynchronizedRef` and persisted atomically inside the critical section.
   **No DB migration** — the migration registry is upstream-owned; adding to it would
   buy permanent conflict surface for something one small JSON file does fine.
+  Boot rehydrate distinguishes _missing/corrupt_ (start empty, persist normally) from
+  _present-but-unreadable_ (a transient I/O error on a file that may still hold valid
+  state): in the latter case the store runs in-memory only for the session and **suppresses
+  persistence**, so it never clobbers the still-valid file with an empty one.
 - Wait target:
   - `resetsAt` present **and in the future** → `resumeAt = resetsAt + safety margin`.
   - `resetsAt` absent **or already in the past** (stale/persistent limit) → **bounded
@@ -179,8 +183,10 @@ Guards — each cancels or blocks a pending resume. **Revised after review:** th
   Open request → do nothing (the explicit v1 exclusion).
 - **Thread gone** — `deletedAt`/`archivedAt` set, or `settledOverride === "settled"`.
 - **Provider gate** — only act on Claude threads in v1 (`session.providerName`).
-- **Caps** — max consecutive auto-resumes per thread (default 10) and max per rolling
-  24h; on exhaustion, stop and say so rather than loop forever.
+- **Caps** — max auto-resumes per thread per rolling 24h (default 10); on exhaustion,
+  stop and say so rather than loop forever. The cap is checked **both at schedule time**
+  (so a capped-out thread stops re-scheduling and stops posting misleading "scheduled"
+  notes on every subsequent rejection) **and at fire time** (defence-in-depth).
 - **Re-arm safety** — at most **one pending resume per thread**: a fresh rejection while
   one is already pending is ignored (`hasPending` short-circuits `planSchedule`). Repeated
   rejections are spaced on a **backoff ladder** (15m → 30m → 60m, capped) rather than
@@ -243,11 +249,12 @@ This is the entire patch against upstream code, and it does **not** grow when fe
   (open blocking request in activities), archived/deleted/settled, caps exhausted,
   non-Claude provider, backoff-when-resetAt-null, thread-advanced (latest turn changed).
 - Scheduling (`planSchedule`): schedule at `resetsAt + margin`; skip when non-rejected;
-  skip when already pending; backoff from `now` when `resetsAt` is absent **or already in
-  the past** (stale limit); ladder caps at its last rung. Backoff uses a non-zero `now` so
-  the `now +` term is actually exercised.
+  skip when already pending; skip when at the 24h cap; backoff from `now` when `resetsAt`
+  is absent **or already in the past** (stale limit); ladder caps at its last rung. Backoff
+  uses a non-zero `now` so the `now +` term is actually exercised.
 - Durability: pending resumes survive a simulated restart (rehydrate from JSON); a corrupt
-  or version-mismatched state file is treated as empty and never crashes boot.
+  or version-mismatched state file is treated as empty and never crashes boot; a
+  present-but-unreadable state path runs in-memory and leaves the existing file intact.
 - Integration (`TestClock`, real store): feed a synthetic `account.rate-limits.updated`
   (status rejected) event through the reactor; assert a single `thread.turn.start` fires
   **only after** the clock passes `resumeAt`, none if the user takes over first, and — when
@@ -315,3 +322,30 @@ Project-A workflow findings from the same pass (fixed in the fork-sync spec + sc
 `// empty`; a dropped fork patch during rebase must escalate (new **exit 40**) instead of
 force-pushing; the recovery tag is advertised only if its push to origin actually
 succeeded.
+
+### Third pass (verified review of the fixes; each finding double-confirmed)
+
+A third review pass over the fixed code, with two independent skeptics verifying each
+finding (and one — the merge-commit case — reproduced empirically with git), confirmed
+three more issues; all fixed:
+
+- **Merge commit on fork `main` permanently stalled the daily sync** (medium). The
+  dropped-patch detector counted _all_ commits (`rev-list --count`), but a default rebase
+  flattens merge commits, so the post-rebase count dropped with no real patch lost → false
+  **exit 40** → the linearized result never pushed → the same false positive recurred
+  every day. Fixed by counting **non-merge** commits (`--no-merges`), verified to still
+  catch a genuinely absorbed patch.
+- **Boot rehydrate could clobber valid durable state** (low). A transient read error
+  (EACCES/EIO) was indistinguishable from a missing/corrupt file, so the store booted
+  empty and the first write overwrote the still-valid file. Fixed by suppressing
+  persistence when the file is present-but-unreadable (see B4).
+- **24h cap was only enforced at fire time** (low). A capped-out thread kept re-scheduling
+  and re-posting "scheduled"/"stopped" timeline notes on every subsequent rejection. Fixed
+  by also checking the cap at schedule time in `planSchedule` (see B5 caps).
+
+Two further candidates were investigated and **refuted** by the verifiers: (a) "swallowed
+persist failure → duplicate resume after restart" — defeated by the `cancelReason` baseline
+re-check against the durable, event-sourced thread state; (b) "unbounded state growth" —
+real as over-retention but negligible at any realistic thread count (tiny records, pruned
+fired-history), a low-priority hygiene item rather than a defect. Both are recorded here so
+the reasoning isn't re-litigated later.
