@@ -43,20 +43,34 @@ The `latest` name comes from `"productName": "T3 Code (Alpha)"` in
 applies if that field is ever removed upstream. So a default local build
 replaces **`T3 Code (Alpha).app`**, the app most fork users already run.
 
-Confirm for yourself before the first `--install` — this reads the real name out
-of the built dmg rather than trusting the table above:
+Don't trust the table — ask the script. `--dry-run` mounts the built `.dmg`
+read-only and reports the **real** name, falling back to the prediction above
+only when nothing has been built yet:
 
 ```bash
-ls -d "/Applications/"*T3*   # what you have installed
-
-MP=$(mktemp -d) && hdiutil attach -nobrowse -readonly -mountpoint "$MP" \
-  release/*.dmg >/dev/null && ls -d "$MP"/*.app && hdiutil detach "$MP" >/dev/null
+ls -d "/Applications/"*T3*                                    # what you have installed
+scripts/t3x/auto-build-desktop.sh --install --dry-run --force # what would be replaced
 ```
 
-If the built name doesn't match the app you actually launch, `--install` creates
-a **new, separate** app and it will look like "nothing updated." In that case
-either switch to running the app this build produces, or redirect the install:
-`T3X_AUTOBUILD_APPLICATIONS_DIR=/some/dir scripts/t3x/auto-build-desktop.sh --install`.
+(`--force` is needed only because a dry run otherwise stops at "no change since
+last build" before it reaches the install step.)
+
+It prints one of:
+
+```
+DRY-RUN install: read 'T3 Code (Alpha).app' from …/release/T3-Code-0.0.28-arm64.dmg
+DRY-RUN: '/Applications/T3 Code (Alpha).app' exists and WOULD be replaced
+```
+
+```
+DRY-RUN WARNING: '/Applications/T3 Code.app' does NOT exist — a real --install
+would create a NEW app and leave whatever you currently run untouched
+```
+
+That second form is the failure you care about: `--install` would create a
+**new, separate** app and it would look like "nothing updated." Either switch to
+running the app this build produces, or redirect the install with
+`T3X_AUTOBUILD_APPLICATIONS_DIR=/some/dir`.
 
 **This also assumes you run the _installed_ app, not `pnpm start:desktop`.**
 Those are different processes; auto-install updates the installed one only.
@@ -122,21 +136,59 @@ resolve against the repo root, matching `build-desktop-artifact.ts`),
 positive integer). `--print-launchd` copies all of these into the emitted plist, so a
 plist generated from a shell where you overrode them keeps those overrides.
 
-`T3X_AUTOBUILD_APP_NAME` only names the `.app` assumed during `--dry-run` (a real install
-reads the actual name out of the mounted dmg); it does not redirect where you install.
+`T3X_AUTOBUILD_APP_NAME` overrides the `.app` name during `--dry-run`, short-circuiting
+the dmg read; it does not redirect where you install.
+`T3X_AUTOBUILD_STDERR_IS_LOG=1` stops `log()` echoing to stderr — set automatically in the
+generated plist, where stderr already points at the log file.
 
 **Exit codes:** `0` success · `3` nothing to do (HEAD unchanged, or another instance holds
-the lock) · `1` build or install failed · `2` bad flag or invalid env value.
+the lock) · `1` build or install failed · `2` bad flag, invalid env value, or a
+TCC-protected repo path.
 
 ## Running it hands-off
 
 ### Option 1 — LaunchAgent (starts at login)
+
+> **🔴 Your repo must NOT live in `~/Documents`, `~/Desktop`, `~/Downloads`, or iCloud
+> Drive.** Those are TCC-protected. LaunchAgents get no TCC grant and — unlike apps —
+> never trigger a consent prompt, so macOS just returns `EPERM`. The agent loads,
+> `launchctl print` cheerfully reports it, and it dies instantly with
+> `last exit code = 126`, having built nothing:
+>
+> ```
+> shell-init: error retrieving current directory: getcwd: … Operation not permitted
+> /bin/bash: …/scripts/t3x/auto-build-desktop.sh: Operation not permitted
+> ```
+>
+> `--print-launchd` detects this and refuses to emit a plist (exit `2`) rather than hand
+> you one that silently never works. Move the repo somewhere unprotected — `~/Developer`
+> is the conventional spot:
+>
+> ```bash
+> mkdir -p ~/Developer
+> mv ~/Documents/t3code ~/Developer/t3code
+> git -C ~/Developer/t3code worktree repair   # plus each worktree, if you use them
+> ```
+>
+> The alternative — granting Full Disk Access to `/bin/bash` — works, but grants FDA to
+> *every* bash script on the machine. Not worth it for this. Option 3 needs no move at
+> all, since a terminal already has the grant.
 
 ```bash
 scripts/t3x/auto-build-desktop.sh --print-launchd --install --interval 120 \
   > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 ```
+
+**Verify it actually runs** — a loaded agent is not a working one:
+
+```bash
+launchctl print "gui/$UID/dev.t3x.autobuild" | grep -E "state|pid|last exit code"
+tail -f ~/.t3/userdata/logs/t3x-autobuild.log
+```
+
+Want `state = running` with a pid and `last exit code = (never exited)`. A
+`last exit code = 126` means the TCC problem above.
 
 Stop / remove it:
 
