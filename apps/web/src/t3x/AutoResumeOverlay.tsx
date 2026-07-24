@@ -161,6 +161,9 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const threadIdRef = useRef(threadId);
   const inFlightWritesRef = useRef(0);
   const promptTimerRef = useRef<number | null>(null);
+  // The edit a debounced write is waiting to send, so it can be flushed rather than
+  // dropped when the thread changes mid-debounce.
+  const pendingPromptRef = useRef<{ threadId: string; value: string } | null>(null);
 
   useEffect(() => {
     threadIdRef.current = threadId;
@@ -210,7 +213,6 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
 
   const applyWriteResult = useCallback(
     (requestThreadId: string, fallback: AutoResumeState | null, next: AutoResumeState | null) => {
-      inFlightWritesRef.current -= 1;
       if (!mountedRef.current || threadIdRef.current !== requestThreadId) {
         return;
       }
@@ -222,6 +224,70 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
     [],
   );
 
+  /**
+   * Issues a write and guarantees the in-flight counter is released exactly once.
+   *
+   * The counter gates polling, so a leaked increment stops the overlay refreshing for the
+   * life of the component. `writeAutoResumeState` swallows its own async failures, but URL
+   * construction happens before the promise exists and can throw synchronously — hence the
+   * try/catch around the release rather than relying on `.then` alone.
+   */
+  const submitWrite = useCallback(
+    (requestThreadId: string, fallback: AutoResumeState | null, body: AutoResumeWrite) => {
+      inFlightWritesRef.current += 1;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        inFlightWritesRef.current -= 1;
+      };
+      try {
+        void writeAutoResumeState(body).then(
+          (next) => {
+            release();
+            applyWriteResult(requestThreadId, fallback, next);
+          },
+          () => release(),
+        );
+      } catch {
+        release();
+      }
+    },
+    [applyWriteResult],
+  );
+
+  /**
+   * Sends a debounced resume-message edit immediately.
+   *
+   * Called when the thread changes or the overlay unmounts. Without it the pending timer
+   * is simply dropped: typing in one thread and switching within the debounce window lost
+   * the edit silently, because the next keystroke in the new thread cleared the old timer.
+   * Fire-and-forget — it deliberately carries the ORIGINATING threadId and never touches
+   * state, since the component may be unmounting.
+   */
+  const flushPendingPrompt = useCallback(() => {
+    if (promptTimerRef.current !== null) {
+      window.clearTimeout(promptTimerRef.current);
+      promptTimerRef.current = null;
+    }
+    const pending = pendingPromptRef.current;
+    pendingPromptRef.current = null;
+    if (pending === null) {
+      return;
+    }
+    try {
+      void writeAutoResumeState({
+        threadId: pending.threadId,
+        overridePrompt: normalizeOverridePrompt(pending.value),
+      });
+    } catch {
+      // A dropped flush is not worth surfacing; the value is still in the textbox.
+    }
+  }, []);
+
+  // Flush on thread change AND on unmount (this cleanup runs for both).
+  useEffect(() => () => flushPendingPrompt(), [threadId, flushPendingPrompt]);
+
   const handleToggle = useCallback(
     (checked: boolean) => {
       const previous = state;
@@ -230,32 +296,28 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
       }
       // Optimistic: `applyWriteResult` puts `previous` back if the write fails.
       setState({ ...previous, enabled: checked });
-      inFlightWritesRef.current += 1;
-      void writeAutoResumeState({ threadId, enabled: checked }).then((next) => {
-        applyWriteResult(threadId, previous, next);
-      });
+      submitWrite(threadId, previous, { threadId, enabled: checked });
     },
-    [applyWriteResult, state, threadId],
+    [state, submitWrite, threadId],
   );
 
   const handlePromptChange = useCallback(
     (value: string) => {
       setPromptDraft(value);
+      pendingPromptRef.current = { threadId, value };
       if (promptTimerRef.current !== null) {
         window.clearTimeout(promptTimerRef.current);
       }
       promptTimerRef.current = window.setTimeout(() => {
         promptTimerRef.current = null;
-        inFlightWritesRef.current += 1;
-        void writeAutoResumeState({
+        pendingPromptRef.current = null;
+        submitWrite(threadId, null, {
           threadId,
           overridePrompt: normalizeOverridePrompt(value),
-        }).then((next) => {
-          applyWriteResult(threadId, null, next);
         });
       }, PROMPT_DEBOUNCE_MS);
     },
-    [applyWriteResult, threadId],
+    [submitWrite, threadId],
   );
 
   if (state === null) {
