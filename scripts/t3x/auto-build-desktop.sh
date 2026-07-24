@@ -82,7 +82,10 @@ now_iso() { date '+%Y-%m-%dT%H:%M:%S%z'; }
 log() { printf '%s %s\n' "$(now_iso)" "$*" | tee -a "$LOG_FILE" >&2; }
 
 # --- json status (no jq) -----------------------------------------------------
-json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"${1-}"; }
+# NOTE: `printf '%s'`, not a `<<<` here-string. A here-string appends a trailing
+# newline, which sys.stdin.read() would capture into every emitted JSON value
+# (e.g. "sha": "abc123\n") and break consumers that compare the SHA.
+json_escape() { printf '%s' "${1-}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'; }
 write_status() {
   # args: result sha dmg detail
   local result="$1" sha="$2" dmg="$3" detail="${4:-}"
