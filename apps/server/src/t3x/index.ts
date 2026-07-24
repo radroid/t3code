@@ -54,8 +54,16 @@ export const T3xLayerLive = AutoResumeReactorLive.pipe(Layer.provide(AutoResumeS
  *     upstream's `makeRoutesLayer` and fail every existing `server.test.ts` case — a fork
  *     change must never widen an upstream signature.
  *  2. **Still one instance.** Both this layer and `T3xLayerLive` provide the *same*
- *     `AutoResumeStoreLive` value, and Effect memoises layer construction per build, so
- *     the reactor and the route share a single store rather than racing two in-memory
- *     copies over one file. `index.test.ts` pins that behaviour.
+ *     module-level `AutoResumeStoreLive` value. Effect memoises layer construction per
+ *     build keyed on layer identity, and `provideWith` / `mergeAllEffect` /
+ *     `HttpRouter.serve` all thread the same `MemoMap`, so the reactor and the route share
+ *     one store rather than racing two in-memory copies over a single file.
+ *
+ *     If that ever stopped holding, the route would mutate its own copy while the reactor
+ *     read a stale one: switching auto-resume off in the UI would look like it worked and
+ *     the thread would resume anyway. `autoResume/sharing.test.ts` pins the memoisation
+ *     behaviour this relies on — note it exercises the composition *shape* with its own
+ *     probes rather than importing these two layers, so treat it as a guard on the
+ *     assumption, not proof of this file's graph.
  */
 export const T3xRoutesLive = autoResumeRouteLayer.pipe(Layer.provide(AutoResumeStoreLive));
