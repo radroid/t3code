@@ -14,6 +14,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
+import { AutoResumeOverlay } from "../t3x/AutoResumeOverlay";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
@@ -79,6 +80,7 @@ function ChatThreadRouteView() {
         threadId={threadRef.threadId}
         routeKind="server"
       />
+      <AutoResumeOverlay threadRef={threadRef} />
     </SidebarInset>
   );
 }
