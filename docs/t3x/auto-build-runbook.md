@@ -104,8 +104,17 @@ Status JSON looks like:
 }
 ```
 
-Env overrides: `T3X_AUTOBUILD_STATE_DIR`, `T3CODE_DESKTOP_OUTPUT_DIR`,
-`T3X_AUTOBUILD_APPLICATIONS_DIR`, `T3X_AUTOBUILD_KEEP_DMGS` (default `3`).
+Env overrides: `T3X_AUTOBUILD_STATE_DIR`, `T3CODE_DESKTOP_OUTPUT_DIR` (relative values
+resolve against the repo root, matching `build-desktop-artifact.ts`),
+`T3X_AUTOBUILD_APPLICATIONS_DIR`, `T3X_AUTOBUILD_KEEP_DMGS` (default `3`, must be a
+positive integer). `--print-launchd` copies all of these into the emitted plist, so a
+plist generated from a shell where you overrode them keeps those overrides.
+
+`T3X_AUTOBUILD_APP_NAME` only names the `.app` assumed during `--dry-run` (a real install
+reads the actual name out of the mounted dmg); it does not redirect where you install.
+
+**Exit codes:** `0` success · `3` nothing to do (HEAD unchanged, or another instance holds
+the lock) · `1` build or install failed · `2` bad flag or invalid env value.
 
 ## Running it hands-off
 
@@ -127,16 +136,34 @@ rm ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 `--print-launchd` substitutes the real repo path, script path, interval and log
 path, and mirrors `--install` into the emitted `ProgramArguments`.
 
-### Option 2 — git hook
+### Option 2 — git hook (read the warning first)
 
-`scripts/t3x/hooks/post-merge` fires a detached build after `git pull`/`git merge`.
-It is **not** installed automatically:
+> **This repo already sets `core.hooksPath = .vite-hooks/_`** and ships a full hook set
+> there (`pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, its own `post-merge`, …).
+> That breaks the two obvious install methods:
+>
+> - `git config core.hooksPath scripts/t3x/hooks` **silently disables every one of those
+>   hooks** — that directory contains only `post-merge`. Do not do this.
+> - `ln -sf … .git/hooks/post-merge` **never fires at all**, because git ignores
+>   `.git/hooks` entirely once `core.hooksPath` is set.
+
+The dispatcher at `.vite-hooks/_/h` runs `.vite-hooks/<hook-name>` if that file exists, so
+the correct way to add one here is to create the **user-hook** file:
 
 ```bash
-git config core.hooksPath scripts/t3x/hooks
-# or, for just this hook:
-ln -sf ../../scripts/t3x/hooks/post-merge .git/hooks/post-merge
+printf '%s\n' 'exec "$(git rev-parse --show-toplevel)/scripts/t3x/hooks/post-merge"' \
+  > .vite-hooks/post-merge
+chmod +x .vite-hooks/post-merge
 ```
+
+`scripts/t3x/hooks/post-merge` is the sample body it delegates to; it backgrounds a
+build-only run so `git pull` returns immediately.
+
+**Honestly, prefer Option 1 or 3.** The hook fires a detached build on *every* merge, so
+two quick `git pull`s start two builds. They no longer corrupt each other (the script
+takes a lock and the second exits immediately), but you still get a redundant queued
+rebuild, and a `.vite-hooks/post-merge` file is one more thing for the daily upstream
+rebase to trip over.
 
 ### Option 3 — run the watcher in a terminal
 
@@ -144,24 +171,37 @@ ln -sf ../../scripts/t3x/hooks/post-merge .git/hooks/post-merge
 scripts/t3x/auto-build-desktop.sh --watch --install --interval 120
 ```
 
-In `--watch` mode the script re-execs itself under `caffeinate -s` so the Mac
-won't sleep mid-build. A failed build logs and the loop keeps polling — it never
-crashes out.
+In `--watch` mode the script re-execs itself under `caffeinate -s` so the Mac won't sleep
+mid-build; the re-exec forwards every flag, so `--watch --install --dry-run` stays a dry
+run. A failed build logs and the loop keeps polling (with backoff) — it never crashes
+out.
 
 ## Caveats & risks
 
-- **Builds take minutes.** Back-to-back commits don't queue up: each poll builds
-  whatever `HEAD` is _now_, so rapid commits collapse to one build of the latest.
-- **`--install` is disruptive.** It quits the running app (`osascript quit`),
-  `rm -rf`s the target in `/Applications`, and copies the new one in. Fine
-  overnight; annoying mid-session. There is no "skip if app is foregrounded"
-  check yet.
+- **Builds take minutes.** Each poll builds whatever `HEAD` is _now_. Note this does
+  **not** perfectly collapse rapid commits: the SHA is sampled *before* the build and
+  recorded *after*, so a commit landing mid-build causes one redundant rebuild of an
+  already-current tree. The bias is deliberate — it can waste a build, never skip one.
+- **`--install` is disruptive.** It quits the running app (`osascript quit`), replaces the
+  target in `/Applications`, and copies the new one in. Fine overnight; annoying
+  mid-session. There is no "skip if app is foregrounded" check yet. The new build is
+  staged alongside and swapped in, so a failed copy leaves your existing app intact.
 - **Unsigned.** Quarantine-stripping is required on every install. If macOS
   tightens Gatekeeper this may stop working.
-- **Disk.** Old `.dmg`s are pruned to the newest `T3X_AUTOBUILD_KEEP_DMGS` (3)
-  after each successful build.
+- **Disk — bigger than the prune suggests.** `T3X_AUTOBUILD_KEEP_DMGS` (default 3) prunes
+  `*.dmg` **only**. electron-builder also writes a `.zip` of comparable size (~233 MB
+  next to a ~236 MB dmg), plus `.blockmap`s and `builder-debug.yml`, and **none of those
+  are pruned** — the zips accumulate one per version. Clear `release/` by hand
+  periodically, or set `T3CODE_DESKTOP_OUTPUT_DIR` somewhere you don't mind growing.
 - **First build after a lockfile change** runs `pnpm install --frozen-lockfile`,
   which adds time.
+- **Repeated failures back off.** A failing build/install is retried with exponential
+  backoff (2×, 4×, … up to 32× the interval, capped at 30 min) rather than every
+  `INTERVAL`, so a persistent fault — an unwritable `/Applications` on a managed Mac, a
+  full disk, a committed type error — can't rebuild all night.
+- **Only one runs at a time.** The build+install+marker sequence takes a lock in the state
+  dir; a second instance logs "another auto-build is already running" and skips. A lock
+  whose owner died is cleared automatically.
 
 ## Out of scope (the "real" auto-update path)
 
