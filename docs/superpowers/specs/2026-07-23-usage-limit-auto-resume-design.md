@@ -227,6 +227,13 @@ command (`decider.ts:972`), tone `info`/`error`:
 Renders in the timeline that already exists → **v1 ships no `apps/web` changes, no
 contracts changes, no settings-schema changes.**
 
+> **Superseded for `apps/web` only.** These timeline activities are still the baseline
+> visibility, but v1.1 adds an actual control surface — a floating per-thread card with a
+> status line, an on/off switch and a resume-message box — specified in
+> `2026-07-24-t3x-autoresume-ui-design.md`. That adds one `apps/web` seam (a mount line in
+> the thread route) and one server route seam; it still touches **no** contracts and no
+> settings schema, so the rest of this section stands.
+
 ## B8. Upstream footprint
 
 ```
