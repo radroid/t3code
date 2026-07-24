@@ -1,0 +1,225 @@
+# t3x — auto-build & install the desktop app
+
+Keeps the installed macOS desktop app current as the fork changes: rebuild the
+arm64 `.dmg` when `HEAD` moves, and optionally install it — no manual
+dmg-dragging.
+
+Everything lives in `scripts/t3x/`. **Zero upstream seams** — this feature adds
+no edits to any upstream-owned file, so it can never conflict during the daily
+rebase. The build itself is the existing `pnpm dist:desktop:dmg:arm64`;
+`scripts/build-desktop-artifact.ts` is never modified.
+
+## TL;DR
+
+```bash
+# one-shot: build a .dmg if HEAD changed since the last build
+scripts/t3x/auto-build-desktop.sh
+
+# see exactly what an install would do, without touching /Applications
+scripts/t3x/auto-build-desktop.sh --install --dry-run
+
+# build + actually install (replaces the app in /Applications)
+scripts/t3x/auto-build-desktop.sh --install
+
+# poll HEAD every 60s and rebuild+install on every new commit
+scripts/t3x/auto-build-desktop.sh --watch --install
+```
+
+## ⚠️ Read this before using `--install`
+
+**Which app gets replaced?** The installer takes the `.app` found inside the
+freshly built `.dmg` and replaces `/Applications/<that same name>.app`.
+
+The name is **not** a flag — it is derived from the version in
+`apps/desktop/package.json` by `resolveDesktopProductName()`:
+
+| Version                        | Channel  | `.app` produced         |
+| ------------------------------ | -------- | ----------------------- |
+| plain (e.g. `0.0.28`)          | `latest` | `T3 Code (Alpha).app`   |
+| `…-nightly.YYYYMMDD.N`         | nightly  | `T3 Code (Nightly).app` |
+
+The `latest` name comes from `"productName": "T3 Code (Alpha)"` in
+`apps/desktop/package.json` — **not** the `"T3 Code"` fallback, which only
+applies if that field is ever removed upstream. So a default local build
+replaces **`T3 Code (Alpha).app`**, the app most fork users already run.
+
+Confirm for yourself before the first `--install` — this reads the real name out
+of the built dmg rather than trusting the table above:
+
+```bash
+ls -d "/Applications/"*T3*   # what you have installed
+
+MP=$(mktemp -d) && hdiutil attach -nobrowse -readonly -mountpoint "$MP" \
+  release/*.dmg >/dev/null && ls -d "$MP"/*.app && hdiutil detach "$MP" >/dev/null
+```
+
+If the built name doesn't match the app you actually launch, `--install` creates
+a **new, separate** app and it will look like "nothing updated." In that case
+either switch to running the app this build produces, or redirect the install:
+`T3X_AUTOBUILD_APPLICATIONS_DIR=/some/dir scripts/t3x/auto-build-desktop.sh --install`.
+
+**This also assumes you run the _installed_ app, not `pnpm start:desktop`.**
+Those are different processes; auto-install updates the installed one only.
+
+**A nightly-versioned checkout targets a different app.** If a sync ever lands a
+`-nightly.*` version, the same command starts replacing `T3 Code (Nightly).app`
+instead. Re-run the check above after a big upstream sync.
+
+**Gatekeeper.** Local builds are unsigned (`T3CODE_DESKTOP_SIGNED` defaults to
+`false`), so macOS quarantines them. The installer runs
+`xattr -dr com.apple.quarantine` on the installed app so it launches without a
+Gatekeeper block. Nothing here is code-signed or notarized.
+
+## How the trigger works
+
+Rebuilds are keyed on a **new commit SHA**, not on file saves — a `.dmg` build
+takes minutes, so watching raw file writes would rebuild continuously mid-edit.
+
+The last successfully built SHA is recorded in
+`~/.t3/userdata/t3x-autobuild-last-sha`. If `git rev-parse HEAD` matches it, the
+script logs "no change" and exits `3`. Use `--force` to rebuild anyway.
+
+Because the marker only advances on a **successful** build, a failed build is
+retried on the next poll rather than being silently skipped.
+
+## Flags
+
+| Flag              | Meaning                                                             |
+| ----------------- | ------------------------------------------------------------------- |
+| `--install`       | After a successful build, install the `.app` into `/Applications`.  |
+| `--relaunch`      | With `--install`, `open` the app afterwards.                        |
+| `--watch`         | Poll `HEAD` forever; build (and install, if asked) on each new SHA. |
+| `--interval N`    | Poll interval in seconds for `--watch` (default `60`).              |
+| `--dry-run`       | Log every step; never build, never touch `/Applications`.           |
+| `--force`         | Build even if `HEAD` is unchanged.                                  |
+| `--print-launchd` | Emit a ready-to-use LaunchAgent plist on stdout.                    |
+
+## Where things land
+
+| What                  | Path                                                      |
+| --------------------- | --------------------------------------------------------- |
+| Built `.dmg`          | `<repo>/release/` (override: `T3CODE_DESKTOP_OUTPUT_DIR`) |
+| Last-built SHA marker | `~/.t3/userdata/t3x-autobuild-last-sha`                   |
+| Status JSON           | `~/.t3/userdata/t3x-autobuild-status.json`                |
+| Log                   | `~/.t3/userdata/logs/t3x-autobuild.log`                   |
+
+Status JSON looks like:
+
+```json
+{
+  "result": "built",
+  "sha": "…",
+  "dmgPath": "…/release/T3 Code-…arm64.dmg",
+  "builtAt": "2026-07-24T01:12:33-0700",
+  "installed": false,
+  "detail": "ok"
+}
+```
+
+Env overrides: `T3X_AUTOBUILD_STATE_DIR`, `T3CODE_DESKTOP_OUTPUT_DIR` (relative values
+resolve against the repo root, matching `build-desktop-artifact.ts`),
+`T3X_AUTOBUILD_APPLICATIONS_DIR`, `T3X_AUTOBUILD_KEEP_DMGS` (default `3`, must be a
+positive integer). `--print-launchd` copies all of these into the emitted plist, so a
+plist generated from a shell where you overrode them keeps those overrides.
+
+`T3X_AUTOBUILD_APP_NAME` only names the `.app` assumed during `--dry-run` (a real install
+reads the actual name out of the mounted dmg); it does not redirect where you install.
+
+**Exit codes:** `0` success · `3` nothing to do (HEAD unchanged, or another instance holds
+the lock) · `1` build or install failed · `2` bad flag or invalid env value.
+
+## Running it hands-off
+
+### Option 1 — LaunchAgent (starts at login)
+
+```bash
+scripts/t3x/auto-build-desktop.sh --print-launchd --install --interval 120 \
+  > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+```
+
+Stop / remove it:
+
+```bash
+launchctl bootout "gui/$UID/dev.t3x.autobuild"
+rm ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+```
+
+`--print-launchd` substitutes the real repo path, script path, interval and log
+path, and mirrors `--install` into the emitted `ProgramArguments`.
+
+### Option 2 — git hook (read the warning first)
+
+> **This repo already sets `core.hooksPath = .vite-hooks/_`** and ships a full hook set
+> there (`pre-commit`, `commit-msg`, `pre-push`, `post-checkout`, its own `post-merge`, …).
+> That breaks the two obvious install methods:
+>
+> - `git config core.hooksPath scripts/t3x/hooks` **silently disables every one of those
+>   hooks** — that directory contains only `post-merge`. Do not do this.
+> - `ln -sf … .git/hooks/post-merge` **never fires at all**, because git ignores
+>   `.git/hooks` entirely once `core.hooksPath` is set.
+
+The dispatcher at `.vite-hooks/_/h` runs `.vite-hooks/<hook-name>` if that file exists, so
+the correct way to add one here is to create the **user-hook** file:
+
+```bash
+printf '%s\n' 'exec "$(git rev-parse --show-toplevel)/scripts/t3x/hooks/post-merge"' \
+  > .vite-hooks/post-merge
+chmod +x .vite-hooks/post-merge
+```
+
+`scripts/t3x/hooks/post-merge` is the sample body it delegates to; it backgrounds a
+build-only run so `git pull` returns immediately.
+
+**Honestly, prefer Option 1 or 3.** The hook fires a detached build on *every* merge, so
+two quick `git pull`s start two builds. They no longer corrupt each other (the script
+takes a lock and the second exits immediately), but you still get a redundant queued
+rebuild, and a `.vite-hooks/post-merge` file is one more thing for the daily upstream
+rebase to trip over.
+
+### Option 3 — run the watcher in a terminal
+
+```bash
+scripts/t3x/auto-build-desktop.sh --watch --install --interval 120
+```
+
+In `--watch` mode the script re-execs itself under `caffeinate -s` so the Mac won't sleep
+mid-build; the re-exec forwards every flag, so `--watch --install --dry-run` stays a dry
+run. A failed build logs and the loop keeps polling (with backoff) — it never crashes
+out.
+
+## Caveats & risks
+
+- **Builds take minutes.** Each poll builds whatever `HEAD` is _now_. Note this does
+  **not** perfectly collapse rapid commits: the SHA is sampled *before* the build and
+  recorded *after*, so a commit landing mid-build causes one redundant rebuild of an
+  already-current tree. The bias is deliberate — it can waste a build, never skip one.
+- **`--install` is disruptive.** It quits the running app (`osascript quit`), replaces the
+  target in `/Applications`, and copies the new one in. Fine overnight; annoying
+  mid-session. There is no "skip if app is foregrounded" check yet. The new build is
+  staged alongside and swapped in, so a failed copy leaves your existing app intact.
+- **Unsigned.** Quarantine-stripping is required on every install. If macOS
+  tightens Gatekeeper this may stop working.
+- **Disk — bigger than the prune suggests.** `T3X_AUTOBUILD_KEEP_DMGS` (default 3) prunes
+  `*.dmg` **only**. electron-builder also writes a `.zip` of comparable size (~233 MB
+  next to a ~236 MB dmg), plus `.blockmap`s and `builder-debug.yml`, and **none of those
+  are pruned** — the zips accumulate one per version. Clear `release/` by hand
+  periodically, or set `T3CODE_DESKTOP_OUTPUT_DIR` somewhere you don't mind growing.
+- **First build after a lockfile change** runs `pnpm install --frozen-lockfile`,
+  which adds time.
+- **Repeated failures back off.** A failing build/install is retried with exponential
+  backoff (2×, 4×, … up to 32× the interval, capped at 30 min) rather than every
+  `INTERVAL`, so a persistent fault — an unwritable `/Applications` on a managed Mac, a
+  full disk, a committed type error — can't rebuild all night.
+- **Only one runs at a time.** The build+install+marker sequence takes a lock in the state
+  dir; a second instance logs "another auto-build is already running" and skips. A lock
+  whose owner died is cleared automatically.
+
+## Out of scope (the "real" auto-update path)
+
+The fully hands-off alternative is to **code-sign + notarize** the build, publish
+the `.dmg` to the fork's GitHub Releases, and let the app's built-in
+`electron-updater` pull it (`T3CODE_DESKTOP_UPDATE_REPOSITORY=radroid/t3code`).
+That removes the local watcher entirely but needs an Apple Developer signing
+cert, notarization, and a macOS CI publish workflow. Deferred until the local
+pipeline proves insufficient.

@@ -14,8 +14,8 @@ Everything else the fork adds lives in new, upstream-invisible files (`apps/**/t
 
 ## Server (`apps/server`)
 
-| Upstream file | Edit | Why unavoidable |
-|---|---|---|
+| Upstream file               | Edit                                                               | Why unavoidable                                                                                                                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/server/src/server.ts` | +1 import of `T3xLayerLive`, +1 `Layer.provideMerge(T3xLayerLive)` | The root layer graph is composed here; a feature layer must be merged into it at exactly one point. All feature layers fan in through `t3x/index.ts`, so this seam stays 2 lines no matter how many features are added. |
 
 > The auto-resume reactor **self-starts** via `Effect.forkScoped` at layer construction,
@@ -29,8 +29,8 @@ avoid a code seam). They don't conflict during rebase, but if upstream changes t
 original's behavior the mirror can drift silently — the daily sync agent must diff these
 originals when they change.
 
-| Fork mirror | Mirrors upstream | Risk if upstream changes |
-|---|---|---|
+| Fork mirror                                                           | Mirrors upstream                         | Risk if upstream changes                                                                               |
+| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`) | `decider.ts:57-80` (private, unexported) | Awaiting-approval guard could miss a new blocking-request activity kind and auto-resume into a prompt. |
 
 ## Web (`apps/web`)
@@ -48,6 +48,15 @@ file, deliberately avoiding the upstream-owned migration registry.)
 ## New files owned entirely by the fork (not seams — listed for orientation)
 
 - `apps/server/src/t3x/**` — feature code + the `T3xLayerLive` aggregator.
-- `scripts/t3x/**` — fork setup + upstream-sync scripts.
+- `scripts/t3x/**` — fork setup, upstream-sync, and desktop auto-build scripts
+  (incl. `scripts/t3x/hooks/**`, opt-in git hooks that are never auto-installed).
 - `.github/workflows/t3x-upstream-sync.yml`, `.github/workflows/t3x-weekly-verify.yml`.
 - `docs/t3x/**`, `docs/superpowers/specs/2026-07-23-*`.
+
+### Desktop auto-build (`scripts/t3x/auto-build-desktop.sh`)
+
+**Zero seams.** Rebuilds/installs the macOS `.dmg` when `HEAD` moves. It shells
+out to the existing `pnpm dist:desktop:dmg:arm64` rather than importing or
+editing `scripts/build-desktop-artifact.ts` (a hot upstream file), and
+deliberately adds **no** script entry to the root `package.json` (also hot) —
+it is invoked by path. See `docs/t3x/auto-build-runbook.md`.
