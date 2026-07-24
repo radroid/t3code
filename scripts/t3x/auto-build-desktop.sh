@@ -101,7 +101,25 @@ mkdir -p "$STATE_DIR" "$LOG_DIR"
 
 # --- logging -----------------------------------------------------------------
 now_iso() { date '+%Y-%m-%dT%H:%M:%S%z'; }
-log() { printf '%s %s\n' "$(now_iso)" "$*" | tee -a "$LOG_FILE" >&2; }
+
+# `tee -a "$LOG_FILE" >&2` writes the line to the log AND echoes it to stderr, which is
+# what you want in a terminal. Under launchd it is not: the generated plist points BOTH
+# StandardOutPath and StandardErrorPath at $LOG_FILE, so the echo lands straight back in
+# the same file and every line appears twice — which reads exactly like two watchers
+# racing when only one is running.
+#
+# print_launchd sets this in the plist it generates, because that plist is precisely
+# where stderr gets aimed at the log. Do NOT try to detect it by comparing
+# `stat -f '%d:%i' /dev/fd/2` against the log file: on macOS that stats the devfs node
+# (e.g. 2540177495:339), never the redirect target, so the comparison can never match.
+STDERR_IS_LOG="${T3X_AUTOBUILD_STDERR_IS_LOG:-0}"
+log() {
+  if [[ "$STDERR_IS_LOG" == "1" ]]; then
+    printf '%s %s\n' "$(now_iso)" "$*" >>"$LOG_FILE"
+  else
+    printf '%s %s\n' "$(now_iso)" "$*" | tee -a "$LOG_FILE" >&2
+  fi
+}
 
 # --- json status (no jq) -----------------------------------------------------
 # NOTE: `printf '%s'`, not a `<<<` here-string. A here-string appends a trailing
@@ -190,8 +208,81 @@ acquire_lock() {
 }
 
 # --- install -----------------------------------------------------------------
+# Answer "which .app would be installed?" WITHOUT changing anything.
+#
+# LOGIC MIRROR of scripts/build-desktop-artifact.ts (resolveDesktopUpdateChannel /
+# resolveDesktopProductName). Only used when no .dmg exists yet to read the name out of;
+# if that upstream logic changes, this prediction goes stale (the dmg peek below does not).
+predicted_app_name() {
+  python3 - "$REPO/apps/desktop/package.json" <<'PY' 2>/dev/null || printf 'T3 Code'
+import json, re, sys
+try:
+    pkg = json.load(open(sys.argv[1]))
+except Exception:
+    print("T3 Code"); raise SystemExit(0)
+version = pkg.get("version", "")
+# resolveDesktopUpdateChannel: /-nightly\.\d{8}\.\d+$/ -> nightly, else latest
+if re.search(r"-nightly\.\d{8}\.\d+$", version):
+    print("T3 Code (Nightly)")
+else:
+    print(pkg.get("productName") or "T3 Code")
+PY
+}
+
+# Resolve the .app basename (without ".app"). Prefers ground truth over prediction:
+# explicit env override > the actual name inside the built dmg > upstream-mirrored guess.
+resolve_app_name() {
+  local dmg="$1" mnt app
+  if [[ -n "${T3X_AUTOBUILD_APP_NAME:-}" ]]; then printf '%s' "$T3X_AUTOBUILD_APP_NAME"; return 0; fi
+  if [[ -n "$dmg" && -f "$dmg" ]]; then
+    mnt="$(mktemp -d "${TMPDIR:-/tmp}/t3x-peek.XXXXXX")"
+    # -readonly: peeking must never modify the artifact, even in a dry run.
+    if hdiutil attach -nobrowse -readonly -quiet "$dmg" -mountpoint "$mnt" >/dev/null 2>&1; then
+      app="$(find "$mnt" -maxdepth 1 -name '*.app' | head -1)"
+      hdiutil detach "$mnt" -quiet >/dev/null 2>&1 || true
+      rmdir "$mnt" 2>/dev/null || true
+      if [[ -n "$app" ]]; then printf '%s' "$(basename "$app" .app)"; return 0; fi
+    else
+      rmdir "$mnt" 2>/dev/null || true
+    fi
+  fi
+  predicted_app_name
+}
+
 install_dmg() {
   local dmg="$1"
+
+  # The whole point of `--install --dry-run` is to answer "which app gets replaced?"
+  # before you let it touch /Applications. It used to answer with a hardcoded
+  # "${T3X_AUTOBUILD_APP_NAME:-T3 Code}.app" and never look at the dmg at all, so on this
+  # repo it always claimed `T3 Code.app` — an app that does not exist — while a real
+  # install replaced `T3 Code (Alpha).app`. It also bailed out entirely before printing
+  # anything when no dmg had been built yet, which is every first-time user.
+  if [[ $DRY_RUN -eq 1 ]]; then
+    local d_appbase d_target
+    d_appbase="$(resolve_app_name "$dmg").app"
+    d_target="$APPLICATIONS_DIR/$d_appbase"
+    if [[ -n "$dmg" && -f "$dmg" ]]; then
+      log "DRY-RUN install: read '$d_appbase' from $dmg"
+    else
+      log "DRY-RUN install: no .dmg built yet; '$d_appbase' predicted from apps/desktop/package.json"
+    fi
+    log "install: '$d_appbase' -> '$d_target'"
+    log "DRY-RUN would: quit app '${d_appbase%.app}'"
+    log "DRY-RUN would: rm -rf '$d_target' && cp -R <app-from-dmg> '$d_target'"
+    log "DRY-RUN would: xattr -dr com.apple.quarantine '$d_target'  (unsigned local build)"
+    [[ $DO_RELAUNCH -eq 1 ]] && log "DRY-RUN would: open '$d_target'"
+    # The footgun this preview exists to catch: if the target is absent, a real --install
+    # CREATES a new app and silently leaves the one you actually launch untouched.
+    if [[ -e "$d_target" ]]; then
+      log "DRY-RUN: '$d_target' exists and WOULD be replaced"
+    else
+      log "DRY-RUN WARNING: '$d_target' does NOT exist — a real --install would create a NEW app"
+      log "DRY-RUN WARNING: and leave whatever you currently run untouched. See docs/t3x/auto-build-runbook.md"
+    fi
+    return 0
+  fi
+
   [[ -z "$dmg" || ! -f "$dmg" ]] && { log "install: no .dmg to install ($dmg)"; return 1; }
 
   local mnt app appbase target
@@ -199,35 +290,14 @@ install_dmg() {
   # shellcheck disable=SC2064
   trap "hdiutil detach '$mnt' -quiet >/dev/null 2>&1 || true; rmdir '$mnt' 2>/dev/null || true" RETURN
 
-  if [[ $DRY_RUN -eq 1 ]]; then
-    log "DRY-RUN install: hdiutil attach '$dmg' -> '$mnt'"
-  else
-    hdiutil attach -nobrowse -quiet "$dmg" -mountpoint "$mnt"
-  fi
+  hdiutil attach -nobrowse -quiet "$dmg" -mountpoint "$mnt"
 
-  # In dry-run we can't read the mount, so infer the app name from env or default.
-  if [[ $DRY_RUN -eq 1 ]]; then
-    appbase="${T3X_AUTOBUILD_APP_NAME:-T3 Code}.app"
-    app="$mnt/$appbase"
-  else
-    app="$(find "$mnt" -maxdepth 1 -name '*.app' | head -1)"
-    [[ -z "$app" ]] && { log "install: no .app found in $dmg"; return 1; }
-    appbase="$(basename "$app")"
-  fi
+  app="$(find "$mnt" -maxdepth 1 -name '*.app' | head -1)"
+  [[ -z "$app" ]] && { log "install: no .app found in $dmg"; return 1; }
+  appbase="$(basename "$app")"
   target="$APPLICATIONS_DIR/$appbase"
 
   log "install: '$appbase' -> '$target'"
-
-  # NOTE: the dry-run return must come BEFORE the quit below. `osascript quit` is a real
-  # side effect on the user's session, so running it here would make `--install --dry-run`
-  # close their running app — exactly what a dry run promises not to do.
-  if [[ $DRY_RUN -eq 1 ]]; then
-    log "DRY-RUN would: quit app '${appbase%.app}'"
-    log "DRY-RUN would: rm -rf '$target' && cp -R '$app' '$target'"
-    log "DRY-RUN would: xattr -dr com.apple.quarantine '$target'  (unsigned local build)"
-    [[ $DO_RELAUNCH -eq 1 ]] && log "DRY-RUN would: open '$target'"
-    return 0
-  fi
 
   # Best-effort quit of the running app so we can replace it.
   osascript -e "quit app \"${appbase%.app}\"" >/dev/null 2>&1 || true
@@ -350,7 +420,60 @@ build_once() {
 # launchctl silently refuses to load.
 xml_escape() { printf '%s' "${1-}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 
+# macOS TCC (Privacy & Security) gates ~/Desktop, ~/Documents, ~/Downloads and iCloud
+# Drive. GUI apps get a consent prompt; launchd agents never do — they just receive
+# EPERM. Echo the containing protected root, or return 1.
+tcc_protected_path() {
+  local p="$1" d
+  for d in "$HOME/Desktop" "$HOME/Documents" "$HOME/Downloads" "$HOME/Library/Mobile Documents"; do
+    case "$p" in "$d" | "$d"/*) printf '%s' "$d"; return 0 ;; esac
+  done
+  return 1
+}
+
 print_launchd() {
+  # Refuse to hand back a plist that provably cannot run. Emitting one anyway is the worst
+  # outcome: `launchctl bootstrap` succeeds, `launchctl print` reports the job as loaded,
+  # and the only evidence of failure is `last exit code = 126` — so it looks installed and
+  # silently never builds anything.
+  local protected
+  if protected="$(tcc_protected_path "$SCRIPT_DIR")"; then
+    if [[ $FORCE -eq 0 ]]; then
+      cat >&2 <<EOF
+ERROR: this repo lives inside a macOS TCC-protected folder, so a LaunchAgent cannot run it.
+
+  repo:      $REPO
+  protected: $protected
+
+launchd jobs get no TCC grant and never trigger a consent prompt — macOS just returns
+EPERM. The agent would load, fail immediately with exit code 126, and build nothing:
+
+  shell-init: error retrieving current directory: getcwd: ... Operation not permitted
+  /bin/bash: $SCRIPT_DIR/auto-build-desktop.sh: Operation not permitted
+
+No plist was emitted. Pick one:
+
+  1. Move the repo out of the protected folder (recommended — no security grant):
+       mkdir -p "\$HOME/Developer"
+       mv "$REPO" "\$HOME/Developer/$(basename "$REPO")"
+       git -C "\$HOME/Developer/$(basename "$REPO")" worktree repair   # if you use worktrees
+     then re-run --print-launchd from the new location.
+
+  2. Grant Full Disk Access to /bin/bash under System Settings > Privacy & Security
+     (Cmd+Shift+G to reach /bin). This grants FDA to EVERY bash script on the machine —
+     broad and permanent; not recommended for this.
+
+  3. Skip launchd entirely and run the watcher in a terminal:
+       $SCRIPT_DIR/auto-build-desktop.sh --watch --install --interval $INTERVAL
+
+If you redirected stdout to a .plist, that file is now empty — delete it.
+Re-run with --force to emit the plist anyway (it will not work).
+EOF
+      exit 2
+    fi
+    log "WARNING: repo is under $protected (TCC-protected); this agent will fail with exit 126"
+  fi
+
   local label="dev.t3x.autobuild"
   local x_script x_repo x_log
   x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
@@ -394,6 +517,9 @@ $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true 
     <key>T3X_AUTOBUILD_APPLICATIONS_DIR</key><string>${x_apps}</string>
     <key>T3CODE_DESKTOP_OUTPUT_DIR</key><string>${x_out}</string>
     <key>T3X_AUTOBUILD_KEEP_DMGS</key><string>${KEEP_DMGS}</string>
+    <!-- StandardOutPath and StandardErrorPath above are the SAME file, so log() must not
+         also echo to stderr or every line is written twice. See the logging section. -->
+    <key>T3X_AUTOBUILD_STDERR_IS_LOG</key><string>1</string>
   </dict>
 </dict>
 </plist>
