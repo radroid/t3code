@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# t3x sample git hook — kick off a desktop rebuild after HEAD moves.
+#
+# NOT installed automatically, and the two obvious ways to install it are BOTH wrong
+# in this repo, which already sets `core.hooksPath = .vite-hooks/_`:
+#
+#   git config core.hooksPath scripts/t3x/hooks   # DON'T: disables every existing hook
+#   ln -sf … .git/hooks/post-merge                # DON'T: never fires; .git/hooks is
+#                                                 #        ignored once hooksPath is set
+#
+# The dispatcher `.vite-hooks/_/h` runs `.vite-hooks/<name>` when present, so delegate
+# to this file from there instead:
+#
+#   printf '%s\n' 'exec "$(git rev-parse --show-toplevel)/scripts/t3x/hooks/post-merge"' \
+#     > .vite-hooks/post-merge && chmod +x .vite-hooks/post-merge
+#
+# See docs/t3x/auto-build-runbook.md — the watcher or LaunchAgent is usually a better fit.
+#
+# `post-merge` fires after `git pull` / `git merge` updates the working tree.
+#
+# It launches the build detached so the git command returns immediately, and
+# builds only (no --install) — add --install here if you want auto-install on
+# every merge (see docs/t3x/auto-build-runbook.md for the caveats).
+set -euo pipefail
+REPO="$(git rev-parse --show-toplevel)"
+nohup "$REPO/scripts/t3x/auto-build-desktop.sh" >/dev/null 2>&1 &
+exit 0
