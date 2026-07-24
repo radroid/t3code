@@ -12,6 +12,14 @@
  * in-memory copy of the state while the reactor kept reading a stale one: toggling
  * auto-resume off in the UI would appear to work and the reactor would resume anyway.
  * That failure is completely silent, hence this test.
+ *
+ * SCOPE, stated honestly: this builds its own store layer and two probe services rather
+ * than importing `T3xLayerLive` / `T3xRoutesLive`. It therefore guards the *assumption*
+ * (one layer value provided to two independent consumers yields one instance) for the
+ * composition shape `t3x/index.ts` uses — it does not exercise that file's actual graph,
+ * and would stay green if someone gave each consumer its own store layer. Importing the
+ * real layers here is not practical: both are `Layer.provide`d shut precisely so they
+ * leak no requirement, so neither exposes the store for a test to compare.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
