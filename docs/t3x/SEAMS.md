@@ -54,6 +54,15 @@ file, deliberately avoiding the upstream-owned migration registry.)
 ## New files owned entirely by the fork (not seams — listed for orientation)
 
 - `apps/server/src/t3x/**` — feature code + the `T3xLayerLive` aggregator.
-- `scripts/t3x/**` — fork setup + upstream-sync scripts.
+- `scripts/t3x/**` — fork setup, upstream-sync, and desktop auto-build scripts
+  (incl. `scripts/t3x/hooks/**`, opt-in git hooks that are never auto-installed).
 - `.github/workflows/t3x-upstream-sync.yml`, `.github/workflows/t3x-weekly-verify.yml`.
 - `docs/t3x/**`, `docs/superpowers/specs/2026-07-23-*`.
+
+### Desktop auto-build (`scripts/t3x/auto-build-desktop.sh`)
+
+**Zero seams.** Rebuilds/installs the macOS `.dmg` when `HEAD` moves. It shells
+out to the existing `pnpm dist:desktop:dmg:arm64` rather than importing or
+editing `scripts/build-desktop-artifact.ts` (a hot upstream file), and
+deliberately adds **no** script entry to the root `package.json` (also hot) —
+it is invoked by path. See `docs/t3x/auto-build-runbook.md`.
