@@ -160,8 +160,19 @@ export const makeAutoResumeStore = (
         return persist(next).pipe(Effect.as(next));
       });
 
+    // `Object.hasOwn`, NOT `state.threads[threadId] ?? EMPTY_RECORD`.
+    //
+    // `threads` is a plain object, so a threadId of `constructor` / `toString` /
+    // `valueOf` / `__proto__` resolves on Object.prototype and is *truthy* — `??` never
+    // falls through, and the caller gets a prototype method typed as a ThreadRecord.
+    // Two things then break, and the HTTP route makes threadId caller-controlled:
+    //   * reads dereference `record.pending` (undefined, not null) -> TypeError -> 500;
+    //   * writes spread a prototype object, which has no own enumerable properties, and
+    //     persist `{"enabled":false}` — missing required keys. The next boot fails the
+    //     WHOLE-file decode, and that path collapses to EMPTY_STATE, silently destroying
+    //     every pending resume and the fired history behind the 24h cap.
     const recordFor = (state: AutoResumeState, threadId: string): ThreadRecord =>
-      state.threads[threadId] ?? EMPTY_RECORD;
+      Object.hasOwn(state.threads, threadId) ? state.threads[threadId]! : EMPTY_RECORD;
 
     return {
       listPending: SynchronizedRef.get(ref).pipe(
