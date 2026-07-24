@@ -19,6 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import { ServerConfig } from "../config.ts";
+import { autoResumeRouteLayer } from "./autoResume/http.ts";
 import { AutoResumeReactorLive } from "./autoResume/Reactor.ts";
 import { AutoResumeStore, makeAutoResumeStore } from "./autoResume/state.ts";
 
@@ -40,3 +41,21 @@ const AutoResumeStoreLive = Layer.effect(
  * this one layer.
  */
 export const T3xLayerLive = AutoResumeReactorLive.pipe(Layer.provide(AutoResumeStoreLive));
+
+/**
+ * All fork-local HTTP routes, fanned in here for the same reason as `T3xLayerLive`:
+ * `server.ts` adds ONE entry to its route list and imports it from this same module, so
+ * adding future routes never grows the upstream seam.
+ *
+ * The store is `provide`d here rather than left as an open requirement. That matters for
+ * two reasons:
+ *
+ *  1. **No seam leak.** An unsatisfied `AutoResumeStore` would surface in the type of
+ *     upstream's `makeRoutesLayer` and fail every existing `server.test.ts` case — a fork
+ *     change must never widen an upstream signature.
+ *  2. **Still one instance.** Both this layer and `T3xLayerLive` provide the *same*
+ *     `AutoResumeStoreLive` value, and Effect memoises layer construction per build, so
+ *     the reactor and the route share a single store rather than racing two in-memory
+ *     copies over one file. `index.test.ts` pins that behaviour.
+ */
+export const T3xRoutesLive = autoResumeRouteLayer.pipe(Layer.provide(AutoResumeStoreLive));
