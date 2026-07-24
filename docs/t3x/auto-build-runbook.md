@@ -30,28 +30,40 @@ scripts/t3x/auto-build-desktop.sh --watch --install
 **Which app gets replaced?** The installer takes the `.app` found inside the
 freshly built `.dmg` and replaces `/Applications/<that same name>.app`.
 
-A plain local `dist:desktop:dmg:arm64` build is the **stable** channel, so it
-produces **`T3 Code.app`**. If the app you actually use day-to-day is
-`T3 Code (Alpha).app` or `T3 Code (Nightly).app`, then `--install` will create a
-**new, third** app in `/Applications` and your Alpha/Nightly install will be
-untouched — i.e. it will look like "nothing updated."
+The name is **not** a flag — it is derived from the version in
+`apps/desktop/package.json` by `resolveDesktopProductName()`:
 
-Check what you have:
+| Version                        | Channel  | `.app` produced         |
+| ------------------------------ | -------- | ----------------------- |
+| plain (e.g. `0.0.28`)          | `latest` | `T3 Code (Alpha).app`   |
+| `…-nightly.YYYYMMDD.N`         | nightly  | `T3 Code (Nightly).app` |
+
+The `latest` name comes from `"productName": "T3 Code (Alpha)"` in
+`apps/desktop/package.json` — **not** the `"T3 Code"` fallback, which only
+applies if that field is ever removed upstream. So a default local build
+replaces **`T3 Code (Alpha).app`**, the app most fork users already run.
+
+Confirm for yourself before the first `--install` — this reads the real name out
+of the built dmg rather than trusting the table above:
 
 ```bash
-ls -d "/Applications/"*T3*
+ls -d "/Applications/"*T3*   # what you have installed
+
+MP=$(mktemp -d) && hdiutil attach -nobrowse -readonly -mountpoint "$MP" \
+  release/*.dmg >/dev/null && ls -d "$MP"/*.app && hdiutil detach "$MP" >/dev/null
 ```
 
-If the names don't match what the build produces, decide deliberately:
-
-- **Switch to running the stable `T3 Code.app`** that this pipeline builds
-  (recommended — simplest), or
-- Point the installer somewhere else per-run:
-  `T3X_AUTOBUILD_APPLICATIONS_DIR=/some/dir scripts/t3x/auto-build-desktop.sh --install`, or
-- Build the channel you actually run and adjust accordingly.
+If the built name doesn't match the app you actually launch, `--install` creates
+a **new, separate** app and it will look like "nothing updated." In that case
+either switch to running the app this build produces, or redirect the install:
+`T3X_AUTOBUILD_APPLICATIONS_DIR=/some/dir scripts/t3x/auto-build-desktop.sh --install`.
 
 **This also assumes you run the _installed_ app, not `pnpm start:desktop`.**
 Those are different processes; auto-install updates the installed one only.
+
+**A nightly-versioned checkout targets a different app.** If a sync ever lands a
+`-nightly.*` version, the same command starts replacing `T3 Code (Nightly).app`
+instead. Re-run the check above after a big upstream sync.
 
 **Gatekeeper.** Local builds are unsigned (`T3CODE_DESKTOP_SIGNED` defaults to
 `false`), so macOS quarantines them. The installer runs
