@@ -183,6 +183,28 @@ describe("/api/t3x/auto-resume", () => {
       }),
     ));
 
+  // This route is what makes threadId caller-controlled; before it, ids only ever came
+  // from provider events. A prototype-chain id used to resolve on Object.prototype, which
+  // 500'd on read and persisted a malformed record that wiped the whole state file on the
+  // next boot. Pinned here at the HTTP boundary, not just in the store.
+  it("handles a prototype-chain threadId as an ordinary unknown thread", () =>
+    withRoute(
+      authOk(),
+      Effect.gen(function* () {
+        for (const hostile of ["constructor", "__proto__", "toString"]) {
+          const res = yield* getJson(`${PATH}?threadId=${encodeURIComponent(hostile)}`);
+          assert.strictEqual(res.status, 200, `GET threadId=${hostile} must not 500`);
+          const body = (yield* res.json) as Record<string, unknown>;
+          assert.strictEqual(body.enabled, true);
+          assert.strictEqual(body.pending, null);
+        }
+
+        const wrote = yield* postJson(PATH, { threadId: "__proto__", enabled: false });
+        assert.strictEqual(wrote.status, 200, "POST threadId=__proto__ must not 500");
+        assert.strictEqual(((yield* wrote.json) as Record<string, unknown>).enabled, false);
+      }),
+    ));
+
   it("POST with a malformed body is a 400, not a 500", () =>
     withRoute(
       authOk(),
