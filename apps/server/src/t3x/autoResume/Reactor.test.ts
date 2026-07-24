@@ -255,4 +255,51 @@ describe("AutoResumeReactor (integration)", () => {
       }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
   );
+
+  it.effect("does NOT schedule for a thread whose auto-resume is switched off", () =>
+    Effect.gen(function* () {
+      const { dispatched, deps, store } = yield* harness(readModel({}), [rejectedEvent(100)]);
+      yield* store.setEnabled("thread-1", false);
+
+      yield* Effect.gen(function* () {
+        yield* settle; // detection runs against the pre-loaded rejection
+
+        assert.strictEqual(
+          (yield* store.listPending).length,
+          0,
+          "a disabled thread must never schedule a resume",
+        );
+        // Disabling is a deliberate user action, so it must not post timeline noise either.
+        assert.notInclude(types(yield* Ref.get(dispatched)), "thread.activity.append");
+
+        yield* advancePastResume;
+        assert.notInclude(types(yield* Ref.get(dispatched)), "thread.turn.start");
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  it.effect("cancels an already-scheduled resume when the thread is switched off mid-wait", () =>
+    Effect.gen(function* () {
+      const { dispatched, deps, store } = yield* harness(readModel({}), [rejectedEvent(100)]);
+
+      yield* Effect.gen(function* () {
+        yield* settle;
+        assert.strictEqual((yield* store.listPending).length, 1, "precondition: it scheduled");
+
+        // The switch is flipped off *after* scheduling but *before* the window reopens.
+        // fireOne must re-read the record rather than trust the scheduling-time value.
+        yield* store.setEnabled("thread-1", false);
+
+        yield* advancePastResume;
+
+        assert.notInclude(types(yield* Ref.get(dispatched)), "thread.turn.start");
+        assert.strictEqual((yield* store.listPending).length, 0, "pending must be cleared");
+        assert.strictEqual(
+          yield* store.countFiredSince("thread-1", 0),
+          0,
+          "a cancellation must not burn one of the 24h attempts",
+        );
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
 });
