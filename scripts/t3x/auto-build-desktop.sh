@@ -43,7 +43,14 @@ LAST_SHA_FILE="$STATE_DIR/t3x-autobuild-last-sha"
 STATUS_FILE="$STATE_DIR/t3x-autobuild-status.json"
 LOG_FILE="$LOG_DIR/t3x-autobuild.log"
 
-OUTPUT_DIR="${T3CODE_DESKTOP_OUTPUT_DIR:-$REPO/release}"
+# Match scripts/build-desktop-artifact.ts, which does `path.resolve(repoRoot, outputDir)`:
+# a RELATIVE override is repo-relative there, so resolving it against $PWD here would make
+# us search/prune the caller's ./<dir> and then report "no .dmg" for a build that succeeded.
+OUTPUT_DIR="${T3CODE_DESKTOP_OUTPUT_DIR:-release}"
+case "$OUTPUT_DIR" in
+  /*) ;;                       # absolute override: use as-is
+  *) OUTPUT_DIR="$REPO/$OUTPUT_DIR" ;;
+esac
 KEEP_DMGS="${T3X_AUTOBUILD_KEEP_DMGS:-3}"
 APPLICATIONS_DIR="${T3X_AUTOBUILD_APPLICATIONS_DIR:-/Applications}"
 
@@ -74,6 +81,13 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+# A non-numeric interval makes `sleep` fail and kills the watcher; 0 turns the poll into a
+# tight loop that rebuilds continuously. Reject both up front rather than at 3am.
+if ! [[ "$INTERVAL" =~ ^[0-9]+$ ]] || [[ "$INTERVAL" -lt 1 ]]; then
+  echo "--interval must be a positive integer (got: '$INTERVAL')" >&2
+  exit 2
+fi
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
@@ -160,18 +174,28 @@ install_dmg() {
   target="$APPLICATIONS_DIR/$appbase"
 
   log "install: '$appbase' -> '$target'"
-  # Best-effort quit of the running app so we can replace it.
-  osascript -e "quit app \"${appbase%.app}\"" >/dev/null 2>&1 || true
 
+  # NOTE: the dry-run return must come BEFORE the quit below. `osascript quit` is a real
+  # side effect on the user's session, so running it here would make `--install --dry-run`
+  # close their running app — exactly what a dry run promises not to do.
   if [[ $DRY_RUN -eq 1 ]]; then
+    log "DRY-RUN would: quit app '${appbase%.app}'"
     log "DRY-RUN would: rm -rf '$target' && cp -R '$app' '$target'"
     log "DRY-RUN would: xattr -dr com.apple.quarantine '$target'  (unsigned local build)"
     [[ $DO_RELAUNCH -eq 1 ]] && log "DRY-RUN would: open '$target'"
     return 0
   fi
 
+  # Best-effort quit of the running app so we can replace it.
+  osascript -e "quit app \"${appbase%.app}\"" >/dev/null 2>&1 || true
+
   rm -rf "$target"
-  cp -R "$app" "$target"
+  # A failed copy must not be recorded as a successful install: without this the marker
+  # advances and the next poll reports "no change" while /Applications holds nothing.
+  if ! cp -R "$app" "$target"; then
+    log "install: FAILED to copy '$app' -> '$target'"
+    return 1
+  fi
   # Unsigned local builds are quarantined by macOS; strip it so Gatekeeper allows launch.
   xattr -dr com.apple.quarantine "$target" || true
   log "install: replaced $target"
@@ -195,12 +219,24 @@ build_once() {
   if [[ $DRY_RUN -eq 1 ]]; then
     log "DRY-RUN would: pnpm dist:desktop:dmg:arm64  (cwd $REPO)"
   else
+    # These are checked explicitly rather than relying on `set -e`: build_once is called as
+    # `if ! build_once` by the watch loop, and bash disables errexit for the whole dynamic
+    # extent of a function whose status is being tested. Without these checks a failed
+    # install would fall through and the dmg would be built against stale dependencies.
     if lockfile_changed "$last"; then
       log "pnpm-lock.yaml changed -> pnpm install --frozen-lockfile"
-      ( cd "$REPO" && pnpm install --frozen-lockfile )
+      if ! ( cd "$REPO" && pnpm install --frozen-lockfile ); then
+        write_status "build-failed" "$cur" "" "pnpm install --frozen-lockfile failed"
+        log "BUILD FAILED for $cur (dependency install)"
+        return 1
+      fi
     fi
     log "ensuring electron runtime"
-    ( cd "$REPO" && pnpm --filter @t3tools/desktop ensure:electron )
+    if ! ( cd "$REPO" && pnpm --filter @t3tools/desktop ensure:electron ); then
+      write_status "build-failed" "$cur" "" "ensure:electron failed"
+      log "BUILD FAILED for $cur (electron runtime)"
+      return 1
+    fi
     log "running: pnpm dist:desktop:dmg:arm64"
     if ! ( cd "$REPO" && pnpm dist:desktop:dmg:arm64 ); then
       write_status "build-failed" "$cur" "" "pnpm dist:desktop:dmg:arm64 failed"
@@ -223,21 +259,42 @@ build_once() {
     log "built dmg: $dmg"
   fi
 
+  local install_failed=0
   if [[ $DO_INSTALL -eq 1 ]]; then
-    install_dmg "$dmg" || log "install step failed (continuing)"
+    install_dmg "$dmg" || install_failed=1
   fi
 
-  if [[ $DRY_RUN -eq 0 ]]; then
-    write_status "built" "$cur" "$dmg" "ok"
-    printf '%s' "$cur" >"$LAST_SHA_FILE"   # advance marker only on a real successful build
-    prune_dmgs
+  if [[ $DRY_RUN -eq 1 ]]; then
+    return 0
   fi
+
+  # The marker means "built AND installed, if an install was asked for". Advancing it after
+  # a failed install would make the next poll report "no change" while /Applications still
+  # holds the old app, so the failure would never be retried.
+  if [[ $install_failed -eq 1 ]]; then
+    write_status "install-failed" "$cur" "$dmg" "dmg built but install failed; marker not advanced so it retries"
+    log "INSTALL FAILED for $cur (dmg built at $dmg); will retry on next run"
+    prune_dmgs
+    return 1
+  fi
+
+  write_status "built" "$cur" "$dmg" "ok"
+  printf '%s' "$cur" >"$LAST_SHA_FILE"   # advance marker only on a fully successful run
+  prune_dmgs
   return 0
 }
 
 # --- launchd plist emitter ---------------------------------------------------
+# A path containing & < > (legal on macOS) would otherwise emit a malformed plist that
+# launchctl silently refuses to load.
+xml_escape() { printf '%s' "${1-}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+
 print_launchd() {
   local label="dev.t3x.autobuild"
+  local x_script x_repo x_log
+  x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
+  x_repo="$(xml_escape "$REPO")"
+  x_log="$(xml_escape "$LOG_FILE")"
   # blank-line filter: the optional-flag command substitutions below leave empty
   # lines behind when their flag is off.
   cat <<PLIST | grep -v '^[[:space:]]*$'
@@ -249,7 +306,7 @@ print_launchd() {
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>${SCRIPT_DIR}/auto-build-desktop.sh</string>
+    <string>${x_script}</string>
     <string>--watch</string>
     <string>--interval</string>
     <string>${INTERVAL}</string>
@@ -257,9 +314,9 @@ $( [[ $DO_INSTALL -eq 1 ]] && printf '    <string>--install</string>' || true )
 $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true )
   </array>
   <key>RunAtLoad</key><true/>
-  <key>WorkingDirectory</key><string>${REPO}</string>
-  <key>StandardOutPath</key><string>${LOG_FILE}</string>
-  <key>StandardErrorPath</key><string>${LOG_FILE}</string>
+  <key>WorkingDirectory</key><string>${x_repo}</string>
+  <key>StandardOutPath</key><string>${x_log}</string>
+  <key>StandardErrorPath</key><string>${x_log}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
