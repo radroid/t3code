@@ -15,6 +15,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
+import { AutoResumeOverlay } from "../t3x/AutoResumeOverlay";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
@@ -81,12 +82,15 @@ function ChatThreadRouteView() {
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       {renderState === "ready" || (renderState === "loading" && serverThreadShell !== null) ? (
-        <ChatView
-          environmentId={threadRef.environmentId}
-          threadId={threadRef.threadId}
-          routeKind="server"
-          threadSyncPhase={threadSyncPhase}
-        />
+        <>
+          <ChatView
+            environmentId={threadRef.environmentId}
+            threadId={threadRef.threadId}
+            routeKind="server"
+            threadSyncPhase={threadSyncPhase}
+          />
+          <AutoResumeOverlay threadRef={threadRef} />
+        </>
       ) : null}
     </SidebarInset>
   );
