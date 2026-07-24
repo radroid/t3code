@@ -52,6 +52,13 @@ case "$OUTPUT_DIR" in
   *) OUTPUT_DIR="$REPO/$OUTPUT_DIR" ;;
 esac
 KEEP_DMGS="${T3X_AUTOBUILD_KEEP_DMGS:-3}"
+# Validated because it is fed to `tail -n +$((KEEP_DMGS + 1))`: a non-numeric value makes
+# the arithmetic yield 1, so `tail -n +1` prunes EVERY dmg including the one just built,
+# and `$(( ))` on attacker-shaped input is a command-execution sink.
+if ! [[ "$KEEP_DMGS" =~ ^[0-9]+$ ]] || [[ "$KEEP_DMGS" -lt 1 ]]; then
+  echo "T3X_AUTOBUILD_KEEP_DMGS must be a positive integer (got: '$KEEP_DMGS')" >&2
+  exit 2
+fi
 APPLICATIONS_DIR="${T3X_AUTOBUILD_APPLICATIONS_DIR:-/Applications}"
 
 # --- flags -------------------------------------------------------------------
@@ -62,6 +69,7 @@ DRY_RUN=0
 FORCE=0
 INTERVAL=60
 CAFFEINATED=0
+INSTALL_OK=0   # set only after an install actually succeeds; drives status JSON
 
 usage() { grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//;s/^#$//'; }
 
@@ -109,7 +117,9 @@ write_status() {
     printf '  "sha": %s,\n' "$(json_escape "$sha")"
     printf '  "dmgPath": %s,\n' "$(json_escape "$dmg")"
     printf '  "builtAt": %s,\n' "$(json_escape "$(now_iso)")"
-    printf '  "installed": %s,\n' "$([[ $DO_INSTALL -eq 1 && $DRY_RUN -eq 0 ]] && echo true || echo false)"
+    # Reflects the OUTCOME. Deriving this from the flags alone emitted
+    # {"result":"install-failed", …, "installed":true} — self-contradictory in one object.
+    printf '  "installed": %s,\n' "$([[ ${INSTALL_OK:-0} -eq 1 ]] && echo true || echo false)"
     printf '  "detail": %s\n' "$(json_escape "$detail")"
     printf '}\n'
   } >"$STATUS_FILE"
@@ -142,8 +152,41 @@ prune_dmgs() {
   old="$(list_dmgs_newest_first | tail -n +"$((KEEP_DMGS + 1))")"
   [[ -z "$old" ]] && return 0
   while IFS= read -r f; do
-    [[ -n "$f" ]] && { log "prune old dmg: $f"; rm -f "$f"; }
+    [[ -n "$f" ]] && { log "prune old dmg: $f"; rm -f "$f" || true; }
   done <<<"$old"
+  # Explicit: without it the function's status is the last `rm`, and in one-shot mode
+  # errexit is live here — a single failing rm aborted the script with exit 1 *after* a
+  # fully successful build+install had already written "result":"built".
+  return 0
+}
+
+# --- mutual exclusion --------------------------------------------------------
+# Concurrency is realistic, not theoretical: hooks/post-merge nohups a detached build on
+# EVERY merge, so two quick `git pull`s start two electron-builder runs writing the same
+# output dir — and one can rm -rf the install target while the other is mid-copy.
+# mkdir is atomic on every filesystem we care about; `flock` is not on stock macOS.
+LOCK_DIR="$STATE_DIR/t3x-autobuild.lock"
+
+release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
+
+acquire_lock() {
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s' "$$" >"$LOCK_DIR/pid" 2>/dev/null || true
+    trap release_lock EXIT
+    return 0
+  fi
+  # A crashed run must not wedge the watcher forever: steal the lock if its owner is gone.
+  local owner
+  owner="$(cat "$LOCK_DIR/pid" 2>/dev/null || printf '')"
+  if [[ -n "$owner" ]] && kill -0 "$owner" 2>/dev/null; then
+    return 1
+  fi
+  log "clearing stale lock (owner pid ${owner:-unknown} is not running)"
+  rm -rf "$LOCK_DIR"
+  mkdir "$LOCK_DIR" 2>/dev/null || return 1
+  printf '%s' "$$" >"$LOCK_DIR/pid" 2>/dev/null || true
+  trap release_lock EXIT
+  return 0
 }
 
 # --- install -----------------------------------------------------------------
@@ -189,11 +232,29 @@ install_dmg() {
   # Best-effort quit of the running app so we can replace it.
   osascript -e "quit app \"${appbase%.app}\"" >/dev/null 2>&1 || true
 
-  rm -rf "$target"
-  # A failed copy must not be recorded as a successful install: without this the marker
-  # advances and the next poll reports "no change" while /Applications holds nothing.
-  if ! cp -R "$app" "$target"; then
-    log "install: FAILED to copy '$app' -> '$target'"
+  # Stage beside the target, then swap. Copying straight onto the target is wrong twice:
+  #  * BSD `cp -R src.app dst.app` copies INTO dst.app when dst.app still exists, silently
+  #    nesting the new build inside the old one and exiting 0 — so the user keeps running
+  #    the old app while every poll reports "no change".
+  #  * Deleting the working app BEFORE the copy leaves nothing installed if the copy then
+  #    fails (ENOSPC is realistic: each build writes ~470MB into release/).
+  # `install_dmg` is called as `install_dmg … || install_failed=1`, which disables errexit
+  # for its whole dynamic extent, so each step is checked explicitly.
+  local staged="$target.t3x-new"
+  rm -rf "$staged"
+  if ! cp -R "$app" "$staged"; then
+    log "install: FAILED to copy '$app' -> '$staged'"
+    rm -rf "$staged"
+    return 1
+  fi
+  # Only now is the old app touched; a failure above leaves it intact and working.
+  if ! rm -rf "$target"; then
+    log "install: FAILED to remove existing '$target' (owned by root, or locked?)"
+    rm -rf "$staged"
+    return 1
+  fi
+  if ! mv "$staged" "$target"; then
+    log "install: FAILED to move '$staged' -> '$target'"
     return 1
   fi
   # Unsigned local builds are quarantined by macOS; strip it so Gatekeeper allows launch.
@@ -261,7 +322,7 @@ build_once() {
 
   local install_failed=0
   if [[ $DO_INSTALL -eq 1 ]]; then
-    install_dmg "$dmg" || install_failed=1
+    if install_dmg "$dmg"; then INSTALL_OK=1; else install_failed=1; fi
   fi
 
   if [[ $DRY_RUN -eq 1 ]]; then
@@ -295,6 +356,15 @@ print_launchd() {
   x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
   x_repo="$(xml_escape "$REPO")"
   x_log="$(xml_escape "$LOG_FILE")"
+  # These MUST be emitted. The plist's own StandardOutPath/marker paths are derived from
+  # these vars, so without them a plist generated from a shell that overrode
+  # T3X_AUTOBUILD_APPLICATIONS_DIR (e.g. while testing against a temp dir) produces an
+  # agent that installs into the REAL /Applications, and one that overrode STATE_DIR
+  # produces an agent logging to the custom path while writing its marker to the default.
+  local x_state x_apps x_out
+  x_state="$(xml_escape "$STATE_DIR")"
+  x_apps="$(xml_escape "$APPLICATIONS_DIR")"
+  x_out="$(xml_escape "$OUTPUT_DIR")"
   # blank-line filter: the optional-flag command substitutions below leave empty
   # lines behind when their flag is off.
   cat <<PLIST | grep -v '^[[:space:]]*$'
@@ -320,6 +390,10 @@ $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true 
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>T3X_AUTOBUILD_STATE_DIR</key><string>${x_state}</string>
+    <key>T3X_AUTOBUILD_APPLICATIONS_DIR</key><string>${x_apps}</string>
+    <key>T3CODE_DESKTOP_OUTPUT_DIR</key><string>${x_out}</string>
+    <key>T3X_AUTOBUILD_KEEP_DMGS</key><string>${KEEP_DMGS}</string>
   </dict>
 </dict>
 </plist>
@@ -330,20 +404,60 @@ PLIST
 watch_loop() {
   # Keep the Mac awake during overnight builds. Re-exec under caffeinate once.
   if [[ $CAFFEINATED -eq 0 ]] && command -v caffeinate >/dev/null 2>&1; then
-    local extra=()
-    [[ $DO_INSTALL -eq 1 ]] && extra+=(--install)
-    [[ $DO_RELAUNCH -eq 1 ]] && extra+=(--relaunch)
+    # Rebuild the FULL flag set, not a subset. Two bugs live here if you get it wrong:
+    #
+    #  * Dropping --dry-run/--force makes the re-exec'd process run for real, so
+    #    `--watch --install --dry-run` — the exact command someone runs to preview the
+    #    watcher — would quit the app and rm -rf /Applications/<app>.
+    #  * Seeding the array empty and expanding "${arr[@]}" aborts under `set -u` on bash
+    #    3.2 (what macOS ships), so `--watch` with no other flag died before its first
+    #    poll. Seeding it with --watch keeps it non-empty, which sidesteps that entirely.
+    local args=(--watch --interval "$INTERVAL" --_caffeinated)
+    [[ $DO_INSTALL -eq 1 ]] && args+=(--install)
+    [[ $DO_RELAUNCH -eq 1 ]] && args+=(--relaunch)
+    [[ $DRY_RUN -eq 1 ]] && args+=(--dry-run)
+    [[ $FORCE -eq 1 ]] && args+=(--force)
     log "re-exec under caffeinate -s"
-    exec caffeinate -s "$0" --watch --interval "$INTERVAL" "${extra[@]}" --_caffeinated
+    exec caffeinate -s "$0" "${args[@]}"
   fi
   log "watch: polling HEAD every ${INTERVAL}s (install=$DO_INSTALL)"
+  local fails=0 rc delay
   while true; do
-    if ! build_once; then
-      # build_once returns 3 for no-op (fine) and 1 for failure — never crash the loop.
-      :
+    rc=0
+    build_once_locked || rc=$?
+    # 0 = built, 3 = nothing to do. Anything else is a real failure.
+    if [[ $rc -eq 0 || $rc -eq 3 ]]; then
+      fails=0
+    else
+      fails=$((fails + 1))
     fi
-    sleep "$INTERVAL"
+
+    # Back off on repeated failure. Without this a persistent fault (unwritable
+    # /Applications on a managed Mac, a full disk, a committed type error) means a full
+    # multi-minute rebuild every INTERVAL seconds, all night, forever.
+    delay="$INTERVAL"
+    if (( fails > 0 )); then
+      local mult=$(( 1 << (fails > 5 ? 5 : fails) ))   # 2x,4x,8x,16x,32x then flat
+      delay=$(( INTERVAL * mult ))
+      (( delay > 1800 )) && delay=1800                  # never wait more than 30 min
+      log "watch: ${fails} consecutive failure(s); next attempt in ${delay}s"
+    fi
+    # `|| true`: a sleep interrupted by a signal must not kill the watcher under errexit.
+    sleep "$delay" || true
   done
+}
+
+# Serialises the whole build+install+marker sequence against another instance.
+build_once_locked() {
+  if ! acquire_lock; then
+    log "another auto-build is already running; skipping this tick"
+    return 3
+  fi
+  local rc=0
+  build_once || rc=$?
+  release_lock
+  trap - EXIT
+  return "$rc"
 }
 
 # --- main --------------------------------------------------------------------
@@ -355,5 +469,5 @@ fi
 if [[ $DO_WATCH -eq 1 ]]; then
   watch_loop
 else
-  build_once
+  build_once_locked
 fi
