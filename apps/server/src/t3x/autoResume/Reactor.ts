@@ -133,6 +133,9 @@ const makeSupervisor = Effect.gen(function* () {
 
       const threadId = event.threadId;
       const record = yield* store.getThread(threadId);
+      // Per-thread switch. A thread the user turned off never schedules, and posts no
+      // timeline note: they disabled it deliberately, so an activity row would be noise.
+      if (!record.enabled) return;
       const nowMs = yield* Clock.currentTimeMillis;
       const firedRecently = yield* store.countFiredSince(threadId, nowMs - BACKOFF_LOOKBACK_MS);
       const firedInCapWindow = yield* store.countFiredSince(threadId, nowMs - CAP_WINDOW_MS);
@@ -180,6 +183,21 @@ const makeSupervisor = Effect.gen(function* () {
       const thread = snapshot.threads.find((t) => t.id === pending.threadId);
       if (!thread) {
         yield* store.clearPending(pending.threadId);
+        return;
+      }
+
+      // The user can switch a thread off *after* its resume was scheduled, so re-read the
+      // record here rather than trusting the value seen at scheduling time, and treat a
+      // disabled thread as a cancellation (drop the pending resume, say so once).
+      const record = yield* store.getThread(pending.threadId);
+      if (!record.enabled) {
+        yield* store.clearPending(pending.threadId);
+        yield* appendActivity(
+          thread.id,
+          "info",
+          "t3x.auto-resume.cancelled",
+          "Auto-resume cancelled: turned off for this thread.",
+        );
         return;
       }
 

@@ -40,8 +40,17 @@ export type PendingResume = typeof PendingResume.Type;
 const ThreadRecord = Schema.Struct({
   pending: Schema.NullOr(PendingResume),
   firedAtMs: Schema.Array(Schema.Number),
-  /** Optional per-thread resume prompt override (settable by a future UI/CLI). */
+  /** Optional per-thread resume prompt override (settable by the UI). */
   overridePrompt: Schema.NullOr(Schema.String),
+  /**
+   * Per-thread auto-resume switch (default on).
+   *
+   * Optional *on disk* with a decode-time default of `true`: state files written
+   * before this field existed must still decode. A missing **required** key would
+   * fail the whole-file decode, and the boot path turns a decode failure into
+   * `EMPTY_STATE` — silently dropping every pending resume and the fired history.
+   */
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 type ThreadRecord = typeof ThreadRecord.Type;
 
@@ -56,6 +65,7 @@ const EMPTY_RECORD: ThreadRecord = {
   pending: null,
   firedAtMs: [],
   overridePrompt: null,
+  enabled: true,
 };
 
 const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(AutoResumeState));
@@ -69,6 +79,13 @@ export interface AutoResumeStoreShape {
   readonly recordFired: (threadId: string, atMs: number) => Effect.Effect<void>;
   /** How many resumes fired for a thread since `sinceMs` (for caps + backoff). */
   readonly countFiredSince: (threadId: string, sinceMs: number) => Effect.Effect<number>;
+  /** Turn auto-resume on/off for a single thread (the UI toggle). */
+  readonly setEnabled: (threadId: string, enabled: boolean) => Effect.Effect<void>;
+  /** Set the per-thread resume text; `null` falls back to the configured default. */
+  readonly setOverridePrompt: (
+    threadId: string,
+    overridePrompt: string | null,
+  ) => Effect.Effect<void>;
 }
 
 export class AutoResumeStore extends Context.Service<AutoResumeStore, AutoResumeStoreShape>()(
@@ -143,8 +160,19 @@ export const makeAutoResumeStore = (
         return persist(next).pipe(Effect.as(next));
       });
 
+    // `Object.hasOwn`, NOT `state.threads[threadId] ?? EMPTY_RECORD`.
+    //
+    // `threads` is a plain object, so a threadId of `constructor` / `toString` /
+    // `valueOf` / `__proto__` resolves on Object.prototype and is *truthy* — `??` never
+    // falls through, and the caller gets a prototype method typed as a ThreadRecord.
+    // Two things then break, and the HTTP route makes threadId caller-controlled:
+    //   * reads dereference `record.pending` (undefined, not null) -> TypeError -> 500;
+    //   * writes spread a prototype object, which has no own enumerable properties, and
+    //     persist `{"enabled":false}` — missing required keys. The next boot fails the
+    //     WHOLE-file decode, and that path collapses to EMPTY_STATE, silently destroying
+    //     every pending resume and the fired history behind the 24h cap.
     const recordFor = (state: AutoResumeState, threadId: string): ThreadRecord =>
-      state.threads[threadId] ?? EMPTY_RECORD;
+      Object.hasOwn(state.threads, threadId) ? state.threads[threadId]! : EMPTY_RECORD;
 
     return {
       listPending: SynchronizedRef.get(ref).pipe(
@@ -202,5 +230,23 @@ export const makeAutoResumeStore = (
             (state) => recordFor(state, threadId).firedAtMs.filter((t) => t >= sinceMs).length,
           ),
         ),
+
+      setEnabled: (threadId, enabled) =>
+        mutate((state) => ({
+          ...state,
+          threads: {
+            ...state.threads,
+            [threadId]: { ...recordFor(state, threadId), enabled },
+          },
+        })),
+
+      setOverridePrompt: (threadId, overridePrompt) =>
+        mutate((state) => ({
+          ...state,
+          threads: {
+            ...state.threads,
+            [threadId]: { ...recordFor(state, threadId), overridePrompt },
+          },
+        })),
     } satisfies AutoResumeStoreShape;
   });

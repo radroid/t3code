@@ -14,9 +14,9 @@ Everything else the fork adds lives in new, upstream-invisible files (`apps/**/t
 
 ## Server (`apps/server`)
 
-| Upstream file               | Edit                                                               | Why unavoidable                                                                                                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/server.ts` | +1 import of `T3xLayerLive`, +1 `Layer.provideMerge(T3xLayerLive)` | The root layer graph is composed here; a feature layer must be merged into it at exactly one point. All feature layers fan in through `t3x/index.ts`, so this seam stays 2 lines no matter how many features are added. |
+| Upstream file               | Edit                                                                                                                                                                   | Why unavoidable                                                                                                                                                                                                                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/server.ts` | +1 import of `T3xLayerLive` **and `T3xRoutesLive`** (one statement), +1 `Layer.provideMerge(T3xLayerLive)`, +1 `T3xRoutesLive` entry in `makeRoutesLayer`'s route list | The root layer graph and the route list are both composed here, so a feature layer and a feature route each need exactly one mount point. Both fan in through `t3x/index.ts` — the import is one statement and the route list one entry — so this seam stays 3 lines no matter how many features or routes are added. |
 
 > The auto-resume reactor **self-starts** via `Effect.forkScoped` at layer construction,
 > so — unlike the built-in reactors — it needs **no** `.start()` call in
@@ -29,14 +29,20 @@ avoid a code seam). They don't conflict during rebase, but if upstream changes t
 original's behavior the mirror can drift silently — the daily sync agent must diff these
 originals when they change.
 
-| Fork mirror                                                           | Mirrors upstream                         | Risk if upstream changes                                                                               |
-| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`) | `decider.ts:57-80` (private, unexported) | Awaiting-approval guard could miss a new blocking-request activity kind and auto-resume into a prompt. |
+| Fork mirror                                                               | Mirrors upstream                                                       | Risk if upstream changes                                                                                                                                                  |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`)     | `decider.ts:57-80` (private, unexported)                               | Awaiting-approval guard could miss a new blocking-request activity kind and auto-resume into a prompt.                                                                    |
+| `apps/server/src/t3x/autoResume/http.ts` (`authenticateWithOperateScope`) | `http.ts:78-95` (`authenticateRawRouteWithScope`, private, unexported) | If upstream changes how raw routes authenticate (new error case, different scope check), `/api/t3x/auto-resume` could authenticate more weakly than the routes beside it. |
 
 ## Web (`apps/web`)
 
-_None._ (v1 auto-resume ships with zero web changes; visibility rides existing
-timeline activities.)
+| Upstream file                                            | Edit                                                          | Why unavoidable                                                                                                                                                                                                                            |
+| -------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` | +1 import, +1 `<AutoResumeOverlay />` sibling of `<ChatView>` | A per-thread overlay has to be rendered by the thread route; there is no extension point. Chosen as a floating card precisely so it needs no cooperation from upstream layout — no `ChatView.tsx` / `ChatComposer` edits (both hot files). |
+
+> The overlay ships to the **desktop app too**: `apps/desktop` is an Electron shell that
+> loads this same web bundle from `t3code://app`, so there is no separate desktop UI to
+> change. `apps/mobile` is a distinct React Native codebase and does **not** get it.
 
 ## Contracts / persistence
 
