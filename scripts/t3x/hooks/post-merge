@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# t3x sample git hook — kick off a desktop rebuild after HEAD moves.
+#
+# This is NOT installed automatically. Opt in with either:
+#   git config core.hooksPath scripts/t3x/hooks     # use this dir for all hooks
+# or symlink just this one:
+#   ln -sf ../../scripts/t3x/hooks/post-merge .git/hooks/post-merge
+#
+# `post-merge` fires after `git pull` / `git merge` updates the working tree.
+# Copy this file to `post-checkout` and/or `post-rewrite` too if you also want
+# rebuilds after branch switches / rebases.
+#
+# It launches the build detached so the git command returns immediately, and
+# builds only (no --install) — add --install here if you want auto-install on
+# every merge (see docs/t3x/auto-build-runbook.md for the caveats).
+set -euo pipefail
+REPO="$(git rev-parse --show-toplevel)"
+nohup "$REPO/scripts/t3x/auto-build-desktop.sh" >/dev/null 2>&1 &
+exit 0
