@@ -137,6 +137,55 @@ describe("AutoResumeStore", () => {
       }),
     ));
 
+  // `threads` is a plain object, so these ids resolve on Object.prototype and are truthy.
+  // A `?? EMPTY_RECORD` lookup therefore returns a prototype method typed as a
+  // ThreadRecord: reads blow up on `record.pending`, and writes persist a record with no
+  // required keys, which fails the whole-file decode on the next boot and wipes every
+  // pending resume. The HTTP route takes threadId straight from the caller, so this is
+  // reachable input, not a curiosity.
+  for (const hostile of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+    it(`treats the prototype-chain threadId "${hostile}" as an absent record`, () =>
+      withStore((store) =>
+        Effect.gen(function* () {
+          const record = yield* store.getThread(hostile);
+          assert.strictEqual(record.enabled, true);
+          assert.strictEqual(record.pending, null, "must be null, not undefined");
+          assert.strictEqual(record.overridePrompt, null);
+          assert.deepStrictEqual([...record.firedAtMs], []);
+        }),
+      ));
+  }
+
+  it("a write under a prototype-chain threadId does not corrupt other threads' state", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3x-state-" });
+      const path = NodePath.join(root, "state.json");
+
+      const store1 = yield* makeAutoResumeStore(path);
+      yield* store1.schedule(pending("real-thread"));
+      yield* store1.recordFired("other-thread", 42);
+
+      // The hostile write must persist a well-formed record like any other.
+      yield* store1.setEnabled("__proto__", false);
+      yield* store1.setOverridePrompt("constructor", "x");
+
+      // Everything must still decode after a restart — the failure mode this guards is a
+      // whole-file decode failure collapsing to EMPTY_STATE.
+      const store2 = yield* makeAutoResumeStore(path);
+      assert.strictEqual(
+        (yield* store2.listPending).length,
+        1,
+        "the real thread's pending resume must survive",
+      );
+      assert.strictEqual(
+        yield* store2.countFiredSince("other-thread", 0),
+        1,
+        "fired history behind the 24h cap must survive",
+      );
+      assert.strictEqual((yield* store2.getThread("__proto__")).enabled, false);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise));
+
   it("setEnabled and setOverridePrompt round-trip and survive a restart", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
