@@ -27,6 +27,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { reconcileInterruptedTurnsOnBoot } from "./orchestration/Layers/CrashRecoveryReconciler.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -291,6 +292,8 @@ const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>)
 export const make = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const keybindings = yield* Keybindings.Keybindings;
+  const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
   const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
   const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -334,6 +337,32 @@ export const make = Effect.gen(function* () {
           }),
         ),
         Effect.forkScoped,
+      ),
+    );
+
+    // Settle turns left frozen `running` by a prior UNGRACEFUL exit (crash / OOM /
+    // SIGKILL) before any reactor observes them and before commands are accepted.
+    // At fresh boot no turn is truly live, so every leftover in-flight turn is a
+    // crash remnant; this mirrors the graceful `session.exited` path by dispatching
+    // a stopped `thread.session.set`, settling the turn to a resumable `interrupted`
+    // state. FOLLOW-UP: auto-resume RE-ARMING (a crash marker + boot producer) is a
+    // deliberate separate change; this only reconciles to the settled state.
+    yield* Effect.logDebug("startup phase: reconciling interrupted turns from a prior crash");
+    yield* runStartupPhase(
+      "reconcile.interrupted-turns",
+      reconcileInterruptedTurnsOnBoot.pipe(
+        Effect.provideService(OrchestrationEngine.OrchestrationEngineService, orchestrationEngine),
+        Effect.provideService(
+          ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+          projectionSnapshotQuery,
+        ),
+        Effect.tap(({ reconciledCount }) =>
+          reconciledCount > 0
+            ? Effect.logInfo("startup phase: reconciled interrupted turns from a prior crash", {
+                reconciledCount,
+              })
+            : Effect.void,
+        ),
       ),
     );
 
