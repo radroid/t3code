@@ -134,6 +134,16 @@ describe("simple predicates", () => {
       false,
     );
   });
+
+  // Crash-recovery reconciliation settles leftover in-flight turns to a resumable
+  // `interrupted` state with a `stopped` session (see CrashRecoveryReconciler). Such a
+  // thread must NOT read as progressing, otherwise auto-resume would treat the crashed
+  // turn as still-working and never resume it.
+  it("threadIsProgressing is false for a reconciled interrupted/stopped thread", () => {
+    expect(
+      threadIsProgressing(makeThread({ status: "stopped", latestTurnState: "interrupted" })),
+    ).toBe(false);
+  });
 });
 
 describe("cancelReason", () => {
