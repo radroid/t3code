@@ -49,6 +49,21 @@ describe("ClientSettings glass opacity", () => {
   });
 });
 
+describe("ClientSettings needs-input notifications", () => {
+  it("defaults needs-input notifications on for existing installs", () => {
+    expect(decodeClientSettings({}).notifyOnNeedsInput).toBe(true);
+  });
+
+  it("honours an explicit opt-out", () => {
+    expect(decodeClientSettings({ notifyOnNeedsInput: false }).notifyOnNeedsInput).toBe(false);
+  });
+
+  it("accepts the toggle in a client settings patch", () => {
+    expect(decodeClientSettingsPatch({}).notifyOnNeedsInput).toBeUndefined();
+    expect(decodeClientSettingsPatch({ notifyOnNeedsInput: false }).notifyOnNeedsInput).toBe(false);
+  });
+});
+
 describe("ClientSettings sidebar v2", () => {
   it("defaults the beta off with a three-day auto-settle threshold", () => {
     const settings = decodeClientSettings({});
