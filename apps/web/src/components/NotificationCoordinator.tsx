@@ -1,7 +1,8 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { toastManager } from "~/components/ui/toast";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { isElectron } from "~/env";
 import { useClientSettings } from "~/hooks/useSettings";
 import {
@@ -25,7 +26,7 @@ import {
   type PermissionPromptState,
 } from "~/notifications/permissionPrompt.logic";
 import { useProjects, useThreadShells } from "~/state/entities";
-import { resolveThreadRouteRef } from "~/threadRoutes";
+import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "~/threadRoutes";
 
 /**
  * Announces chats that start waiting on the user, on desktop through the OS
@@ -41,10 +42,20 @@ export function NotificationCoordinator() {
   const threadShells = useThreadShells();
   const projects = useProjects();
   const notifyOnNeedsInput = useClientSettings((settings) => settings.notifyOnNeedsInput);
-  const routeThreadRef = useParams({
+  // Resolved through the draft route too: right after a draft is promoted the
+  // user is still on `/draft/$draftId`, and the chat they are looking at must
+  // stay suppressed.
+  const routeTarget = useParams({
     strict: false,
-    select: (params) => resolveThreadRouteRef(params),
+    select: (params) => resolveThreadRouteTarget(params),
   });
+  const routeDraftThread = useComposerDraftStore((store) =>
+    routeTarget?.kind === "draft" ? store.getDraftSession(routeTarget.draftId) : null,
+  );
+  const routeThreadRef = useMemo(
+    () => resolveActiveThreadRouteRef(routeTarget, routeDraftThread),
+    [routeDraftThread, routeTarget],
+  );
   const [tracker] = useState(createAttentionTracker);
   const promptStateRef = useRef<PermissionPromptState>({ promptedThisSession: false });
 
