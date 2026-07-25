@@ -1,6 +1,8 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
+import { toastManager } from "~/components/ui/toast";
+import { isElectron } from "~/env";
 import { useClientSettings } from "~/hooks/useSettings";
 import {
   buildAwarenessInputs,
@@ -14,8 +16,14 @@ import {
 import {
   canDeliverNotification,
   getNotificationPermissionState,
+  requestWebNotificationPermission,
   showAttentionNotification,
+  type WebNotificationPermission,
 } from "~/notifications/notifier";
+import {
+  shouldShowPermissionPrompt,
+  type PermissionPromptState,
+} from "~/notifications/permissionPrompt.logic";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { resolveThreadRouteRef } from "~/threadRoutes";
 
@@ -38,6 +46,7 @@ export function NotificationCoordinator() {
     select: (params) => resolveThreadRouteRef(params),
   });
   const [tracker] = useState(createAttentionTracker);
+  const promptStateRef = useRef<PermissionPromptState>({ promptedThisSession: false });
 
   const handleActivation = useCallback(
     (activation: { readonly environmentId: string; readonly threadId: string }) => {
@@ -50,11 +59,45 @@ export function NotificationCoordinator() {
     [navigate],
   );
 
+  /**
+   * Nudges a browser that has never answered the permission dialog, at the one
+   * moment the ask is self-explanatory: a chat just started waiting. Marked as
+   * prompted before the toast is even answered, so an ignored or declined
+   * prompt is not repeated for the rest of the session.
+   */
+  const promptForPermission = useEffectEvent((permission: WebNotificationPermission) => {
+    if (
+      !shouldShowPermissionPrompt({
+        state: promptStateRef.current,
+        settingEnabled: notifyOnNeedsInput,
+        permission,
+        isElectron,
+      })
+    ) {
+      return;
+    }
+    promptStateRef.current = { promptedThisSession: true };
+    toastManager.add({
+      type: "info",
+      title: "Enable notifications to know when an agent needs you.",
+      actionProps: {
+        children: "Enable",
+        onClick: () => {
+          void requestWebNotificationPermission().catch(() => undefined);
+        },
+      },
+    });
+  });
+
   const deliverEvents = useEffectEvent((events: ReadonlyArray<AttentionEvent>) => {
     if (events.length === 0) {
       return;
     }
-    if (!canDeliverNotification(getNotificationPermissionState(), notifyOnNeedsInput)) {
+    const permission = getNotificationPermissionState();
+    if (!canDeliverNotification(permission, notifyOnNeedsInput)) {
+      // Dropped events are the cue for the contextual prompt: the only
+      // recoverable reason is a permission the user has yet to answer.
+      promptForPermission(permission);
       return;
     }
 
