@@ -79,7 +79,17 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
-import { primaryServerObservabilityAtom, primaryServerProvidersAtom } from "../../state/server";
+import {
+  getNotificationPermissionState,
+  requestWebNotificationPermission,
+  type WebNotificationPermission,
+} from "../../notifications/notifier";
+import {
+  primaryServerObservabilityAtom,
+  primaryServerProvidersAtom,
+  serverEnvironment,
+} from "../../state/server";
+import { usePrimaryEnvironment } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -514,6 +524,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming
         ? ["Stream token by token"]
         : []),
+      ...(settings.notifyOnNeedsInput !== DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput
+        ? ["Notify when an agent needs input"]
+        : []),
       ...(settings.enableProviderUpdateChecks !==
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
@@ -572,6 +585,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.glassOpacity,
       settings.enableLegacyTokenStreaming,
       settings.enableProviderUpdateChecks,
+      settings.notifyOnNeedsInput,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
@@ -663,6 +677,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
+      notifyOnNeedsInput: DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
@@ -1862,6 +1877,9 @@ export function GeneralSettingsPanel() {
   );
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(
+    getNotificationPermissionState,
+  );
   const diagnosticsDescription = formatDiagnosticsDescription({
     localTracingEnabled: observability?.localTracingEnabled ?? false,
     otlpTracesEnabled: observability?.otlpTracesEnabled ?? false,
@@ -2103,6 +2121,51 @@ export function GeneralSettingsPanel() {
                 updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
               }
               aria-label="Show skills in slash menu"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Notify when an agent needs input"
+          description="Show a notification when a chat is waiting on your approval, an answer, or its turn has finished."
+          status={
+            notificationPermission === "denied"
+              ? "Notifications are blocked by your browser. Allow them for this site to receive alerts."
+              : null
+          }
+          resetAction={
+            settings.notifyOnNeedsInput !== DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput ? (
+              <SettingResetButton
+                label="needs-input notifications"
+                onClick={() =>
+                  updateSettings({
+                    notifyOnNeedsInput: DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.notifyOnNeedsInput}
+              onCheckedChange={(checked) => {
+                const enabled = Boolean(checked);
+                updateSettings({ notifyOnNeedsInput: enabled });
+                if (!enabled) {
+                  return;
+                }
+                const permission = getNotificationPermissionState();
+                // The toggle click is the user gesture browsers require before
+                // they will show the permission dialog, so ask right here.
+                if (!isElectron && permission === "default") {
+                  void requestWebNotificationPermission()
+                    .then(setNotificationPermission)
+                    .catch(() => undefined);
+                  return;
+                }
+                setNotificationPermission(permission);
+              }}
+              aria-label="Notify when an agent needs input"
             />
           }
         />
