@@ -130,6 +130,17 @@ export function cancelReason(
   if (threadIsProgressing(thread)) return "progressing";
   if (hasOpenBlockingRequest(thread.activities)) return "awaiting-input";
   if (newestUserMessageId(thread) !== baseline.newestUserMessageId) return "user-took-over";
-  if ((thread.latestTurn?.turnId ?? null) !== baseline.latestTurnId) return "thread-advanced";
+  // Advancement needs POSITIVE evidence: a different, non-null turn id. The snapshot's
+  // `latestTurn` is joined on `projection_threads.latest_turn_id`, which is populated
+  // only while a turn is active — so a usage limit that lands mid-turn captures the
+  // running turn's id in the baseline, and by fire time (turn settled, session idle)
+  // the snapshot reports `latestTurn: null`. That null means "no active turn", not
+  // "the thread moved on"; treating it as advancement cancelled every real resume
+  // (radroid/t3code#6). A genuine user takeover is caught above via the newest user
+  // message; active work is caught by `progressing`.
+  const currentTurnId = thread.latestTurn?.turnId ?? null;
+  if (currentTurnId !== null && currentTurnId !== baseline.latestTurnId) {
+    return "thread-advanced";
+  }
   return null;
 }
