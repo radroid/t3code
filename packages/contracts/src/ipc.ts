@@ -1030,6 +1030,20 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+export interface DesktopNotificationRequest {
+  /** Stable per thread, used to coalesce repeat notifications for one thread. */
+  readonly id: string;
+  readonly title: string;
+  readonly body: string;
+  readonly environmentId: string;
+  readonly threadId: string;
+}
+
+export interface DesktopNotificationActivation {
+  readonly environmentId: string;
+  readonly threadId: string;
+}
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /** The desktop client's OS platform, read from Electron's preload process. */
@@ -1121,6 +1135,20 @@ export interface DesktopBridge {
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
   };
+  /**
+   * Native notification surface. Optional like `preview` because an older
+   * desktop shell may host a newer web bundle: callers must feature-detect
+   * and fall back to the web Notification API when these are undefined.
+   */
+  showNotification?: (request: DesktopNotificationRequest) => Promise<void>;
+  /**
+   * Fires when the user clicks a notification raised via `showNotification`.
+   * Returns an unsubscribe function. Present only in desktop shells that
+   * support native notifications.
+   */
+  onNotificationActivated?: (
+    listener: (activation: DesktopNotificationActivation) => void,
+  ) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.
