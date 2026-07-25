@@ -42,6 +42,14 @@ export const make = Effect.gen(function* () {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 
+  // Live notifications keyed by `DesktopNotificationRequest.id`, which the
+  // contract defines as a coalescing key: showing again for the same id
+  // replaces the previous entry instead of stacking a second one in
+  // Notification Center (the web path gets this from the notification `tag`).
+  // Holding the JS reference also keeps the notification from being collected
+  // while it is on screen, which is what makes Electron's `click` reliable.
+  const liveNotifications = new Map<string, Electron.Notification>();
+
   const activate = Effect.fn("desktop.electron.notification.activate")(function* (
     request: DesktopNotificationRequest,
   ) {
@@ -76,9 +84,19 @@ export const make = Effect.gen(function* () {
           title: request.title,
           body: request.body,
         });
+        const forget = () => {
+          if (liveNotifications.get(request.id) === notification) {
+            liveNotifications.delete(request.id);
+          }
+        };
         notification.on("click", () => {
+          forget();
           runFork(activate(request));
         });
+        notification.on("close", forget);
+
+        liveNotifications.get(request.id)?.close();
+        liveNotifications.set(request.id, notification);
         notification.show();
       },
       catch: (cause) => new ElectronNotificationShowError({ notificationId: request.id, cause }),
