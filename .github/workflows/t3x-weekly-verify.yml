@@ -67,12 +67,21 @@ jobs:
           TITLE="[t3x-sync] weekly full build failing"
           BODY="$(printf 'Weekly full build failed.\n\n**kind:** `weekly-build`\n**failed steps:**%s\n**run:** %s\n\nThis is advisory — it does not block the daily rebase. A green typecheck/lint/test can still hide a build regression; investigate when convenient.' "$FAILED_STEPS" "$RUN_URL")"
 
-          # `.[0].number` on an empty list prints literal "null"; `// empty` yields "" so
-          # the -n test correctly falls through to creating a fresh issue.
+          # See the daily workflow for why we decouple label attachment from issue creation:
+          # `gh issue create --label` aborts creation when the label lookup lags behind
+          # `gh label create`, leaving a red run with no tracking issue. Find by label, then
+          # fall back to the title marker; create without --label and attach afterwards.
           EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          if [[ -z "$EXISTING" ]]; then
+            EXISTING="$(gh issue list --search 't3x-sync in:title' --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          fi
+
           if [[ -n "$EXISTING" ]]; then
             gh issue comment "$EXISTING" --body "$BODY"
+            gh issue edit "$EXISTING" --add-label "$SYNC_LABEL" 2>/dev/null || true
           else
-            gh issue create --title "$TITLE" --label "$SYNC_LABEL" --body "$BODY"
+            URL="$(gh issue create --title "$TITLE" --body "$BODY" 2>/dev/null || true)"
+            NUM="${URL##*/}"
+            if [[ -n "$NUM" ]]; then gh issue edit "$NUM" --add-label "$SYNC_LABEL" 2>/dev/null || true; fi
           fi
           exit 1
