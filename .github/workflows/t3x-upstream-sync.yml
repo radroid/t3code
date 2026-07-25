@@ -99,7 +99,7 @@ jobs:
           RESULT="$(echo "$STATUS" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("result","unknown"))' 2>/dev/null || echo unknown)"
           TITLE="[t3x-sync] daily rebase needs attention ($RESULT)"
 
-          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\nThe daily Claude sync agent should pick this up (see docs/t3x/sync-agent-runbook.md).' \
+          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\n---\n\n▶ **To fix:** comment `@claude resolve` on this issue (or run the *t3x sync resolve (agent)* workflow). An agent replays the rebase, resolves the conflicts, runs typecheck/lint/test, and opens a PR for review — nothing is pushed to `main`. Runbook: `docs/t3x/sync-agent-runbook.md`.' \
             "$RESULT" "${RECOVERY_TAG:-none}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" "$STATUS")"
 
           # Find an existing open sync thread. Try the label first, then fall back to the title
