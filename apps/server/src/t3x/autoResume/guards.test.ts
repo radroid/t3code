@@ -166,6 +166,25 @@ describe("cancelReason", () => {
     expect(cancelReason(thread, baseline())).toBe("thread-advanced");
   });
 
+  // Regression for radroid/t3code#6: the projection populates latest_turn_id only while
+  // a turn is active, so a limit captured mid-turn (baseline has the running turn's id)
+  // always sees latestTurn: null once that turn settles. Null is "no active turn", not
+  // advancement — cancelling here killed every real-world resume.
+  it("does NOT treat a settled-away turn (latestTurn null at fire) as advancement", () => {
+    const thread = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      status: "stopped",
+    });
+    expect(thread.latestTurn).toBeNull();
+    expect(cancelReason(thread, baseline())).toBeNull();
+  });
+
+  it("still detects advancement when a turn exists but the baseline had none", () => {
+    const noTurnBaseline = captureBaseline(makeThread({ messages: [{ id: "u1", role: "user" }] }));
+    const thread = makeThread({ messages: [{ id: "u1", role: "user" }], latestTurnId: "turn-9" });
+    expect(cancelReason(thread, noTurnBaseline)).toBe("thread-advanced");
+  });
+
   it("blocks when awaiting input", () => {
     const thread = makeThread({
       messages: [{ id: "u1", role: "user" }],
