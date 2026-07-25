@@ -34,6 +34,9 @@ const readModel = (o: {
   messages?: Array<{ id: string; role: string }>;
   status?: string;
   latestTurnId?: string;
+  /** Explicit latestTurn override; pass null to model an idle thread whose
+   * projection row has no latest_turn_id (see radroid/t3code#6). */
+  latestTurn?: { turnId: string; state: string } | null;
 }): OrchestrationReadModel =>
   ({
     snapshotSequence: 1,
@@ -51,7 +54,10 @@ const readModel = (o: {
         settledOverride: null,
         messages: o.messages ?? [{ id: "u1", role: "user" }],
         activities: [],
-        latestTurn: { turnId: o.latestTurnId ?? "turn-1", state: "completed" },
+        latestTurn:
+          o.latestTurn !== undefined
+            ? o.latestTurn
+            : { turnId: o.latestTurnId ?? "turn-1", state: "completed" },
         session: { status: o.status ?? "ready", providerName: "claudeAgent" },
       },
     ],
@@ -197,6 +203,40 @@ describe("AutoResumeReactor (integration)", () => {
         const turn = turnStarts[0] as Extract<OrchestrationCommand, { type: "thread.turn.start" }>;
         assert.strictEqual(turn.message.text, "continue");
         assert.strictEqual(turn.threadId, "thread-1");
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  // Regression for radroid/t3code#6 — the incident shape observed in production:
+  // the limit lands while the turn is RUNNING (baseline captures its id); by wake
+  // time the turn has settled and the projection row has no latest_turn_id, so the
+  // snapshot reports latestTurn: null. That must NOT read as "thread-advanced".
+  it.effect("resumes when the limited turn has settled away by wake time (latestTurn null)", () =>
+    Effect.gen(function* () {
+      const { dispatched, modelRef, deps } = yield* harness(
+        readModel({ status: "running", latestTurn: { turnId: "turn-1", state: "running" } }),
+        [rejectedEvent(100)],
+      );
+
+      yield* Effect.gen(function* () {
+        yield* settle; // detection schedules; baseline.latestTurnId === "turn-1"
+
+        // The limited turn settles and the session stops during the wait — the
+        // projection's latest_turn_id empties out, so the snapshot's latestTurn is null.
+        yield* Ref.set(modelRef, readModel({ status: "stopped", latestTurn: null }));
+
+        yield* advancePastResume;
+
+        const commands = yield* Ref.get(dispatched);
+        const turnStarts = commands.filter((c) => c.type === "thread.turn.start");
+        assert.strictEqual(turnStarts.length, 1, "the settled thread must resume, not cancel");
+        const summaries = commands
+          .filter((c) => c.type === "thread.activity.append")
+          .map((c) => (c as unknown as { activity: { summary: string } }).activity.summary);
+        assert.isFalse(
+          summaries.some((s) => s.includes("thread-advanced")),
+          "no thread-advanced cancellation may be posted",
+        );
       }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
   );
