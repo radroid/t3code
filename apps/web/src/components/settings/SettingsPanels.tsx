@@ -1317,7 +1317,7 @@ export function GeneralSettingsPanel() {
           title="Notify when an agent needs input"
           description="Show a notification when a chat is waiting on your approval, an answer, or its turn has finished."
           status={
-            notificationPermission === "denied"
+            settings.notifyOnNeedsInput && notificationPermission === "denied"
               ? "Notifications are blocked by your browser. Allow them for this site to receive alerts."
               : null
           }
