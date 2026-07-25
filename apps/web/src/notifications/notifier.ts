@@ -80,7 +80,18 @@ export function showAttentionNotification(
     return;
   }
 
-  const notification = new Notification(event.title, { body: event.body, tag: event.key });
+  // Android Chrome reports `"Notification" in window` and can even report
+  // permission `"granted"`, yet throws `TypeError: Illegal constructor` here
+  // because page-scope notifications need a service worker. Swallow it: the
+  // throw would otherwise escape the coordinator's effect, tearing down the
+  // React tree and dropping the rest of the event batch.
+  let notification: Notification;
+  try {
+    notification = new Notification(event.title, { body: event.body, tag: event.key });
+  } catch {
+    return;
+  }
+
   notification.addEventListener("click", () => {
     window.focus();
     onActivate({ environmentId: event.environmentId, threadId: event.threadId });
