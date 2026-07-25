@@ -2,7 +2,12 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { ChildProcessSpawner } from "effect/unstable/process";
-import { type VcsError, VcsProcessSpawnError, VcsProcessTimeoutError } from "@t3tools/contracts";
+import {
+  type VcsError,
+  VcsProcessExitError,
+  VcsProcessSpawnError,
+  VcsProcessTimeoutError,
+} from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as AzureDevOps from "./AzureDevOpsSourceControlProvider.ts";
@@ -173,5 +178,42 @@ it.effect(
 
       assert.strictEqual(item.status, "available");
       assert.strictEqual(item.auth.status, "unauthenticated");
+    }),
+);
+
+it.effect(
+  "treats a non-spawn `--version` failure (e.g. a non-zero exit) as present and still runs the auth probe",
+  () =>
+    Effect.gen(function* () {
+      const { process, calls } = makeProcess((input) => {
+        if (isVersionCall(input)) {
+          return Effect.fail(
+            new VcsProcessExitError({
+              operation: input.operation,
+              command: input.command,
+              cwd: input.cwd,
+              exitCode: 1,
+              detail: "Process exited with a non-zero status.",
+            }),
+          );
+        }
+        return Effect.succeed(processOutput("azure-user@example.com\n"));
+      });
+
+      const item = yield* probeSourceControlProvider({
+        spec: AzureDevOps.discovery,
+        process,
+        cwd: "/repo",
+      });
+
+      // Only a genuine spawn failure means "missing"; any other runtime failure of
+      // `--version` (here a non-zero exit) means the CLI is present, so it stays
+      // available and the auth probe still runs. (issue #4)
+      assert.strictEqual(item.status, "available");
+      assert.strictEqual(item.auth.status, "authenticated");
+      assert.ok(
+        calls.some(isAuthCall),
+        "expected the auth probe to run after a non-spawn `--version` failure",
+      );
     }),
 );
