@@ -11,6 +11,7 @@ interface FakeNotificationEntry {
   readonly options: { readonly title?: string; readonly body?: string };
   readonly listeners: Map<string, (...args: readonly unknown[]) => void>;
   shown: number;
+  closed: number;
 }
 
 const { notificationState, FakeNotification } = vi.hoisted(() => {
@@ -31,7 +32,7 @@ const { notificationState, FakeNotification } = vi.hoisted(() => {
       if (notificationState.constructorThrows !== null) {
         throw notificationState.constructorThrows;
       }
-      this.entry = { options, listeners: new Map(), shown: 0 };
+      this.entry = { options, listeners: new Map(), shown: 0, closed: 0 };
       notificationState.instances.push(this.entry);
     }
 
@@ -42,6 +43,13 @@ const { notificationState, FakeNotification } = vi.hoisted(() => {
 
     show(): void {
       this.entry.shown += 1;
+    }
+
+    // Electron dismisses the notification and then emits `close`; the fake
+    // mirrors that so the service's bookkeeping is exercised.
+    close(): void {
+      this.entry.closed += 1;
+      this.entry.listeners.get("close")?.();
     }
   }
 
@@ -62,8 +70,8 @@ const request = {
   threadId: "thread-1",
 } as const;
 
-const clickFirstNotification = () => {
-  const entry = notificationState.instances[0];
+const clickNotification = (index: number) => {
+  const entry = notificationState.instances[index];
   assert.isDefined(entry);
   const click = entry.listeners.get("click");
   if (click === undefined) {
@@ -71,6 +79,23 @@ const clickFirstNotification = () => {
   }
   click();
 };
+
+const clickFirstNotification = () => clickNotification(0);
+
+const closeNotification = (index: number) => {
+  const entry = notificationState.instances[index];
+  assert.isDefined(entry);
+  const close = entry.listeners.get("close");
+  if (close === undefined) {
+    throw new Error("Expected the notification to register a close listener.");
+  }
+  close();
+};
+
+const silentWindowLayer = Layer.mock(ElectronWindow.ElectronWindow)({
+  focusedMainOrFirst: Effect.succeed(Option.none()),
+  sendAll: () => Effect.void,
+});
 
 describe("ElectronNotification", () => {
   beforeEach(() => {
@@ -173,6 +198,48 @@ describe("ElectronNotification", () => {
         ),
       ),
     ),
+  );
+
+  it.effect("closes the previous notification when the same id is shown again", () =>
+    Effect.gen(function* () {
+      const notifications = yield* ElectronNotification.ElectronNotification;
+      yield* notifications.show(request);
+      yield* notifications.show(request);
+      yield* notifications.show({ ...request, id: "thread-2", threadId: "thread-2" });
+
+      assert.equal(notificationState.instances.length, 3);
+      // Only the first is superseded: the third carries a different id.
+      assert.equal(notificationState.instances[0]?.closed, 1);
+      assert.equal(notificationState.instances[1]?.closed, 0);
+      assert.equal(notificationState.instances[2]?.closed, 0);
+    }).pipe(Effect.provide(ElectronNotification.layer.pipe(Layer.provide(silentWindowLayer)))),
+  );
+
+  it.effect("forgets a dismissed notification so it is never closed twice", () =>
+    Effect.gen(function* () {
+      const notifications = yield* ElectronNotification.ElectronNotification;
+      yield* notifications.show(request);
+
+      // The OS dismissal emits `close` without routing through `close()`.
+      closeNotification(0);
+      yield* notifications.show(request);
+
+      assert.equal(notificationState.instances.length, 2);
+      assert.equal(notificationState.instances[0]?.closed, 0);
+    }).pipe(Effect.provide(ElectronNotification.layer.pipe(Layer.provide(silentWindowLayer)))),
+  );
+
+  it.effect("forgets a clicked notification so it is never closed afterwards", () =>
+    Effect.gen(function* () {
+      const notifications = yield* ElectronNotification.ElectronNotification;
+      yield* notifications.show(request);
+
+      clickFirstNotification();
+      yield* notifications.show(request);
+
+      assert.equal(notificationState.instances.length, 2);
+      assert.equal(notificationState.instances[0]?.closed, 0);
+    }).pipe(Effect.provide(ElectronNotification.layer.pipe(Layer.provide(silentWindowLayer)))),
   );
 
   it.effect("swallows Electron notification failures instead of failing the caller", () =>

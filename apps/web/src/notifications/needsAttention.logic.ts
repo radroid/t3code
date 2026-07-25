@@ -34,6 +34,11 @@ export interface AttentionTracker {
  * And `completed` only fires out of `running`: threads are born at session
  * status `ready`, which the ladder projects as `completed`, so any other
  * approach announces a "Done" for work that never ran.
+ *
+ * Only observed phases can be announced: the server coalesces a burst of domain
+ * events into a single shell refetch (`apps/server/src/ws.ts:754-767`), so any
+ * phase a thread passes through inside one batch is never seen here and never
+ * fires.
  */
 export function createAttentionTracker(): AttentionTracker {
   let phases = new Map<string, AgentAwarenessPhase | null>();
