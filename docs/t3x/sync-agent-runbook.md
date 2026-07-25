@@ -1,49 +1,70 @@
-# t3x daily sync — Claude scheduled-agent runbook
+# t3x daily sync — conflict-resolver runbook
 
-This is the prompt/checklist for the **daily Claude Code scheduled agent** that backs
-the GitHub Action. The Action does the mechanical rebase every day for free; this agent
-only does real work when the Action escalates. See the design spec
-`docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md` (A6).
+The daily GitHub Action (`t3x-upstream-sync.yml`) does the mechanical rebase every day for
+free. When it **can't** complete — a merge conflict, a red verify, or a dropped patch — it
+opens (or updates) a single `t3x-sync` issue with a status JSON block. This runbook is how that
+issue gets resolved: **on demand, by activating an agent**. Nothing runs on clean days.
 
-## How to schedule it (Claude app)
+See the design specs `2026-07-23-fork-upstream-sync-design.md` (the daily/weekly sync + the
+`t3x-sync` escalation contract) and `2026-07-25-sync-conflict-agent-design.md` (this resolver).
 
-Create a daily routine that runs in the fork's working copy (or a fresh clone of
-`radroid/t3code`) with the prompt below. Schedule it shortly **after** the Action's
-08:00 UTC run (e.g. 08:30 UTC) so an escalation issue already exists if there is one.
+## Activate the agent (the one action)
 
-## The prompt to schedule
+On the open `t3x-sync` issue, comment:
 
-> You are the daily upstream-sync agent for the `radroid/t3code` fork.
->
-> 1. Run: `gh issue list --label t3x-sync --state open --json number,title,body`
-> 2. **If there are no open `t3x-sync` issues:** the automated rebase succeeded (or had
->    nothing to do). Reply "clean — nothing to do" and stop. Do not spend further effort.
-> 3. **If there is an open issue**, read its status JSON, then in the working copy:
->    - `git fetch upstream && git checkout main`
->    - `git rebase upstream/main`
->    - **Conflict case:** resolve each conflict. `rerere` will auto-apply anything seen
->      before; resolve the rest by understanding intent, favouring upstream's structure
->      while preserving the fork's behavior. `git add -A && git rebase --continue`.
->    - **Verify failed case:** reproduce with `vp run typecheck && vp run lint && vp run test`
->      and fix the fork's patches to match upstream's new internals.
-> 4. **Always do the thing CI cannot:** review the upstream commits that touched t3x
->    *seams* (see `docs/t3x/SEAMS.md`) even when they did **not** textually conflict —
->    upstream may have changed the semantics of an API the fork hooks into. For each
->    seam file, `git log <old>..upstream/main -- <file>` and read the diffs. Confirm the
->    fork's feature still behaves correctly against the new code.
-> 5. If a patch commit went **empty/dropped** during rebase, that means upstream absorbed
->    it. Confirm the behavior now exists upstream, drop the patch, and note it in the issue.
-> 6. When green: `git push --force-with-lease origin main`, then
->    `gh issue close <n> --comment "resynced: <one-line summary of what changed>"`.
-> 7. If you genuinely cannot resolve it (e.g. upstream refactored the orchestration
->    engine in a way that breaks auto-resume's detection), do NOT push. Comment on the
->    issue with exactly what is blocked and what decision is needed, and stop.
->
-> Never force-push if verification is red. The recovery tag `t3x/last-good-*` from the
-> Action is your rollback point.
+```
+@claude resolve
+```
 
-## Manual trigger
+That triggers `.github/workflows/t3x-sync-resolve.yml`, which runs Claude Code in CI to replay
+the rebase, resolve the conflicts, run verify, and **open a PR into `main`**. It never pushes to
+`main` — you review and merge the PR. The agent comments the PR link back on the issue when done.
 
-To force a sync outside the schedule:
-`gh workflow run "t3x upstream sync (daily)" -R radroid/t3code -f dry_run=true`
-(drop `dry_run` to actually push).
+Prefer a button? Run it manually instead (optionally pass the issue number and bump the model
+for a gnarly merge):
+
+```
+gh workflow run "t3x sync resolve (agent)" -R radroid/t3code -f issue=<n> -f model=claude-opus-5
+```
+
+## What the agent does (and what a human doing it locally should do)
+
+This is the checklist the workflow prompt mirrors — follow it if you resolve locally instead.
+
+1. `git fetch upstream && git switch -c t3x/sync-<id> main`
+2. `git rebase upstream/main`. Resolve each conflict by understanding intent — favour
+   upstream's structure while preserving the fork's t3x behaviour. `rerere` (enabled locally)
+   auto-applies anything resolved before. `git add -A && git rebase --continue`.
+3. **Do the thing CI cannot:** review the upstream commits that touched t3x *seams*
+   (`docs/t3x/SEAMS.md`) even when they did **not** textually conflict — upstream may have
+   changed the semantics of an API the fork hooks into. For each seam file,
+   `git log <old>..upstream/main -- <file>` and read the diffs; confirm the fork's feature
+   still behaves.
+4. If a patch commit went **empty/dropped**, upstream absorbed it — confirm the behaviour now
+   exists upstream, drop the patch, and note it.
+5. Verify: `vp run typecheck && vp run lint && vp run test`. Fix the fork's patches to match
+   upstream's new internals until green.
+6. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human merges.
+   The recovery tag `t3x/last-good-*` from the Action is the rollback point.
+7. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
+   breaks auto-resume's detection): do NOT open a green PR. Push the branch, open a **draft**
+   PR, and comment on the issue with exactly what is blocked and what decision is needed.
+
+## One-time setup
+
+1. Install the **Claude GitHub App**: run `/install-github-app` in Claude Code (repo admin
+   required). It adds the auth secret (`CLAUDE_CODE_OAUTH_TOKEN`, or `ANTHROPIC_API_KEY`).
+2. When the installer offers to add the **generic `@claude` responder** workflow, choose
+   **Skip** — this repo ships its own `t3x-sync-resolve.yml`, and a generic responder would
+   double-fire on the same `@claude resolve` comment.
+
+Only a user with write access (`OWNER`/`MEMBER`/`COLLABORATOR`) can trigger the resolver, so the
+API budget can't be spent by a passer-by on the public fork.
+
+## Force a sync outside the daily schedule
+
+```
+gh workflow run "t3x upstream sync (daily)" -R radroid/t3code -f dry_run=true
+```
+
+(drop `dry_run` to actually push a clean rebase).
