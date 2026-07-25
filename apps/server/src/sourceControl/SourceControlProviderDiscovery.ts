@@ -10,6 +10,11 @@ import * as Option from "effect/Option";
 import type * as SourceControlProvider from "./SourceControlProvider.ts";
 import type * as VcsProcess from "../vcs/VcsProcess.ts";
 
+// `az --version` on Windows routinely takes 6-8s (Python startup + Azure CLI's
+// "updates available" check), so the old 5s cap misclassified a present-but-slow
+// CLI as missing. Raise the discovery probe budget well above that. (issue #4)
+const CLI_PROBE_TIMEOUT_MS = 15_000;
+
 export interface SourceControlAuthProbeInput {
   readonly stdout: string;
   readonly stderr: string;
@@ -167,7 +172,7 @@ function probeCli(input: {
       command: input.spec.executable,
       args: input.spec.versionArgs,
       cwd: input.cwd,
-      timeoutMs: 5_000,
+      timeoutMs: CLI_PROBE_TIMEOUT_MS,
       maxOutputBytes: 8_000,
       appendTruncationMarker: true,
     })
@@ -186,17 +191,24 @@ function probeCli(input: {
             detail: Option.none<string>(),
           }) satisfies DiscoveryProbeResult,
       ),
-      Effect.catch((cause) =>
-        Effect.succeed({
+      Effect.catch((cause) => {
+        // Only a genuine spawn failure (e.g. ENOENT) means the CLI is absent, so
+        // that is the sole case that reports "missing" and shows the install hint.
+        // Any other failure (timeout, non-zero exit, etc.) means the CLI is present
+        // but the version probe was slow/noisy; keep it "available" so
+        // `probeSourceControlProvider` still runs the fast `account show` auth
+        // probe instead of short-circuiting to the install hint. (issue #4)
+        const status = cause._tag === "VcsProcessSpawnError" ? "missing" : "available";
+        return Effect.succeed({
           kind: input.spec.kind,
           label: input.spec.label,
           executable: input.spec.executable,
-          status: "missing" as const,
+          status,
           version: Option.none<string>(),
           installHint: input.spec.installHint,
           detail: detailFromCause(cause),
-        } satisfies DiscoveryProbeResult),
-      ),
+        } satisfies DiscoveryProbeResult);
+      }),
     );
 }
 
@@ -244,7 +256,7 @@ export function probeSourceControlProvider(input: {
           args: spec.authArgs,
           cwd: input.cwd,
           allowNonZeroExit: true,
-          timeoutMs: 5_000,
+          timeoutMs: CLI_PROBE_TIMEOUT_MS,
           maxOutputBytes: 8_000,
           appendTruncationMarker: true,
         })
@@ -287,7 +299,7 @@ export const refineUnknownRemoteProvider = Effect.fn("refineUnknownRemoteProvide
           args: spec.authArgs,
           cwd: input.cwd,
           allowNonZeroExit: true,
-          timeoutMs: 5_000,
+          timeoutMs: CLI_PROBE_TIMEOUT_MS,
           maxOutputBytes: 8_000,
           appendTruncationMarker: true,
         })
