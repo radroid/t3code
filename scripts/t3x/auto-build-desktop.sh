@@ -16,7 +16,11 @@
 #   scripts/t3x/auto-build-desktop.sh --install          # build + install to /Applications
 #   scripts/t3x/auto-build-desktop.sh --install --relaunch
 #   scripts/t3x/auto-build-desktop.sh --install --dry-run # log the install steps, change nothing
-#   scripts/t3x/auto-build-desktop.sh --watch [--interval 60] [--install]
+#   scripts/t3x/auto-build-desktop.sh --watch [--interval 43200] [--install]
+#     --watch polls HEAD every --interval seconds (default 12h) and rebuilds only
+#     when main has changed since the last build. It does NOT rebuild the instant
+#     main moves; a change is picked up at the next poll. Run a one-shot build any
+#     time with the plain --install form above (bypasses the interval).
 #   scripts/t3x/auto-build-desktop.sh --print-launchd     # emit a ready-to-use LaunchAgent plist
 #   scripts/t3x/auto-build-desktop.sh --help
 #
@@ -67,7 +71,10 @@ DO_RELAUNCH=0
 DO_WATCH=0
 DRY_RUN=0
 FORCE=0
-INTERVAL=60
+# Default watch cadence: 12h. This machine builds on a slow, deliberate schedule
+# (rebuild at most once per interval, and only if main changed) rather than tracking
+# every main commit — override with --interval for a tighter loop when actively iterating.
+INTERVAL=43200
 CAFFEINATED=0
 INSTALL_OK=0   # set only after an install actually succeeds; drives status JSON
 
@@ -565,7 +572,12 @@ watch_loop() {
     if (( fails > 0 )); then
       local mult=$(( 1 << (fails > 5 ? 5 : fails) ))   # 2x,4x,8x,16x,32x then flat
       delay=$(( INTERVAL * mult ))
-      (( delay > 1800 )) && delay=1800                  # never wait more than 30 min
+      # Cap the backoff so a persistent failure can't rebuild forever — but never below
+      # the poll interval. On the 12h cadence a flat 30-min cap would retry a failing
+      # build ~48x/day, exactly the "stop constantly building" case this avoids; on a
+      # short interval it still tops out at 30 min.
+      local cap=$(( INTERVAL > 1800 ? INTERVAL : 1800 ))
+      (( delay > cap )) && delay="$cap"
       log "watch: ${fails} consecutive failure(s); next attempt in ${delay}s"
     fi
     # `|| true`: a sleep interrupted by a signal must not kill the watcher under errexit.
