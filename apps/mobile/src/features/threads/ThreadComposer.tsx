@@ -69,6 +69,7 @@ import {
 } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { resolveComposerSendLabel } from "./composerSendLabel";
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
@@ -309,10 +310,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.session?.status === "running" ||
     props.selectedThread.session?.status === "starting";
 
-  const sendLabel =
-    props.connectionState !== "connected" || props.activeThreadBusy || props.queueCount > 0
-      ? "Queue"
-      : "Send";
+  const sendLabel = resolveComposerSendLabel({
+    connectionState: props.connectionState,
+    activeThreadBusy: props.activeThreadBusy,
+    queueCount: props.queueCount,
+  });
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const currentInteractionMode = props.selectedThread.interactionMode ?? "default";
@@ -536,6 +538,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.id,
     props.selectedThread.title,
   ]);
+  // Return now submits (queues-when-busy / sends-when-idle), matching desktop
+  // Enter=submit. The newline button is the cross-platform multiline escape
+  // hatch: it inserts "\n" at the caret through the same insert-at-selection
+  // mechanism used for @file / skill tokens (replaceTextRange + selection).
+  const handleInsertNewline = useCallback(() => {
+    const result = replaceTextRange(
+      draftMessage,
+      composerSelection.start,
+      composerSelection.end,
+      "\n",
+    );
+    setComposerSelection({ start: result.cursor, end: result.cursor });
+    onChangeDraftMessage(result.text);
+  }, [composerSelection.start, composerSelection.end, draftMessage, onChangeDraftMessage]);
   const handleCommandSelect = useCallback(
     (item: ComposerCommandItem) => {
       if (!composerTrigger) return;
@@ -863,6 +879,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   accessibilityLabel="Add attachment"
                   icon="plus"
                   onPress={() => void props.onPickDraftImages()}
+                  showChevron={false}
+                />
+                <ComposerToolbarButton
+                  accessibilityLabel="Insert line break"
+                  icon="return"
+                  onPress={handleInsertNewline}
                   showChevron={false}
                 />
                 <ControlPillMenu
