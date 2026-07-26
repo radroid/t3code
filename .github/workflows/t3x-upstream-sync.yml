@@ -91,24 +91,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Best-effort, idempotent label create (tolerates "already exists"). The label is
+          # also provisioned out-of-band, so issue creation below never depends on this line.
           gh label create "$SYNC_LABEL" --color B60205 --description "Upstream sync needs a human/agent" 2>/dev/null || true
 
           STATUS="$(cat t3x-sync-status.json 2>/dev/null || echo '{"result":"unknown"}')"
           RESULT="$(echo "$STATUS" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("result","unknown"))' 2>/dev/null || echo unknown)"
           TITLE="[t3x-sync] daily rebase needs attention ($RESULT)"
 
-          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\nThe daily Claude sync agent should pick this up (see docs/t3x/sync-agent-runbook.md).' \
+          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\n---\n\n▶ **To fix:** comment `@claude resolve` on this issue (or run the *t3x sync resolve (agent)* workflow). An agent replays the rebase, resolves the conflicts, runs typecheck/lint/test, and opens a PR for review — nothing is pushed to `main`. Runbook: `docs/t3x/sync-agent-runbook.md`.' \
             "$RESULT" "${RECOVERY_TAG:-none}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" "$STATUS")"
 
-          # `.[0].number` on an empty list prints literal "null"; `// empty` yields "" so
-          # the -n test correctly falls through to creating a fresh issue.
+          # Find an existing open sync thread. Try the label first, then fall back to the title
+          # marker so a not-yet-attached label can't hide it and spawn a duplicate.
+          # `.[0].number` on an empty list prints literal "null"; `// empty` yields "".
           EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          if [[ -z "$EXISTING" ]]; then
+            EXISTING="$(gh issue list --search 't3x-sync in:title' --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+          fi
+
           if [[ -n "$EXISTING" ]]; then
             gh issue comment "$EXISTING" --body "$BODY"
+            gh issue edit "$EXISTING" --add-label "$SYNC_LABEL" 2>/dev/null || true
             echo "::notice::updated existing t3x-sync issue #$EXISTING"
           else
-            gh issue create --title "$TITLE" --label "$SYNC_LABEL" --body "$BODY"
-            echo "::notice::opened new t3x-sync issue"
+            # Create WITHOUT --label, then attach the label. `gh issue create --label` aborts the
+            # whole creation when the label lookup lags behind `gh label create` (GitHub API
+            # replication) — that race is why prior runs went red with NO issue ever opened.
+            # Decoupling guarantees the escalation issue always lands.
+            URL="$(gh issue create --title "$TITLE" --body "$BODY" 2>/dev/null || true)"
+            NUM="${URL##*/}"
+            if [[ -n "$NUM" ]]; then
+              gh issue edit "$NUM" --add-label "$SYNC_LABEL" 2>/dev/null || true
+              echo "::notice::opened new t3x-sync issue #$NUM"
+            else
+              echo "::error::failed to open t3x-sync issue"
+            fi
           fi
           # Surface as a red run so it's visible in the Actions tab too.
           exit 1
