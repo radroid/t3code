@@ -56,6 +56,11 @@ import {
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import {
+  getNotificationPermissionState,
+  requestWebNotificationPermission,
+  type WebNotificationPermission,
+} from "../../notifications/notifier";
+import {
   primaryServerObservabilityAtom,
   primaryServerProvidersAtom,
   serverEnvironment,
@@ -412,6 +417,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
+      ...(settings.notifyOnNeedsInput !== DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput
+        ? ["Notify when an agent needs input"]
+        : []),
       ...(settings.enableProviderUpdateChecks !==
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
@@ -451,6 +459,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
       settings.enableProviderUpdateChecks,
+      settings.notifyOnNeedsInput,
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       settings.wordWrap,
@@ -478,6 +487,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+      notifyOnNeedsInput: DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
       newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
@@ -501,6 +511,9 @@ export function GeneralSettingsPanel() {
   const updateSettings = useUpdatePrimarySettings();
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(
+    getNotificationPermissionState,
+  );
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -735,6 +748,51 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableAssistantStreaming: Boolean(checked) })
               }
               aria-label="Stream assistant messages"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Notify when an agent needs input"
+          description="Show a notification when a chat is waiting on your approval, an answer, or its turn has finished."
+          status={
+            settings.notifyOnNeedsInput && notificationPermission === "denied"
+              ? "Notifications are blocked by your browser. Allow them for this site to receive alerts."
+              : null
+          }
+          resetAction={
+            settings.notifyOnNeedsInput !== DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput ? (
+              <SettingResetButton
+                label="needs-input notifications"
+                onClick={() =>
+                  updateSettings({
+                    notifyOnNeedsInput: DEFAULT_UNIFIED_SETTINGS.notifyOnNeedsInput,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.notifyOnNeedsInput}
+              onCheckedChange={(checked) => {
+                const enabled = Boolean(checked);
+                updateSettings({ notifyOnNeedsInput: enabled });
+                if (!enabled) {
+                  return;
+                }
+                const permission = getNotificationPermissionState();
+                // The toggle click is the user gesture browsers require before
+                // they will show the permission dialog, so ask right here.
+                if (!isElectron && permission === "default") {
+                  void requestWebNotificationPermission()
+                    .then(setNotificationPermission)
+                    .catch(() => undefined);
+                  return;
+                }
+                setNotificationPermission(permission);
+              }}
+              aria-label="Notify when an agent needs input"
             />
           }
         />
