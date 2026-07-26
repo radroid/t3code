@@ -53,8 +53,10 @@ import { ComposerEditor, type ComposerEditorHandle } from "../../components/Comp
 import {
   ComposerActionButton,
   ComposerInlineControl,
+  ComposerToolbarButton,
   ComposerToolbarRow,
 } from "../../components/ComposerToolbar";
+import { replaceTextRange } from "@t3tools/shared/composerTrigger";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type {
   DraftComposerAttachment,
@@ -84,6 +86,7 @@ import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
+import { resolveComposerSendLabel } from "./composerSendLabel";
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
@@ -324,8 +327,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     (props.selectedThread.session?.status === "running" ||
       props.selectedThread.session?.status === "starting");
 
-  const sendLabel =
-    props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
+  const sendLabel = resolveComposerSendLabel({
+    connectionState: props.connectionState,
+    queueCount: props.queueCount,
+  });
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const connectionStatus = composerConnectionStatus({
@@ -361,6 +366,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     onChangeDraftMessage: props.onChangeDraftMessage,
     onChangeSelection: composerMenu.onSelectionChange,
   });
+  // Return now submits (queues-when-busy / sends-when-idle), matching desktop
+  // Enter=submit. The newline button is the cross-platform multiline escape
+  // hatch: it inserts "\n" at the caret through the same insert-at-selection
+  // mechanism used for @file / skill tokens (replaceTextRange + selection).
+  const handleInsertNewline = useCallback(() => {
+    const result = replaceTextRange(
+      props.draftMessage,
+      composerMenu.selection.start,
+      composerMenu.selection.end,
+      "\n",
+    );
+    composerMenu.onSelectionChange({ start: result.cursor, end: result.cursor });
+    props.onChangeDraftMessage(result.text);
+  }, [composerMenu, props.draftMessage, props.onChangeDraftMessage]);
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
@@ -770,13 +789,21 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   />
                 ) : (
                   <View className="min-w-0 flex-1 flex-row items-center justify-between">
-                    <ComposerAttachmentButton
-                      supportsFiles={Boolean(
-                        props.serverConfig?.environment.capabilities.fileAttachments,
-                      )}
-                      onPickMedia={props.onPickDraftMedia}
-                      onPickFiles={props.onPickDraftFiles}
-                    />
+                    <View className="flex-row items-center">
+                      <ComposerAttachmentButton
+                        supportsFiles={Boolean(
+                          props.serverConfig?.environment.capabilities.fileAttachments,
+                        )}
+                        onPickMedia={props.onPickDraftMedia}
+                        onPickFiles={props.onPickDraftFiles}
+                      />
+                      <ComposerToolbarButton
+                        accessibilityLabel="Insert line break"
+                        icon="return"
+                        onPress={handleInsertNewline}
+                        showChevron={false}
+                      />
+                    </View>
                     <View className="min-w-0 shrink" style={{ maxWidth: 152 }}>
                       <ComposerInlineControl
                         accessibilityLabel="Model and reasoning settings"

@@ -39,6 +39,10 @@ export interface ComposerEditorProps {
   readonly onPasteImages?: (uris: ReadonlyArray<string>) => void;
   readonly onFocus?: () => void;
   readonly onBlur?: () => void;
-  /** Invoked by the native editor when Command-Return is pressed on a hardware keyboard. */
+  /**
+   * Invoked by the native editor when the composer should submit: any Return
+   * key with no modifier (soft keyboard or hardware), plus hardware
+   * Command-Return. Shift-Return still inserts a newline instead of submitting.
+   */
   readonly onSubmit?: () => void;
 }

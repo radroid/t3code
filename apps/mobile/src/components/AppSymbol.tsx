@@ -31,6 +31,7 @@ import IconCircleXFilled from "@tabler/icons-react-native/IconCircleXFilled";
 import IconClock from "@tabler/icons-react-native/IconClock";
 import IconCode from "@tabler/icons-react-native/IconCode";
 import IconCopy from "@tabler/icons-react-native/IconCopy";
+import IconCornerDownLeft from "@tabler/icons-react-native/IconCornerDownLeft";
 import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
 import IconDots from "@tabler/icons-react-native/IconDots";
 import IconDotsCircleHorizontal from "@tabler/icons-react-native/IconDotsCircleHorizontal";
@@ -140,6 +141,7 @@ const ANDROID_ICON_BY_SF_SYMBOL: Partial<Record<SFSymbol, Icon>> = {
   play: IconPlayerPlay,
   plus: IconPlus,
   "qrcode.viewfinder": IconQrcode,
+  return: IconCornerDownLeft,
   "point.3.connected.trianglepath.dotted": IconNetwork,
   "point.topleft.down.curvedto.point.bottomright.up": IconGitMerge,
   safari: IconExternalLink,
