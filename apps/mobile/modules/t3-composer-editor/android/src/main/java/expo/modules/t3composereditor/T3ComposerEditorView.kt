@@ -13,7 +13,11 @@ import android.text.Spanned
 import android.text.TextWatcher
 import android.text.style.ReplacementSpan
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import expo.modules.kotlin.AppContext
@@ -31,6 +35,7 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
   private val onComposerSelectionChange by EventDispatcher()
   private val onComposerFocus by EventDispatcher()
   private val onComposerBlur by EventDispatcher()
+  private val onComposerSubmit by EventDispatcher()
   private val onComposerPasteImages by EventDispatcher()
   private val onComposerContentSizeChange by EventDispatcher()
   private var applyingNativeValue = false
@@ -64,6 +69,11 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
     }
     editor.pasteImagesListener = { uris ->
       onComposerPasteImages(mapOf("uris" to uris))
+    }
+    // A bare Enter (no Shift) submits — mirrors iOS and desktop Enter=submit.
+    // Empty payload matches the iOS `onComposerSubmit([:])` contract.
+    editor.submitListener = {
+      onComposerSubmit(emptyMap<String, Any>())
     }
     editor.setOnFocusChangeListener { _, hasFocus ->
       if (hasFocus) {
@@ -450,6 +460,47 @@ private fun parseTokens(value: String): List<ComposerToken> = try {
 private class SelectionAwareEditText(context: Context) : EditText(context) {
   var selectionListener: ((Int, Int) -> Unit)? = null
   var pasteImagesListener: ((List<String>) -> Unit)? = null
+  var submitListener: (() -> Unit)? = null
+
+  private fun isPlainEnter(keyCode: Int, event: KeyEvent?): Boolean {
+    val isEnter = keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+    // Shift+Enter still inserts a newline; only an unmodified Enter submits.
+    return isEnter && event?.isShiftPressed != true
+  }
+
+  // Hardware keyboards (and soft keyboards that route Enter as a key event)
+  // land here. Fire submit on the down edge and consume both edges so the
+  // multi-line field never inserts the newline.
+  override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    if (isPlainEnter(keyCode, event)) {
+      submitListener?.invoke()
+      return true
+    }
+    return super.onKeyDown(keyCode, event)
+  }
+
+  override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+    if (isPlainEnter(keyCode, event)) {
+      return true
+    }
+    return super.onKeyUp(keyCode, event)
+  }
+
+  // Soft keyboards that commit the newline as text (rather than a key event)
+  // land here; an exact "\n" commit means a bare Return, so submit instead.
+  // A multi-line paste ("a\nb") is unaffected because it is not exactly "\n".
+  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+    val base = super.onCreateInputConnection(outAttrs) ?: return null
+    return object : InputConnectionWrapper(base, false) {
+      override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+        if (text?.toString() == "\n") {
+          submitListener?.invoke()
+          return true
+        }
+        return super.commitText(text, newCursorPosition)
+      }
+    }
+  }
 
   override fun onSelectionChanged(selStart: Int, selEnd: Int) {
     super.onSelectionChanged(selStart, selEnd)
