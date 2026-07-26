@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { serializeComposerFileLink, serializeComposerMentionPath } from "./composerTrigger.ts";
+import {
+  replaceTextRange,
+  serializeComposerFileLink,
+  serializeComposerMentionPath,
+} from "./composerTrigger.ts";
 
 describe("serializeComposerMentionPath", () => {
   it("keeps simple mention paths unquoted", () => {
@@ -39,5 +43,31 @@ describe("serializeComposerFileLink", () => {
     expect(serializeComposerFileLink("@scope/package.json")).toBe(
       "[package.json](@scope/package.json)",
     );
+  });
+});
+
+// The mobile composer's newline button inserts "\n" at the caret through this
+// same insert-at-selection helper it uses for @file / skill tokens. These cover
+// the newline cases specifically so the button's behaviour stays pinned.
+describe("replaceTextRange newline insertion", () => {
+  it("inserts a newline at a collapsed caret in the middle of the text", () => {
+    expect(replaceTextRange("abcd", 2, 2, "\n")).toEqual({
+      text: "ab\ncd",
+      cursor: 3,
+    });
+  });
+
+  it("inserts a newline at the end of the text", () => {
+    expect(replaceTextRange("abc", 3, 3, "\n")).toEqual({
+      text: "abc\n",
+      cursor: 4,
+    });
+  });
+
+  it("replaces a selection range with a newline", () => {
+    expect(replaceTextRange("abcdef", 1, 4, "\n")).toEqual({
+      text: "a\nef",
+      cursor: 2,
+    });
   });
 });
