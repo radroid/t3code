@@ -497,6 +497,16 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     shouldChangeTextIn range: NSRange,
     replacementText text: String
   ) -> Bool {
+    // A bare Return (soft keyboard or hardware) submits — matching desktop
+    // Enter=submit and the composer's queue-when-busy / send-when-idle outbox.
+    // Only an exact single "\n" is intercepted, so a multi-line paste like
+    // "a\nb" still inserts normally. The newline button inserts "\n" through
+    // the controlled value (setText), never this typing path. Hardware
+    // Command-Return keeps flowing through the UIKeyCommand above.
+    if text == "\n" {
+      onComposerSubmit([:])
+      return false
+    }
     restoreBaseTypingAttributes()
     return true
   }
