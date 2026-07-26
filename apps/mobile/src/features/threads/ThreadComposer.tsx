@@ -76,6 +76,7 @@ import {
   useThreadSettingsSheetPresentation,
   type NavigationWithFinishTransitioning,
 } from "./use-thread-settings-sheet-presentation";
+import { resolveComposerSendLabel } from "./composerSendLabel";
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
@@ -332,8 +333,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.session?.status === "running" ||
     props.selectedThread.session?.status === "starting";
 
-  const sendLabel =
-    props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
+  const sendLabel = resolveComposerSendLabel({
+    connectionState: props.connectionState,
+    queueCount: props.queueCount,
+  });
   const currentModelSelection = props.selectedThread.modelSelection;
   const currentRuntimeMode = props.selectedThread.runtimeMode;
   const connectionStatus = composerConnectionStatus({
@@ -575,6 +578,20 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     props.selectedThread.id,
     props.selectedThread.title,
   ]);
+  // Return now submits (queues-when-busy / sends-when-idle), matching desktop
+  // Enter=submit. The newline button is the cross-platform multiline escape
+  // hatch: it inserts "\n" at the caret through the same insert-at-selection
+  // mechanism used for @file / skill tokens (replaceTextRange + selection).
+  const handleInsertNewline = useCallback(() => {
+    const result = replaceTextRange(
+      draftMessage,
+      composerSelection.start,
+      composerSelection.end,
+      "\n",
+    );
+    setComposerSelection({ start: result.cursor, end: result.cursor });
+    onChangeDraftMessage(result.text);
+  }, [composerSelection.start, composerSelection.end, draftMessage, onChangeDraftMessage]);
   const handleCommandSelect = useCallback(
     (item: ComposerCommandItem) => {
       if (!composerTrigger) return;
@@ -876,6 +893,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   onPress={() => void props.onPickDraftImages()}
                   showChevron={false}
                 />
+                <ComposerToolbarButton
+                  accessibilityLabel="Insert line break"
+                  icon="return"
+                  onPress={handleInsertNewline}
+                  showChevron={false}
+                />
                 <ComposerInlineControl
                   accessibilityLabel="Model and reasoning settings"
                   emphasized
@@ -886,6 +909,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   maxWidth={152}
                   onPress={openSettings}
                 />
+
                 {showStopAction ? (
                   <ComposerToolbarButton
                     accessibilityLabel="Stop"
