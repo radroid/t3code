@@ -65,6 +65,11 @@ private final class ComposerTextView: UITextView {
   var onAttributedMutation: (() -> Void)?
   var onSubmit: (() -> Void)?
 
+  // Set only while a Shift+Return hardware key command is programmatically
+  // inserting a line break, so the delegate lets that "\n" through instead of
+  // treating it as a submit. Reset synchronously after the insert.
+  private(set) var isInsertingHardLineBreak = false
+
   override var keyCommands: [UIKeyCommand]? {
     var commands = super.keyCommands ?? []
     let submit = UIKeyCommand(
@@ -75,11 +80,28 @@ private final class ComposerTextView: UITextView {
     submit.discoverabilityTitle = "Send Message"
     submit.wantsPriorityOverSystemBehavior = true
     commands.append(submit)
+    // Shift+Return inserts a newline on a hardware keyboard (mirrors Android and
+    // desktop Shift+Enter), since a bare Return now submits. Soft keyboards use
+    // the composer's line-break button instead.
+    let newline = UIKeyCommand(
+      input: "\r",
+      modifierFlags: .shift,
+      action: #selector(insertHardLineBreak(_:))
+    )
+    newline.discoverabilityTitle = "Insert Line Break"
+    newline.wantsPriorityOverSystemBehavior = true
+    commands.append(newline)
     return commands
   }
 
   @objc private func submitMessage(_ sender: UIKeyCommand) {
     onSubmit?()
+  }
+
+  @objc private func insertHardLineBreak(_ sender: UIKeyCommand) {
+    isInsertingHardLineBreak = true
+    insertText("\n")
+    isInsertingHardLineBreak = false
   }
 
   override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
@@ -502,8 +524,9 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     // Only an exact single "\n" is intercepted, so a multi-line paste like
     // "a\nb" still inserts normally. The newline button inserts "\n" through
     // the controlled value (setText), never this typing path. Hardware
-    // Command-Return keeps flowing through the UIKeyCommand above.
-    if text == "\n" {
+    // Command-Return keeps flowing through the UIKeyCommand above, and a
+    // Shift+Return line break is let through via isInsertingHardLineBreak.
+    if text == "\n", (textView as? ComposerTextView)?.isInsertingHardLineBreak != true {
       onComposerSubmit([:])
       return false
     }
