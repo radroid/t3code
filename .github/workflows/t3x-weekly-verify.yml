@@ -59,6 +59,10 @@ jobs:
         if: steps.build.outputs.code == '1'
         env:
           GH_TOKEN: ${{ github.token }}
+          # Pin gh to THIS fork. On a fork, gh's base-repo resolution can target the parent
+          # repo (where GITHUB_TOKEN has no write access), silently breaking issue creation.
+          # GH_REPO forces the fork for every gh call below. See t3x-upstream-sync.yml.
+          GH_REPO: ${{ github.repository }}
           FAILED_STEPS: ${{ steps.build.outputs.failed_steps }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -80,7 +84,8 @@ jobs:
             gh issue comment "$EXISTING" --body "$BODY"
             gh issue edit "$EXISTING" --add-label "$SYNC_LABEL" 2>/dev/null || true
           else
-            URL="$(gh issue create --title "$TITLE" --body "$BODY" 2>/dev/null || true)"
+            # Don't swallow stderr: surface a create failure in the run log (|| true keeps set -e happy).
+            URL="$(gh issue create --title "$TITLE" --body "$BODY" || true)"
             NUM="${URL##*/}"
             if [[ -n "$NUM" ]]; then gh issue edit "$NUM" --add-label "$SYNC_LABEL" 2>/dev/null || true; fi
           fi
