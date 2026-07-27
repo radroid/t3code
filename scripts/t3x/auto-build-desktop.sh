@@ -21,6 +21,12 @@
 #     when main has changed since the last build. It does NOT rebuild the instant
 #     main moves; a change is picked up at the next poll. Run a one-shot build any
 #     time with the plain --install form above (bypasses the interval).
+#   scripts/t3x/auto-build-desktop.sh --ref origin/main [--watch ...] [--install]
+#     --ref builds a REMOTE ref instead of the local checkout: each run fetches the
+#     remote, pins a dedicated build worktree (T3X_AUTOBUILD_WORKTREE, default
+#     <repo>-build) to that ref's sha, and builds there. The checkout this script
+#     lives in is never read for builds, so local branches/agents can't change what
+#     gets installed. A fetch failure (offline) is logged and retried next tick.
 #   scripts/t3x/auto-build-desktop.sh --print-launchd     # emit a ready-to-use LaunchAgent plist
 #   scripts/t3x/auto-build-desktop.sh --help
 #
@@ -34,6 +40,7 @@
 #   T3CODE_DESKTOP_OUTPUT_DIR (default: <repo>/release) — where the .dmg lands
 #   T3X_AUTOBUILD_APP_NAME    (default: derived from the .app inside the .dmg)
 #   T3X_AUTOBUILD_KEEP_DMGS   (default: 3) — how many recent .dmgs to keep per prune
+#   T3X_AUTOBUILD_WORKTREE    (default: <repo>-build) — build worktree used by --ref
 #
 set -euo pipefail
 
@@ -47,14 +54,6 @@ LAST_SHA_FILE="$STATE_DIR/t3x-autobuild-last-sha"
 STATUS_FILE="$STATE_DIR/t3x-autobuild-status.json"
 LOG_FILE="$LOG_DIR/t3x-autobuild.log"
 
-# Match scripts/build-desktop-artifact.ts, which does `path.resolve(repoRoot, outputDir)`:
-# a RELATIVE override is repo-relative there, so resolving it against $PWD here would make
-# us search/prune the caller's ./<dir> and then report "no .dmg" for a build that succeeded.
-OUTPUT_DIR="${T3CODE_DESKTOP_OUTPUT_DIR:-release}"
-case "$OUTPUT_DIR" in
-  /*) ;;                       # absolute override: use as-is
-  *) OUTPUT_DIR="$REPO/$OUTPUT_DIR" ;;
-esac
 KEEP_DMGS="${T3X_AUTOBUILD_KEEP_DMGS:-3}"
 # Validated because it is fed to `tail -n +$((KEEP_DMGS + 1))`: a non-numeric value makes
 # the arithmetic yield 1, so `tail -n +1` prunes EVERY dmg including the one just built,
@@ -77,6 +76,7 @@ FORCE=0
 INTERVAL=43200
 CAFFEINATED=0
 INSTALL_OK=0   # set only after an install actually succeeds; drives status JSON
+BUILD_REF=""   # --ref remote/branch: build that ref in a dedicated worktree, not this checkout
 
 usage() { grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//;s/^#$//'; }
 
@@ -89,6 +89,8 @@ while [[ $# -gt 0 ]]; do
     --force) FORCE=1 ;;
     --interval) INTERVAL="${2:?--interval needs a value}"; shift ;;
     --interval=*) INTERVAL="${1#*=}" ;;
+    --ref) BUILD_REF="${2:?--ref needs a value (e.g. origin/main)}"; shift ;;
+    --ref=*) BUILD_REF="${1#*=}" ;;
     --print-launchd) PRINT_LAUNCHD=1 ;;
     --_caffeinated) CAFFEINATED=1 ;;  # internal: set after re-exec under caffeinate
     -h|--help) usage; exit 0 ;;
@@ -103,6 +105,42 @@ if ! [[ "$INTERVAL" =~ ^[0-9]+$ ]] || [[ "$INTERVAL" -lt 1 ]]; then
   echo "--interval must be a positive integer (got: '$INTERVAL')" >&2
   exit 2
 fi
+
+# --- ref mode: build a remote ref in a dedicated worktree --------------------
+# $REPO is repointed at the build worktree so every downstream consumer (sha
+# compare, lockfile diff, pnpm cwd, app-name prediction, relative OUTPUT_DIR)
+# operates on the pinned checkout. $MAIN_REPO keeps the script's own repo for
+# the git operations that manage the worktree (fetch, worktree add).
+MAIN_REPO="$REPO"
+if [[ -n "$BUILD_REF" ]]; then
+  if [[ ! "$BUILD_REF" =~ ^[^/]+/.+$ ]]; then
+    echo "--ref must be <remote>/<branch> (got: '$BUILD_REF')" >&2
+    exit 2
+  fi
+  REF_REMOTE="${BUILD_REF%%/*}"
+  REF_BRANCH="${BUILD_REF#*/}"
+  if ! git -C "$MAIN_REPO" remote get-url "$REF_REMOTE" >/dev/null 2>&1; then
+    echo "--ref remote '$REF_REMOTE' is not a remote of $MAIN_REPO" >&2
+    exit 2
+  fi
+  BUILD_WT="${T3X_AUTOBUILD_WORKTREE:-${MAIN_REPO}-build}"
+  # `checkout --force` runs in this directory every sync; pointing it at the main
+  # checkout would clobber whatever branch (and uncommitted work) is there.
+  if [[ "$BUILD_WT" == "$MAIN_REPO" ]]; then
+    echo "T3X_AUTOBUILD_WORKTREE must not be the repo itself ($MAIN_REPO)" >&2
+    exit 2
+  fi
+  REPO="$BUILD_WT"
+fi
+
+# Match scripts/build-desktop-artifact.ts, which does `path.resolve(repoRoot, outputDir)`:
+# a RELATIVE override is repo-relative there, so resolving it against $PWD here would make
+# us search/prune the caller's ./<dir> and then report "no .dmg" for a build that succeeded.
+OUTPUT_DIR="${T3CODE_DESKTOP_OUTPUT_DIR:-release}"
+case "$OUTPUT_DIR" in
+  /*) ;;                       # absolute override: use as-is
+  *) OUTPUT_DIR="$REPO/$OUTPUT_DIR" ;;
+esac
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 
@@ -151,8 +189,61 @@ write_status() {
 }
 
 # --- helpers -----------------------------------------------------------------
-current_sha() { git -C "$REPO" rev-parse HEAD; }
+# In ref mode "what should be built" is the remote-tracking ref, read from the main
+# repo (worktrees share refs). The build worktree is only checkout machinery — and it
+# may not exist yet (first run, dry-run), so its HEAD cannot be the source of truth.
+current_sha() {
+  if [[ -n "$BUILD_REF" ]]; then
+    git -C "$MAIN_REPO" rev-parse "refs/remotes/$BUILD_REF"
+  else
+    git -C "$REPO" rev-parse HEAD
+  fi
+}
 read_last_sha() { [[ -f "$LAST_SHA_FILE" ]] && cat "$LAST_SHA_FILE" || printf ''; }
+
+# Ref mode: fetch the remote and pin the build worktree to $BUILD_REF's sha.
+# Failure returns 1 without advancing the marker, so the next tick retries.
+ensure_ref_synced() {
+  local sha
+  if ! git -C "$MAIN_REPO" fetch --quiet "$REF_REMOTE" "$REF_BRANCH"; then
+    write_status "fetch-failed" "" "" "git fetch $REF_REMOTE $REF_BRANCH failed (offline?)"
+    log "fetch failed: $REF_REMOTE $REF_BRANCH (offline?); will retry next tick"
+    return 1
+  fi
+  sha="$(git -C "$MAIN_REPO" rev-parse "refs/remotes/$BUILD_REF")" || return 1
+  if [[ ! -e "$BUILD_WT/.git" ]]; then
+    if [[ $DRY_RUN -eq 1 ]]; then
+      log "DRY-RUN would: git worktree add --detach '$BUILD_WT' $sha"
+      return 0
+    fi
+    # prune first: a build worktree deleted from disk stays registered and would
+    # make `worktree add` refuse the path forever.
+    git -C "$MAIN_REPO" worktree prune 2>/dev/null || true
+    log "creating build worktree: $BUILD_WT @ $sha"
+    if ! git -C "$MAIN_REPO" worktree add --detach "$BUILD_WT" "$sha"; then
+      write_status "worktree-failed" "$sha" "" "git worktree add failed for $BUILD_WT"
+      log "FAILED to create build worktree $BUILD_WT"
+      return 1
+    fi
+    return 0
+  fi
+  if [[ "$(git -C "$BUILD_WT" rev-parse HEAD)" != "$sha" ]]; then
+    if [[ $DRY_RUN -eq 1 ]]; then
+      log "DRY-RUN would: sync build worktree $BUILD_WT to $sha"
+      return 0
+    fi
+    # --force: stray build outputs must never block an update; node_modules is
+    # untracked and survives. --detach: never hold a branch, so main and the
+    # other worktrees stay free to check anything out.
+    if ! git -C "$BUILD_WT" checkout --force --detach --quiet "$sha"; then
+      write_status "worktree-failed" "$sha" "" "checkout failed in $BUILD_WT"
+      log "FAILED to sync build worktree to $sha"
+      return 1
+    fi
+    log "build worktree synced to $sha"
+  fi
+  return 0
+}
 
 lockfile_changed() {
   # $1 = last sha ("" if unknown). True (0) when the lockfile differs or last is unknown.
@@ -344,6 +435,11 @@ install_dmg() {
 # --- build -------------------------------------------------------------------
 build_once() {
   local cur last
+  # Ref mode: fetch + pin the build worktree first — current_sha reads the
+  # remote-tracking ref, which is only meaningful after a fresh fetch.
+  if [[ -n "$BUILD_REF" ]]; then
+    ensure_ref_synced || return 1
+  fi
   cur="$(current_sha)"
   last="$(read_last_sha)"
 
@@ -361,8 +457,11 @@ build_once() {
     # `if ! build_once` by the watch loop, and bash disables errexit for the whole dynamic
     # extent of a function whose status is being tested. Without these checks a failed
     # install would fall through and the dmg would be built against stale dependencies.
-    if lockfile_changed "$last"; then
-      log "pnpm-lock.yaml changed -> pnpm install --frozen-lockfile"
+    # A fresh build worktree has NO node_modules at all, and lockfile_changed alone
+    # would skip the install whenever the lockfile happens to be unchanged since the
+    # last-built sha — guaranteeing a build failure on the worktree's first use.
+    if [[ ! -d "$REPO/node_modules" ]] || lockfile_changed "$last"; then
+      log "node_modules missing or pnpm-lock.yaml changed -> pnpm install --frozen-lockfile"
       if ! ( cd "$REPO" && pnpm install --frozen-lockfile ); then
         write_status "build-failed" "$cur" "" "pnpm install --frozen-lockfile failed"
         log "BUILD FAILED for $cur (dependency install)"
@@ -484,7 +583,10 @@ EOF
   local label="dev.t3x.autobuild"
   local x_script x_repo x_log
   x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
-  x_repo="$(xml_escape "$REPO")"
+  # MAIN_REPO, not REPO: in ref mode REPO is the build worktree, which may not exist
+  # until the first tick — and launchd refuses to spawn a job whose WorkingDirectory
+  # is missing.
+  x_repo="$(xml_escape "$MAIN_REPO")"
   x_log="$(xml_escape "$LOG_FILE")"
   # These MUST be emitted. The plist's own StandardOutPath/marker paths are derived from
   # these vars, so without them a plist generated from a shell that overrode
@@ -510,6 +612,7 @@ EOF
     <string>--watch</string>
     <string>--interval</string>
     <string>${INTERVAL}</string>
+$( [[ -n "$BUILD_REF" ]] && printf '    <string>--ref</string>\n    <string>%s</string>' "$(xml_escape "$BUILD_REF")" || true )
 $( [[ $DO_INSTALL -eq 1 ]] && printf '    <string>--install</string>' || true )
 $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true )
   </array>
@@ -524,6 +627,7 @@ $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true 
     <key>T3X_AUTOBUILD_APPLICATIONS_DIR</key><string>${x_apps}</string>
     <key>T3CODE_DESKTOP_OUTPUT_DIR</key><string>${x_out}</string>
     <key>T3X_AUTOBUILD_KEEP_DMGS</key><string>${KEEP_DMGS}</string>
+$( [[ -n "$BUILD_REF" ]] && printf '    <key>T3X_AUTOBUILD_WORKTREE</key><string>%s</string>' "$(xml_escape "$BUILD_WT")" || true )
     <!-- StandardOutPath and StandardErrorPath above are the SAME file, so log() must not
          also echo to stderr or every line is written twice. See the logging section. -->
     <key>T3X_AUTOBUILD_STDERR_IS_LOG</key><string>1</string>
@@ -546,6 +650,7 @@ watch_loop() {
     #    3.2 (what macOS ships), so `--watch` with no other flag died before its first
     #    poll. Seeding it with --watch keeps it non-empty, which sidesteps that entirely.
     local args=(--watch --interval "$INTERVAL" --_caffeinated)
+    [[ -n "$BUILD_REF" ]] && args+=(--ref "$BUILD_REF")
     [[ $DO_INSTALL -eq 1 ]] && args+=(--install)
     [[ $DO_RELAUNCH -eq 1 ]] && args+=(--relaunch)
     [[ $DRY_RUN -eq 1 ]] && args+=(--dry-run)
