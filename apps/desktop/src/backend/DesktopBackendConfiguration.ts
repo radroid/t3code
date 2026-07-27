@@ -94,6 +94,30 @@ const WSL_FORWARDED_ENV_NAMES = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
+// Give the backend a predictable V8 old-space ceiling instead of inheriting the
+// default. This is headroom for transient heap spikes (large diffs, big file
+// reads) so a memory-constrained host is less likely to push the backend into a
+// GC-thrash / stall while it is busy — part of the robustness work for issue
+// #21. It is a ceiling, not a reservation, so it does not raise steady-state
+// memory use (the backend's normal RSS is well under this).
+const DESKTOP_BACKEND_MAX_OLD_SPACE_MB = 4096;
+const DESKTOP_BACKEND_MAX_OLD_SPACE_FLAG = `--max-old-space-size=${DESKTOP_BACKEND_MAX_OLD_SPACE_MB}`;
+
+// Append our heap-headroom flag to any NODE_OPTIONS already exported (by the
+// user or the dev-runner) rather than replacing it. If an explicit
+// --max-old-space-size is already present we leave it untouched so an operator
+// can override the ceiling. Electron-run-as-node honours the NODE_OPTIONS
+// safelist, which includes --max-old-space-size.
+const backendNodeOptions = (existing: string | undefined): string => {
+  const trimmed = existing?.trim() ?? "";
+  if (trimmed.includes("--max-old-space-size")) {
+    return trimmed;
+  }
+  return trimmed.length > 0
+    ? `${trimmed} ${DESKTOP_BACKEND_MAX_OLD_SPACE_FLAG}`
+    : DESKTOP_BACKEND_MAX_OLD_SPACE_FLAG;
+};
+
 const backendChildEnvPatch = (): Record<string, string | undefined> =>
   Object.fromEntries(DESKTOP_BACKEND_ENV_NAMES.map((name) => [name, undefined]));
 
@@ -402,6 +426,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        NODE_OPTIONS: backendNodeOptions(process.env.NODE_OPTIONS),
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,
@@ -596,6 +621,10 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "env",
       `PATH=${launchPath}`,
       preflight.nodePath,
+      // Match the primary backend's heap headroom. WSL runs plain node, so the
+      // flag is passed as a V8 execArg (before the entry script) rather than via
+      // NODE_OPTIONS.
+      DESKTOP_BACKEND_MAX_OLD_SPACE_FLAG,
       preflight.linuxEntryPath,
       "--bootstrap-fd",
       "0",
