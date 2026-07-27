@@ -45,6 +45,23 @@ function eventThreadId(event: OrchestrationEvent): ThreadId | null {
   return null;
 }
 
+/**
+ * Skip events that can never change a thread's attention phase, to avoid a shell fetch +
+ * awareness recompute on every high-frequency domain event. Conservative denylist: anything
+ * not listed still flows through (correctness over perf).
+ */
+function isPhaseRelevantEvent(event: OrchestrationEvent): boolean {
+  switch (event.type) {
+    case "thread.meta-updated":
+    case "thread.runtime-mode-set":
+    case "thread.interaction-mode-set":
+    case "thread.proposed-plan-upserted":
+      return false;
+    default:
+      return true;
+  }
+}
+
 const makeSupervisor = Effect.gen(function* () {
   const config = resolveConfig();
   if (!config.enabled) {
@@ -61,13 +78,6 @@ const makeSupervisor = Effect.gen(function* () {
 
   const handleThread = (threadId: ThreadId) =>
     Effect.gen(function* () {
-      // No subscribers → no work. The tracker only builds history while subscribed, which is
-      // fine: a subscription added mid-session is first-seen and so never replays a stale edge.
-      const subscriptions = yield* store.list;
-      if (subscriptions.length === 0) {
-        return;
-      }
-
       const threadOpt = yield* snapshotQuery.getThreadShellById(threadId);
       if (Option.isNone(threadOpt)) {
         tracker.forget(threadId);
@@ -86,8 +96,16 @@ const makeSupervisor = Effect.gen(function* () {
         project: { title: projectTitle },
         thread,
       });
+      // Observe unconditionally so the tracker stays primed even with no subscribers. A
+      // transition that occurs before the first device subscribes then still fires once a
+      // subscription exists, instead of being swallowed as a first-seen observation.
       const kind = tracker.observe(threadId, state?.phase ?? null);
       if (kind === null || state === null) {
+        return;
+      }
+
+      const subscriptions = yield* store.list;
+      if (subscriptions.length === 0) {
         return;
       }
 
@@ -107,7 +125,7 @@ const makeSupervisor = Effect.gen(function* () {
   yield* Effect.forkScoped(
     Stream.runForEach(engine.streamDomainEvents, (event) => {
       const threadId = eventThreadId(event);
-      if (threadId === null) {
+      if (threadId === null || !isPhaseRelevantEvent(event)) {
         return Effect.void;
       }
       return handleThread(threadId).pipe(
