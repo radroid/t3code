@@ -763,6 +763,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         continue;
       }
       if (currentIntent.network === "offline") {
+        // A network drop is not backend slowness — don't carry a "slow" budget
+        // across the outage, so the first attempt after the network returns
+        // starts fresh on the normal establishment budget. (failureCount is kept
+        // so backoff continuity survives a transient blip.)
+        tolerant = false;
+        consecutiveSlowTimeouts = 0;
         yield* clearLease;
         yield* setState(offlineState(currentIntent, generation, failureCount + 1, latestFailure));
         const applicationActivated = yield* waitForSignal;
