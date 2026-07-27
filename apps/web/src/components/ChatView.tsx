@@ -171,8 +171,11 @@ import {
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
+import { resolveComposerSendLabel } from "~/outbox/composerSendLabel.logic";
+import { enqueueThreadOutboxMessage, useThreadOutboxQueue } from "~/outbox/threadOutbox";
+import { ThreadOutboxQueueList } from "./chat/ThreadOutboxQueueList";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import {
@@ -2239,6 +2242,21 @@ function ChatViewContent(props: ChatViewProps) {
     threadError,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  // Thread outbox ("queue"): submitting while the thread is busy/disconnected
+  // enqueues instead of erroring, and the drain sends the head once settled.
+  const outboxQueue = useThreadOutboxQueue(activeThread?.environmentId ?? null, activeThreadId);
+  const composerActiveThreadBusy = phase === "running" || isSendBusy || isRevertingCheckpoint;
+  const composerSendLabel = resolveComposerSendLabel({
+    connectionState: activeEnvironmentConnectionPhase,
+    activeThreadBusy: composerActiveThreadBusy,
+    queueCount: outboxQueue.length,
+  });
+  const composerQueueMode =
+    isServerThread &&
+    !isLocalDraftThread &&
+    !activePendingProgress &&
+    !showPlanFollowUpPrompt &&
+    composerSendLabel === "Queue";
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
     activeThread?.session ?? null,
@@ -4783,6 +4801,127 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // Enqueue the current composer content into the thread outbox. Text-only:
+  // terminal/element/preview/review contexts are folded into the prompt like a
+  // normal send, but image attachments cannot survive a reload through
+  // localStorage and are not carried on a queued message.
+  const handleQueueComposerSubmission = useCallback(async () => {
+    if (!activeThread || !activeProject) return;
+    const sendCtx = composerRef.current?.getSendContext();
+    if (!sendCtx?.providerAvailable) return;
+    const {
+      images: composerImages,
+      terminalContexts: composerTerminalContexts,
+      elementContexts: composerElementContexts,
+      previewAnnotations: composerPreviewAnnotations,
+      reviewComments: composerReviewComments,
+      selectedProvider: ctxSelectedProvider,
+      selectedModel: ctxSelectedModel,
+      selectedProviderModels: ctxSelectedProviderModels,
+      selectedPromptEffort: ctxSelectedPromptEffort,
+      selectedModelSelection: ctxSelectedModelSelection,
+    } = sendCtx;
+    const promptForSend = promptRef.current;
+    const { sendableTerminalContexts, hasSendableContent } = deriveComposerSendState({
+      prompt: promptForSend,
+      imageCount: composerImages.length,
+      terminalContexts: composerTerminalContexts,
+      elementContextCount:
+        composerElementContexts.length +
+        composerPreviewAnnotations.length +
+        composerReviewComments.length,
+    });
+    if (!hasSendableContent) return;
+
+    const messageTextWithContexts = appendElementContextsToPrompt(
+      appendTerminalContextsToPrompt(promptForSend, sendableTerminalContexts),
+      composerElementContexts,
+    );
+    const messageTextWithPreviewAnnotations = composerPreviewAnnotations.reduce(
+      (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
+      messageTextWithContexts,
+    );
+    const messageTextForSend = appendReviewCommentsToPrompt(
+      messageTextWithPreviewAnnotations,
+      composerReviewComments,
+    );
+    // The queue is text-only. If the composer holds nothing but image
+    // attachments (no text and no non-image context survived), there is nothing
+    // we can faithfully queue: enqueuing the image-only bootstrap prompt would
+    // deliver a message claiming images are attached while carrying none, and
+    // clearing the draft would destroy the image. Warn and leave the composer
+    // intact so the user can add text, or wait for the thread to idle and send.
+    if (messageTextForSend.trim().length === 0) {
+      if (composerImages.length > 0) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Images can't be queued",
+            description:
+              "Queued messages are text-only. Add a message to queue, or wait until the chat is idle to send with the image.",
+          }),
+        );
+      }
+      return;
+    }
+
+    const queuedText = formatOutgoingPrompt({
+      provider: ctxSelectedProvider,
+      model: ctxSelectedModel,
+      models: ctxSelectedProviderModels,
+      effort: ctxSelectedPromptEffort,
+      text: messageTextForSend,
+    });
+
+    try {
+      await enqueueThreadOutboxMessage({
+        environmentId: activeThread.environmentId,
+        threadId: activeThread.id,
+        messageId: newMessageId(),
+        commandId: newCommandId(),
+        text: queuedText,
+        modelSelection: ctxSelectedModelSelection,
+        runtimeMode,
+        interactionMode,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      setThreadError(
+        activeThread.id,
+        error instanceof Error ? error.message : "Failed to queue message.",
+      );
+      return;
+    }
+
+    // Warn about dropped images only after the text message actually entered the
+    // queue, so a failed enqueue never misinforms the user that images were
+    // "not added" when nothing was queued at all.
+    if (composerImages.length > 0) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Images aren't queued",
+          description:
+            "Queued messages are text-only; attached images were not added to the queued message.",
+        }),
+      );
+    }
+
+    promptRef.current = "";
+    clearComposerDraftContent(composerDraftTarget);
+    composerRef.current?.resetCursorState();
+  }, [
+    activeProject,
+    activeThread,
+    clearComposerDraftContent,
+    composerDraftTarget,
+    composerRef,
+    interactionMode,
+    promptRef,
+    runtimeMode,
+    setThreadError,
+  ]);
+
   const onSend = async (
     e?: { preventDefault: () => void },
     directAnnotation?: {
@@ -4801,6 +4940,17 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     };
+    // Queue mode routes the submit through the thread outbox instead of the
+    // immediate-send path (which is gated on an idle, connected thread).
+    //
+    // A direct annotation is deliberately excluded: queued messages are
+    // text-only, so enqueuing one would drop the annotation silently. Letting it
+    // fall through reaches upstream's gate below, which tells the user the
+    // annotation stayed on the draft.
+    if (composerQueueMode && !directAnnotation) {
+      await handleQueueComposerSubmission();
+      return;
+    }
     if (
       !activeThread ||
       isSendBusy ||
@@ -6201,6 +6351,10 @@ function ChatViewContent(props: ChatViewProps) {
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
+                          <ThreadOutboxQueueList
+                            environmentId={activeThread?.environmentId ?? null}
+                            threadId={activeThreadId}
+                          />
                           <ChatComposer
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
@@ -6208,6 +6362,7 @@ function ChatViewContent(props: ChatViewProps) {
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}
                             draftId={draftId}
+                            sendLabel={composerSendLabel}
                             activeThreadId={activeThreadId}
                             activeThreadEnvironmentId={activeThread?.environmentId}
                             activeThread={activeThread}
