@@ -1336,6 +1336,43 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("resets the tolerant budget across a network drop", () =>
+    Effect.gen(function* () {
+      // A slow timeout arms the tolerant 45s budget. A network drop is not
+      // backend slowness, so the reconnect after the network returns must start
+      // fresh on the normal 15s budget rather than carry the enlarged one.
+      const harness = yield* makeHarness({ ready: () => Effect.never });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) =>
+          state.phase === "connecting" && state.stage === "synchronizing" && state.attempt === 1,
+      );
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+
+      // Network blips offline (which resets the tolerant classification) then back.
+      yield* harness.setNetworkStatus("offline");
+      yield* awaitState(supervisor.state, (state) => state.phase === "offline");
+      yield* harness.setNetworkStatus("online");
+
+      // The reconnect must time out at the normal 15s budget — a leaked tolerant
+      // flag would keep it "connecting" until 45s.
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "synchronizing",
+      );
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(supervisor.state, (state) => state.phase === "backoff");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("reconnects a relay session on a credentials change during a background probe", () =>
     Effect.gen(function* () {
       // The first session's heartbeat probe stalls; a credentials change that
