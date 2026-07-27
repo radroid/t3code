@@ -96,6 +96,27 @@ script logs "no change" and exits `3`. Use `--force` to rebuild anyway.
 Because the marker only advances on a **successful** build, a failed build is
 retried on the next poll rather than being silently skipped.
 
+### `--ref`: build a remote ref, not the local checkout
+
+By default the watcher builds whatever `HEAD` the checkout it lives in happens to
+be on — which couples "what's installed" to the state of that working tree. With
+`--ref origin/main`, every run instead:
+
+1. `git fetch origin main` (a failure — e.g. offline — is logged as
+   `fetch-failed` in the status JSON and retried next tick; the marker never
+   advances on failure).
+2. Pins a **dedicated build worktree** (`T3X_AUTOBUILD_WORKTREE`, default
+   `<repo>-build`) to that ref's SHA with a detached, `--force` checkout. The
+   worktree is created on first use, and `pnpm install` runs automatically when
+   its `node_modules` is missing.
+3. Builds there. The main checkout is never read for builds, so local branches,
+   uncommitted work, and agents operating in the repo can't change what gets
+   installed.
+
+The worktree never holds a branch (always detached), so no other worktree is
+blocked from checking out `main`. The script itself still runs from the main
+checkout — script changes take effect after that checkout is updated.
+
 ## Flags
 
 | Flag              | Meaning                                                             |
@@ -104,6 +125,7 @@ retried on the next poll rather than being silently skipped.
 | `--relaunch`      | With `--install`, `open` the app afterwards.                        |
 | `--watch`         | Poll `HEAD` forever; build (and install, if asked) on each new SHA. |
 | `--interval N`    | Poll interval in seconds for `--watch` (default `60`).              |
+| `--ref R`         | Build remote ref `R` (e.g. `origin/main`) in a dedicated worktree.  |
 | `--dry-run`       | Log every step; never build, never touch `/Applications`.           |
 | `--force`         | Build even if `HEAD` is unchanged.                                  |
 | `--print-launchd` | Emit a ready-to-use LaunchAgent plist on stdout.                    |
