@@ -56,7 +56,9 @@ file, deliberately avoiding the upstream-owned migration registry.)
 - `apps/server/src/t3x/**` — feature code + the `T3xLayerLive` aggregator.
 - `scripts/t3x/**` — fork setup, upstream-sync, and desktop auto-build scripts
   (incl. `scripts/t3x/hooks/**`, opt-in git hooks that are never auto-installed).
-- `.github/workflows/t3x-upstream-sync.yml`, `.github/workflows/t3x-weekly-verify.yml`.
+- `.github/workflows/t3x-*.yml` — `t3x-upstream-sync.yml`, `t3x-weekly-verify.yml`,
+  `t3x-sync-resolve.yml`, `t3x-ci.yml` (the fork's PR/main gate; upstream's `ci.yml` needs
+  blacksmith runners the fork can't use).
 - `docs/t3x/**`, `docs/superpowers/specs/2026-07-23-*`.
 
 ### Desktop auto-build (`scripts/t3x/auto-build-desktop.sh`)
