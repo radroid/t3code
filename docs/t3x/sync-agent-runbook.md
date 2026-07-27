@@ -18,7 +18,8 @@ On the open `t3x-sync` issue, comment:
 
 That triggers `.github/workflows/t3x-sync-resolve.yml`, which runs Claude Code in CI to replay
 the rebase, resolve the conflicts, run verify, and **open a PR into `main`**. It never pushes to
-`main` — you review and merge the PR. The agent comments the PR link back on the issue when done.
+`main` — you review it and land it yourself (see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button)).
+The agent comments the PR link back on the issue when done.
 
 Prefer a button? Run it manually instead (optionally pass the issue number and bump the model
 for a gnarly merge):
@@ -44,11 +45,40 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    exists upstream, drop the patch, and note it.
 5. Verify: `vp run typecheck && vp run lint && vp run test`. Fix the fork's patches to match
    upstream's new internals until green.
-6. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human merges.
-   The recovery tag `t3x/last-good-*` from the Action is the rollback point.
+6. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
+   and **lands it — see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button);
+   the GitHub merge button does not work on a rebased branch.** The recovery tag
+   `t3x/last-good-*` from the Action is the rollback point.
 7. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
    breaks auto-resume's detection): do NOT open a green PR. Push the branch, open a **draft**
    PR, and comment on the issue with exactly what is blocked and what decision is needed.
+
+## Landing a sync PR (do NOT use the GitHub merge button)
+
+The resolver's branch is the fork's patch series **rebased onto new upstream**, so `main` is
+*not* an ancestor of it. GitHub reports the PR `CONFLICTING`/`DIRTY` (a huge diff plus add/add
+conflicts on the fork's own files), and **Merge / Squash / Rebase all fail** — the branch is
+meant to *replace* `main`'s history, not extend it. Land it by force-updating `main` to the
+reviewed tip instead:
+
+```
+git fetch origin
+# review the branch first (checklist above), then point main at its exact tip:
+git push --force-with-lease origin origin/t3x/sync-<id>:main
+gh pr close <n> --comment "Landed by force-updating main to <tip-sha>"
+```
+
+- `main` has **no branch protection**, so the force-push is allowed but unguarded — the only
+  rollback is the `t3x/last-good-*` tag the daily Action pushes before each rebase.
+- The PR will **not** auto-mark as merged after a force-update; close it manually (as above).
+- **No independent CI gates the PR** — `ci.yml` runs on `blacksmith-*` runners the fork can't
+  use, so the only verify is the resolve job's own `vp run typecheck/lint/test`. To re-gate
+  locally before landing:
+  `git switch --detach origin/t3x/sync-<id> && vp run typecheck && vp run lint && vp run test`.
+- **After landing, every other in-flight branch is behind the sync** and must be rebased onto the
+  new `main` before its PR can land (they were built on pre-sync history; expect the same class
+  of conflicts on shared t3x files). Reset any stale local `main` too:
+  `git checkout main && git fetch origin && git reset --hard origin/main`.
 
 ## One-time setup
 
