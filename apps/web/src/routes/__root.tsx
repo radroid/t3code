@@ -20,6 +20,7 @@ import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstall
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { NotificationCoordinator } from "../components/NotificationCoordinator";
 import { ThreadOutboxDrain } from "../outbox/useThreadOutboxDrain";
+import { PushSubscriptionManager } from "../components/PushSubscriptionManager";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
@@ -145,6 +146,7 @@ function RootRouteView() {
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         <NotificationCoordinator />
         {primaryEnvironmentAuthenticated ? <ThreadOutboxDrain /> : null}
+        <PushSubscriptionManager />
         {appShell}
         {/* Above the router: a theme draft is judged by walking the app, so the
             editor has to survive navigation away from settings. */}
