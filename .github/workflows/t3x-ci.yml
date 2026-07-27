@@ -1,0 +1,52 @@
+# t3x fork CI — the fork's real PR/main gate.
+#
+# Upstream's ci.yml runs on blacksmith-* runners the fork has no access to, so it never runs
+# here and PRs show "no checks". This runs the same fast checks on ubuntu-latest so every fork
+# PR (and every push to main / a sync branch) gets an independent typecheck/lint/test gate.
+#
+# NOTE: pull_request does NOT fire on a CONFLICTING sync PR (GitHub can't build the merge ref),
+# so sync branches are gated by the push trigger on `t3x/sync-**` instead — an independent check
+# alongside the resolve job's own verify.
+name: t3x fork CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "t3x/sync-**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3x-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      # Run all three even if an earlier one fails, so a single run reports every failure.
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: vp run lint
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: vp run test
