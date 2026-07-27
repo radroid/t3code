@@ -59,7 +59,9 @@ export const sendWebPush = (
       const statusCode = extractStatusCode(error);
       return Effect.succeed({
         ok: false,
-        expired: statusCode === 404 || statusCode === 410,
+        // 404/410 = subscription gone; 403 = VAPID key mismatch (undeliverable for this
+        // server key). Prune all so the client re-subscribes with the current key.
+        expired: statusCode === 404 || statusCode === 410 || statusCode === 403,
       } satisfies WebPushSendResult);
     }),
   );
