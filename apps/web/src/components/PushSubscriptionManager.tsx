@@ -29,9 +29,11 @@ export function PushSubscriptionManager() {
       if (cancelled) {
         return;
       }
-      if (notifyOnNeedsInput && getNotificationPermissionState() === "granted") {
+      const permission = getNotificationPermissionState();
+      if (notifyOnNeedsInput && permission === "granted") {
         void ensurePushSubscription();
-      } else if (!notifyOnNeedsInput) {
+      } else if (!notifyOnNeedsInput || permission === "denied") {
+        // Setting off, or permission revoked: drop the now-useless server-side subscription.
         void removePushSubscription();
       }
     };
