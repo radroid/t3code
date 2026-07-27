@@ -582,8 +582,14 @@ const environmentOwnedDataCleanupLayer = Layer.succeed(
   EnvironmentOwnedDataCleanup,
   EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) =>
-      Effect.sync(() => {
+      Effect.promise(async () => {
         clearComposerDraftsEnvironment(environmentId);
+        // Imported lazily: a static import here would form a module-init cycle
+        // (platform -> outbox/threadOutbox -> state/shell -> connection catalog)
+        // that leaves catalog atoms undefined at collection time. This callback
+        // only runs on environment removal, long after init.
+        const { clearThreadOutboxEnvironment } = await import("../outbox/threadOutbox");
+        await clearThreadOutboxEnvironment(environmentId);
       }),
   }),
 );
