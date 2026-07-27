@@ -111,7 +111,7 @@ const withRoute = <A, E>(
       Layer.provideMerge(NodeHttpServer.layer(() => NodeHttp.createServer(), { port: 0 })),
     );
 
-    return yield* body.pipe(Effect.provide(served), Effect.provide(FetchHttpClient.layer));
+    return yield* body.pipe(Effect.provide(Layer.merge(served, FetchHttpClient.layer)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise);
 
 describe("/api/t3x/auto-resume", () => {
