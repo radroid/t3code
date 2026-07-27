@@ -19,6 +19,7 @@ import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstall
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { NotificationCoordinator } from "../components/NotificationCoordinator";
 import { ThreadOutboxDrain } from "../outbox/useThreadOutboxDrain";
+import { PushSubscriptionManager } from "../components/PushSubscriptionManager";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { Button } from "../components/ui/button";
@@ -140,6 +141,7 @@ function RootRouteView() {
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         <NotificationCoordinator />
         {primaryEnvironmentAuthenticated ? <ThreadOutboxDrain /> : null}
+        <PushSubscriptionManager />
         {appShell}
       </AnchoredToastProvider>
     </ToastProvider>
