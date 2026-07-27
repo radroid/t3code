@@ -101,7 +101,11 @@ const makeSubscribeRoute = (store: PushSubscriptionStoreShape) =>
     Effect.gen(function* () {
       const session = yield* authenticateWithScope(AuthOrchestrationOperateScope);
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const body = yield* decodeSubscribeBody(yield* request.json).pipe(
+      const rawBody = yield* Effect.orElseSucceed(request.json, () => null);
+      if (rawBody === null) {
+        return HttpServerResponse.text("Invalid body", { status: 400 });
+      }
+      const body = yield* decodeSubscribeBody(rawBody).pipe(
         Effect.map((decoded): typeof SubscribeBody.Type | null => decoded),
         Effect.orElseSucceed(() => null),
       );
@@ -127,7 +131,11 @@ const makeUnsubscribeRoute = (store: PushSubscriptionStoreShape) =>
     Effect.gen(function* () {
       yield* authenticateWithScope(AuthOrchestrationOperateScope);
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const body = yield* decodeUnsubscribeBody(yield* request.json).pipe(
+      const rawBody = yield* Effect.orElseSucceed(request.json, () => null);
+      if (rawBody === null) {
+        return HttpServerResponse.text("Invalid body", { status: 400 });
+      }
+      const body = yield* decodeUnsubscribeBody(rawBody).pipe(
         Effect.map((decoded): typeof UnsubscribeBody.Type | null => decoded),
         Effect.orElseSucceed(() => null),
       );
