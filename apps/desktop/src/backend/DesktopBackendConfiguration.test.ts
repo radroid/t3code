@@ -135,6 +135,9 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
+        // Heap headroom for the primary backend (issue #21). extendEnv:true means
+        // this config value wins over an inherited process.env NODE_OPTIONS.
+        assert.include(first.env.NODE_OPTIONS ?? "", "--max-old-space-size=4096");
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);
         assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
@@ -151,6 +154,43 @@ describe("DesktopBackendConfiguration", () => {
       }),
     ),
   );
+
+  it.effect("resolvePrimary sets a bare heap flag when NODE_OPTIONS is unset", () => {
+    const previous = process.env.NODE_OPTIONS;
+    delete process.env.NODE_OPTIONS;
+    return withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+        assert.equal(config.env.NODE_OPTIONS, "--max-old-space-size=4096");
+      }),
+    ).pipe(Effect.ensuring(Effect.sync(() => restoreEnv("NODE_OPTIONS", previous))));
+  });
+
+  it.effect("resolvePrimary appends heap headroom to an existing NODE_OPTIONS", () => {
+    const previous = process.env.NODE_OPTIONS;
+    process.env.NODE_OPTIONS = "--enable-source-maps";
+    return withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+        assert.equal(config.env.NODE_OPTIONS, "--enable-source-maps --max-old-space-size=4096");
+      }),
+    ).pipe(Effect.ensuring(Effect.sync(() => restoreEnv("NODE_OPTIONS", previous))));
+  });
+
+  it.effect("resolvePrimary preserves an explicit NODE_OPTIONS heap setting", () => {
+    const previous = process.env.NODE_OPTIONS;
+    process.env.NODE_OPTIONS = "--max-old-space-size=1024";
+    return withHarness(
+      Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolvePrimary;
+        // An operator override wins; we do not append a second, conflicting flag.
+        assert.equal(config.env.NODE_OPTIONS, "--max-old-space-size=1024");
+      }),
+    ).pipe(Effect.ensuring(Effect.sync(() => restoreEnv("NODE_OPTIONS", previous))));
+  });
 
   it.effect("resolveWsl reuses the primary's bootstrap token", () =>
     withHarness(
@@ -279,6 +319,8 @@ describe("DesktopBackendConfiguration", () => {
           "env",
           "PATH=/home/test user's/.nvm/versions/node/v22.0.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/test user/bin:/opt/test's tools/bin:/usr/bin:/bin",
           nodePath,
+          // Heap headroom, passed as a V8 execArg before the entry script (issue #21).
+          "--max-old-space-size=4096",
           linuxEntryPath,
           "--bootstrap-fd",
           "0",
