@@ -53,6 +53,9 @@ async function createReconcilerSystem() {
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
+  // This helper builds a synchronous-style setup/dispose system shared across many `it()`
+  // blocks, exposed as ReconcilerSystem rather than raw Effects, so it.effect(...) doesn't fit.
+  // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests
   const runtime = ManagedRuntime.make(orchestrationLayer);
   const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
   const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
