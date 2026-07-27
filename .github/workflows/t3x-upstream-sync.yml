@@ -90,6 +90,12 @@ jobs:
         if: steps.sync.outputs.code == '20' || steps.sync.outputs.code == '30' || steps.sync.outputs.code == '40' || steps.sync.outputs.code == '1'
         env:
           GH_TOKEN: ${{ github.token }}
+          # Pin every gh call below to THIS fork. The "Configure git" step adds a remote named
+          # `upstream` (the parent repo); gh's base-repo resolution ranks `upstream` above
+          # `origin`, so un-pinned gh commands silently target the PARENT — where GITHUB_TOKEN
+          # has no write access — and `gh issue create` fails, leaving escalations red with no
+          # t3x-sync issue ever opened. GH_REPO forces the fork for label/list/create/edit alike.
+          GH_REPO: ${{ github.repository }}
         run: |
           # Best-effort, idempotent label create (tolerates "already exists"). The label is
           # also provisioned out-of-band, so issue creation below never depends on this line.
@@ -119,7 +125,9 @@ jobs:
             # whole creation when the label lookup lags behind `gh label create` (GitHub API
             # replication) — that race is why prior runs went red with NO issue ever opened.
             # Decoupling guarantees the escalation issue always lands.
-            URL="$(gh issue create --title "$TITLE" --body "$BODY" 2>/dev/null || true)"
+            # Do NOT swallow stderr here: if the create fails, its error must reach the run log
+            # so the cause is diagnosable (`|| true` keeps set -e happy on failure).
+            URL="$(gh issue create --title "$TITLE" --body "$BODY" || true)"
             NUM="${URL##*/}"
             if [[ -n "$NUM" ]]; then
               gh issue edit "$NUM" --add-label "$SYNC_LABEL" 2>/dev/null || true
