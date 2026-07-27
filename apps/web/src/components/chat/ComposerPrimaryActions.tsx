@@ -27,6 +27,14 @@ interface ComposerPrimaryActionsProps {
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
+  /** "Queue" when a submit will enqueue to the thread outbox, else "Send". */
+  sendLabel?: "Send" | "Queue";
+  /**
+   * Whether queuing is available for this thread. When true and the thread is
+   * running, the primary action becomes a "Queue" submit and Stop moves to a
+   * secondary control instead of being the sole primary action.
+   */
+  canQueue?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
    * be the only primary action and a running turn could not be steered. */
@@ -70,6 +78,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
+  sendLabel = "Send",
+  canQueue = false,
   preserveComposerFocusOnPointerDown = false,
   showSendWhileRunning = false,
   onPreviousPendingQuestion,
@@ -104,6 +114,18 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <rect x="2" y="2" width="8" height="8" rx="1.5" />
       </svg>
     </button>
+  );
+
+  const queueButton = (
+    <Button
+      type="submit"
+      size="sm"
+      className={cn("rounded-full", compact ? "px-3" : "px-4")}
+      {...pointerFocusProps}
+      disabled={!hasSendableContent}
+    >
+      Queue
+    </Button>
   );
 
   if (pendingAction) {
@@ -271,7 +293,25 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   );
 
   if (!isRunning) {
+    // Idle but the submit will still enqueue (outbox non-empty, or disconnected):
+    // surface an explicit "Queue" control so Return/click reads as queuing.
+    if (sendLabel === "Queue" && canQueue) {
+      return queueButton;
+    }
     return sendButton;
+  }
+
+  // While the thread is busy, queuing (when available) becomes the primary action and
+  // Stop moves beside it as a secondary control. This also satisfies upstream's
+  // showSendWhileRunning intent (#4781) -- the running turn stays reachable on mobile,
+  // and Queue *is* the send action here, so it stands in for the send button.
+  if (canQueue) {
+    return (
+      <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
+        {renderStopGenerationButton(false)}
+        {queueButton}
+      </div>
+    );
   }
 
   return (
