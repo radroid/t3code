@@ -45,7 +45,9 @@ daily sync → conflict/verify-fail/dropped-patch
         new branch t3x/sync-<run_id> · git rebase upstream/main · resolve conflicts
         · review SEAMS.md semantics · vp run typecheck/lint/test
    → git push branch · gh pr create → main · comment PR link on the issue
-   → user reviews + merges the PR
+   → user reviews + lands the PR by force-updating main to the reviewed tip
+     (the branch is a rebase, so the GitHub merge button can't land it —
+      see docs/t3x/sync-agent-runbook.md § "Landing a sync PR")
 ```
 
 ### Component: `.github/workflows/t3x-sync-resolve.yml`
