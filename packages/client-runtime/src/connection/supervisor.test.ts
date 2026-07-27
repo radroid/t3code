@@ -113,6 +113,10 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     attempt: number,
     target: ConnectionTarget,
   ) => Effect.Effect<PreparedConnection, ConnectionAttemptError>;
+  // Runs at the "opening" stage, after the socket URL is prepared but before a
+  // session is acquired — lets a test stall/fail an attempt at "opening"
+  // specifically (distinct from "preparing" and "synchronizing").
+  readonly opening?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
   readonly ready?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
   readonly probe?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
 }) {
@@ -154,6 +158,9 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     yield* reportProgress({ stage: "preparing" });
     const prepared = yield* prepare(target);
     yield* reportProgress({ stage: "opening", prepared });
+    if (options?.opening) {
+      yield* options.opening(yield* Ref.get(prepareCount));
+    }
 
     const attempt = yield* Ref.updateAndGet(sessionCount, (count) => count + 1);
     const closed = yield* Deferred.make<never, ConnectionTransientError>();
@@ -1037,6 +1044,325 @@ describe("EnvironmentSupervisor", () => {
       );
 
       expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect(
+    "extends the establishment budget and retries quickly after a slow (synchronizing) timeout",
+    () =>
+      Effect.gen(function* () {
+        // The backend accepts the socket (reaches "synchronizing") but is always
+        // slow to finish readiness. Attempt 1 uses the normal 15s budget and times
+        // out; subsequent attempts must get the enlarged budget and a fast retry so
+        // a briefly-overloaded-but-alive backend is not abandoned. See issue #21.
+        const harness = yield* makeHarness({
+          ready: () => Effect.never,
+        });
+        const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+          initiallyDesired: true,
+        }).pipe(Effect.provide(harness.dependencies));
+
+        // Attempt 1: normal 15s budget.
+        yield* awaitState(
+          supervisor.state,
+          (state) =>
+            state.phase === "connecting" && state.stage === "synchronizing" && state.attempt === 1,
+        );
+        yield* TestClock.adjust("15 seconds");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) =>
+            state.phase === "backoff" &&
+            state.attempt === 1 &&
+            state.lastFailure?.reason === "timeout",
+        );
+
+        // Fast retry (1s), not the exponential ladder.
+        yield* TestClock.adjust("1 second");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) =>
+            state.phase === "connecting" && state.stage === "synchronizing" && state.attempt === 2,
+        );
+
+        // Attempt 2 must survive past the old 15s budget...
+        yield* TestClock.adjust("15 seconds");
+        expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connecting");
+        // ...and only time out once the enlarged 45s budget elapses.
+        yield* TestClock.adjust("30 seconds");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === 2,
+        );
+
+        // Still a fast 1s retry (not 2s), proving the slow path does not escalate.
+        yield* TestClock.adjust("1 second");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "connecting" && state.attempt === 3,
+        );
+      }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("connects once a slow backend answers within the enlarged budget", () =>
+    Effect.gen(function* () {
+      // Attempt 1 stalls at readiness (slow timeout); attempt 2's readiness takes
+      // 30s — longer than the normal 15s budget but within the enlarged one — and
+      // must succeed instead of being abandoned.
+      const harness = yield* makeHarness({
+        ready: (attempt) => (attempt === 1 ? Effect.never : Effect.sleep("30 seconds")),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "synchronizing",
+      );
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(supervisor.state, (state) => state.phase === "backoff");
+
+      yield* TestClock.adjust("1 second");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) =>
+          state.phase === "connecting" && state.stage === "synchronizing" && state.attempt === 2,
+      );
+      // 30s of readiness would time out under the old 15s budget; the enlarged
+      // budget lets it complete. (Generation counts established connections, and
+      // attempt 1 never established, so the successful second attempt is
+      // generation 1.)
+      yield* TestClock.adjust("30 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.attempt === 2,
+      );
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("runs a periodic background liveness probe while connected", () =>
+    Effect.gen(function* () {
+      const probeCount = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        probe: () => Ref.update(probeCount, (count) => count + 1),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(yield* Ref.get(probeCount)).toBe(0);
+
+      // No foreground activation — the heartbeat alone drives the probe.
+      yield* TestClock.adjust("30 seconds");
+      yield* eventuallyState(supervisor.state, () => true);
+      expect(yield* Ref.get(probeCount)).toBe(1);
+      expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connected");
+
+      yield* TestClock.adjust("30 seconds");
+      yield* eventuallyState(supervisor.state, () => true);
+      expect(yield* Ref.get(probeCount)).toBe(2);
+      expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connected");
+      expect(yield* Ref.get(harness.sessionCount)).toBe(1);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(0);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("reconnects when a background heartbeat probe times out", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        probe: (attempt) => (attempt === 1 ? Effect.never : Effect.void),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 1,
+      );
+      // Heartbeat fires...
+      yield* TestClock.adjust("30 seconds");
+      // ...the probe stalls and times out after the probe budget.
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.lastFailure?.reason === "timeout",
+      );
+      yield* TestClock.adjust("1 second");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect(
+    "keeps the normal budget and exponential backoff for a timeout that never reached the backend",
+    () =>
+      Effect.gen(function* () {
+        // prepare hangs, so every attempt times out at the "preparing" stage
+        // without ever reaching the backend — this must NOT get the tolerant path.
+        const harness = yield* makeHarness({ prepare: () => Effect.never });
+        const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+          initiallyDesired: true,
+        }).pipe(Effect.provide(harness.dependencies));
+
+        yield* awaitState(
+          supervisor.state,
+          (state) =>
+            state.phase === "connecting" && state.stage === "preparing" && state.attempt === 1,
+        );
+        yield* TestClock.adjust("15 seconds");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === 1,
+        );
+
+        // First retry is 1s either way (RETRY_DELAYS_MS[0] === SLOW_RETRY_DELAY_MS).
+        yield* TestClock.adjust("1 second");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) =>
+            state.phase === "connecting" && state.stage === "preparing" && state.attempt === 2,
+        );
+        // Attempt 2 must use the NORMAL 15s budget, not the tolerant 45s one:
+        // it times out at 15s (a tolerant attempt would still be connecting).
+        yield* TestClock.adjust("15 seconds");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === 2,
+        );
+        // ...and the retry is the exponential 2s, not the tolerant 1s.
+        yield* TestClock.adjust("1 second");
+        expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("backoff");
+        yield* TestClock.adjust("1 second");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "connecting" && state.attempt === 3,
+        );
+      }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("treats a timeout at the 'opening' stage as slow-but-reachable", () =>
+    Effect.gen(function* () {
+      // Stall at "opening" (socket URL prepared, session not yet acquired). This
+      // is the lower boundary of reachedBackend, so it must take the tolerant path.
+      const harness = yield* makeHarness({ opening: () => Effect.never });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "opening" && state.attempt === 1,
+      );
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+
+      yield* TestClock.adjust("1 second");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "opening" && state.attempt === 2,
+      );
+      // Attempt 2 gets the enlarged budget: still connecting past the old 15s...
+      yield* TestClock.adjust("15 seconds");
+      expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connecting");
+      // ...timing out only once the 45s budget elapses.
+      yield* TestClock.adjust("30 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 2,
+      );
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("falls back to the normal budget after too many consecutive slow timeouts", () =>
+    Effect.gen(function* () {
+      // Always slow at synchronizing. The tolerant path is bounded, so after
+      // MAX_TOLERANT_TIMEOUTS (3) consecutive slow timeouts it must revert to the
+      // normal 15s budget — otherwise a misclassified dead endpoint would loop on
+      // 45s attempts forever.
+      const harness = yield* makeHarness({ ready: () => Effect.never });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      // Attempt 1: normal 15s budget, then three tolerant 45s attempts (2, 3, 4).
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.attempt === 1,
+      );
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+      for (const attempt of [2, 3, 4]) {
+        yield* TestClock.adjust("1 second");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "connecting" && state.attempt === attempt,
+        );
+        // Each of these is a tolerant attempt: still connecting past 15s.
+        yield* TestClock.adjust("15 seconds");
+        expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connecting");
+        yield* TestClock.adjust("30 seconds");
+        yield* eventuallyState(
+          supervisor.state,
+          (state) => state.phase === "backoff" && state.attempt === attempt,
+        );
+      }
+
+      // The 4th slow timeout tripped the cap, so attempt 5 uses the exponential
+      // ladder (retryDelayMs(3) === 8s) and the normal 15s budget again.
+      yield* TestClock.adjust("8 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.attempt === 5,
+      );
+      yield* TestClock.adjust("15 seconds");
+      yield* eventuallyState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 5,
+      );
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("reconnects a relay session on a credentials change during a background probe", () =>
+    Effect.gen(function* () {
+      // The first session's heartbeat probe stalls; a credentials change that
+      // lands while it is in flight must still tear down and reconnect rather
+      // than wait for the probe to time out.
+      const harness = yield* makeHarness({
+        probe: (attempt) => (attempt === 1 ? Effect.never : Effect.void),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(RELAY_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 1,
+      );
+      // Heartbeat fires and the probe stalls.
+      yield* TestClock.adjust("30 seconds");
+      // Credentials change mid-probe — reconnect must happen without waiting for
+      // the 15s probe timeout.
+      yield* harness.wake("credentials-changed");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connected" && state.generation === 2,
+      );
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
+      expect(yield* Ref.get(harness.releaseCount)).toBe(1);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
