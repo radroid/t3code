@@ -47,6 +47,17 @@ jobs:
         if: ${{ !cancelled() }}
         run: vp run lint
 
+      # `--testTimeout` is raised because `apps/web/vite.config.ts` pins testTimeout to 15s, which is
+      # tuned for upstream's blacksmith runners. This fork runs on 2-core ubuntu-latest, where
+      # upstream's `stashImageCompression` worst-case test (~3s on an M-series Mac; 6x the next
+      # slowest in its file) reliably exceeds 15s and fails the whole gate.
+      #
+      # Proven upstream-inherited, not a fork regression: branch `t3x/ci-control-upstream` — pristine
+      # upstream/main plus this workflow file and nothing else — fails identically (run 30386125253).
+      #
+      # 60s is not arbitrary: it is what the ROOT vite.config.ts already uses. This only stops
+      # apps/web's tighter local override from being applied on slower hardware than it assumes.
+      # The job's own `timeout-minutes` remains the backstop against a genuinely hung test.
       - name: Test
         if: ${{ !cancelled() }}
-        run: vp run test
+        run: vp run test --testTimeout=60000
