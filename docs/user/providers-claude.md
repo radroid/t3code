@@ -34,9 +34,11 @@ normal login.
 
 > **Do not type `~/.claude` into that field.** Leaving it empty and pointing it at the default
 > directory are not the same thing. Setting `CLAUDE_CONFIG_DIR` explicitly changes how Claude Code
-> looks up its stored credentials, and the account stops being identified — `claude auth status`
-> still reports `"loggedIn": true` but returns `"email": null`, so T3 Code can no longer show you
-> which account the instance is using. Leave the field empty for your main account.
+> looks up its stored credentials, and the account stops being identified: you stay logged in, but
+> the account's email is no longer reported, so T3 Code cannot show you which account the instance is
+> using. You can see this for yourself — `claude auth status` returns your email with no prefix, but
+> `CLAUDE_CONFIG_DIR=~/.claude claude auth status` returns `"loggedIn": true` with `"email": null`.
+> Leave the field empty for your main account.
 
 ## Reduce Context Usage
 
