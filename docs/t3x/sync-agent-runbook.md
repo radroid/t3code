@@ -68,6 +68,28 @@ created) shows up in the Actions tab as **skipped**, not as an error. Check ther
 a rebase that is not the problem. Read the `**Result:**` / `**kind:**` line first; a `weekly-build`
 failure means fix the build.
 
+### When verify goes red on code the fork does not own
+
+A sync can import an upstream test that fails **in this fork's CI but not upstream's**, because
+upstream runs on `blacksmith-*` runners and the fork runs on 2-core `ubuntu-latest`. Before treating
+a red verify as a bad rebase, run the control experiment — it takes two minutes and gives a
+definitive answer:
+
+```
+git switch --detach upstream/main
+git checkout <sync-branch> -- .github/workflows/t3x-ci.yml
+git switch -c t3x/ci-control-upstream && git commit -am "ci: control run" && git push -u origin HEAD
+gh workflow run t3x-ci.yml -R radroid/t3code --ref t3x/ci-control-upstream
+```
+
+That branch is pristine upstream plus one fork-owned file. If it fails the same way, the failure is
+upstream-inherited and no fork patch caused it. Delete the branch afterwards.
+
+Fix such failures in `.github/workflows/t3x-ci.yml` (fork-owned) rather than by patching the upstream
+file — patching adds a row to `docs/t3x/SEAMS.md` and permanent rebase cost for a CI-environment
+problem. The `--testTimeout` override on the Test step exists for exactly this reason; its comment
+records the case.
+
 ## What the agent does (and what a human doing it locally should do)
 
 This is the checklist the workflow prompt mirrors — follow it if you resolve locally instead.
