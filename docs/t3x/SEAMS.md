@@ -3,8 +3,12 @@
 **The authoritative list of every upstream-owned file this fork edits.**
 
 Measured, not asserted: **34 upstream-owned files, +1466 / -112 lines**, against merge-base
-`89c5a192f`. Everything else the fork adds lives in new files upstream has never seen and cannot
-conflict.
+`887dd6e45` (the 2026-07-28 upstream sync). Everything else the fork adds lives in new files upstream
+has never seen and cannot conflict.
+
+The churn and risk columns are still measured against the _previous_ merge-base `89c5a192f`, because
+the 45 commits absorbed by that sync have not yet aged into a 60-day window. Recompute them at the
+next sync.
 
 Regenerate this ledger before trusting it — see [Regenerating](#regenerating) at the bottom. An
 earlier version of this file claimed the surface was 2 files and "Contracts / persistence: _None._"
@@ -45,10 +49,10 @@ Sorted by risk, worst first.
 | `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29      | 5     | **145**  | Backend heap headroom (`NODE_OPTIONS`)                                                                                                           |
 | `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +53/-13  | 2     | **132**  | Queue button; extracts upstream's inline stop button                                                                                             |
 | `apps/desktop/src/backend/DesktopBackendConfiguration.test.ts`          | +42      | 3     | **126**  | Heap-headroom assertions                                                                                                                         |
+| `packages/contracts/src/settings.ts`                                    | +7/-2    | 14    | **126**  | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                          |
 | `packages/shared/src/composerTrigger.test.ts`                           | +31/-1   | 3     | **96**   | `replaceTextRange` newline coverage                                                                                                              |
 | `apps/server/src/sourceControl/SourceControlProviderDiscovery.ts`       | +20/-8   | 3     | **84**   | Issue #4: CLI probe timeout + spawn-error classification                                                                                         |
 | `apps/server/src/server.ts`                                             | +3       | 25    | **75**   | The intended mount point: one import, one `Layer.provideMerge`, one route entry                                                                  |
-| `packages/contracts/src/settings.ts`                                    | +7/-2    | 14    | **70**   | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                          |
 | `apps/desktop/src/main.ts`                                              | +4       | 17    | **68**   | `ElectronNotification` layer                                                                                                                     |
 | `apps/web/src/connection/platform.ts`                                   | +7/-1    | 7     | **56**   | Lazy `import()` of outbox cleanup to dodge a module-init cycle                                                                                   |
 | `apps/web/src/routes/__root.tsx`                                        | +6       | 9     | **54**   | Mounts `<NotificationCoordinator>`, `<ThreadOutboxDrain>`, `<PushSubscriptionManager>`                                                           |
@@ -115,11 +119,17 @@ git diff --numstat "$MB"..HEAD | while read -r a d p; do
 done
 ```
 
-That prints exactly the upstream-owned files the fork edits. Churn for any one of them:
+That prints exactly the upstream-owned files the fork edits. Churn for any one of them — anchored to
+the merge-base date, **not** to today, so the number is reproducible after the fact:
 
 ```bash
-git log --oneline --since="60 days ago" "$MB" -- <path> | wc -l
+SINCE=$(git show -s --format=%cI "$MB")
+git log --oneline --since="$SINCE" --until="$SINCE" --before="$SINCE" "$MB" -- <path> | wc -l
+# simpler and equivalent: the 60 days of upstream history ending at the merge-base
+git log --oneline "$MB" --since="$(git show -s --format=%cI "$MB") -60 days" -- <path> | wc -l
 ```
 
-Re-run both after every upstream sync and update this file. If the ledger and this document
-disagree, the ledger is right.
+**Re-run both after every upstream sync and update this file — including the merge-base hash in the
+header.** Every churn and risk figure shifts once the newly absorbed commits fall inside the window,
+so a ledger quoting an old merge-base is stale even when its file list is still right. If the
+regenerated ledger and this document disagree, the ledger is right.
