@@ -91,10 +91,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     environmentIdentificationMode === "artwork",
   );
 
-  const stopButton = (
+  const renderStopButton = (emphasisClassName: string) => (
     <button
       type="button"
-      className="flex size-8 cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none sm:h-8 sm:w-8"
+      className={cn(
+        "flex size-8 cursor-pointer items-center justify-center rounded-full transition-all duration-150 sm:h-8 sm:w-8",
+        emphasisClassName,
+      )}
       {...pointerFocusProps}
       onClick={onInterrupt}
       aria-label="Stop generation"
@@ -103,6 +106,18 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <rect x="2" y="2" width="8" height="8" rx="1.5" />
       </svg>
     </button>
+  );
+
+  // The filled treatment, used wherever Stop is the only action in the footer.
+  const stopButton = renderStopButton(
+    "bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
+  );
+
+  // Beside the Queue button, Stop is the secondary action, so it drops to a
+  // quiet outline: a saturated red circle should not be the highest-contrast
+  // element in the composer while the primary action is Queue.
+  const secondaryStopButton = renderStopButton(
+    "border border-border/60 bg-background/40 text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive",
   );
 
   const queueButton = (
@@ -177,7 +192,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     if (canQueue) {
       return (
         <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
-          {stopButton}
+          {secondaryStopButton}
           {queueButton}
         </div>
       );
