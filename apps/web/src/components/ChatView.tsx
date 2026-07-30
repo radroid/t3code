@@ -4947,6 +4947,13 @@ function ChatViewContent(props: ChatViewProps) {
     // fall through reaches upstream's gate below, which tells the user the
     // annotation stayed on the draft.
     if (composerQueueMode && !directAnnotation) {
+      // The queue path skips the immediate-send guards below, but upstream's
+      // "detail still loading" gate applies to it too — queuing writes to the
+      // same thread, so accepting a submit before its messages have loaded
+      // would enqueue against an incomplete thread.
+      if (threadDetailLoading) {
+        return;
+      }
       await handleQueueComposerSubmission();
       return;
     }
