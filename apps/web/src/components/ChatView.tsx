@@ -4700,6 +4700,13 @@ function ChatViewContent(props: ChatViewProps) {
     // Queue mode routes the submit through the thread outbox instead of the
     // immediate-send path (which is gated on an idle, connected thread).
     if (composerQueueMode) {
+      // The queue path skips the immediate-send guards below, but upstream's
+      // "detail still loading" gate applies to it too — queuing writes to the
+      // same thread, so accepting a submit before its messages have loaded
+      // would enqueue against an incomplete thread.
+      if (threadDetailLoading) {
+        return;
+      }
       await handleQueueComposerSubmission();
       return;
     }
