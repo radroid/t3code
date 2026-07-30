@@ -2,13 +2,12 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **34 upstream-owned files, +1468 / -112 lines**, against merge-base
-`b64ae880e` (the 2026-07-28 upstream sync). Everything else the fork adds lives in new files upstream
+Measured, not asserted: **34 upstream-owned files, +1508 / -134 lines**, against merge-base
+`50871eb5d` (the 2026-07-30 upstream sync). Everything else the fork adds lives in new files upstream
 has never seen and cannot conflict.
 
-The churn and risk columns are still measured against the _previous_ merge-base `89c5a192f`, because
-the 45 commits absorbed by that sync have not yet aged into a 60-day window. Recompute them at the
-next sync.
+The churn and risk columns are measured against that same merge-base, over the 60 days preceding it —
+the 46 commits absorbed by this sync are now inside the window, so every figure below moved.
 
 Regenerate this ledger before trusting it — see [Regenerating](#regenerating) at the bottom. An
 earlier version of this file claimed the surface was 2 files and "Contracts / persistence: _None._"
@@ -37,42 +36,42 @@ upstream never touches is cheap, and a two-line edit to a file upstream rewrites
 
 Sorted by risk, worst first.
 
-| Upstream file                                                           | fork Δ   | churn | risk     | Why the fork touches it                                                                                                                          |
-| ----------------------------------------------------------------------- | -------- | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/web/src/components/ChatView.tsx`                                  | +151/-1  | 55    | **8360** | Thread outbox: `handleQueueComposerSubmission`, queue-mode state, `onSend` early-return, `<ThreadOutboxQueueList>`, `sendLabel`                  |
-| `pnpm-lock.yaml`                                                        | +83      | 56    | **4648** | Web Push adds `web-push` + `@types/web-push`. Unavoidable and always conflicts; regenerate rather than merge                                     |
-| `packages/client-runtime/src/connection/supervisor.test.ts`             | +363     | 3     | **1089** | Issue #21: 356-line appended `describe` + harness plumbing                                                                                       |
-| `apps/web/src/components/settings/SettingsPanels.tsx`                   | +58      | 13    | **754**  | Needs-input notifications: import, 3 restore-reducer entries, permission state, a 45-line `<SettingsRow>`                                        |
-| `apps/server/src/serverRuntimeStartup.test.ts`                          | +149/-1  | 5     | **750**  | Crash-recovery reconciler coverage                                                                                                               |
-| `packages/client-runtime/src/connection/supervisor.ts`                  | +164/-47 | 3     | **633**  | Issue #21: in-place rewrite of the reconnect/backoff state machine, incl. a 41-line upstream block replaced by 2                                 |
-| `packages/contracts/src/ipc.ts`                                         | +28      | 22    | **616**  | `DesktopNotificationRequest` / `Activation` + two optional `DesktopBridge` members                                                               |
-| `apps/web/src/components/chat/ChatComposer.tsx`                         | +16/-2   | 30    | **540**  | Threads `sendLabel` / `canQueue` through the composer                                                                                            |
-| `apps/mobile/src/features/threads/ThreadComposer.tsx`                   | +26/-4   | 16    | **480**  | Mobile Return-key send/queue                                                                                                                     |
-| `apps/server/src/serverRuntimeStartup.ts`                               | +29      | 6     | **174**  | `reconcile.interrupted-turns` startup phase                                                                                                      |
-| `apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift` | +33      | 5     | **165**  | Shift+Return newline vs. bare Return submit                                                                                                      |
-| `apps/desktop/src/preload.ts`                                           | +12      | 13    | **156**  | `showNotification` + `onNotificationActivated` on the exposed bridge                                                                             |
-| `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29      | 5     | **145**  | Backend heap headroom (`NODE_OPTIONS`)                                                                                                           |
-| `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +53/-13  | 2     | **132**  | Queue button; extracts upstream's inline stop button                                                                                             |
-| `apps/desktop/src/backend/DesktopBackendConfiguration.test.ts`          | +42      | 3     | **126**  | Heap-headroom assertions                                                                                                                         |
-| `packages/contracts/src/settings.ts`                                    | +7/-2    | 14    | **126**  | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                          |
-| `packages/shared/src/composerTrigger.test.ts`                           | +31/-1   | 3     | **96**   | `replaceTextRange` newline coverage                                                                                                              |
-| `apps/server/src/sourceControl/SourceControlProviderDiscovery.ts`       | +20/-8   | 3     | **84**   | Issue #4: CLI probe timeout + spawn-error classification                                                                                         |
-| `apps/server/src/server.ts`                                             | +3       | 25    | **75**   | The intended mount point: one import, one `Layer.provideMerge`, one route entry                                                                  |
-| `apps/desktop/src/main.ts`                                              | +4       | 17    | **68**   | `ElectronNotification` layer                                                                                                                     |
-| `apps/web/src/connection/platform.ts`                                   | +7/-1    | 7     | **56**   | Lazy `import()` of outbox cleanup to dodge a module-init cycle                                                                                   |
-| `apps/web/src/routes/__root.tsx`                                        | +6       | 9     | **54**   | Mounts `<NotificationCoordinator>`, `<ThreadOutboxDrain>`, `<PushSubscriptionManager>`                                                           |
-| `apps/mobile/…/T3ComposerEditorView.kt`                                 | +51      | 1     | **51**   | Android bare-Enter intercept                                                                                                                     |
-| `apps/desktop/src/ipc/channels.ts`                                      | +2       | 11    | **22**   | Two notification channel constants                                                                                                               |
-| `apps/server/package.json`                                              | +2       | 11    | **22**   | `web-push` dependency                                                                                                                            |
-| `apps/desktop/src/ipc/DesktopIpcHandlers.ts`                            | +2       | 9     | **18**   | Registers the `showNotification` handler                                                                                                         |
-| `apps/mobile/src/native/T3ComposerEditor.types.ts`                      | +5/-1    | 3     | **18**   | Reworded `onSubmit` doc comment                                                                                                                  |
-| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`                | +2       | 4     | **8**    | Mounts `<AutoResumeOverlay>`                                                                                                                     |
-| `apps/web/index.html`                                                   | +5       | 1     | **5**    | PWA manifest + meta tags                                                                                                                         |
-| `apps/desktop/src/settings/DesktopClientSettings.test.ts`               | +1       | 5     | **5**    | `notifyOnNeedsInput` in a fixture                                                                                                                |
-| `apps/mobile/src/native/T3ComposerEditor.native.tsx`                    | +3       | 1     | **3**    | Plumbs `onComposerSubmit`                                                                                                                        |
-| `apps/mobile/src/components/AppSymbol.tsx`                              | +2       | 1     | **2**    | `return:` icon entry                                                                                                                             |
-| `apps/mobile/…/T3ComposerEditorModule.kt`                               | +1       | 1     | **1**    | Event-name list entry                                                                                                                            |
-| `docs/providers/claude.md`                                              | +78/-31  | ~0    | **~0**   | Fixes the broken multi-account recipe. Near-frozen upstream (last touched 2026-04-29) — **the one row worth upstreaming**, which would remove it |
+| Upstream file                                                           | fork Δ   | churn | risk     | Why the fork touches it                                                                                                                           |
+| ----------------------------------------------------------------------- | -------- | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/ChatView.tsx`                                  | +158/-1  | 60    | **9540** | Thread outbox: `handleQueueComposerSubmission`, queue-mode state, `onSend` early-return, `<ThreadOutboxQueueList>`, `sendLabel`                   |
+| `pnpm-lock.yaml`                                                        | +83      | 62    | **5146** | Web Push adds `web-push` + `@types/web-push`. Unavoidable and always conflicts; regenerate rather than merge                                      |
+| `packages/client-runtime/src/connection/supervisor.test.ts`             | +363     | 5     | **1815** | Issue #21: 356-line appended `describe` + harness plumbing                                                                                        |
+| `packages/client-runtime/src/connection/supervisor.ts`                  | +186/-63 | 5     | **1245** | Issue #21: in-place rewrite of the reconnect/backoff state machine; now also owns the shared `runLivenessProbe` helper upstream's probe path uses |
+| `apps/web/src/components/settings/SettingsPanels.tsx`                   | +58      | 17    | **986**  | Needs-input notifications: import, 3 restore-reducer entries, permission state, a 45-line `<SettingsRow>`                                         |
+| `apps/server/src/serverRuntimeStartup.test.ts`                          | +149/-1  | 6     | **900**  | Crash-recovery reconciler coverage                                                                                                                |
+| `packages/contracts/src/ipc.ts`                                         | +28      | 23    | **644**  | `DesktopNotificationRequest` / `Activation` + two optional `DesktopBridge` members                                                                |
+| `apps/web/src/components/chat/ChatComposer.tsx`                         | +16/-2   | 34    | **612**  | Threads `sendLabel` / `canQueue` through the composer                                                                                             |
+| `apps/mobile/src/features/threads/ThreadComposer.tsx`                   | +26/-4   | 16    | **480**  | Mobile Return-key send/queue                                                                                                                      |
+| `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +56/-13  | 4     | **276**  | Queue button; extracts upstream's inline stop button. Must mirror upstream's `sendDisabledReason` gate                                            |
+| `apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift` | +33      | 6     | **198**  | Shift+Return newline vs. bare Return submit                                                                                                       |
+| `apps/server/src/serverRuntimeStartup.ts`                               | +29      | 6     | **174**  | `reconcile.interrupted-turns` startup phase                                                                                                       |
+| `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29      | 6     | **174**  | Backend heap headroom (`NODE_OPTIONS`)                                                                                                            |
+| `apps/desktop/src/backend/DesktopBackendConfiguration.test.ts`          | +42      | 4     | **168**  | Heap-headroom assertions                                                                                                                          |
+| `apps/desktop/src/preload.ts`                                           | +12      | 14    | **168**  | `showNotification` + `onNotificationActivated` on the exposed bridge                                                                              |
+| `packages/contracts/src/settings.ts`                                    | +7/-2    | 18    | **162**  | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                           |
+| `packages/shared/src/composerTrigger.test.ts`                           | +31/-1   | 3     | **96**   | `replaceTextRange` newline coverage                                                                                                               |
+| `apps/server/src/server.ts`                                             | +3       | 28    | **84**   | The intended mount point: one import, one `Layer.provideMerge`, one route entry                                                                   |
+| `apps/server/src/sourceControl/SourceControlProviderDiscovery.ts`       | +20/-8   | 3     | **84**   | Issue #4: CLI probe timeout + spawn-error classification                                                                                          |
+| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`                | +10/-6   | 5     | **80**   | Mounts `<AutoResumeOverlay>` as a sibling of `<ChatView>` inside upstream's render-state conditional                                              |
+| `apps/desktop/src/main.ts`                                              | +4       | 18    | **72**   | `ElectronNotification` layer                                                                                                                      |
+| `apps/web/src/connection/platform.ts`                                   | +7/-1    | 7     | **56**   | Lazy `import()` of outbox cleanup to dodge a module-init cycle                                                                                    |
+| `apps/web/src/routes/__root.tsx`                                        | +6       | 9     | **54**   | Mounts `<NotificationCoordinator>`, `<ThreadOutboxDrain>`, `<PushSubscriptionManager>`                                                            |
+| `apps/mobile/…/T3ComposerEditorView.kt`                                 | +51      | 1     | **51**   | Android bare-Enter intercept                                                                                                                      |
+| `apps/server/package.json`                                              | +2       | 14    | **28**   | `web-push` dependency                                                                                                                             |
+| `apps/desktop/src/ipc/channels.ts`                                      | +2       | 12    | **24**   | Two notification channel constants                                                                                                                |
+| `apps/desktop/src/ipc/DesktopIpcHandlers.ts`                            | +2       | 9     | **18**   | Registers the `showNotification` handler                                                                                                          |
+| `apps/mobile/src/native/T3ComposerEditor.types.ts`                      | +5/-1    | 3     | **18**   | Reworded `onSubmit` doc comment                                                                                                                   |
+| `apps/desktop/src/settings/DesktopClientSettings.test.ts`               | +1       | 7     | **7**    | `notifyOnNeedsInput` in a fixture                                                                                                                 |
+| `apps/web/index.html`                                                   | +5       | 1     | **5**    | PWA manifest + meta tags                                                                                                                          |
+| `apps/mobile/src/native/T3ComposerEditor.native.tsx`                    | +3       | 1     | **3**    | Plumbs `onComposerSubmit`                                                                                                                         |
+| `apps/mobile/src/components/AppSymbol.tsx`                              | +2       | 1     | **2**    | `return:` icon entry                                                                                                                              |
+| `apps/mobile/…/T3ComposerEditorModule.kt`                               | +1       | 1     | **1**    | Event-name list entry                                                                                                                             |
+| `docs/providers/claude.md`                                              | +78/-31  | 0     | **0**    | Fixes the broken multi-account recipe. Near-frozen upstream (last touched 2026-04-29) — **the one row worth upstreaming**, which would remove it  |
 
 **Per surface:** `apps/web` 8 · `apps/mobile` 7 · `apps/desktop` 7 · `apps/server` 5 ·
 `packages/**` 5 · `docs/` 1 · repo root 1.
@@ -94,6 +93,20 @@ conflict during rebase, so nothing warns you when the original changes and the m
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`)     | `decider.ts` (private, unexported)                               | Could miss a new blocking-request activity kind and auto-resume into a prompt.   |
 | `apps/server/src/t3x/autoResume/http.ts` (`authenticateWithOperateScope`) | `http.ts` (`authenticateRawRouteWithScope`, private, unexported) | `/api/t3x/auto-resume` could authenticate more weakly than the routes beside it. |
+
+### Parallel paths (fork controls that must honour upstream's guards)
+
+Worse than a mirror: the fork adds a **second way to do something upstream already gates**. When
+upstream adds a new precondition to its path, the fork's path silently keeps working — no conflict,
+no type error, no failing test.
+
+| Fork path                                                | Upstream guard it must mirror                                 | Checked at the 2026-07-30 sync                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `onSend` queue branch + `ComposerPrimaryActions` "Queue" | `sendDisabledReason` / `threadDetailLoading` (upstream #4830) | Drifted — both bypassed the new "Messages loading" gate; fixed in `8b9f74968`. |
+
+**At every sync, re-check this table**: for each upstream guard listed, confirm the fork's parallel
+path still refuses under the same conditions. Upstream's #4830 added the gate to `onSend`'s
+immediate-send branch only, and the fork's queue branch returns _before_ it.
 
 ## Files owned entirely by the fork (not seams)
 
