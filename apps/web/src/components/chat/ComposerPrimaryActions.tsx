@@ -122,7 +122,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       size="sm"
       className={cn("rounded-full", compact ? "px-3" : "px-4")}
       {...pointerFocusProps}
-      disabled={!hasSendableContent}
+      // Queuing is a submit like any other, so it honours the same disable
+      // reason as Send — otherwise a thread whose detail is still loading
+      // (upstream's "Messages loading" guard) could still be queued into.
+      disabled={!hasSendableContent || isSendDisabled}
     >
       Queue
     </Button>
