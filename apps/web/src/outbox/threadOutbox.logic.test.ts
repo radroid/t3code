@@ -14,6 +14,7 @@ import {
   groupQueuedThreadMessages,
   modelSelectionsEqual,
   parseQueuedThreadMessage,
+  reorderQueuedThreadMessages,
   resolveQueuedThreadSettings,
   resolveThreadOutboxDeliveryAction,
   resolveThreadOutboxFailureAction,
@@ -30,6 +31,7 @@ function queuedMessage(input: {
   readonly threadId?: string;
   readonly messageId: string;
   readonly createdAt: string;
+  readonly sortKey?: string;
 }): QueuedThreadMessage {
   return {
     environmentId: EnvironmentId.make(input.environmentId ?? "environment-1"),
@@ -38,7 +40,22 @@ function queuedMessage(input: {
     commandId: CommandId.make(`command-${input.messageId}`),
     text: input.messageId,
     createdAt: input.createdAt,
+    ...(input.sortKey !== undefined ? { sortKey: input.sortKey } : {}),
   };
+}
+
+/** The queued message ids for a single thread, in delivery order. */
+function orderedIds(queue: ReadonlyArray<QueuedThreadMessage>): ReadonlyArray<string> {
+  const grouped = groupQueuedThreadMessages(queue);
+  return (Object.values(grouped)[0] ?? []).map((message) => message.messageId);
+}
+
+/** Applies the messages a reorder rewrote back onto the queue they came from. */
+function applyReorder(
+  queue: ReadonlyArray<QueuedThreadMessage>,
+  changed: ReadonlyArray<QueuedThreadMessage>,
+): ReadonlyArray<QueuedThreadMessage> {
+  return [...queue, ...changed];
 }
 
 describe("thread outbox model", () => {
@@ -215,6 +232,103 @@ describe("thread outbox model", () => {
       }),
     ).toBe("retry");
   });
+
+  it("orders by an explicit sort key once one is present, then by message id", () => {
+    // A message reordered to the front sorts ahead of an older one despite its
+    // later createdAt.
+    const first = queuedMessage({
+      messageId: "message-2",
+      createdAt: "2026-06-08T10:00:02.000Z",
+      sortKey: "2026-06-08T10:00:01.000Z",
+    });
+    const second = queuedMessage({
+      messageId: "message-1",
+      createdAt: "2026-06-08T10:00:01.000Z",
+      sortKey: "2026-06-08T10:00:02.000Z",
+    });
+
+    expect(orderedIds([second, first])).toEqual(["message-2", "message-1"]);
+
+    // Same instant, no sort key: the message id breaks the tie, so the order
+    // cannot depend on localStorage key-enumeration order across a reload.
+    const sameInstantB = queuedMessage({
+      messageId: "message-b",
+      createdAt: "2026-06-08T10:00:03.000Z",
+    });
+    const sameInstantA = queuedMessage({
+      messageId: "message-a",
+      createdAt: "2026-06-08T10:00:03.000Z",
+    });
+
+    expect(orderedIds([sameInstantB, sameInstantA])).toEqual(["message-a", "message-b"]);
+    expect(orderedIds([sameInstantA, sameInstantB])).toEqual(["message-a", "message-b"]);
+  });
+
+  it("moves a queued message one position and rewrites only what changed", () => {
+    const queue = [
+      queuedMessage({ messageId: "message-1", createdAt: "2026-06-08T10:00:01.000Z" }),
+      queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" }),
+      queuedMessage({ messageId: "message-3", createdAt: "2026-06-08T10:00:03.000Z" }),
+    ];
+
+    const down = reorderQueuedThreadMessages(queue, MessageId.make("message-1"), "down");
+    expect(down.map((message) => message.messageId)).toEqual(["message-2", "message-1"]);
+    expect(orderedIds(applyReorder(queue, down))).toEqual(["message-2", "message-1", "message-3"]);
+
+    const up = reorderQueuedThreadMessages(queue, MessageId.make("message-3"), "up");
+    expect(orderedIds(applyReorder(queue, up))).toEqual(["message-1", "message-3", "message-2"]);
+
+    // createdAt is the message's permanent timestamp in thread history, so a
+    // reorder must never rewrite it.
+    for (const message of [...down, ...up]) {
+      const original = queue.find((candidate) => candidate.messageId === message.messageId);
+      expect(message.createdAt).toBe(original?.createdAt);
+    }
+  });
+
+  it("treats a move off either end, or of an unknown message, as a no-op", () => {
+    const queue = [
+      queuedMessage({ messageId: "message-1", createdAt: "2026-06-08T10:00:01.000Z" }),
+      queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" }),
+    ];
+
+    expect(reorderQueuedThreadMessages(queue, MessageId.make("message-1"), "up")).toEqual([]);
+    expect(reorderQueuedThreadMessages(queue, MessageId.make("message-2"), "down")).toEqual([]);
+    expect(reorderQueuedThreadMessages(queue, MessageId.make("message-9"), "up")).toEqual([]);
+    expect(reorderQueuedThreadMessages([], MessageId.make("message-1"), "down")).toEqual([]);
+  });
+
+  it("swaps two messages queued in the same millisecond", () => {
+    // Both carry identical order keys, so without disambiguation the message-id
+    // tiebreak would silently undo the move.
+    const queue = [
+      queuedMessage({ messageId: "message-a", createdAt: "2026-06-08T10:00:01.000Z" }),
+      queuedMessage({ messageId: "message-b", createdAt: "2026-06-08T10:00:01.000Z" }),
+    ];
+
+    const changed = reorderQueuedThreadMessages(queue, MessageId.make("message-b"), "up");
+    expect(orderedIds(applyReorder(queue, changed))).toEqual(["message-b", "message-a"]);
+  });
+
+  it("keeps a reordered message ahead of one queued afterwards", () => {
+    // Reordering re-deals the queue's existing slots rather than inventing new
+    // keys, so a later enqueue still lands at the back.
+    const queue = [
+      queuedMessage({ messageId: "message-1", createdAt: "2026-06-08T10:00:01.000Z" }),
+      queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" }),
+    ];
+    const changed = reorderQueuedThreadMessages(queue, MessageId.make("message-2"), "up");
+    const later = queuedMessage({
+      messageId: "message-3",
+      createdAt: "2026-06-08T10:00:09.000Z",
+    });
+
+    expect(orderedIds([...applyReorder(queue, changed), later])).toEqual([
+      "message-2",
+      "message-1",
+      "message-3",
+    ]);
+  });
 });
 
 describe("thread outbox manager", () => {
@@ -370,6 +484,96 @@ describe("thread outbox manager", () => {
       "environment-2:thread-2": [survivor],
     });
     expect([...stored.values()]).toEqual([survivor]);
+    registry.dispose();
+  });
+
+  it("reorders a thread's queue durably and leaves other threads alone", async () => {
+    const registry = AtomRegistry.make();
+    const stored = new Map<MessageId, QueuedThreadMessage>();
+    const storage: ThreadOutboxStorage = {
+      load: async () => [...stored.values()],
+      write: async (message) => {
+        stored.set(message.messageId, message);
+      },
+      remove: async (message) => {
+        stored.delete(message.messageId);
+      },
+    };
+    const manager = createThreadOutboxManager({ registry, storage });
+
+    const first = queuedMessage({ messageId: "message-1", createdAt: "2026-06-08T10:00:01.000Z" });
+    const second = queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" });
+    const otherThread = queuedMessage({
+      threadId: "thread-2",
+      messageId: "message-3",
+      createdAt: "2026-06-08T10:00:03.000Z",
+    });
+    await manager.enqueue(first);
+    await manager.enqueue(second);
+    await manager.enqueue(otherThread);
+
+    await expect(manager.reorder(second, "up")).resolves.toBe(true);
+
+    const queues = registry.get(manager.queuedMessagesByThreadKeyAtom);
+    expect(queues["environment-1:thread-1"]?.map((message) => message.messageId)).toEqual([
+      "message-2",
+      "message-1",
+    ]);
+    expect(queues["environment-1:thread-2"]).toEqual([otherThread]);
+    // The move must survive a reload, so it has to be on disk — not just in the
+    // atom.
+    expect(
+      groupQueuedThreadMessages([...stored.values()])["environment-1:thread-1"]?.map(
+        (message) => message.messageId,
+      ),
+    ).toEqual(["message-2", "message-1"]);
+
+    // Already at the head: nothing to write, nothing to report.
+    await expect(manager.reorder(second, "up")).resolves.toBe(false);
+    // Delivered or deleted in the meantime: a trailing reorder is a no-op and
+    // must not resurrect it.
+    await manager.remove(second);
+    await expect(manager.reorder(second, "down")).resolves.toBe(false);
+    expect(stored.has(second.messageId)).toBe(false);
+    registry.dispose();
+  });
+
+  it("keeps the atom aligned with disk when a reorder write fails part way", async () => {
+    const registry = AtomRegistry.make();
+    const stored = new Map<MessageId, QueuedThreadMessage>();
+    const writeCause = new Error("write failed");
+    let failWritesFor: string | null = null;
+    const storage: ThreadOutboxStorage = {
+      load: async () => [...stored.values()],
+      write: async (message) => {
+        if (message.messageId === failWritesFor) {
+          throw writeCause;
+        }
+        stored.set(message.messageId, message);
+      },
+      remove: async (message) => {
+        stored.delete(message.messageId);
+      },
+    };
+    const manager = createThreadOutboxManager({ registry, storage });
+
+    const first = queuedMessage({ messageId: "message-1", createdAt: "2026-06-08T10:00:01.000Z" });
+    const second = queuedMessage({ messageId: "message-2", createdAt: "2026-06-08T10:00:02.000Z" });
+    await manager.enqueue(first);
+    await manager.enqueue(second);
+
+    // reorder writes message-2 then message-1; fail the second write.
+    failWritesFor = "message-1";
+    await expect(manager.reorder(second, "up")).rejects.toThrow(ThreadOutboxManagerError);
+
+    // Whatever the atom shows must be exactly what a reload would rebuild.
+    const atomQueues = registry.get(manager.queuedMessagesByThreadKeyAtom);
+    const diskQueues = groupQueuedThreadMessages([...stored.values()]);
+    const messageIds = (queue: ReadonlyArray<QueuedThreadMessage> | undefined) =>
+      queue?.map((message) => message.messageId);
+    expect(messageIds(atomQueues["environment-1:thread-1"])).toEqual(
+      messageIds(diskQueues["environment-1:thread-1"]),
+    );
     registry.dispose();
   });
 });

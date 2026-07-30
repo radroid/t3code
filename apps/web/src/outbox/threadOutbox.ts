@@ -8,7 +8,7 @@ import { Atom } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentShell } from "../state/shell";
 import { createThreadOutboxManager } from "./threadOutboxManager";
-import type { QueuedThreadMessage } from "./threadOutbox.logic";
+import type { QueuedThreadMessage, QueuedThreadMessageMove } from "./threadOutbox.logic";
 import { localThreadOutboxStorage } from "./threadOutboxStorage";
 
 const EMPTY_QUEUE: ReadonlyArray<QueuedThreadMessage> = Object.freeze([]);
@@ -32,6 +32,18 @@ export function enqueueThreadOutboxMessage(message: QueuedThreadMessage): Promis
 
 export function updateThreadOutboxMessage(message: QueuedThreadMessage): Promise<boolean> {
   return threadOutboxManager.update(message);
+}
+
+/**
+ * Moves a queued message one position within its thread's queue. Resolves
+ * `false` when nothing moved (already at the end it is moving toward, or the
+ * message was delivered/deleted in the meantime).
+ */
+export function moveThreadOutboxMessage(
+  message: QueuedThreadMessage,
+  move: QueuedThreadMessageMove,
+): Promise<boolean> {
+  return threadOutboxManager.reorder(message, move);
 }
 
 export function removeThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {

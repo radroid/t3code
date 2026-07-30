@@ -91,12 +91,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     environmentIdentificationMode === "artwork",
   );
 
-  const renderStopGenerationButton = (insidePendingAction: boolean) => (
+  // Two independent axes. Upstream owns the size (a pending-action footer packs
+  // the button tighter); the fork owns the emphasis (Stop drops to a quiet
+  // outline when Queue is the primary action beside it).
+  const renderStopButton = (emphasisClassName: string, insidePendingAction = false) => (
     <button
       type="button"
       className={cn(
-        "flex cursor-pointer items-center justify-center rounded-full bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-all duration-150 hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
+        "flex cursor-pointer items-center justify-center rounded-full transition-all duration-150",
         insidePendingAction ? "size-8 sm:size-7" : "size-8 sm:h-8 sm:w-8",
+        emphasisClassName,
       )}
       {...pointerFocusProps}
       onClick={onInterrupt}
@@ -106,6 +110,18 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <rect x="2" y="2" width="8" height="8" rx="1.5" />
       </svg>
     </button>
+  );
+
+  // The filled treatment, used wherever Stop is the only action in the footer.
+  const filledStopEmphasis =
+    "bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] hover:bg-destructive hover:scale-105 active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none";
+  const stopButton = renderStopButton(filledStopEmphasis);
+
+  // Beside the Queue button, Stop is the secondary action, so it drops to a
+  // quiet outline: a saturated red circle should not be the highest-contrast
+  // element in the composer while the primary action is Queue.
+  const secondaryStopButton = renderStopButton(
+    "border border-border/60 bg-background/40 text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive",
   );
 
   const queueButton = (
@@ -126,7 +142,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   if (pendingAction) {
     return (
       <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
-        {isRunning ? renderStopGenerationButton(true) : null}
+        {isRunning ? renderStopButton(filledStopEmphasis, true) : null}
         {pendingAction.questionIndex > 0 ? (
           compact ? (
             <Button
@@ -184,12 +200,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     if (canQueue) {
       return (
         <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
-          {renderStopGenerationButton(false)}
+          {secondaryStopButton}
           {queueButton}
         </div>
       );
     }
-    return renderStopGenerationButton(false);
+    return stopButton;
   }
 
   if (showPlanFollowUpPrompt) {
