@@ -41,6 +41,21 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
   createdAt: IsoDateTime,
+  /**
+   * Queue position, written only once the user reorders the thread's queue.
+   *
+   * Deliberately optional so this stays schema version 1: a record persisted
+   * before reordering existed still decodes, and `THREAD_OUTBOX_SCHEMA_VERSION`
+   * is a `Schema.Literals` whose bump would make every older record throw —
+   * which threadOutboxStorage swallows as "skip invalid", silently emptying the
+   * user's queue on upgrade.
+   *
+   * Reordering cannot simply rewrite `createdAt`: that value is sent verbatim
+   * as the turn-start command's timestamp, so it becomes the message's
+   * permanent `createdAt`/`updatedAt` in server-side thread history and feeds
+   * the client's queued-turn-start grace window.
+   */
+  sortKey: Schema.optional(Schema.String),
 });
 
 const decodeStoredQueuedThreadMessage = Schema.decodeUnknownSync(QueuedThreadMessageSchema);
@@ -112,6 +127,34 @@ export function parseQueuedThreadMessage(value: string): QueuedThreadMessage {
   return message;
 }
 
+/**
+ * The value a queued message is ordered by. Enqueue order (`createdAt`) until
+ * the user reorders the thread's queue, after which the explicit `sortKey`
+ * wins. Both are compared as strings, which matches enqueue order because the
+ * only producer of `createdAt` is `new Date().toISOString()` (fixed width, UTC).
+ */
+export function queuedThreadMessageOrderKey(message: QueuedThreadMessage): string {
+  return message.sortKey ?? message.createdAt;
+}
+
+export function compareQueuedThreadMessages(
+  left: QueuedThreadMessage,
+  right: QueuedThreadMessage,
+): number {
+  const byOrderKey = queuedThreadMessageOrderKey(left).localeCompare(
+    queuedThreadMessageOrderKey(right),
+  );
+  if (byOrderKey !== 0) {
+    return byOrderKey;
+  }
+  // Two messages enqueued in the same millisecond carry identical keys, and
+  // `load` returns them in localStorage key-enumeration order, which is
+  // browser-defined — so without this tiebreak their relative order could flip
+  // across a reload. Now that the order is user-visible and user-editable, it
+  // has to be deterministic.
+  return left.messageId.localeCompare(right.messageId);
+}
+
 export function groupQueuedThreadMessages(
   messages: ReadonlyArray<QueuedThreadMessage>,
 ): Record<string, ReadonlyArray<QueuedThreadMessage>> {
@@ -126,9 +169,72 @@ export function groupQueuedThreadMessages(
     (grouped[threadKey] ??= []).push(message);
   }
   for (const queue of Object.values(grouped)) {
-    queue.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    queue.sort(compareQueuedThreadMessages);
   }
   return grouped;
+}
+
+export type QueuedThreadMessageMove = "up" | "down";
+
+/**
+ * The ordering slots a thread's queue currently occupies, made strictly
+ * increasing. Reordering re-deals these same slots to the permuted queue rather
+ * than inventing new keys, so a reordered message can never sort past one that
+ * is enqueued later (a fresh `createdAt` is greater than every existing slot).
+ *
+ * The `#n` suffix disambiguates messages enqueued in the same millisecond;
+ * without it a swap of two such messages would assign them equal keys and the
+ * messageId tiebreak would silently undo the move.
+ */
+function orderingSlots(ordered: ReadonlyArray<QueuedThreadMessage>): ReadonlyArray<string> {
+  const occurrences = new Map<string, number>();
+  return ordered.map((message) => {
+    const base = queuedThreadMessageOrderKey(message);
+    const seen = occurrences.get(base) ?? 0;
+    occurrences.set(base, seen + 1);
+    return seen === 0 ? base : `${base}#${seen}`;
+  });
+}
+
+/**
+ * Moves `messageId` one position within a single thread's queue, returning only
+ * the messages whose persisted `sortKey` has to change (empty when the move is
+ * a no-op — unknown message, or already at the end it is moving toward).
+ */
+export function reorderQueuedThreadMessages(
+  queue: ReadonlyArray<QueuedThreadMessage>,
+  messageId: MessageIdType,
+  move: QueuedThreadMessageMove,
+): ReadonlyArray<QueuedThreadMessage> {
+  const ordered = [...queue].sort(compareQueuedThreadMessages);
+  const index = ordered.findIndex((message) => message.messageId === messageId);
+  if (index === -1) {
+    return [];
+  }
+  const target = move === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= ordered.length) {
+    return [];
+  }
+
+  const slots = orderingSlots(ordered);
+  const moved = [...ordered];
+  const [entry] = moved.splice(index, 1);
+  if (entry === undefined) {
+    return [];
+  }
+  moved.splice(target, 0, entry);
+
+  const changed: Array<QueuedThreadMessage> = [];
+  moved.forEach((message, position) => {
+    const sortKey = slots[position];
+    // Compared against the *effective* key, not the raw field: a message that
+    // keeps its place still orders correctly on its createdAt, so writing it an
+    // explicit sortKey would just cost a storage round-trip.
+    if (sortKey !== undefined && queuedThreadMessageOrderKey(message) !== sortKey) {
+      changed.push({ ...message, sortKey });
+    }
+  });
+  return changed;
 }
 
 export function flattenQueuedThreadMessages(
