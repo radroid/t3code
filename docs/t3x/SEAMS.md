@@ -23,7 +23,7 @@ recurring rebase conflict in a file this doc said the fork did not touch) went u
 >
 > **Self-reference:** if your change edits a file that already has a row here, update that row and
 > the header totals **in the same commit**. This ledger measures the tree the commit creates, not the
-> tree it started from — a commit that edits `docs/providers/claude.md` and leaves the row alone
+> tree it started from — a commit that edits `docs/user/providers-claude.md` and leaves the row alone
 > makes this document wrong the moment it lands. That has already happened once.
 
 ## Reading the risk column
