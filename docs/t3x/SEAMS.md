@@ -2,7 +2,7 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **34 upstream-owned files, +1516 / -136 lines**, against merge-base
+Measured, not asserted: **34 upstream-owned files, +1531 / -136 lines**, against merge-base
 `9dd425b22` (the 2026-07-30 upstream sync). Everything else the fork adds lives in new files upstream
 has never seen and cannot conflict.
 
@@ -47,7 +47,7 @@ Sorted by risk, worst first.
 | `packages/contracts/src/ipc.ts`                                         | +28      | 23    | **644**  | `DesktopNotificationRequest` / `Activation` + two optional `DesktopBridge` members                                                                               |
 | `apps/web/src/components/chat/ChatComposer.tsx`                         | +16/-2   | 34    | **612**  | Threads `sendLabel` / `canQueue` through the composer                                                                                                            |
 | `apps/mobile/src/features/threads/ThreadComposer.tsx`                   | +26/-4   | 16    | **480**  | Mobile Return-key send/queue                                                                                                                                     |
-| `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +56/-13  | 4     | **276**  | Queue button; extracts upstream's inline stop button. Must mirror upstream's `sendDisabledReason` gate                                                           |
+| `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +71/-13  | 4     | **336**  | Queue button; extracts upstream's inline stop button and adds a quiet variant used beside Queue. Must mirror upstream's `sendDisabledReason` gate                |
 | `apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift` | +33      | 6     | **198**  | Shift+Return newline vs. bare Return submit                                                                                                                      |
 | `apps/server/src/serverRuntimeStartup.ts`                               | +29      | 6     | **174**  | `reconcile.interrupted-turns` startup phase                                                                                                                      |
 | `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29      | 6     | **174**  | Backend heap headroom (`NODE_OPTIONS`)                                                                                                                           |
@@ -89,10 +89,11 @@ Sorted by risk, worst first.
 Upstream helpers the fork **replicates** rather than imports, to avoid a code seam. These never
 conflict during rebase, so nothing warns you when the original changes and the mirror drifts.
 
-| Fork mirror                                                               | Mirrors upstream                                                 | Risk if upstream changes                                                         |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`)     | `decider.ts` (private, unexported)                               | Could miss a new blocking-request activity kind and auto-resume into a prompt.   |
-| `apps/server/src/t3x/autoResume/http.ts` (`authenticateWithOperateScope`) | `http.ts` (`authenticateRawRouteWithScope`, private, unexported) | `/api/t3x/auto-resume` could authenticate more weakly than the routes beside it. |
+| Fork mirror                                                               | Mirrors upstream                                                                 | Risk if upstream changes                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/t3x/autoResume/guards.ts` (`hasOpenBlockingRequest`)     | `decider.ts` (private, unexported)                                               | Could miss a new blocking-request activity kind and auto-resume into a prompt.                                                                                                                                                                                                                                                                                                                                  |
+| `apps/server/src/t3x/autoResume/http.ts` (`authenticateWithOperateScope`) | `http.ts` (`authenticateRawRouteWithScope`, private, unexported)                 | `/api/t3x/auto-resume` could authenticate more weakly than the routes beside it.                                                                                                                                                                                                                                                                                                                                |
+| `apps/web/src/outbox/**` (thread outbox)                                  | `apps/mobile/src/state/thread-outbox-*.ts` (upstream-authored, still maintained) | The web outbox is a hand port of upstream's mobile one, function for function. Two divergences are already deliberate: the web queue drops image attachments (mobile persists them as base64 data URLs, which localStorage cannot hold) and orders on an explicit `sortKey` for user reordering, where mobile still sorts on `createdAt` alone. Upstream reworking its mobile outbox produces no conflict here. |
 
 ### Parallel paths (fork controls that must honour upstream's guards)
 
