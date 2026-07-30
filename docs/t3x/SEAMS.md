@@ -2,8 +2,8 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **34 upstream-owned files, +1466 / -112 lines**, against merge-base
-`887dd6e45` (the 2026-07-28 upstream sync). Everything else the fork adds lives in new files upstream
+Measured, not asserted: **34 upstream-owned files, +1468 / -112 lines**, against merge-base
+`b64ae880e` (the 2026-07-28 upstream sync). Everything else the fork adds lives in new files upstream
 has never seen and cannot conflict.
 
 The churn and risk columns are still measured against the _previous_ merge-base `89c5a192f`, because
@@ -21,6 +21,11 @@ recurring rebase conflict in a file this doc said the fork did not touch) went u
 >
 > **Tripwire:** the surface is already far past "a handful of rows". Before adding row 35, re-isolate
 > something instead. Prefer fork-owned files even when an in-place edit is smaller.
+>
+> **Self-reference:** if your change edits a file that already has a row here, update that row and
+> the header totals **in the same commit**. This ledger measures the tree the commit creates, not the
+> tree it started from — a commit that edits `docs/providers/claude.md` and leaves the row alone
+> makes this document wrong the moment it lands. That has already happened once.
 
 ## Reading the risk column
 
@@ -67,7 +72,7 @@ Sorted by risk, worst first.
 | `apps/mobile/src/native/T3ComposerEditor.native.tsx`                    | +3       | 1     | **3**    | Plumbs `onComposerSubmit`                                                                                                                        |
 | `apps/mobile/src/components/AppSymbol.tsx`                              | +2       | 1     | **2**    | `return:` icon entry                                                                                                                             |
 | `apps/mobile/…/T3ComposerEditorModule.kt`                               | +1       | 1     | **1**    | Event-name list entry                                                                                                                            |
-| `docs/providers/claude.md`                                              | +76/-31  | ~0    | **~0**   | Fixes the broken multi-account recipe. Near-frozen upstream (last touched 2026-04-29) — **the one row worth upstreaming**, which would remove it |
+| `docs/providers/claude.md`                                              | +78/-31  | ~0    | **~0**   | Fixes the broken multi-account recipe. Near-frozen upstream (last touched 2026-04-29) — **the one row worth upstreaming**, which would remove it |
 
 **Per surface:** `apps/web` 8 · `apps/mobile` 7 · `apps/desktop` 7 · `apps/server` 5 ·
 `packages/**` 5 · `docs/` 1 · repo root 1.
@@ -123,11 +128,14 @@ That prints exactly the upstream-owned files the fork edits. Churn for any one o
 the merge-base date, **not** to today, so the number is reproducible after the fact:
 
 ```bash
-SINCE=$(git show -s --format=%cI "$MB")
-git log --oneline --since="$SINCE" --until="$SINCE" --before="$SINCE" "$MB" -- <path> | wc -l
-# simpler and equivalent: the 60 days of upstream history ending at the merge-base
-git log --oneline "$MB" --since="$(git show -s --format=%cI "$MB") -60 days" -- <path> | wc -l
+MBTS=$(git show -s --format=%ct "$MB")                     # merge-base commit time, epoch seconds
+git log --oneline --since="@$((MBTS - 60 * 86400))" "$MB" -- <path> | wc -l
 ```
+
+The `@<epoch>` form is load-bearing. Git's approxidate parser **silently ignores** a relative suffix
+on an absolute date, so `--since="<iso-date> -60 days"` is treated as `--since="<iso-date>"` — an
+empty window that returns 0 for every file. Verify the command is working before trusting it:
+`apps/web/src/components/ChatView.tsx` should return a number in the 50s, not 0.
 
 **Re-run both after every upstream sync and update this file — including the merge-base hash in the
 header.** Every churn and risk figure shifts once the newly absorbed commits fall inside the window,
