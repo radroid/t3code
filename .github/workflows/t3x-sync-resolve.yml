@@ -114,8 +114,12 @@ jobs:
                where they did NOT textually conflict, and adjust the fork's patches if upstream
                changed the semantics of an API the fork hooks into. If a fork patch became
                empty (upstream absorbed it), drop it and note that.
-            4. Verify: run `vp run typecheck`, `vp run lint`, then `vp run test`. Fix the fork's
-               patches until all three pass.
+            4. Verify: run `vp run typecheck`, `vp run lint`, then
+               `vp run test --testTimeout=120000`. The --testTimeout flag is required: apps/web
+               pins 15s, which is too tight for this fork's 2-core runners, and 120s matches the
+               fork's CI gate without lowering any package's own budget. Note the flag must NOT
+               come after a `--` separator or it is silently ignored. Fix the fork's patches until
+               all three pass.
             5. Push the branch: `git push -u origin HEAD`.
             6. Open a PR into `main` with `gh pr create`, title "t3x: resolve upstream sync
                (run ${{ github.run_id }})". In the body summarise: the upstream range merged,
