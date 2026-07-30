@@ -55,9 +55,13 @@ jobs:
       # Proven upstream-inherited, not a fork regression: branch `t3x/ci-control-upstream` — pristine
       # upstream/main plus this workflow file and nothing else — fails identically (run 30386125253).
       #
-      # 60s is not arbitrary: it is what the ROOT vite.config.ts already uses. This only stops
-      # apps/web's tighter local override from being applied on slower hardware than it assumes.
+      # 120000 is deliberate: it is the HIGHEST value any package configures
+      # (apps/server/vite.config.ts pins 120s for sqlite+git+orchestration integration tests). The
+      # flag applies to every package, so a lower value would silently CUT apps/server's budget in
+      # half — the same failure class this override exists to prevent. At 120s no package is
+      # lowered: web 15s -> 120s, root 60s -> 120s, server 120s -> 120s.
       # The job's own `timeout-minutes` remains the backstop against a genuinely hung test.
+      # Keep in sync with the `test` case in `scripts/t3x/sync-upstream.sh`.
       - name: Test
         if: ${{ !cancelled() }}
-        run: vp run test --testTimeout=60000
+        run: vp run test --testTimeout=120000
