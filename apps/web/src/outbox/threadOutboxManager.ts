@@ -10,7 +10,9 @@ import { Atom, type AtomRegistry } from "effect/unstable/reactivity";
 import {
   flattenQueuedThreadMessages,
   groupQueuedThreadMessages,
+  reorderQueuedThreadMessages,
   type QueuedThreadMessage,
+  type QueuedThreadMessageMove,
 } from "./threadOutbox.logic";
 import type { ThreadOutboxStorage } from "./threadOutboxStorage";
 
@@ -25,6 +27,7 @@ export class ThreadOutboxManagerError extends Schema.TaggedErrorClass<ThreadOutb
       "load",
       "enqueue",
       "update",
+      "reorder",
       "remove",
       "clear-environment-load",
       "clear-environment-remove",
@@ -145,6 +148,48 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
       return true;
     });
 
+  // Moves a queued message one position within its own thread's queue. Like
+  // `update` this is a no-op for a message that has since been delivered or
+  // deleted, and for a move off either end. Returns whether anything moved.
+  const reorder = (message: QueuedThreadMessage, move: QueuedThreadMessageMove): Promise<boolean> =>
+    serialize(async () => {
+      const queue = currentMessages().filter(
+        (candidate) =>
+          candidate.environmentId === message.environmentId &&
+          candidate.threadId === message.threadId,
+      );
+      const changed = reorderQueuedThreadMessages(queue, message.messageId, move);
+      if (changed.length === 0) {
+        return false;
+      }
+      // Durable-write-first, as everywhere else here: the atom must never show
+      // an order that is not on disk, or a reload would silently undo the move.
+      // Written one at a time so a mid-way failure still leaves the atom
+      // matching exactly what reached storage.
+      const written: Array<QueuedThreadMessage> = [];
+      try {
+        for (const next of changed) {
+          await options.storage.write(next);
+          written.push(next);
+        }
+      } catch (cause) {
+        if (written.length > 0) {
+          setMessages([...currentMessages(), ...written]);
+        }
+        throw new ThreadOutboxManagerError({
+          operation: "reorder",
+          environmentId: message.environmentId,
+          threadId: message.threadId,
+          messageId: message.messageId,
+          cause,
+        });
+      }
+      // groupQueuedThreadMessages dedupes by messageId keeping the last
+      // occurrence, so appending the rewritten messages replaces them.
+      setMessages([...currentMessages(), ...changed]);
+      return true;
+    });
+
   const remove = (message: QueuedThreadMessage): Promise<void> =>
     serialize(async () => {
       try {
@@ -219,6 +264,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     load,
     enqueue,
     update,
+    reorder,
     remove,
     clearEnvironment,
   };
