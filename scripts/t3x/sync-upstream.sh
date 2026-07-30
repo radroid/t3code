@@ -128,10 +128,17 @@ if [[ "$SKIP_VERIFY" == 1 ]]; then
   exit 0
 fi
 
+# Per-script extra args, so the daily verify matches the fork's CI gate exactly. `test` needs
+# --testTimeout because apps/web pins 15s (tuned for upstream's blacksmith runners) and this fork
+# runs on 2-core ubuntu-latest, where an upstream CPU-bound test reliably blows it. 120s is the
+# highest any package configures (apps/server), so it never LOWERS a package's own budget.
+# Keep in sync with `.github/workflows/t3x-ci.yml`.
 for script in $VERIFY; do
-  echo "→ verify: $RUN $script"
+  EXTRA=""
+  if [[ "$script" == "test" ]]; then EXTRA="--testTimeout=120000"; fi
+  echo "→ verify: $RUN $script $EXTRA"
   # shellcheck disable=SC2086
-  if ! $RUN "$script"; then
+  if ! $RUN "$script" $EXTRA; then
     FAILING_STEP="$script"
     fail "verification step '$script' failed"
     write_status daily verify-failed "rebase clean but '$script' failed"

@@ -106,8 +106,14 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    still behaves.
 4. If a patch commit went **empty/dropped**, upstream absorbed it — confirm the behaviour now
    exists upstream, drop the patch, and note it.
-5. Verify: `vp run typecheck && vp run lint && vp run test`. Fix the fork's patches to match
-   upstream's new internals until green.
+5. Verify: `vp run typecheck && vp run lint && vp run test --testTimeout=120000`. Fix the fork's
+   patches to match upstream's new internals until green.
+
+   Two notes. **`AGENTS.md` says "do not run repo-wide checks" — an upstream sync is the sanctioned
+   exception.** A rebase can break any package, so the full suite is the point; that rule is about
+   routine feature work. And the `--testTimeout` flag is required (see the section above); it must
+   not follow a `--` separator or it is silently ignored.
+
 6. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
    and **lands it — see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button);
    the GitHub merge button does not work on a rebased branch.** The recovery tag
