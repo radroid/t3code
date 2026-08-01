@@ -166,6 +166,7 @@ import {
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { resolveComposerSendLabel } from "~/outbox/composerSendLabel.logic";
 import { enqueueThreadOutboxMessage, useThreadOutboxQueue } from "~/outbox/threadOutbox";
+import { canSteerActiveThread } from "~/outbox/composerSteering.logic";
 import { ThreadOutboxQueueList } from "./chat/ThreadOutboxQueueList";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
@@ -2143,10 +2144,19 @@ function ChatViewContent(props: ChatViewProps) {
   // enqueues instead of erroring, and the drain sends the head once settled.
   const outboxQueue = useThreadOutboxQueue(activeThread?.environmentId ?? null, activeThreadId);
   const composerActiveThreadBusy = phase === "running" || isSendBusy || isRevertingCheckpoint;
+  // A running turn is not on its own a reason to queue: steer-capable drivers
+  // fold a mid-turn send into the work in progress.
+  const composerCanSteerActiveThread = canSteerActiveThread({
+    phase,
+    isSendBusy,
+    isRevertingCheckpoint,
+    provider: selectedProvider,
+  });
   const composerSendLabel = resolveComposerSendLabel({
     connectionState: activeEnvironmentConnectionPhase,
     activeThreadBusy: composerActiveThreadBusy,
     queueCount: outboxQueue.length,
+    canSteerActiveThread: composerCanSteerActiveThread,
   });
   const composerQueueMode =
     isServerThread &&
