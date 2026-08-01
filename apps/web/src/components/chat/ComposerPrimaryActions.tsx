@@ -259,6 +259,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  // Upstream hoisted this button to a variable itself in #4781, so the fork no longer
+  // carries its own copy of the styling -- the stale-hoist hazard this seam used to
+  // have (silently reverting an upstream restyle instead of conflicting) is gone.
+  // The only fork addition is the aria-label branch for a running turn: on a
+  // steer-capable driver this submit folds into the work in progress rather than
+  // starting a new turn, and that is invisible otherwise.
   const sendButton = (
     <button
       type="submit"
@@ -287,7 +293,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 ? "Preparing worktree"
                 : isSendBusy
                   ? "Sending"
-                  : "Send message"
+                  : isRunning
+                    ? "Send message to the running turn"
+                    : "Send message"
       }
     >
       {stageBackdropVariant ? (
@@ -320,15 +328,17 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return sendButton;
   }
 
-  // While the thread is busy, queuing (when available) becomes the primary action and
-  // Stop moves beside it as a secondary control. This also satisfies upstream's
-  // showSendWhileRunning intent (#4781) -- the running turn stays reachable on mobile,
-  // and Queue *is* the send action here, so it stands in for the send button.
+  // While the thread is busy the primary action moves beside Stop, which drops to a
+  // secondary control. Which action it is depends on whether the message can go out
+  // now: "Queue" when it will be held, or the ordinary Send when the provider will
+  // steer it into the running turn. Rendering it matters beyond discoverability --
+  // Enter does not submit on a mobile viewport, so this button is the only mid-turn
+  // send affordance there, which is also upstream's showSendWhileRunning intent (#4781).
   if (canQueue) {
     return (
       <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
         {secondaryStopButton}
-        {queueButton}
+        {sendLabel === "Queue" ? queueButton : sendButton}
       </div>
     );
   }
