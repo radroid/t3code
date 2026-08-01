@@ -11,6 +11,7 @@ import {
   useThreadOutboxQueue,
 } from "~/outbox/threadOutbox";
 import type { QueuedThreadMessage } from "~/outbox/threadOutbox.logic";
+import { logOutboxMutationFailure } from "~/outbox/outboxDiagnostics";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
@@ -82,6 +83,8 @@ function QueuedMessageRow({
   const [draft, setDraft] = useState(message.text);
   const [busy, setBusy] = useState(false);
   const messageIdRef = useRef<MessageId>(message.messageId);
+  const moveUpRef = useRef<HTMLButtonElement | null>(null);
+  const moveDownRef = useRef<HTMLButtonElement | null>(null);
 
   // Keep the local draft aligned with external updates while not editing.
   useEffect(() => {
@@ -137,14 +140,45 @@ function QueuedMessageRow({
 
   const move = useCallback(
     async (direction: "up" | "down") => {
+      // Guarded here rather than by disabling the button: `busy` flips
+      // synchronously, so disabling would take effect on the very control the
+      // user just activated, and a disabled element loses focus to <body>.
+      if (busy) {
+        return;
+      }
+      // Only restore focus when the press came from this control, so a mouse
+      // click does not pull a focus ring onto the row.
+      const pressed = (direction === "up" ? moveUpRef : moveDownRef).current;
+      const hadFocus = pressed !== null && document.activeElement === pressed;
       setBusy(true);
       try {
         await moveThreadOutboxMessage(message, direction);
+      } catch (error) {
+        // A rejected reorder means the new order never reached storage, so the
+        // queue silently stays as it was. Without this the promise rejects
+        // unhandled and the only symptom is a click that appears to do nothing.
+        logOutboxMutationFailure(
+          "reorder",
+          { direction, messageId: message.messageId, threadId: message.threadId },
+          error,
+        );
       } finally {
         setBusy(false);
+        if (hadFocus) {
+          // Once the move commits, this button may sit at the end of its travel
+          // and be disabled, or its row may have been re-inserted into the DOM.
+          // Both blur to <body>, which does not just lose the caret — the whole
+          // action cluster is only revealed on :focus-within, so it disappears
+          // and the next move needs a Tab from the top of the document.
+          requestAnimationFrame(() => {
+            const same = (direction === "up" ? moveUpRef : moveDownRef).current;
+            const other = (direction === "up" ? moveDownRef : moveUpRef).current;
+            (same !== null && !same.disabled ? same : other)?.focus();
+          });
+        }
       }
     },
-    [message],
+    [busy, message],
   );
 
   if (isEditing) {
@@ -201,12 +235,23 @@ function QueuedMessageRow({
           not something to read in full. Editing shows the whole text. */}
       <p className="min-w-0 flex-1 truncate text-foreground/80">{message.text}</p>
       {/* Revealed on hover, on keyboard focus anywhere in the row, and always on
-          touch devices, which have no hover state to reveal them. */}
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
+          touch devices, which have no hover state to reveal them.
+
+          `*:pointer-coarse:after:min-w-auto` is load-bearing, and is the same
+          antidote the `Group` primitive applies. Every Button carries a
+          `pointer-coarse:after:min-w-11` invisible 44px hit area that is *not*
+          pointer-events-none, so four adjacent icon buttons overlap on touch:
+          without this, the right third of Edit hit-tests to Remove, and a tap
+          meant to edit deletes the message instead. Neutralising the minimum
+          width makes the hit area match the visible button; the extra gap keeps
+          the now-smaller targets apart. Minimum height is left alone — nothing
+          is adjacent vertically. */}
+      <div className="*:pointer-coarse:after:min-w-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:gap-1.5 pointer-coarse:opacity-100">
         <Button
           aria-label={`Move queued message ${position} up`}
-          disabled={busy || !canMoveUp}
+          disabled={!canMoveUp}
           onClick={() => void move("up")}
+          ref={moveUpRef}
           size="icon-xs"
           variant="ghost"
         >
@@ -214,8 +259,9 @@ function QueuedMessageRow({
         </Button>
         <Button
           aria-label={`Move queued message ${position} down`}
-          disabled={busy || !canMoveDown}
+          disabled={!canMoveDown}
           onClick={() => void move("down")}
+          ref={moveDownRef}
           size="icon-xs"
           variant="ghost"
         >
