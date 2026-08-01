@@ -183,6 +183,7 @@ import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { resolveComposerSendLabel } from "~/outbox/composerSendLabel.logic";
 import { enqueueThreadOutboxMessage, useThreadOutboxQueue } from "~/outbox/threadOutbox";
 import { canSteerActiveThread } from "~/outbox/composerSteering.logic";
+import { logComposerDispatch } from "~/outbox/outboxDiagnostics";
 import { ThreadOutboxQueueList } from "./chat/ThreadOutboxQueueList";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
@@ -5044,6 +5045,18 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     };
+    // One breadcrumb per submit: whether it queued, sent, or steered into a
+    // running turn, plus every input to that decision. A refused steer is
+    // invisible on the client, so this is the only client-side evidence.
+    logComposerDispatch({
+      queued: composerQueueMode,
+      steerable: composerCanSteerActiveThread,
+      phase,
+      queueCount: outboxQueue.length,
+      connection: activeEnvironmentConnectionPhase,
+      provider: selectedProvider,
+      threadId: activeThread?.id ?? null,
+    });
     // Queue mode routes the submit through the thread outbox instead of the
     // immediate-send path (which is gated on an idle, connected thread).
     //
