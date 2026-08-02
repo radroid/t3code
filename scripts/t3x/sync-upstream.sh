@@ -132,10 +132,13 @@ fi
 # --testTimeout because apps/web pins 15s (tuned for upstream's blacksmith runners) and this fork
 # runs on 2-core ubuntu-latest, where an upstream CPU-bound test reliably blows it. 120s is the
 # highest any package configures (apps/server), so it never LOWERS a package's own budget.
+# --hookTimeout is the same fix for the same reason and is NOT implied by --testTimeout: a
+# beforeAll/beforeEach carries its own budget, and an upstream web test timed out in one under
+# full-suite load at the 2026-08-02 sync while passing standalone.
 # Keep in sync with `.github/workflows/t3x-ci.yml`.
 for script in $VERIFY; do
   EXTRA=""
-  if [[ "$script" == "test" ]]; then EXTRA="--testTimeout=120000"; fi
+  if [[ "$script" == "test" ]]; then EXTRA="--testTimeout=120000 --hookTimeout=120000"; fi
   echo "→ verify: $RUN $script $EXTRA"
   # shellcheck disable=SC2086
   if ! $RUN "$script" $EXTRA; then
