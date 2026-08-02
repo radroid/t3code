@@ -34,6 +34,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
+import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 
 it("uses the canonical Codex default for auto-bootstrapped model selection", () => {
   assert.deepStrictEqual(ServerRuntimeStartup.getAutoBootstrapDefaultModelSelection(), {
@@ -355,7 +356,7 @@ const driveStartupMake = (dispatchFails: boolean) =>
 
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const startup = yield* ServerRuntimeStartup.make.pipe(
+        const startup = yield* ServerRuntimeStartup.make().pipe(
           Effect.provideService(ServerConfig.ServerConfig, {
             cwd: "/tmp/startup-crash-recovery",
             mode: "web",
@@ -387,9 +388,10 @@ const driveStartupMake = (dispatchFails: boolean) =>
             OrchestrationEngine.OrchestrationEngineService,
             engineDouble as never,
           ),
-          // Only referenced by the post-`command-ready` startup tail (heartbeat / browser /
-          // headless access), which this test never reaches because it never marks the HTTP
-          // listener ready — but they are still part of `make`'s static requirement set.
+          // Referenced by the startup tail (heartbeat / browser / headless access). Upstream
+          // moved `signalCommandReady` to *after* the `http.wait` gate, so this test now has to
+          // mark the HTTP listener ready to reach readiness at all — and therefore does run the
+          // tail. These doubles keep it inert.
           Effect.provideService(AnalyticsService.AnalyticsService, {
             record: () => Effect.void,
             flush: Effect.void,
@@ -401,7 +403,16 @@ const driveStartupMake = (dispatchFails: boolean) =>
             launchBrowser: () => Effect.void,
           } as never),
           Effect.provideService(HttpServer.HttpServer, {} as never),
+          // Upstream's "prepared boundary": startup asks the launcher to prepare a trial
+          // update after `http.wait` and before command readiness. No update in this test.
+          Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, {
+            prepareTrial: Effect.void,
+          } as never),
         );
+        // `signalCommandReady` now sits behind the `http.wait` gate, so readiness never
+        // resolves unless the listener is marked. Both assertions below concern phases that
+        // run well before this gate, so marking it immediately does not weaken them.
+        yield* startup.markHttpListening;
         yield* startup.awaitCommandReady;
       }),
     );
