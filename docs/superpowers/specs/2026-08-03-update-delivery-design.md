@@ -15,16 +15,16 @@ We want: merge to `main` → CI builds → the app says so → one click restart
 
 ## Decisions taken
 
-| Decision            | Choice                                                            | Why                                                                                                                                                                                          |
-| ------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Who builds          | **GitHub Actions**, not the user's machine                        | Standard macOS and Windows runners are free with unlimited minutes on public repos; this fork is public. No local CPU cost, no local toolchain drift.                                        |
-| Signal transport    | **CI → fork-owned Worker → push to app**                          | Chosen over polling. Sub-second, and the Worker is ~150 lines.                                                                                                                               |
-| Worker tenancy      | **One Worker, shared**                                            | The repo is public, so "`main` moved to `<sha>`" is public information. No subscriber identity, no tokens, no revocation. One secret in the whole system: the HMAC proving CI sent the ping. |
-| Notification UI     | **Fork-owned toast, top-right**                                   | Explicit product call. Upstream's sidebar pill is silenced (see [Exactly one surface](#exactly-one-surface)).                                                                                |
-| Download timing     | **Pre-staged in the background**; the click is an instant restart | The artifact already exists when the toast appears, so waiting to download only adds a progress bar.                                                                                         |
-| Code signing        | **Unsigned**, fork-owned installer                                | $0. Costs us electron-updater's macOS path, which we replace with logic the fork already has.                                                                                                |
-| Platforms (v1)      | macOS arm64, Windows x64                                          | Linux has no consumer; Windows arm64 is commented out upstream too.                                                                                                                          |
-| **Update identity** | **Commit SHA, never the version string**                          | Forced by #47 — see below.                                                                                                                                                                   |
+| Decision            | Choice                                                                      | Why                                                                                                                                                                                          |
+| ------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who builds          | **GitHub Actions**, not the user's machine                                  | Standard macOS and Windows runners are free with unlimited minutes on public repos; this fork is public. No local CPU cost, no local toolchain drift.                                        |
+| Signal transport    | **CI → fork-owned Worker → push to app**                                    | Chosen over polling. Sub-second, and the Worker is ~150 lines.                                                                                                                               |
+| Worker tenancy      | **One Worker, shared**                                                      | The repo is public, so "`main` moved to `<sha>`" is public information. No subscriber identity, no tokens, no revocation. One secret in the whole system: the HMAC proving CI sent the ping. |
+| Notification UI     | **Fork-owned toast, top-right**                                             | Explicit product call. Upstream's sidebar pill is silenced (see [Exactly one surface](#exactly-one-surface)).                                                                                |
+| Download timing     | **Staged to swap-ready in the background**; the click is a rename + restart | The artifact already exists when the toast appears. Staging must go past "downloaded" to "copied and de-quarantined beside the target", or the cost just moves to after the click.           |
+| Code signing        | **Unsigned**, fork-owned installer                                          | $0. Costs us electron-updater's macOS path, which we replace with logic the fork already has.                                                                                                |
+| Platforms (v1)      | macOS arm64, Windows x64                                                    | Linux has no consumer; Windows arm64 is commented out upstream too.                                                                                                                          |
+| **Update identity** | **Commit SHA, never the version string**                                    | Forced by #47 — see below.                                                                                                                                                                   |
 
 ### Why identity is the SHA
 
@@ -34,7 +34,17 @@ comparison, "is the installed build newer" — is therefore **silently wrong on 
 stale artifact reinstalls and reports success, indistinguishable from a real update.
 
 So every artefact, manifest entry, comparison, and post-install verification in this design keys
-on the 40-character commit SHA. The version string is display text and nothing else.
+on the commit, and the version string is display text and nothing else.
+
+Concretely that means **`t3codeCommitHash`, at 12 characters** — the value the build script
+already writes into the staged package.json and `DesktopAppIdentity` already reads back. It is
+what the app can actually know about itself, so it is the only honest comparison key. The full
+40-char SHA rides in the manifest for display and traceability, and is never compared.
+
+Ordering is a **separate** key: `buildNumber`, from the release workflow's run number. The commit
+hash answers "is this a different build?" and cannot answer "is this a newer one" — least of all
+on a fork whose `main` is force-pushed, where a released commit may not even be an ancestor of
+`main`.
 
 ## Architecture
 
@@ -45,35 +55,40 @@ Five units, each independently testable.
        │
        ▼
  ┌──────────────────────────────┐
- │ A. t3x-release.yml           │  needs: t3x-ci green
- │    macos-latest  → dmg arm64 │
- │    windows-latest→ nsis x64  │
+ │ A. t3x-release.yml           │  on: workflow_run [t3x fork CI] == success
+ │    macos-latest  → dmg arm64 │  checkout ref: workflow_run.head_sha
+ │    windows-latest→ nsis x64  │  build env: GITHUB_REPOSITORY=""
  └──────────────┬───────────────┘
-                │ publishes
+                │ both legs must succeed
+                ▼
+ ┌──────────────────────────────┐
+ │ A2. publish  needs: [build]  │  renames assets, computes SHA256,
+ │                              │  assembles the manifest, uploads
+ └──────────────┬───────────────┘
                 ▼
       GitHub Release  (tag t3x-build-<shortsha>, prerelease)
-        ├── T3Code-<sha>-arm64.dmg
-        ├── T3Code-<sha>-x64.exe
-        └── t3x-latest.json      ← SHA-keyed manifest + SHA256 per asset
+        ├── T3Code-<shortsha>-arm64.dmg      ← renamed; the build emits
+        ├── T3Code-<shortsha>-x64.exe          T3-Code-0.0.31-*, every time
+        └── t3x-latest.json   ← shortSha + buildNumber + SHA256 per asset
                 │
-                │ B. notify step (HMAC-signed POST)
+                │ B. notify (HMAC over timestamp + body)
                 ▼
  ┌──────────────────────────────┐
- │ C. Worker (fork-owned)       │  GET /latest  → JSON  (public)
- │    infra/t3x-update-relay/   │  GET /events  → SSE   (public)
+ │ C. Worker (fork-owned)       │  GET /latest  → JSON, no-store
+ │    infra/t3x-update-relay/   │  GET /events  → SSE, 15-min cap
  └──────────────┬───────────────┘
-                │ push
+                │ push  (+ 15-min floor poll, always)
                 ▼
  ┌──────────────────────────────┐
- │ D. Desktop subscriber        │  compares payload.sha vs own build sha
- │    apps/desktop/src/t3x/     │  → downloads + stages in background
- │      updateDelivery/         │  → exposes state on the desktop bridge
+ │ D. Desktop subscriber        │  compares shortSha vs t3codeCommitHash
+ │    apps/desktop/src/t3x/     │  rejects buildNumber <= own
+ │      updateDelivery/         │  → stages to a swap-ready bundle
  └──────────────┬───────────────┘
                 │
                 ▼
  ┌──────────────────────────────┐
  │ E. Toast (top-right)         │  "Update ready · Restart"
- │    apps/web/.../t3x/         │  click → install → app.relaunch()
+ │    apps/web/.../t3x/         │  click → mv + DesktopLifecycle.relaunch
  └──────────────────────────────┘
 ```
 
