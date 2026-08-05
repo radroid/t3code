@@ -2,12 +2,28 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **34 upstream-owned files, +1616 / -187 lines**, against merge-base
+Measured, not asserted: **35 upstream-owned files, +1633 / -187 lines**, against merge-base
 `64bf01619` (the 2026-08-02 upstream sync). Everything else the fork adds lives in new files upstream
 has never seen and cannot conflict.
 
 The churn and risk columns are measured against that same merge-base, over the 60 days preceding it —
 the 46 commits absorbed by this sync are now inside the window, so every figure below moved.
+
+> **Baseline correction, 2026-08-05.** The line totals above were previously recorded as `+1616`
+> while the tree measured `+1627`, because the [Regenerating](#regenerating) script resolved the
+> merge-base through the **local** `main`, which had drifted 62 commits behind `origin/main` (sync
+> PRs land by force-push, so local `main` diverges rather than fast-forwards). The script now uses
+> `origin/main`. Two consequences worth knowing:
+>
+> - The file list and line totals are correct as of this edit — verified by regenerating against
+>   `origin/main`, which yields the same 34-file / `+1627` surface the stale path did, plus the new
+>   `AGENTS.md` row.
+> - The true merge-base against `origin/main` is now `30c96228` (2026-08-02), not `64bf01619`. The
+>   churn and risk **columns** still use the `64bf01619` window, so they remain internally
+>   consistent with each other but are one sync stale. Re-baselining them is a full regeneration and
+>   was deliberately not folded into this commit. Expect small shifts when it happens —
+>   `AGENTS.md`, for example, is churn 10 / risk 60 at `64bf01619` and churn 9 / risk 54 at
+>   `30c96228`.
 
 Regenerate this ledger before trusting it — see [Regenerating](#regenerating) at the bottom. An
 earlier version of this file claimed the surface was 2 files and "Contracts / persistence: _None._"
@@ -18,8 +34,14 @@ recurring rebase conflict in a file this doc said the fork did not touch) went u
 > per-surface aggregator) — **never** by adding a fresh edit to an upstream file. If a change
 > genuinely cannot avoid touching upstream code, it gets a row here.
 >
-> **Tripwire:** the surface is already far past "a handful of rows". Before adding row 35, re-isolate
+> **Tripwire:** the surface is already far past "a handful of rows". Before adding row 36, re-isolate
 > something instead. Prefer fork-owned files even when an in-place edit is smaller.
+>
+> Row 35 (`AGENTS.md`) was added knowingly on 2026-08-05, against this tripwire. The alternatives —
+> a tracked `.claude/settings.json` SessionStart hook, or an untracked `CLAUDE.local.md` — were
+> rejected for being Claude-Code-only and worktree-local respectively. It is six lines of prose in a
+> prose file, so it conflicts cheaply; the config it points at is all fork-owned. If a better
+> discovery mechanism appears, this is the first row to retire.
 >
 > **Self-reference:** if your change edits a file that already has a row here, update that row and
 > the header totals **in the same commit**. This ledger measures the tree the commit creates, not the
@@ -36,45 +58,46 @@ upstream never touches is cheap, and a two-line edit to a file upstream rewrites
 
 Sorted by risk, worst first.
 
-| Upstream file                                                           | fork Δ   | churn | risk      | Why the fork touches it                                                                                                                                                                                |
-| ----------------------------------------------------------------------- | -------- | ----- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/web/src/components/ChatView.tsx`                                  | +181/-1  | 63    | **11466** | Thread outbox: `handleQueueComposerSubmission`, queue-mode state, `onSend` early-return, `<ThreadOutboxQueueList>`, `sendLabel`, steer-vs-queue predicate, dispatch breadcrumb                         |
-| `pnpm-lock.yaml`                                                        | +83      | 64    | **5312**  | Web Push adds `web-push` + `@types/web-push`. Unavoidable and always conflicts; regenerate rather than merge                                                                                           |
-| `packages/client-runtime/src/connection/supervisor.test.ts`             | +363     | 5     | **1815**  | Issue #21: 356-line appended `describe` + harness plumbing                                                                                                                                             |
-| `packages/client-runtime/src/connection/supervisor.ts`                  | +186/-63 | 5     | **1245**  | Issue #21: in-place rewrite of the reconnect/backoff state machine; now also owns the shared `runLivenessProbe` helper upstream's probe path uses                                                      |
-| `apps/web/src/components/settings/SettingsPanels.tsx`                   | +58      | 18    | **1044**  | Needs-input notifications: import, 3 restore-reducer entries, permission state, a 45-line `<SettingsRow>`. **Not registered in upstream's new settings-search catalog** — see the note below the table |
-| `apps/server/src/serverRuntimeStartup.test.ts`                          | +149/-1  | 6     | **900**   | Crash-recovery reconciler coverage                                                                                                                                                                     |
-| `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +130/-64 | 4     | **776**   | Queue button; hoists upstream's inline stop and send buttons so the running-turn footer can pair Stop with either. Must mirror upstream's `sendDisabledReason` gate                                    |
-| `packages/contracts/src/ipc.ts`                                         | +28      | 22    | **616**   | `DesktopNotificationRequest` / `Activation` + two optional `DesktopBridge` members                                                                                                                     |
-| `apps/web/src/components/chat/ChatComposer.tsx`                         | +16/-2   | 34    | **612**   | Threads `sendLabel` / `canQueue` through the composer                                                                                                                                                  |
-| `apps/mobile/src/features/threads/ThreadComposer.tsx`                   | +26/-4   | 16    | **480**   | Mobile Return-key send/queue                                                                                                                                                                           |
-| `apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift` | +33      | 6     | **198**   | Shift+Return newline vs. bare Return submit                                                                                                                                                            |
-| `apps/server/src/serverRuntimeStartup.ts`                               | +32      | 6     | **192**   | `reconcile.interrupted-turns` startup phase, inside upstream's `startup` effect between `settings.start` and `reactors.start`                                                                          |
-| `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29      | 6     | **174**   | Backend heap headroom (`NODE_OPTIONS`)                                                                                                                                                                 |
-| `apps/desktop/src/backend/DesktopBackendConfiguration.test.ts`          | +42      | 4     | **168**   | Heap-headroom assertions                                                                                                                                                                               |
-| `packages/contracts/src/settings.ts`                                    | +7/-2    | 18    | **162**   | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                                                                                |
-| `apps/desktop/src/preload.ts`                                           | +12      | 13    | **156**   | `showNotification` + `onNotificationActivated` on the exposed bridge                                                                                                                                   |
-| `docs/user/providers-claude.md`                                         | +86/-33  | 1     | **119**   | Fixes the broken multi-account recipe. Upstream renamed this from `docs/providers/claude.md` in #4807 — **the one row worth upstreaming**, which would remove it                                       |
-| `packages/shared/src/composerTrigger.test.ts`                           | +31/-1   | 3     | **96**    | `replaceTextRange` newline coverage                                                                                                                                                                    |
-| `apps/server/src/server.ts`                                             | +3       | 29    | **87**    | The intended mount point: one import, one `Layer.provideMerge`, one route entry                                                                                                                        |
-| `apps/server/src/sourceControl/SourceControlProviderDiscovery.ts`       | +20/-8   | 3     | **84**    | Issue #4: CLI probe timeout + spawn-error classification                                                                                                                                               |
-| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`                | +10/-6   | 5     | **80**    | Mounts `<AutoResumeOverlay>` as a sibling of `<ChatView>` inside upstream's render-state conditional                                                                                                   |
-| `apps/desktop/src/main.ts`                                              | +4       | 17    | **68**    | `ElectronNotification` layer                                                                                                                                                                           |
-| `apps/web/src/connection/platform.ts`                                   | +7/-1    | 7     | **56**    | Lazy `import()` of outbox cleanup to dodge a module-init cycle                                                                                                                                         |
-| `apps/web/src/routes/__root.tsx`                                        | +6       | 9     | **54**    | Mounts `<NotificationCoordinator>`, `<ThreadOutboxDrain>`, `<PushSubscriptionManager>`                                                                                                                 |
-| `apps/mobile/…/T3ComposerEditorView.kt`                                 | +51      | 1     | **51**    | Android bare-Enter intercept                                                                                                                                                                           |
-| `apps/server/package.json`                                              | +2       | 15    | **30**    | `web-push` dependency                                                                                                                                                                                  |
-| `apps/desktop/src/ipc/channels.ts`                                      | +2       | 12    | **24**    | Two notification channel constants                                                                                                                                                                     |
-| `apps/mobile/src/native/T3ComposerEditor.types.ts`                      | +5/-1    | 3     | **18**    | Reworded `onSubmit` doc comment                                                                                                                                                                        |
-| `apps/desktop/src/ipc/DesktopIpcHandlers.ts`                            | +2       | 8     | **16**    | Registers the `showNotification` handler                                                                                                                                                               |
-| `apps/desktop/src/settings/DesktopClientSettings.test.ts`               | +1       | 7     | **7**     | `notifyOnNeedsInput` in a fixture                                                                                                                                                                      |
-| `apps/mobile/src/native/T3ComposerEditor.native.tsx`                    | +3       | 2     | **6**     | Plumbs `onComposerSubmit`, now inside upstream's `<TextInputWrapper>` paste shell                                                                                                                      |
-| `apps/web/index.html`                                                   | +5       | 1     | **5**     | PWA manifest + meta tags                                                                                                                                                                               |
-| `apps/mobile/src/components/AppSymbol.tsx`                              | +2       | 2     | **4**     | `return:` icon entry                                                                                                                                                                                   |
-| `apps/mobile/…/T3ComposerEditorModule.kt`                               | +1       | 1     | **1**     | Event-name list entry                                                                                                                                                                                  |
+| Upstream file                                                           | fork Δ   | churn | risk      | Why the fork touches it                                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------- | -------- | ----- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/ChatView.tsx`                                  | +181/-1  | 63    | **11466** | Thread outbox: `handleQueueComposerSubmission`, queue-mode state, `onSend` early-return, `<ThreadOutboxQueueList>`, `sendLabel`, steer-vs-queue predicate, dispatch breadcrumb                                                                                                                                    |
+| `pnpm-lock.yaml`                                                        | +83      | 64    | **5312**  | Web Push adds `web-push` + `@types/web-push`. Unavoidable and always conflicts; regenerate rather than merge                                                                                                                                                                                                      |
+| `packages/client-runtime/src/connection/supervisor.test.ts`             | +363     | 5     | **1815**  | Issue #21: 356-line appended `describe` + harness plumbing                                                                                                                                                                                                                                                        |
+| `packages/client-runtime/src/connection/supervisor.ts`                  | +186/-63 | 5     | **1245**  | Issue #21: in-place rewrite of the reconnect/backoff state machine; now also owns the shared `runLivenessProbe` helper upstream's probe path uses                                                                                                                                                                 |
+| `apps/web/src/components/settings/SettingsPanels.tsx`                   | +58      | 18    | **1044**  | Needs-input notifications: import, 3 restore-reducer entries, permission state, a 45-line `<SettingsRow>`. **Not registered in upstream's new settings-search catalog** — see the note below the table                                                                                                            |
+| `apps/server/src/serverRuntimeStartup.test.ts`                          | +149/-1  | 6     | **900**   | Crash-recovery reconciler coverage                                                                                                                                                                                                                                                                                |
+| `apps/web/src/components/chat/ComposerPrimaryActions.tsx`               | +130/-64 | 4     | **776**   | Queue button; hoists upstream's inline stop and send buttons so the running-turn footer can pair Stop with either. Must mirror upstream's `sendDisabledReason` gate                                                                                                                                               |
+| `packages/contracts/src/ipc.ts`                                         | +28      | 22    | **616**   | `DesktopNotificationRequest` / `Activation` + two optional `DesktopBridge` members                                                                                                                                                                                                                                |
+| `apps/web/src/components/chat/ChatComposer.tsx`                         | +16/-2   | 34    | **612**   | Threads `sendLabel` / `canQueue` through the composer                                                                                                                                                                                                                                                             |
+| `apps/mobile/src/features/threads/ThreadComposer.tsx`                   | +26/-4   | 16    | **480**   | Mobile Return-key send/queue                                                                                                                                                                                                                                                                                      |
+| `apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift` | +33      | 6     | **198**   | Shift+Return newline vs. bare Return submit                                                                                                                                                                                                                                                                       |
+| `apps/server/src/serverRuntimeStartup.ts`                               | +32      | 6     | **192**   | `reconcile.interrupted-turns` startup phase, inside upstream's `startup` effect between `settings.start` and `reactors.start`                                                                                                                                                                                     |
+| `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29      | 6     | **174**   | Backend heap headroom (`NODE_OPTIONS`)                                                                                                                                                                                                                                                                            |
+| `apps/desktop/src/backend/DesktopBackendConfiguration.test.ts`          | +42      | 4     | **168**   | Heap-headroom assertions                                                                                                                                                                                                                                                                                          |
+| `packages/contracts/src/settings.ts`                                    | +7/-2    | 18    | **162**   | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                                                                                                                                                                                           |
+| `apps/desktop/src/preload.ts`                                           | +12      | 13    | **156**   | `showNotification` + `onNotificationActivated` on the exposed bridge                                                                                                                                                                                                                                              |
+| `docs/user/providers-claude.md`                                         | +86/-33  | 1     | **119**   | Fixes the broken multi-account recipe. Upstream renamed this from `docs/providers/claude.md` in #4807 — **the one row worth upstreaming**, which would remove it                                                                                                                                                  |
+| `packages/shared/src/composerTrigger.test.ts`                           | +31/-1   | 3     | **96**    | `replaceTextRange` newline coverage                                                                                                                                                                                                                                                                               |
+| `apps/server/src/server.ts`                                             | +3       | 29    | **87**    | The intended mount point: one import, one `Layer.provideMerge`, one route entry                                                                                                                                                                                                                                   |
+| `apps/server/src/sourceControl/SourceControlProviderDiscovery.ts`       | +20/-8   | 3     | **84**    | Issue #4: CLI probe timeout + spawn-error classification                                                                                                                                                                                                                                                          |
+| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`                | +10/-6   | 5     | **80**    | Mounts `<AutoResumeOverlay>` as a sibling of `<ChatView>` inside upstream's render-state conditional                                                                                                                                                                                                              |
+| `apps/desktop/src/main.ts`                                              | +4       | 17    | **68**    | `ElectronNotification` layer                                                                                                                                                                                                                                                                                      |
+| `AGENTS.md`                                                             | +6       | 10    | **60**    | `## Agent skills` pointer block for the mattpocock engineering skills. Three one-line links into `docs/t3x/agents/`; no config lives here. Placed between `## How it works` and `## Where code lives` — stable anchors, deliberately not appended at EOF where upstream adds tips (the issue #29 add/add pattern) |
+| `apps/web/src/connection/platform.ts`                                   | +7/-1    | 7     | **56**    | Lazy `import()` of outbox cleanup to dodge a module-init cycle                                                                                                                                                                                                                                                    |
+| `apps/web/src/routes/__root.tsx`                                        | +6       | 9     | **54**    | Mounts `<NotificationCoordinator>`, `<ThreadOutboxDrain>`, `<PushSubscriptionManager>`                                                                                                                                                                                                                            |
+| `apps/mobile/…/T3ComposerEditorView.kt`                                 | +51      | 1     | **51**    | Android bare-Enter intercept                                                                                                                                                                                                                                                                                      |
+| `apps/server/package.json`                                              | +2       | 15    | **30**    | `web-push` dependency                                                                                                                                                                                                                                                                                             |
+| `apps/desktop/src/ipc/channels.ts`                                      | +2       | 12    | **24**    | Two notification channel constants                                                                                                                                                                                                                                                                                |
+| `apps/mobile/src/native/T3ComposerEditor.types.ts`                      | +5/-1    | 3     | **18**    | Reworded `onSubmit` doc comment                                                                                                                                                                                                                                                                                   |
+| `apps/desktop/src/ipc/DesktopIpcHandlers.ts`                            | +2       | 8     | **16**    | Registers the `showNotification` handler                                                                                                                                                                                                                                                                          |
+| `apps/desktop/src/settings/DesktopClientSettings.test.ts`               | +1       | 7     | **7**     | `notifyOnNeedsInput` in a fixture                                                                                                                                                                                                                                                                                 |
+| `apps/mobile/src/native/T3ComposerEditor.native.tsx`                    | +3       | 2     | **6**     | Plumbs `onComposerSubmit`, now inside upstream's `<TextInputWrapper>` paste shell                                                                                                                                                                                                                                 |
+| `apps/web/index.html`                                                   | +5       | 1     | **5**     | PWA manifest + meta tags                                                                                                                                                                                                                                                                                          |
+| `apps/mobile/src/components/AppSymbol.tsx`                              | +2       | 2     | **4**     | `return:` icon entry                                                                                                                                                                                                                                                                                              |
+| `apps/mobile/…/T3ComposerEditorModule.kt`                               | +1       | 1     | **1**     | Event-name list entry                                                                                                                                                                                                                                                                                             |
 
 **Per surface:** `apps/web` 8 · `apps/mobile` 7 · `apps/desktop` 7 · `apps/server` 5 ·
-`packages/**` 5 · `docs/` 1 · repo root 1.
+`packages/**` 5 · `docs/` 1 · repo root 2.
 
 > **Settings search (new at the 2026-08-02 sync).** Upstream added a settings search catalog
 > (`apps/web/src/components/settings/settingsSearch.ts`) and every upstream `<SettingsRow>` now
@@ -133,7 +156,10 @@ immediate-send branch only, and the fork's queue branch returns _before_ it.
 - `.github/workflows/t3x-*.yml` — `t3x-upstream-sync.yml`, `t3x-weekly-verify.yml`,
   `t3x-sync-resolve.yml`, `t3x-ci.yml` (the fork's PR/main gate; upstream's `ci.yml` needs
   blacksmith runners the fork cannot use).
-- `docs/t3x/**`, `docs/superpowers/specs/**`.
+- `docs/t3x/**`, `docs/superpowers/specs/**` — including `docs/t3x/agents/**` (issue tracker, triage
+  labels, domain-doc rules for the mattpocock engineering skills) and `docs/t3x/adr/`. These sit
+  under `docs/t3x/` rather than the skills' default `docs/agents/`, root `CONTEXT.md`, and
+  `docs/adr/` precisely because those three are paths upstream could plausibly create.
 
 Note that a fork-created file is only conflict-free if upstream never creates a file at the same
 path. Roughly half of the fork's new files sit outside the four `t3x`-named namespaces above, so
@@ -148,11 +174,19 @@ root `package.json` (also hot) — it is invoked by path. See `docs/t3x/auto-bui
 ## Regenerating
 
 ```bash
-MB=$(git merge-base main upstream/main)
-git diff --numstat "$MB"..HEAD | while read -r a d p; do
+git fetch origin main upstream                             # both refs must be current
+MB=$(git merge-base origin/main upstream/main)             # origin/main, NOT local main
+git diff --numstat "$MB"..origin/main | while read -r a d p; do
   git cat-file -e "$MB:$p" 2>/dev/null && printf '%s\t%s\t%s\n' "$a" "$d" "$p"
 done
 ```
+
+`origin/main` is load-bearing, the same way `@<epoch>` is below. Sync branches land by
+`git push --force-with-lease origin t3x/sync-<id>:main`, so local `main` never fast-forwards — it
+**diverges**, and silently. On 2026-08-05 it was 62 behind / 64 ahead, and a regeneration run
+through it under-reported the surface by 11 lines while still looking plausible. Sanity-check with
+`git rev-list --left-right --count main...origin/main` before trusting a run; anything non-zero on
+the left means local `main` is not the fork.
 
 That prints exactly the upstream-owned files the fork edits. Churn for any one of them — anchored to
 the merge-base date, **not** to today, so the number is reproducible after the fact:
