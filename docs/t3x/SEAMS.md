@@ -2,9 +2,21 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **35 upstream-owned files, +1633 / -187 lines**, against merge-base
+Measured, not asserted: **35 upstream-owned files, +1643 / -187 lines**, against merge-base
 `64bf01619` (the 2026-08-02 upstream sync). Everything else the fork adds lives in new files upstream
 has never seen and cannot conflict.
+
+> **Update delivery adds no rows.** The feature
+> (`docs/superpowers/specs/2026-08-03-update-delivery-design.md`) is entirely new fork-owned files —
+> `infra/t3x-update-relay/`, `.github/workflows/t3x-release.yml`, `scripts/t3x/`,
+> `apps/desktop/src/t3x/updateDelivery/`, `apps/web/src/components/t3x/` — plus the `pnpm-lock.yaml`
+> row below. Two things that would each have cost a row were solved at the workflow level instead:
+> silencing upstream's updater is done by building with `GITHUB_REPOSITORY: ""` rather than editing
+> `DesktopUpdates.ts`, and serialising the desktop build for #47 is done with
+> `vp run build:desktop --concurrency-limit 1` rather than editing `build-desktop-artifact.ts`.
+> The remaining integration (mounting the toast in `__root.tsx`, and the desktop bridge members in
+> `preload.ts` / `ipc/channels.ts` / `contracts/src/ipc.ts`) lands on **existing** rows and will
+> update them in the same commit, per the self-reference rule below.
 
 The churn and risk columns are measured against that same merge-base, over the 60 days preceding it —
 the 46 commits absorbed by this sync are now inside the window, so every figure below moved.
@@ -61,7 +73,7 @@ Sorted by risk, worst first.
 | Upstream file                                                           | fork Δ   | churn | risk      | Why the fork touches it                                                                                                                                                                                                                                                                                           |
 | ----------------------------------------------------------------------- | -------- | ----- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/web/src/components/ChatView.tsx`                                  | +181/-1  | 63    | **11466** | Thread outbox: `handleQueueComposerSubmission`, queue-mode state, `onSend` early-return, `<ThreadOutboxQueueList>`, `sendLabel`, steer-vs-queue predicate, dispatch breadcrumb                                                                                                                                    |
-| `pnpm-lock.yaml`                                                        | +83      | 64    | **5312**  | Web Push adds `web-push` + `@types/web-push`. Unavoidable and always conflicts; regenerate rather than merge                                                                                                                                                                                                      |
+| `pnpm-lock.yaml`                                                        | +93      | 64    | **5952**  | Web Push adds `web-push` + `@types/web-push`; update delivery adds the `t3x-update-relay` workspace entry (+6, `effect` + `@cloudflare/workers-types` only — `wrangler` is run via `pnpm dlx` precisely to keep it out of here, it would have cost ~500). Unavoidable and always conflicts; regenerate rather than merge |
 | `packages/client-runtime/src/connection/supervisor.test.ts`             | +363     | 5     | **1815**  | Issue #21: 356-line appended `describe` + harness plumbing                                                                                                                                                                                                                                                        |
 | `packages/client-runtime/src/connection/supervisor.ts`                  | +186/-63 | 5     | **1245**  | Issue #21: in-place rewrite of the reconnect/backoff state machine; now also owns the shared `runLivenessProbe` helper upstream's probe path uses                                                                                                                                                                 |
 | `apps/web/src/components/settings/SettingsPanels.tsx`                   | +58      | 18    | **1044**  | Needs-input notifications: import, 3 restore-reducer entries, permission state, a 45-line `<SettingsRow>`. **Not registered in upstream's new settings-search catalog** — see the note below the table                                                                                                            |
