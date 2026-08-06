@@ -104,6 +104,11 @@ export class UpdateChannel extends DurableObject {
     await this.ctx.storage.put(LATEST_STORAGE_KEY, next);
 
     const frame = sseData(rawBody);
+    // Iterating a copy is deliberate, not redundant: #enqueue drops a subscriber whose peer has
+    // gone away, which deletes from this very Set. Iterating it directly would mutate during
+    // traversal and skip subscribers — so a single dead connection could silently cost a live one
+    // its notification.
+    // oxlint-disable-next-line unicorn/no-useless-spread
     for (const subscriber of [...this.#subscribers]) {
       this.#enqueue(subscriber, frame);
     }
