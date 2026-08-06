@@ -8,8 +8,8 @@
 // Deliberately .mjs, matching scripts/clean-tsgo-backups.mjs. It is glue that runs once in CI with
 // no imports from the workspace, so it does not need to participate in typecheck.
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 const EXPECTED_PLATFORMS = ["darwin-arm64", "win32-x64"];
 
@@ -45,9 +45,9 @@ if (!Number.isSafeInteger(buildNumber) || buildNumber <= 0) {
   throw new Error(`RUN_NUMBER must be a positive integer, got "${process.env.RUN_NUMBER}".`);
 }
 
-const assets = readdirSync(inputDir)
+const assets = NodeFS.readdirSync(inputDir)
   .filter((name) => name.startsWith("asset-") && name.endsWith(".json"))
-  .map((name) => JSON.parse(readFileSync(join(inputDir, name), "utf8")))
+  .map((name) => JSON.parse(NodeFS.readFileSync(NodePath.join(inputDir, name), "utf8")))
   .map((asset) => ({
     platform: asset.platform,
     file: asset.file,
@@ -87,5 +87,5 @@ const manifest = {
   assets,
 };
 
-writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
+NodeFS.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
