@@ -1,3 +1,13 @@
+// t3x: fork-owned update delivery. Defined in its own file so this upstream file gains one import
+// and one bridge member rather than a block of interfaces. See docs/t3x/SEAMS.md.
+import type { T3xUpdateBridge } from "./t3x/updateDelivery.ts";
+export type {
+  T3xUpdateBridge,
+  T3xUpdateBuild,
+  T3xUpdateState,
+  T3xUpdateStatus,
+} from "./t3x/updateDelivery.ts";
+
 import type {
   VcsCreateRefInput,
   VcsCreateRefResult,
@@ -1086,6 +1096,12 @@ export interface DesktopBridge {
   onNotificationActivated?: (
     listener: (activation: DesktopNotificationActivation) => void,
   ) => () => void;
+  /**
+   * t3x: fork-owned update delivery. Optional for the same reason as
+   * `showNotification` — an older desktop shell may host a newer web bundle,
+   * and the toast must simply not appear rather than throw.
+   */
+  t3xUpdate?: T3xUpdateBridge;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.

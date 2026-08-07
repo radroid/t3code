@@ -129,6 +129,23 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.NOTIFICATION_ACTIVATED_CHANNEL, wrappedListener);
     };
   },
+  // t3x: fork-owned update delivery.
+  t3xUpdate: {
+    getState: () => ipcRenderer.invoke(IpcChannels.T3X_UPDATE_GET_STATE_CHANNEL),
+    onState: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+        if (typeof state !== "object" || state === null) return;
+        listener(state as Parameters<typeof listener>[0]);
+      };
+
+      ipcRenderer.on(IpcChannels.T3X_UPDATE_STATE_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.T3X_UPDATE_STATE_CHANNEL, wrappedListener);
+      };
+    },
+    restartNow: () => ipcRenderer.invoke(IpcChannels.T3X_UPDATE_RESTART_CHANNEL),
+    dismiss: (shortSha) => ipcRenderer.invoke(IpcChannels.T3X_UPDATE_DISMISS_CHANNEL, shortSha),
+  },
   getWindowFullscreenState: () =>
     ipcRenderer.sendSync(IpcChannels.GET_WINDOW_FULLSCREEN_STATE_CHANNEL) === true,
   onWindowFullscreenStateChange: (listener) => {
