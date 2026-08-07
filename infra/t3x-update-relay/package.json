@@ -1,0 +1,18 @@
+{
+  "name": "t3x-update-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "//deploy": "wrangler is run via `pnpm dlx`, not depended on. It drags ~500 lines into pnpm-lock.yaml, which SEAMS.md records as the second-worst rebase-conflict surface in this fork — and it is only ever needed at deploy time, on CI, where a one-shot fetch costs nothing.",
+    "deploy": "pnpm dlx wrangler@4 deploy",
+    "dev": "pnpm dlx wrangler@4 dev",
+    "test": "vp test run",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260601.1"
+  }
+}
