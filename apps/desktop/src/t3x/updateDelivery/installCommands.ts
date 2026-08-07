@@ -35,6 +35,28 @@ export function macStagingCommands(args: {
   readonly stagedAppPath: string;
 }): readonly Command[] {
   return [
+    ...macAttachCommands({ dmgPath: args.dmgPath, mountPoint: args.mountPoint }),
+    ...macCopyCommands({
+      sourceAppPath: args.sourceAppPath,
+      stagedAppPath: args.stagedAppPath,
+    }),
+    macDetachCommand(args.mountPoint),
+  ];
+}
+
+/**
+ * Split out because `sourceAppPath` is not knowable until the dmg is mounted.
+ *
+ * The `.app` name inside the dmg must be READ, never computed — `resolveMacInstallTarget` refuses
+ * an install when the mounted name differs from the installed one, and that check is worthless if
+ * both sides come from the same guess. So the caller attaches, lists the mount point, and only
+ * then can build the copy step.
+ */
+export function macAttachCommands(args: {
+  readonly dmgPath: string;
+  readonly mountPoint: string;
+}): readonly Command[] {
+  return [
     // Belt and braces: `fetch` does not set com.apple.quarantine, unlike LaunchServices-aware
     // downloaders, but stripping it costs nothing and a quarantined dmg fails to attach cleanly.
     { bin: "xattr", args: ["-d", "com.apple.quarantine", args.dmgPath] },
@@ -42,12 +64,27 @@ export function macStagingCommands(args: {
       bin: "hdiutil",
       args: ["attach", args.dmgPath, "-nobrowse", "-readonly", "-mountpoint", args.mountPoint],
     },
+  ];
+}
+
+export function macCopyCommands(args: {
+  readonly sourceAppPath: string;
+  readonly stagedAppPath: string;
+}): readonly Command[] {
+  return [
     // Remove any leftover staged bundle first, so `cp -R` creates rather than nests.
     { bin: "rm", args: ["-rf", args.stagedAppPath] },
     { bin: "cp", args: ["-R", args.sourceAppPath, args.stagedAppPath] },
     { bin: "xattr", args: ["-dr", "com.apple.quarantine", args.stagedAppPath] },
-    { bin: "hdiutil", args: ["detach", args.mountPoint, "-force"] },
   ];
+}
+
+/**
+ * Always runs, including after a failed copy — a dmg left attached survives this process and the
+ * next attach to the same mount point fails, so one bad update would poison every later one.
+ */
+export function macDetachCommand(mountPoint: string): Command {
+  return { bin: "hdiutil", args: ["detach", mountPoint, "-force"] };
 }
 
 /**

@@ -7,13 +7,14 @@
  * people to ignore it.
  */
 
-export type UpdateDeliveryStatus =
-  | { readonly kind: "idle" }
-  /** Downloading and copying into place. Deliberately invisible. */
-  | { readonly kind: "staging"; readonly shortSha: string }
-  | { readonly kind: "ready"; readonly shortSha: string; readonly version: string }
-  | { readonly kind: "restarting" }
-  | { readonly kind: "failed"; readonly message: string; readonly logPath?: string };
+import type { T3xUpdateStatus } from "@t3tools/contracts";
+
+/**
+ * Aliased rather than redeclared. The same union crosses the IPC boundary, and two copies of it
+ * would drift the moment one side gained a state — with the renderer silently falling through to
+ * "show nothing", which is the failure this whole feature exists to remove.
+ */
+export type UpdateDeliveryStatus = T3xUpdateStatus;
 
 export interface UpdateToastInput {
   readonly status: UpdateDeliveryStatus;

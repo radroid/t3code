@@ -11,8 +11,13 @@ export const MIN_FREE_BYTES_HEADROOM = 1_500_000_000;
 
 export interface StagedEntry {
   readonly name: string;
-  readonly shortSha: string;
-  readonly bytes: number;
+  /**
+   * Absent when the filename carries no recognisable build. Those are always swept: an entry the
+   * naming scheme does not explain is junk from an older layout or a partial write, and keeping it
+   * would mean the staging directory grows by 470 MB per unrecognised file forever.
+   */
+  readonly shortSha: string | undefined;
+  readonly bytes?: number;
 }
 
 /**

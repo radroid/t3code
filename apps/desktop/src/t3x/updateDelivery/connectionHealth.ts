@@ -82,6 +82,11 @@ export function reconnectDelayMs(attempt: number, random: () => number): number 
  * predicate — if a trigger is worth waking for, it is worth reconciling for.
  */
 export type ReconciliationTrigger =
+  /**
+   * A frame arrived on the open stream. The only trigger that does NOT re-read `/latest` — the
+   * frame carries the whole manifest, and the relay serves the same bytes on both endpoints.
+   */
+  | "push"
   | "startup"
   | "floor-poll"
   | "watchdog-fired"

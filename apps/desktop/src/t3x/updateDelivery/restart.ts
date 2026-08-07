@@ -64,7 +64,7 @@ export const restartIntoInstalledBuild = Effect.fn("t3x.updateDelivery.restart")
   const outcome: RestartOutcome = yield* shutdown.awaitComplete.pipe(
     Effect.timeout(SHUTDOWN_GRACE),
     Effect.as<RestartOutcome>("graceful"),
-    Effect.catch(() => Effect.succeed<RestartOutcome>("forced-after-timeout")),
+    Effect.orElseSucceed((): RestartOutcome => "forced-after-timeout"),
   );
 
   if (outcome === "forced-after-timeout") {
@@ -76,6 +76,33 @@ export const restartIntoInstalledBuild = Effect.fn("t3x.updateDelivery.restart")
   yield* electronApp.relaunch({ execPath: args.execPath, args: [...args.argv] });
   yield* electronApp.exit(0);
 
+  return outcome;
+});
+
+/**
+ * Quit and stay quit — the Windows path.
+ *
+ * Deliberately does NOT arm `app.relaunch()`. On Windows the NSIS installer starts the app again
+ * itself (`--force-run`), so arming a relaunch here would race two instances: ours coming back on
+ * the old binary while the installer is still replacing it, and the installer's on the new one.
+ */
+export const quitForInstaller = Effect.fn("t3x.updateDelivery.quitForInstaller")(function* () {
+  const electronApp = yield* ElectronApp.ElectronApp;
+  const shutdown = yield* DesktopShutdown.DesktopShutdown;
+
+  yield* shutdown.request;
+  const outcome: RestartOutcome = yield* shutdown.awaitComplete.pipe(
+    Effect.timeout(SHUTDOWN_GRACE),
+    Effect.as<RestartOutcome>("graceful"),
+    Effect.orElseSucceed((): RestartOutcome => "forced-after-timeout"),
+  );
+  if (outcome === "forced-after-timeout") {
+    yield* Effect.logWarning(
+      "t3x: shutdown did not finish within the grace period; exiting so the installer can proceed",
+    );
+  }
+
+  yield* electronApp.exit(0);
   return outcome;
 });
 
