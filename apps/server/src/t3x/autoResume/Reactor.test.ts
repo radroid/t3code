@@ -146,6 +146,21 @@ const harness = (initialModel: OrchestrationReadModel, events: ProviderRuntimeEv
 
 const types = (commands: ReadonlyArray<OrchestrationCommand>) => commands.map((c) => c.type);
 
+// Conditions for settleUntil/advanceUntil. Each is re-evaluated on every pump, so it always
+// reads fresh state rather than a value captured before the loop.
+const scheduledOne = (store: { readonly listPending: Effect.Effect<ReadonlyArray<unknown>> }) =>
+  store.listPending.pipe(Effect.map((pending) => pending.length === 1));
+
+const dispatchedIncludes = (
+  dispatched: Ref.Ref<OrchestrationCommand[]>,
+  type: OrchestrationCommand["type"],
+) => Ref.get(dispatched).pipe(Effect.map((commands) => types(commands).includes(type)));
+
+const firedCount = (
+  store: { readonly countFiredSince: (threadId: string, since: number) => Effect.Effect<number> },
+  expected: number,
+) => store.countFiredSince("thread-1", 0).pipe(Effect.map((n) => n === expected));
+
 // A real event-loop tick. The store persists via writeFileStringAtomically — real
 // filesystem I/O whose completion callback fires on the Node event loop, NOT on
 // TestClock — and schedule() gates its in-memory ref update behind that write. So
@@ -156,21 +171,74 @@ const realTick = Effect.promise(() => new Promise<void>((resolve) => setImmediat
 // Give forked fibers scheduling turns to subscribe/process (they are message-blocked on
 // the provider stream, so TestClock.adjust alone does not run them), interleaved with
 // real ticks so store persistence completes deterministically.
-const settle = Effect.gen(function* () {
-  for (let i = 0; i < 10; i++) {
-    yield* realTick;
-    for (let j = 0; j < 5; j++) yield* Effect.yieldNow;
-  }
+/** One pump of both schedulers: the Effect fiber scheduler and the real Node event loop. */
+const pump = Effect.gen(function* () {
+  yield* realTick;
+  for (let j = 0; j < 5; j++) yield* Effect.yieldNow;
 });
+
+/**
+ * A bounded spin, for asserting that something does NOT happen.
+ *
+ * You cannot wait for the absence of an event, so these sites keep a fixed number of turns.
+ * Anything waiting for something to APPEAR must use `settleUntil` — see the note there.
+ */
+const settleQuiet = Effect.gen(function* () {
+  for (let i = 0; i < 10; i++) yield* pump;
+});
+
+const MAX_SETTLE_PUMPS = 500;
+
+/**
+ * Wait until `condition` holds, pumping both schedulers.
+ *
+ * Condition-based rather than a fixed spin, because no tick count is correct on every machine:
+ * `schedule()` gates its in-memory ref update behind `writeFileStringAtomically` — real
+ * filesystem I/O that completes on the Node event loop, NOT on TestClock — and how many turns
+ * that takes depends on the disk and the load.
+ *
+ * The fixed 10-pump spin this replaces failed about 1 run in 13 locally and took a main CI run
+ * red on 2026-08-07 with `expected +0 to equal 1`: the assertion simply looked before the write
+ * landed. Exiting as soon as the condition holds also makes the common case FASTER than the old
+ * spin, which always paid for all ten.
+ */
+const settleUntil = (condition: Effect.Effect<boolean>, description: string) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < MAX_SETTLE_PUMPS; i++) {
+      if (yield* condition) return;
+      yield* pump;
+    }
+    return yield* Effect.die(
+      new Error(`timed out waiting for ${description} after ${MAX_SETTLE_PUMPS} pumps`),
+    );
+  });
 
 // Advance the test clock in wake-poll-sized steps, letting the wake fiber run each tick.
 // A single large adjust does not reliably drive a recurring delay+forever loop.
 const advancePastResume = Effect.gen(function* () {
   for (let i = 0; i < 8; i++) {
     yield* TestClock.adjust(Duration.millis(30_000));
-    yield* settle;
+    yield* settleQuiet;
   }
 });
+
+/**
+ * Advance the clock until `condition` holds, for the cases that expect the wake fiber to fire.
+ *
+ * Same reasoning as `settleUntil`, one layer out: the wake fiber's work also ends in a store
+ * write, so "advance eight times and look" has the same race. Runs a generous number of steps
+ * because each one is a virtual 30s and costs only scheduler turns.
+ */
+const advanceUntil = (condition: Effect.Effect<boolean>, description: string) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 40; i++) {
+      if (yield* condition) return;
+      yield* TestClock.adjust(Duration.millis(30_000));
+      yield* settleQuiet;
+    }
+    if (yield* condition) return;
+    return yield* Effect.die(new Error(`timed out waiting for ${description} past the resume`));
+  });
 
 describe("AutoResumeReactor (integration)", () => {
   it.effect("schedules on a rejected event and resumes once the window reopens", () =>
@@ -180,7 +248,7 @@ describe("AutoResumeReactor (integration)", () => {
       ]);
 
       yield* Effect.gen(function* () {
-        yield* settle; // let detection process the pre-loaded event + schedule
+        yield* settleUntil(scheduledOne(store), "detection to schedule a pending resume");
 
         const calls = yield* Ref.get(snapshotCalls);
         assert.isAbove(
@@ -195,7 +263,7 @@ describe("AutoResumeReactor (integration)", () => {
         assert.include(types(afterSchedule), "thread.activity.append");
         assert.notInclude(types(afterSchedule), "thread.turn.start");
 
-        yield* advancePastResume; // past resumeAt; wake fiber fires
+        yield* advanceUntil(dispatchedIncludes(dispatched, "thread.turn.start"), "the resume turn");
 
         const afterWake = yield* Ref.get(dispatched);
         const turnStarts = afterWake.filter((c) => c.type === "thread.turn.start");
@@ -213,13 +281,13 @@ describe("AutoResumeReactor (integration)", () => {
   // snapshot reports latestTurn: null. That must NOT read as "thread-advanced".
   it.effect("resumes when the limited turn has settled away by wake time (latestTurn null)", () =>
     Effect.gen(function* () {
-      const { dispatched, modelRef, deps } = yield* harness(
+      const { dispatched, modelRef, deps, store } = yield* harness(
         readModel({ status: "running", latestTurn: { turnId: "turn-1", state: "running" } }),
         [rejectedEvent(100)],
       );
 
       yield* Effect.gen(function* () {
-        yield* settle; // detection schedules; baseline.latestTurnId === "turn-1"
+        yield* settleUntil(scheduledOne(store), "detection to schedule"); // baseline.latestTurnId === "turn-1"
 
         // The limited turn settles and the session stops during the wait — the
         // projection's latest_turn_id empties out, so the snapshot's latestTurn is null.
@@ -243,10 +311,12 @@ describe("AutoResumeReactor (integration)", () => {
 
   it.effect("does NOT resume when the user takes over before the window reopens", () =>
     Effect.gen(function* () {
-      const { dispatched, modelRef, deps } = yield* harness(readModel({}), [rejectedEvent(100)]);
+      const { dispatched, modelRef, deps, store } = yield* harness(readModel({}), [
+        rejectedEvent(100),
+      ]);
 
       yield* Effect.gen(function* () {
-        yield* settle; // detection schedules from the pre-loaded event
+        yield* settleUntil(scheduledOne(store), "detection to schedule from the pre-loaded event");
 
         // User sends a new message before the resume is due -> guard must cancel.
         yield* Ref.set(
@@ -275,8 +345,10 @@ describe("AutoResumeReactor (integration)", () => {
       yield* Ref.set(failTurnStart, true); // make the resume's turn.start dispatch fail
 
       yield* Effect.gen(function* () {
-        yield* settle;
-        yield* advancePastResume; // fire once (dispatch fails)
+        yield* settleUntil(scheduledOne(store), "detection to schedule");
+        // Fires once and the dispatch fails; the attempt is reserved either way, which is the
+        // observable signal that the wake actually ran.
+        yield* advanceUntil(firedCount(store, 1), "the attempt to be reserved");
 
         // The attempt was reserved (pending cleared, one fire recorded) despite the failure.
         assert.strictEqual((yield* store.listPending).length, 0);
@@ -302,7 +374,9 @@ describe("AutoResumeReactor (integration)", () => {
       yield* store.setEnabled("thread-1", false);
 
       yield* Effect.gen(function* () {
-        yield* settle; // detection runs against the pre-loaded rejection
+        // A bounded spin, not settleUntil: a disabled thread is gated BEFORE getSnapshot, so
+        // there is no positive signal to wait for — the assertion is that nothing appears.
+        yield* settleQuiet; // give detection every chance to run against the pre-loaded rejection
 
         assert.strictEqual(
           (yield* store.listPending).length,
@@ -323,7 +397,7 @@ describe("AutoResumeReactor (integration)", () => {
       const { dispatched, deps, store } = yield* harness(readModel({}), [rejectedEvent(100)]);
 
       yield* Effect.gen(function* () {
-        yield* settle;
+        yield* settleUntil(scheduledOne(store), "detection to schedule");
         assert.strictEqual((yield* store.listPending).length, 1, "precondition: it scheduled");
 
         // The switch is flipped off *after* scheduling but *before* the window reopens.
