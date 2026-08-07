@@ -150,10 +150,30 @@ Also required at the workflow level: `permissions: contents: write` (upstream's 
 (`:2035`). Upload is a separate workflow step, exactly as upstream does it. Earlier drafts of this
 design claimed publishing came for free; it does not.
 
-**Version must be semver, so identity is carried separately.** `--build-version` becomes
-electron-builder's `version` field and a 40-char SHA is not valid semver. Use
-`0.0.31-t3x.<shortsha>`; `resolveDesktopUpdateChannel` only special-cases `-nightly.<d>.<d>`
-(`:1478`), so this stays on the `latest` channel and the product name is unchanged.
+**The version carries the fork's build counter: `0.0.31-t3x.<buildNumber>`.**
+
+The upstream base does not move between syncs (#47), so a fork-owned counter is the only thing
+distinguishing one build from the next. It must be **numeric**: semver compares prerelease
+identifiers, and an earlier draft used the short sha — identifiable, but `-t3x.a3f9c21b` versus
+`-t3x.b0e77c14` sorts alphabetically by hash, which orders nothing. Numeric identifiers sort
+numerically, so `0.0.31-t3x.43` correctly precedes `0.0.31-t3x.44`.
+
+It is the **same** `github.run_number` the manifest carries as `buildNumber` and the relay orders
+on. One counter used everywhere, rather than a version scheme that disagrees with the update logic.
+`build-update-manifest.mjs` asserts the version ends with `-t3x.<buildNumber>`, so the two cannot
+drift into a state where the app orders by one value and displays another.
+
+The sha is not lost — it is in the release tag, both asset filenames, the manifest, and
+`t3codeCommitHash` inside the app. **The version answers "which is newer"; the hash answers "which
+commit".** Keeping those two questions apart is the whole lesson of #47.
+
+`resolveDesktopUpdateChannel` only special-cases `-nightly.<d>.<d>` (`:1478`), so a `-t3x.`
+prerelease stays on the `latest` channel and the product name is unchanged.
+
+One cosmetic consequence, accepted: semver sorts any prerelease *below* the plain release, so
+`0.0.31-t3x.43` ranks below a bare `0.0.31`. Nothing in this design compares version strings, so it
+never affects behaviour — but it is why the About box shows a version that looks like a
+pre-release of upstream's.
 
 **Identity reuses what already exists.** The build script already runs
 `git rev-parse --short=12 HEAD` (`:523`) and writes `t3codeCommitHash` into the staged
@@ -216,7 +236,7 @@ The final step of the release workflow POSTs to the Worker:
 {
   "sha": "<40-char, display and traceability only>",
   "shortSha": "<12-char, the comparison key>",
-  "version": "0.0.31-t3x.<shortsha>",
+  "version": "0.0.31-t3x.<buildNumber>",
   "builtAt": "<ISO8601>",
   "releaseTag": "t3x-build-<shortsha>",
   "assets": [{ "platform": "darwin-arm64", "url": "…", "sha256": "…", "bytes": 123 }]

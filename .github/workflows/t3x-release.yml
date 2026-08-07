@@ -70,6 +70,8 @@ jobs:
         # BUILD_SHA is read from the environment rather than interpolated into the script. On the
         # workflow_dispatch path it is user-supplied, and `${{ }}` interpolation splices the raw
         # value into the shell source before bash ever sees it.
+        env:
+          BUILD_COUNTER: ${{ github.run_number }}
         run: |
           set -euo pipefail
           if [[ ! "$BUILD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -88,13 +90,30 @@ jobs:
           # actually read about itself, so it is the only honest comparison key.
           short_sha="$(git rev-parse --short=12 HEAD)"
 
-          # --build-version becomes electron-builder's `version`, which must be valid semver — a
-          # raw SHA is not. resolveDesktopUpdateChannel only special-cases -nightly.<d>.<d>, so a
-          # -t3x. prerelease stays on the "latest" channel and the product name is unchanged.
+          # The fork's build counter, and the reason the version is orderable at all.
+          #
+          # The upstream base does not move between syncs (0.0.31 -> 0.0.31, issue #47), so without
+          # a fork-owned counter every build here would carry an identical version. An earlier
+          # draft used the short sha instead: identifiable, but semver compares prerelease
+          # identifiers, and `-t3x.a3f9c21b` vs `-t3x.b0e77c14` sorts alphabetically by hash, which
+          # orders nothing. A numeric identifier sorts numerically, so 0.0.31-t3x.43 correctly
+          # precedes 0.0.31-t3x.44.
+          #
+          # This is the SAME number the manifest carries as buildNumber and the relay orders on.
+          # One counter, used everywhere, rather than a version scheme that disagrees with the
+          # update logic.
+          #
+          # The sha is not lost: it is in the release tag, both asset filenames, the manifest, and
+          # t3codeCommitHash inside the app. Version answers "which is newer"; the hash answers
+          # "which commit". Keeping those separate is the whole lesson of #47.
+          #
+          # --build-version becomes electron-builder's `version` and must be valid semver — a raw
+          # sha is not. resolveDesktopUpdateChannel only special-cases -nightly.<d>.<d>, so a -t3x.
+          # prerelease stays on the "latest" channel and the product name is unchanged.
           base="$(node -p "require('./apps/desktop/package.json').version")"
-          echo "sha=$sha"                        >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha"            >> "$GITHUB_OUTPUT"
-          echo "version=${base}-t3x.${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha"                          >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha"              >> "$GITHUB_OUTPUT"
+          echo "version=${base}-t3x.${BUILD_COUNTER}" >> "$GITHUB_OUTPUT"
           echo "tag=t3x-build-${short_sha}"      >> "$GITHUB_OUTPUT"
 
   build:

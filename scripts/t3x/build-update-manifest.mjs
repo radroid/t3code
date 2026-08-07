@@ -45,6 +45,17 @@ if (!Number.isSafeInteger(buildNumber) || buildNumber <= 0) {
   throw new Error(`RUN_NUMBER must be a positive integer, got "${process.env.RUN_NUMBER}".`);
 }
 
+// The version's counter and the manifest's ordering key are the same number by construction.
+// Asserted rather than assumed: if they ever drift, the app would order updates by one value while
+// displaying another, and "0.0.31-t3x.44 is installed" could be a build the client considers older
+// than what it already has. Cheap check, silent failure if omitted.
+if (!version.endsWith(`-t3x.${buildNumber}`)) {
+  throw new Error(
+    `VERSION "${version}" does not end with the build counter "-t3x.${buildNumber}". ` +
+      "The release workflow must derive both from github.run_number.",
+  );
+}
+
 const assets = NodeFS.readdirSync(inputDir)
   .filter((name) => name.startsWith("asset-") && name.endsWith(".json"))
   .map((name) => JSON.parse(NodeFS.readFileSync(NodePath.join(inputDir, name), "utf8")))
