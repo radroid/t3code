@@ -11,10 +11,10 @@
  * packages no `app-update.yml`, which makes electron-updater self-disable. See the design doc.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { T3xUpdateBridge, T3xUpdateState } from "@t3tools/contracts";
 
-import { toastManager } from "../ui/toast";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { selectUpdateToastView, shouldSendRestart, type UpdateToastView } from "./updateToast.logic";
 
 const IDLE_STATE: T3xUpdateState = { status: { kind: "idle" }, hasUpdatedBefore: false };
@@ -62,12 +62,21 @@ export function T3xUpdateToast() {
     };
   }, []);
 
-  const view = selectUpdateToastView({
-    status: state.status,
-    dismissedShortSha,
-    isElectron: updateBridge() !== undefined,
-    hasUpdatedBefore: state.hasUpdatedBefore,
-  });
+  const view = useMemo(
+    () =>
+      selectUpdateToastView({
+        status: state.status,
+        dismissedShortSha,
+        isElectron: updateBridge() !== undefined,
+        hasUpdatedBefore: state.hasUpdatedBefore,
+      }),
+    [state, dismissedShortSha],
+  );
+
+  // Keyed on the view's content, not its identity. `selectUpdateToastView` returns a fresh object
+  // every render, so depending on the object itself would push a toast update on every re-render
+  // of the root route — which is most of them.
+  const viewKey = JSON.stringify(view);
 
   useEffect(() => {
     if (view.kind === "hidden") {
@@ -96,7 +105,7 @@ export function T3xUpdateToast() {
     } else {
       toastManager.update(toastId.current, payload);
     }
-  }, [view]);
+  }, [viewKey]);
 
   return null;
 }
@@ -110,19 +119,26 @@ function toastPayload(
 ) {
   // `timeout: 0` on every variant. An update that quietly times out is an update the user never
   // learns about, and a failure that times out is issue #41's silence all over again.
+  //
+  // Built through `stackedThreadToast` rather than by hand: `actionVariant` and `onClose` are read
+  // off `toast.data`, not off the top level, so passing them directly is accepted by the types and
+  // then ignored at render — the dismiss would never register and the button would render with the
+  // wrong variant.
   if (view.kind === "ready") {
-    return {
-      type: "info" as const,
+    return stackedThreadToast({
+      type: "info",
       title: view.title,
       description: view.description,
       timeout: 0,
       actionProps: { children: view.actionLabel, onClick: handlers.onRestart },
-      actionVariant: "default" as const,
-      data: { hideCopyButton: true },
-      onClose: () => {
-        handlers.onDismiss(view.shortSha);
+      actionVariant: "default",
+      data: {
+        hideCopyButton: true,
+        onClose: () => {
+          handlers.onDismiss(view.shortSha);
+        },
       },
-    };
+    });
   }
 
   if (view.kind === "restarting") {
@@ -131,7 +147,8 @@ function toastPayload(
       title: view.title,
       timeout: 0,
       // Cleared explicitly: leaving the Restart button visible during the restart invites a second
-      // click on a bundle that is already being swapped.
+      // click on a bundle that is already being swapped. Base UI merges updates into the existing
+      // toast, so an omitted `actionProps` would leave the old button in place.
       actionProps: undefined,
       data: { hideCopyButton: true },
     };
