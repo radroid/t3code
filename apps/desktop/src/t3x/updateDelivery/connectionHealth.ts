@@ -81,6 +81,32 @@ export function reconnectDelayMs(attempt: number, random: () => number): number 
  * There is no variant that trusts the stream instead, which is why this is a list rather than a
  * predicate — if a trigger is worth waking for, it is worth reconciling for.
  */
+/**
+ * A stream that lasted this long was working, whatever ended it.
+ *
+ * Comfortably longer than an instant reject and comfortably shorter than the relay's 15-minute
+ * cap, so a healthy connection always resets the backoff and a flapping one never does.
+ */
+export const HEALTHY_STREAM_MS = 60_000;
+
+/** Caps the exponent. `reconnectDelayMs` already clamps the delay; this stops the counter growing. */
+export const MAX_BACKOFF_ATTEMPT = 16;
+
+/**
+ * The next backoff attempt, decided by how long the last connection lasted — **not** by why it
+ * ended.
+ *
+ * `stream-closed` is both the healthy case and the pathological one. The relay caps every
+ * connection at fifteen minutes, so a clean close is what a working subscriber sees four times an
+ * hour; a relay that accepts a connection and drops it immediately reports exactly the same thing.
+ * Resetting on the reason treats those as equivalent and turns the second into a one-second hot
+ * loop against a single Durable Object — from every installed app at once.
+ */
+export function nextBackoffAttempt(attempt: number, lastedMs: number): number {
+  if (lastedMs >= HEALTHY_STREAM_MS) return 0;
+  return Math.min(attempt + 1, MAX_BACKOFF_ATTEMPT);
+}
+
 export type ReconciliationTrigger =
   /**
    * A frame arrived on the open stream. The only trigger that does NOT re-read `/latest` — the

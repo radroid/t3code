@@ -3,6 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   assessConnection,
   FLOOR_POLL_INTERVAL_MS,
+  HEALTHY_STREAM_MS,
+  MAX_BACKOFF_ATTEMPT,
+  nextBackoffAttempt,
   reconnectDelayMs,
   RECONNECT_MAX_DELAY_MS,
   SERVER_HEARTBEAT_INTERVAL_MS,
@@ -62,6 +65,42 @@ describe("watchdog and floor-poll relationship", () => {
 
   it("gives the server at least two heartbeats before giving up", () => {
     expect(WATCHDOG_TIMEOUT_MS).toBeGreaterThanOrEqual(SERVER_HEARTBEAT_INTERVAL_MS * 2);
+  });
+});
+
+describe("nextBackoffAttempt", () => {
+  it("resets after a stream that lasted", () => {
+    // The relay's own 15-minute cap. A working subscriber sees this four times an hour, and
+    // treating it as a failure would push a healthy client into a minute of backoff.
+    expect(nextBackoffAttempt(7, 15 * 60_000)).toBe(0);
+  });
+
+  it("escalates after a stream that died young", () => {
+    expect(nextBackoffAttempt(0, 200)).toBe(1);
+    expect(nextBackoffAttempt(3, 200)).toBe(4);
+  });
+
+  it("escalates on a clean close that came too fast", () => {
+    // The case a reason-based reset gets wrong: a relay that accepts a connection and drops it
+    // immediately reports the same "stream-closed" a healthy 15-minute stream does. Keyed on the
+    // reason this would reset to 0 every time, hammering one Durable Object once a second from
+    // every installed app at once.
+    expect(nextBackoffAttempt(5, 50)).toBe(6);
+  });
+
+  it("stops counting at the cap", () => {
+    expect(nextBackoffAttempt(MAX_BACKOFF_ATTEMPT, 100)).toBe(MAX_BACKOFF_ATTEMPT);
+  });
+
+  it("treats the threshold itself as healthy", () => {
+    expect(nextBackoffAttempt(4, HEALTHY_STREAM_MS)).toBe(0);
+    expect(nextBackoffAttempt(4, HEALTHY_STREAM_MS - 1)).toBe(5);
+  });
+
+  it("stays inside the relay's stream cap", () => {
+    // If the healthy threshold ever exceeded the cap, no stream could ever be called healthy and
+    // the backoff would climb to a minute even on a perfectly working connection.
+    expect(HEALTHY_STREAM_MS).toBeLessThan(15 * 60_000);
   });
 });
 

@@ -8,6 +8,7 @@
  * that can drift into believing something the others do not.
  */
 
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -29,6 +30,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import { T3X_UPDATE_STATE_CHANNEL } from "../../ipc/channels.ts";
 import {
   FLOOR_POLL_INTERVAL_MS,
+  nextBackoffAttempt,
   reconnectDelayMs,
   type ReconciliationTrigger,
 } from "./connectionHealth.ts";
@@ -363,23 +365,26 @@ export const make = Effect.gen(function* () {
     const subscriber = Effect.gen(function* () {
       let attempt = 0;
       while (true) {
+        const openedAt = yield* Clock.currentTimeMillis;
         const outcome = yield* streamRelayEvents({
           eventsUrl: endpoints.events,
           onManifest: (manifest) =>
             considerManifest(manifest, "push").pipe(Effect.provideContext(services)),
         }).pipe(Effect.as("ended" as const), Effect.catch(Effect.succeed));
+        const lastedMs = (yield* Clock.currentTimeMillis) - openedAt;
 
         const reason = outcome === "ended" ? "stream-closed" : outcome.reason;
-        yield* Effect.logDebug(`t3x update stream ended (${reason}); reconnecting`);
+        yield* Effect.logDebug(
+          `t3x update stream ended after ${lastedMs}ms (${reason}); reconnecting`,
+        );
+
+        attempt = nextBackoffAttempt(attempt, lastedMs);
+
         yield* Effect.sleep(Duration.millis(reconnectDelayMs(attempt, Math.random)));
-        attempt = Math.min(attempt + 1, 16);
         yield* reconcile(
           endpoints.latest,
           reason === "stream-stalled" ? "watchdog-fired" : "stream-closed",
         );
-        // Only a stream that carried bytes resets the backoff. Resetting on every attempt would
-        // turn a relay that accepts connections and immediately closes them into a hot loop.
-        if (reason === "stream-closed") attempt = 0;
       }
     });
 
