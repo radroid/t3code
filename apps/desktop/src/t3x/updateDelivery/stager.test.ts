@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
-import { parseDfAvailableBytes, stagedFileName } from "./stager.ts";
+import { assetDownloadClient, parseDfAvailableBytes, stagedFileName } from "./stager.ts";
 
 describe("parseDfAvailableBytes", () => {
   const POSIX_OUTPUT = [
@@ -43,4 +46,37 @@ describe("stagedFileName", () => {
       "abcdef012345-T3Code-arm64.dmg",
     );
   });
+});
+
+describe("assetDownloadClient", () => {
+  const RELEASE_URL = "https://github.com/radroid/t3code/releases/download/t3x-build-abc/app.dmg";
+  const SIGNED_URL = "https://release-assets.githubusercontent.com/signed/app.dmg";
+
+  /** Mimics GitHub: the release URL only ever hands back a redirect to a signed asset host. */
+  const githubReleaseHost = HttpClient.make((request) =>
+    Effect.succeed(
+      HttpClientResponse.fromWeb(
+        request,
+        request.url === RELEASE_URL
+          ? new Response(null, { status: 302, headers: { location: SIGNED_URL } })
+          : new Response("dmg-bytes", { status: 200 }),
+      ),
+    ),
+  );
+
+  it.effect("follows the redirect to the signed asset host", () =>
+    Effect.gen(function* () {
+      const response = yield* assetDownloadClient(githubReleaseHost).get(RELEASE_URL);
+      // 302 here is the bug that broke every update: undici stops at the redirect, and
+      // downloadAsset's `status >= 300` check reported it as "HTTP 302 for github.com/...".
+      expect(response.status).toBe(200);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops at the redirect without the wrapper, which is what made this worth a test", () =>
+    Effect.gen(function* () {
+      const response = yield* githubReleaseHost.get(RELEASE_URL);
+      expect(response.status).toBe(302);
+    }).pipe(Effect.scoped),
+  );
 });
