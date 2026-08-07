@@ -125,6 +125,22 @@ const freeBytesOn = Effect.fn("t3x.updateDelivery.freeBytes")(function* (path: s
 }, Effect.scoped);
 
 /**
+ * Following redirects is load-bearing here, not defensive hygiene.
+ *
+ * A GitHub release asset URL (`/releases/download/<tag>/<file>`) ALWAYS answers 302 with a signed,
+ * short-lived `release-assets.githubusercontent.com` location. The bytes are never served from
+ * github.com. The desktop app provides `NodeHttpClient.layerUndici` (main.ts), and undici does not
+ * follow redirects unless asked — so every update attempt died on the status check in
+ * `downloadAsset` with "HTTP 302 for https://github.com/...", which reads like a GitHub fault
+ * rather than a client that stopped one hop early.
+ *
+ * Named and exported so the redirect hop is covered by a test: inlining the `.pipe(...)` made the
+ * one thing that broke the whole update path invisible to the suite.
+ */
+export const assetDownloadClient = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
+  client.pipe(HttpClient.followRedirects());
+
+/**
  * Download the asset, hashing as the bytes arrive.
  *
  * One pass, not two. Re-reading 470 MB from disk to checksum it doubles the I/O for no benefit,
@@ -140,7 +156,7 @@ const downloadAsset = Effect.fn("t3x.updateDelivery.download")(function* (args: 
   readonly partialPath: string;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
-  const client = yield* HttpClient.HttpClient;
+  const client = assetDownloadClient(yield* HttpClient.HttpClient);
 
   const response = yield* client
     .get(args.asset.url)
