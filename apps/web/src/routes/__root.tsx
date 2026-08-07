@@ -20,6 +20,8 @@ import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPrompt
 import { NotificationCoordinator } from "../components/NotificationCoordinator";
 import { ThreadOutboxDrain } from "../outbox/useThreadOutboxDrain";
 import { PushSubscriptionManager } from "../components/PushSubscriptionManager";
+// t3x: fork-owned update delivery.
+import { T3xUpdateToast } from "../components/t3x/UpdateToast";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { Button } from "../components/ui/button";
@@ -142,6 +144,7 @@ function RootRouteView() {
         <NotificationCoordinator />
         {primaryEnvironmentAuthenticated ? <ThreadOutboxDrain /> : null}
         <PushSubscriptionManager />
+        <T3xUpdateToast />
         {appShell}
       </AnchoredToastProvider>
     </ToastProvider>
