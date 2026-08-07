@@ -132,6 +132,12 @@ Clients send typed WebSocket requests. The server turns them into _commands_, a 
 
 Full glossary with file links: `docs/internals/glossary.md`
 
+## Agent skills
+
+- **Issue tracker** — GitHub issues on the fork, `radroid/t3code`. See `docs/t3x/agents/issue-tracker.md`.
+- **Triage labels** — the five canonical roles, unrenamed. See `docs/t3x/agents/triage-labels.md`.
+- **Domain docs** — single-context, under `docs/t3x/`. See `docs/t3x/agents/domain.md`.
+
 ## Where code lives
 
 - `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read `.repos/effect-smol/LLMS.md` before writing Effect code.
