@@ -401,11 +401,40 @@ jobs:
             staged/T3Code-*
             staged/t3x-latest.json
           fail_on_unmatched_files: true
+          # The manual-install commands are here rather than in a doc because this page is where
+          # someone stands when they need them. Both platforms' in-app updaters already handle
+          # this — macAttachCommands/macCopyCommands strip quarantine from the dmg and the staged
+          # bundle — so ONLY a hand-downloaded copy hits it, which is exactly the bootstrap case:
+          # the first install on a machine, and any install after the updater itself breaks.
           body: |
             Automated fork build of `${{ needs.resolve.outputs.sha }}`.
 
-            Unsigned. macOS will quarantine a manually-downloaded copy; the in-app updater strips
-            that itself. See `docs/superpowers/specs/2026-08-03-update-delivery-design.md`.
+            Unsigned. In-app updates strip quarantine themselves; a **manually downloaded** copy
+            does not go through that path and needs one command by hand.
+
+            **macOS** — drag the app to `/Applications` FIRST. Launching from the mounted dmg
+            triggers App Translocation, and the updater refuses to replace a translocated app.
+            Then:
+
+            ```
+            xattr -dr com.apple.quarantine "/Applications/T3 Code (Alpha).app"
+            ```
+
+            Without this, Gatekeeper calls the app *damaged* rather than merely unsigned — the
+            bundle carries Electron's inherited ad-hoc linker signature with no sealed resources —
+            and right-click → Open does NOT bypass that.
+
+            **Windows** — clear Mark-of-the-Web, then choose *More info → Run anyway* at the
+            SmartScreen prompt:
+
+            ```
+            Unblock-File -Path .\T3Code-${{ needs.resolve.outputs.short_sha }}-x64.exe
+            ```
+
+            Windows x64 only; there is no arm64 asset. SHA-256 for every asset is in
+            `t3x-latest.json` above.
+
+            Design: `docs/superpowers/specs/2026-08-03-update-delivery-design.md`.
 
       - name: Notify the update relay
         if: ${{ vars.T3X_UPDATE_RELAY_URL != '' }}
