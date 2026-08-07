@@ -211,25 +211,50 @@ jobs:
       # (0xC0000142) when three vp tasks spawn concurrently. Running it alone is the mitigation,
       # applied here rather than by editing build-desktop-artifact.ts — `vp run build:desktop` is
       # hardcoded there with no concurrency flag, so changing it would cost a new SEAMS.md row.
+      #
+      # The flag has to sit BEFORE the task name, and the inner command has to be called
+      # directly. `vp run --help` is explicit: "Any arguments after the task name are forwarded
+      # to the task process." So a trailing `--concurrency-limit 1` never reached vp at all — it
+      # was forwarded down into apps/server's build CLI, which rejected it with "Unrecognized
+      # flag" and took the whole bundle build down. Passing it to the root `build:desktop` script
+      # would not work either: that script shells out to a second `vp run`, which is a fresh
+      # process that resets the limit to its default of 4, so the serialisation would be a no-op.
       - name: Build desktop bundle (serialised)
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+
+          # Inlining build:desktop's body is what lets the flag go in front of the task name, so
+          # fail loudly if upstream ever changes that script rather than silently serialising
+          # something else — or nothing.
+          expected='vp run --filter @t3tools/desktop --filter t3 build'
+          actual="$(node -p 'require("./package.json").scripts["build:desktop"] || ""')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::root build:desktop is now '$actual' (expected '$expected'). Re-inline it in t3x-release.yml." >&2
+            exit 1
+          fi
+
+          log=bundle-attempt.log
           for attempt in 1 2 3; do
-            if vp run build:desktop --concurrency-limit 1; then
+            status=0
+            # `|| status=$?`, not `if vp …; then exit 0; fi` followed by `status=$?`. After an
+            # `if` whose condition failed and whose body never ran, `$?` is the *if statement's*
+            # status — zero — so the old form reported every real failure as "exit 0" and the
+            # retry classification below could never be reached.
+            vp run --concurrency-limit 1 --filter @t3tools/desktop --filter t3 build 2>&1 \
+              | tee "$log" || status=$?
+            if [[ $status -eq 0 ]]; then
               exit 0
             fi
-            status=$?
-            # 0xC0000142 = -1073741502, 0xC0000005 = -1073741819. Both are Windows process-startup
-            # failures under resource pressure, not build errors — a bare negative integer in the
-            # log sends people debugging the wrong thing.
-            case "$status" in
-              3221225794|3221225477|-1073741502|-1073741819)
-                echo "::warning::Attempt $attempt hit a Windows process-startup failure (exit $status). Retrying." ;;
-              *)
-                echo "::error::build:desktop failed with exit $status (not a known transient)." >&2
-                exit "$status" ;;
-            esac
+            # Classified on output, not on the exit code. Bash truncates a child's status to 8
+            # bits, so 0xC0000142 can never appear in `$?` to be matched, and vp reports its own
+            # status rather than the dead grandchild's anyway.
+            if grep -qiE '0xC0000142|0xC0000005|STATUS_DLL_INIT_FAILED|Access violation' "$log"; then
+              echo "::warning::Attempt $attempt hit a Windows process-startup failure. Retrying."
+            else
+              echo "::error::build:desktop failed with exit $status (not a known transient)." >&2
+              exit "$status"
+            fi
           done
           echo "::error::build:desktop failed three times with transient process-startup errors." >&2
           exit 1
