@@ -189,7 +189,10 @@ jobs:
 
       - name: Ensure Electron runtime is installed
         shell: bash
-        run: vp run ensure:electron
+        # `--filter` is required: ensure:electron is a package task (@t3tools/desktop), not a root
+        # one, and `vp run ensure:electron` fails the job outright with "Task not found". Matches
+        # ci.yml, release.yml and t3x-weekly-verify.yml, which all scope it the same way.
+        run: vp run --filter @t3tools/desktop ensure:electron
 
       # Installed unconditionally by upstream for Windows, separate from the signing block — the
       # staged `vp install --prod` still runs native lifecycle scripts (node-pty, sharp,
