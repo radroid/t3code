@@ -1,0 +1,434 @@
+# t3x fork release — build the desktop app on every green merge to main and publish it.
+#
+# Upstream's release.yml cannot be reused: it runs on blacksmith-12vcpu-macos-26 and
+# blacksmith-32vcpu-windows-2025, runners this fork has no access to (the same reason t3x-ci.yml
+# exists alongside ci.yml). Every inherited upstream workflow, release.yml included, is
+# disabled_manually on this fork.
+#
+# Standard GitHub-hosted runners — macOS and Windows included — are free with unlimited minutes on
+# public repositories, and this fork is public. The build costs nothing.
+#
+# Design: docs/superpowers/specs/2026-08-03-update-delivery-design.md
+name: t3x fork release
+
+# workflow_run, NOT push.
+#
+# t3x-ci is a separate workflow and `needs:` cannot cross workflows, so this is the only way to
+# gate on it. The cost is a footgun that matters enormously here: under workflow_run, github.sha
+# is the DEFAULT BRANCH TIP, not the commit that was tested. Every checkout below pins
+# workflow_run.head_sha, and the build asserts it got that commit — for a design whose entire
+# identity is the commit, building the wrong one is silent and fatal.
+on:
+  workflow_run:
+    workflows: ["t3x fork CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to build (defaults to main's tip)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# Not cancel-in-progress. A half-cancelled release can leave a tag created and assets missing,
+# and two merges landing minutes apart is normal here.
+concurrency:
+  group: t3x-release
+  cancel-in-progress: false
+
+env:
+  BUILD_SHA: ${{ github.event.workflow_run.head_sha || inputs.sha || github.sha }}
+
+jobs:
+  resolve:
+    name: Resolve build identity
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      short_sha: ${{ steps.identity.outputs.short_sha }}
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BUILD_SHA }}
+          # .repos/ is tracked: 12,961 files, 126 MB. Upstream excludes it from every job.
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - id: identity
+        name: Resolve identity
+        shell: bash
+        # BUILD_SHA is read from the environment rather than interpolated into the script. On the
+        # workflow_dispatch path it is user-supplied, and `${{ }}` interpolation splices the raw
+        # value into the shell source before bash ever sees it.
+        env:
+          BUILD_COUNTER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BUILD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::BUILD_SHA is not a 40-character commit sha." >&2
+            exit 1
+          fi
+
+          sha="$(git rev-parse HEAD)"
+          if [[ "$sha" != "$BUILD_SHA" ]]; then
+            echo "::error::Checked out $sha but expected $BUILD_SHA." >&2
+            exit 1
+          fi
+
+          # 12 characters, matching `git rev-parse --short=12` in build-desktop-artifact.ts and
+          # COMMIT_HASH_DISPLAY_LENGTH in DesktopAppIdentity.ts. This is the value the app can
+          # actually read about itself, so it is the only honest comparison key.
+          short_sha="$(git rev-parse --short=12 HEAD)"
+
+          # The fork's build counter, and the reason the version is orderable at all.
+          #
+          # The upstream base does not move between syncs (0.0.31 -> 0.0.31, issue #47), so without
+          # a fork-owned counter every build here would carry an identical version. An earlier
+          # draft used the short sha instead: identifiable, but semver compares prerelease
+          # identifiers, and `-t3x.a3f9c21b` vs `-t3x.b0e77c14` sorts alphabetically by hash, which
+          # orders nothing. A numeric identifier sorts numerically, so 0.0.31-t3x.43 correctly
+          # precedes 0.0.31-t3x.44.
+          #
+          # This is the SAME number the manifest carries as buildNumber and the relay orders on.
+          # One counter, used everywhere, rather than a version scheme that disagrees with the
+          # update logic.
+          #
+          # The sha is not lost: it is in the release tag, both asset filenames, the manifest, and
+          # t3codeCommitHash inside the app. Version answers "which is newer"; the hash answers
+          # "which commit". Keeping those separate is the whole lesson of #47.
+          #
+          # --build-version becomes electron-builder's `version` and must be valid semver — a raw
+          # sha is not. resolveDesktopUpdateChannel only special-cases -nightly.<d>.<d>, so a -t3x.
+          # prerelease stays on the "latest" channel and the product name is unchanged.
+          base="$(node -p "require('./apps/desktop/package.json').version")"
+          echo "sha=$sha"                          >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha"              >> "$GITHUB_OUTPUT"
+          echo "version=${base}-t3x.${BUILD_COUNTER}" >> "$GITHUB_OUTPUT"
+          echo "tag=t3x-build-${short_sha}"      >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: [resolve]
+    runs-on: ${{ matrix.runner }}
+    # Upstream's 30 minutes is calibrated for 12-32 vCPU blacksmith runners. A cold macos-latest
+    # (3 vCPU, 7 GB) with no pnpm store, no cargo target dir and an Electron download is
+    # realistically 20-40 min; Windows NSIS is 30-60 given issue #47's ~18 min on a warm desktop.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            runner: macos-latest
+            platform: mac
+            target: dmg
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+            asset_glob: "*.dmg"
+            asset_ext: dmg
+            manifest_platform: darwin-arm64
+          - label: Windows x64
+            runner: windows-latest
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            asset_glob: "*.exe"
+            asset_ext: exe
+            manifest_platform: win32-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Free disk space
+        if: ${{ matrix.platform == 'mac' }}
+        shell: bash
+        run: |
+          # Standard runners ship ~14 GB free. node_modules alone is ~5.9 GB locally, and the mac
+          # build produces an unpacked ~1 GB app plus a 237 MB dmg on top of a second prod install
+          # tree. Reclaim what we can before starting.
+          sudo rm -rf /Users/runner/Library/Android /Users/runner/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      # cargo is an UNCONDITIONAL dependency of the desktop build: stageResourceMonitor is called
+      # with no platform or flag guard and hard-fails when the binary is missing.
+      # native/resource-monitor is edition 2024, so Rust >= 1.85 is required. Do not rely on the
+      # runner image having a new enough toolchain.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/resource-monitor
+
+      - name: Ensure Electron runtime is installed
+        shell: bash
+        run: vp run ensure:electron
+
+      # Installed unconditionally by upstream for Windows, separate from the signing block — the
+      # staged `vp install --prod` still runs native lifecycle scripts (node-pty, sharp,
+      # msgpackr-extract) and recent MSVC + node-gyp wants the Spectre-mitigated libs.
+      - name: Install Spectre-mitigated MSVC libs
+        if: ${{ matrix.platform == 'win' }}
+        shell: pwsh
+        run: |
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          & $installer modify --installPath $vsPath `
+            --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre" `
+            --quiet --norestart | Out-Null
+
+      # Issue #47: the desktop build task intermittently dies with STATUS_DLL_INIT_FAILED
+      # (0xC0000142) when three vp tasks spawn concurrently. Running it alone is the mitigation,
+      # applied here rather than by editing build-desktop-artifact.ts — `vp run build:desktop` is
+      # hardcoded there with no concurrency flag, so changing it would cost a new SEAMS.md row.
+      - name: Build desktop bundle (serialised)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if vp run build:desktop --concurrency-limit 1; then
+              exit 0
+            fi
+            status=$?
+            # 0xC0000142 = -1073741502, 0xC0000005 = -1073741819. Both are Windows process-startup
+            # failures under resource pressure, not build errors — a bare negative integer in the
+            # log sends people debugging the wrong thing.
+            case "$status" in
+              3221225794|3221225477|-1073741502|-1073741819)
+                echo "::warning::Attempt $attempt hit a Windows process-startup failure (exit $status). Retrying." ;;
+              *)
+                echo "::error::build:desktop failed with exit $status (not a known transient)." >&2
+                exit "$status" ;;
+            esac
+          done
+          echo "::error::build:desktop failed three times with transient process-startup errors." >&2
+          exit 1
+
+      - name: Build desktop artifact
+        shell: bash
+        env:
+          # LOAD-BEARING, NOT HYGIENE.
+          #
+          # Actions sets GITHUB_REPOSITORY automatically. resolveGitHubPublishConfig reads it,
+          # which populates buildConfig.publish, which makes electron-builder write
+          # Contents/Resources/app-update.yml into the bundle — and that file is exactly what
+          # DesktopUpdates reads to decide hasUpdateFeedConfig. A fork build shipping it would be
+          # the FIRST ONE EVER to switch upstream's electron-updater on, version-keyed against a
+          # version that never bumps (0.0.31 -> 0.0.31, issue #47).
+          #
+          # Left empty, resolveGitHubPublishConfig returns undefined, no publish config is written,
+          # no app-update.yml is packaged, and the updater disables itself with "no update feed is
+          # configured". That is what makes the fork's toast the only update surface, at zero
+          # upstream edits. The verify step below asserts it.
+          GITHUB_REPOSITORY: ""
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: ""
+        run: |
+          set -euo pipefail
+          node scripts/build-desktop-artifact.ts \
+            --platform "${{ matrix.platform }}" \
+            --target "${{ matrix.target }}" \
+            --arch "${{ matrix.arch }}" \
+            --build-version "${{ needs.resolve.outputs.version }}" \
+            --skip-build \
+            --verbose
+
+      - name: Verify no update feed was packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The machine-checkable form of "exactly one update surface". This is the claim most
+          # likely to regress silently on an upstream sync, so it fails the release rather than
+          # shipping an app with two updaters that disagree.
+          if find release -name "app-update.yml" -print -quit | grep -q .; then
+            echo "::error::app-update.yml was packaged. Upstream's updater would be live in this build." >&2
+            find release -name "app-update.yml" >&2
+            exit 1
+          fi
+          echo "No app-update.yml packaged."
+
+      - name: Collect and rename
+        id: collect
+        shell: bash
+        env:
+          SHORT_SHA: ${{ needs.resolve.outputs.short_sha }}
+          ARCH: ${{ matrix.arch }}
+          ASSET_EXT: ${{ matrix.asset_ext }}
+          ASSET_GLOB: ${{ matrix.asset_glob }}
+          MANIFEST_PLATFORM: ${{ matrix.manifest_platform }}
+        run: |
+          set -euo pipefail
+          mkdir -p staged
+
+          # artifactName is "T3-Code-${version}-${arch}.${ext}", and this fork's version never
+          # bumps — so without renaming, every release's asset is literally the same filename.
+          # That is issue #47's stale-artifact hazard wearing a different hat.
+          src="$(find release -maxdepth 1 -name "$ASSET_GLOB" -print -quit)"
+          if [[ -z "$src" ]]; then
+            echo "::error::No $ASSET_GLOB produced in release/." >&2
+            exit 1
+          fi
+
+          dest="staged/T3Code-${SHORT_SHA}-${ARCH}.${ASSET_EXT}"
+          mv "$src" "$dest"
+
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            sha256="$(certutil -hashfile "$dest" SHA256 | sed -n '2p' | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
+            bytes="$(stat -c %s "$dest")"
+          else
+            sha256="$(shasum -a 256 "$dest" | cut -d' ' -f1)"
+            bytes="$(stat -f %z "$dest")"
+          fi
+
+          node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            fs.writeFileSync(process.argv[1], JSON.stringify({
+              platform: process.argv[2],
+              file: path.basename(process.argv[3]),
+              sha256: process.argv[4],
+              bytes: Number(process.argv[5]),
+            }));
+          ' "staged/asset-${MANIFEST_PLATFORM}.json" \
+            "$MANIFEST_PLATFORM" "$dest" "$sha256" "$bytes"
+
+          ls -la staged
+
+      - name: Upload staged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: t3x-release-${{ matrix.manifest_platform }}
+          path: staged/*
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    name: Publish and notify
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          sparse-checkout: |
+            /scripts
+            /package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: t3x-release-*
+          merge-multiple: true
+          path: staged
+
+      - name: Assemble manifest
+        id: manifest
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          FULL_SHA: ${{ needs.resolve.outputs.sha }}
+          SHORT_SHA: ${{ needs.resolve.outputs.short_sha }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: node scripts/t3x/build-update-manifest.mjs staged staged/t3x-latest.json
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          target_commitish: ${{ needs.resolve.outputs.sha }}
+          name: ${{ needs.resolve.outputs.version }}
+          prerelease: true
+          files: |
+            staged/T3Code-*
+            staged/t3x-latest.json
+          fail_on_unmatched_files: true
+          body: |
+            Automated fork build of `${{ needs.resolve.outputs.sha }}`.
+
+            Unsigned. macOS will quarantine a manually-downloaded copy; the in-app updater strips
+            that itself. See `docs/superpowers/specs/2026-08-03-update-delivery-design.md`.
+
+      - name: Notify the update relay
+        if: ${{ vars.T3X_UPDATE_RELAY_URL != '' }}
+        shell: bash
+        env:
+          RELAY_URL: ${{ vars.T3X_UPDATE_RELAY_URL }}
+          HMAC_SECRET: ${{ secrets.T3X_UPDATE_HMAC_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HMAC_SECRET:-}" ]]; then
+            echo "::warning::T3X_UPDATE_HMAC_SECRET is unset; skipping notify. The release is published, clients will find it on their next poll."
+            exit 0
+          fi
+
+          body="$(cat staged/t3x-latest.json)"
+          timestamp="$(date +%s)"
+          # Signed material is "<timestamp>.<body>" — the timestamp is bound into the signature so
+          # it cannot be rewritten in transit to refresh a captured request. It is a separate value
+          # from the manifest's builtAt because uploading ~470 MB routinely takes minutes.
+          signature="$(printf '%s.%s' "$timestamp" "$body" \
+            | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex \
+            | sed 's/^.*= /sha256=/')"
+
+          status="$(curl -sS -o /tmp/notify-response.txt -w '%{http_code}' \
+            -X POST "${RELAY_URL%/}/notify" \
+            -H 'content-type: application/json' \
+            -H "x-t3x-timestamp: $timestamp" \
+            -H "x-t3x-signature: $signature" \
+            --data-binary "$body")"
+
+          echo "relay responded $status: $(cat /tmp/notify-response.txt)"
+          # 409 means the relay already holds a newer build — a later run won the race. That is the
+          # ordering rule working, not a failure.
+          if [[ "$status" != "200" && "$status" != "409" ]]; then
+            echo "::error::Relay rejected the notification ($status)." >&2
+            exit 1
+          fi
+
+      - name: Prune old prereleases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # One prerelease per merge is unbounded growth at ~470 MB per macOS build.
+          gh release list --repo "${{ github.repository }}" --limit 200 \
+            --json tagName,createdAt,isPrerelease \
+            --jq '[.[] | select(.isPrerelease and (.tagName | startswith("t3x-build-")))]
+                  | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' \
+            | while read -r tag; do
+                [[ -z "$tag" ]] && continue
+                echo "Deleting old prerelease $tag"
+                gh release delete "$tag" --repo "${{ github.repository }}" --cleanup-tag --yes || true
+              done
