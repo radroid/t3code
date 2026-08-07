@@ -11,6 +11,7 @@
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -31,10 +32,16 @@ import {
   reconnectDelayMs,
   type ReconciliationTrigger,
 } from "./connectionHealth.ts";
-import { parseBuildNumber, readEmbeddedCommitHash, relayEndpoints, resolveRelayUrl } from "./config.ts";
+import {
+  parseBuildNumber,
+  readEmbeddedCommitHash,
+  relayEndpoints,
+  resolveRelayUrl,
+  UPDATED_MARKER_NAME,
+} from "./config.ts";
 import { decideUpdateAction, describeSkipReason, type InstalledBuild } from "./decision.ts";
 import { macSwapCommands, windowsInstallCommand } from "./installCommands.ts";
-import type { UpdateManifest } from "./manifest.ts";
+import type { UpdateAsset, UpdateManifest } from "./manifest.ts";
 import { fetchLatestManifest, streamRelayEvents } from "./relayClient.ts";
 import { executablePathForBundle, quitForInstaller, restartIntoInstalledBuild } from "./restart.ts";
 import { shouldAbandonStaging } from "./staging.ts";
@@ -101,15 +108,25 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => undefined),
     );
 
+  const updatedMarkerPath = environment.path.join(
+    environment.stateDir,
+    "t3x-updates",
+    UPDATED_MARKER_NAME,
+  );
+  const hasUpdatedBefore = yield* fileSystem
+    .exists(updatedMarkerPath)
+    .pipe(Effect.orElseSucceed(() => false));
+
   const internal = yield* Ref.make<Internal>({
     status: { kind: "idle" },
     staged: undefined,
     inFlightShortSha: undefined,
-    hasUpdatedBefore: false,
+    hasUpdatedBefore,
     dismissed: undefined,
     buildNumberFloor: parseBuildNumber(environment.appVersion),
   });
   const started = yield* Ref.make(false);
+  const stagingFiber = yield* Ref.make<Fiber.Fiber<void> | undefined>(undefined);
 
   const publish = Effect.gen(function* () {
     const snapshot = yield* Ref.get(internal);
@@ -131,48 +148,24 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Everything funnels through here, from every tier.
+   * The download and everything after it, run on its own fiber.
    *
-   * Single-flight by `inFlightShortSha`: two tiers announcing the same build within a second of
-   * each other is the normal case, not an edge case — the push arrives and the reconcile poll that
-   * follows a reconnect finds the same manifest. Downloading it twice would be 940 MB.
+   * Forked rather than awaited by the caller, because the caller is usually inside the SSE read
+   * loop. Blocking there for a 470 MB download would stop the loop consuming heartbeats, and the
+   * watchdog — which keys on bytes reaching the parser — would declare a perfectly healthy
+   * connection stalled fifty seconds into the download it is itself performing.
    */
-  const considerManifest = Effect.fn("t3x.updateDelivery.consider")(function* (
+  const stageAndAnnounce = Effect.fn("t3x.updateDelivery.stageAndAnnounce")(function* (
     manifest: UpdateManifest,
+    asset: UpdateAsset,
     trigger: ReconciliationTrigger,
   ) {
-    const snapshot = yield* Ref.get(internal);
-
-    if (
-      snapshot.inFlightShortSha !== undefined &&
-      !shouldAbandonStaging({
-        inFlightShortSha: snapshot.inFlightShortSha,
-        announcedShortSha: manifest.shortSha,
-      })
-    ) {
-      return;
-    }
-
-    const decision = decideUpdateAction(manifest, yield* installedBuild);
-    if (decision.kind === "skip") {
-      // Logged at debug volume on purpose: "already running this build" fires on every reconnect
-      // and every floor poll, which is the system working.
-      yield* Effect.logDebug(
-        `t3x update (${trigger}) skipped ${manifest.shortSha}: ${describeSkipReason(decision.reason)}`,
-      );
-      return;
-    }
-
-    yield* Ref.update(internal, (current) => ({
-      ...current,
-      inFlightShortSha: manifest.shortSha,
-    }));
     yield* setStatus({ kind: "staging", shortSha: manifest.shortSha });
     yield* Effect.logInfo(`t3x update (${trigger}): staging ${manifest.shortSha}`);
 
     const staged = yield* stageUpdate({
       manifest,
-      asset: decision.asset,
+      asset,
       execPath: process.execPath,
     }).pipe(
       Effect.catch((error) =>
@@ -186,9 +179,12 @@ export const make = Effect.gen(function* () {
           Effect.as(undefined),
         ),
       ),
+      // Interruption is a supersede, not a failure: a newer build was announced and this download
+      // was abandoned deliberately. Clearing the marker is the only thing owed, and the half-
+      // written `.part` file is swept on the next run because its bytes were never checksummed.
+      Effect.ensuring(Ref.update(internal, (current) => ({ ...current, inFlightShortSha: undefined }))),
     );
 
-    yield* Ref.update(internal, (current) => ({ ...current, inFlightShortSha: undefined }));
     if (staged === undefined) return;
 
     yield* Ref.update(internal, (current) => ({
@@ -200,6 +196,64 @@ export const make = Effect.gen(function* () {
     }));
     yield* setStatus({ kind: "ready", shortSha: staged.shortSha, version: staged.version });
     yield* Effect.logInfo(`t3x update: ${staged.shortSha} is staged and ready`);
+  });
+
+  /**
+   * Everything funnels through here, from every tier.
+   *
+   * Single-flight, and genuinely so: two tiers announcing the SAME build within a second of each
+   * other is the normal case, not an edge case — the push arrives and the reconcile that follows a
+   * reconnect finds the same manifest. That one returns early. A DIFFERENT, newer build interrupts
+   * the download in flight rather than starting a second one beside it: two concurrent 470 MB
+   * downloads would be worse than either, and finishing the older one would leave the user a
+   * `ready` toast for a build that is already behind.
+   */
+  const considerManifest = Effect.fn("t3x.updateDelivery.consider")(function* (
+    manifest: UpdateManifest,
+    trigger: ReconciliationTrigger,
+  ) {
+    const snapshot = yield* Ref.get(internal);
+
+    if (snapshot.inFlightShortSha !== undefined) {
+      if (
+        !shouldAbandonStaging({
+          inFlightShortSha: snapshot.inFlightShortSha,
+          announcedShortSha: manifest.shortSha,
+        })
+      ) {
+        return;
+      }
+      const previous = yield* Ref.get(stagingFiber);
+      if (previous !== undefined) {
+        yield* Effect.logInfo(
+          `t3x update: abandoning ${snapshot.inFlightShortSha} for ${manifest.shortSha}`,
+        );
+        yield* Fiber.interrupt(previous);
+      }
+    }
+
+    const decision = decideUpdateAction(manifest, yield* installedBuild);
+    if (decision.kind === "skip") {
+      // Logged at debug volume on purpose: "already running this build" fires on every reconnect
+      // and every floor poll, which is the system working.
+      yield* Effect.logDebug(
+        `t3x update (${trigger}) skipped ${manifest.shortSha}: ${describeSkipReason(decision.reason)}`,
+      );
+      return;
+    }
+
+    // Marked before forking, so a second announcement arriving in the same tick sees the flight.
+    yield* Ref.update(internal, (current) => ({
+      ...current,
+      inFlightShortSha: manifest.shortSha,
+    }));
+    // Detached, not a child fiber. The usual caller is the SSE read loop, and a child would be
+    // interrupted when that loop reconnects — which it does every fifteen minutes by design. A
+    // download that dies on the relay's own stream cap would never once finish.
+    const fiber = yield* Effect.forkDetach(
+      stageAndAnnounce(manifest, decision.asset, trigger).pipe(Effect.provideContext(services)),
+    );
+    yield* Ref.set(stagingFiber, fiber);
   });
 
   /** Every trigger re-reads `/latest` rather than trusting whatever the stream last said. */
@@ -215,6 +269,21 @@ export const make = Effect.gen(function* () {
       ),
     );
     if (manifest !== undefined) yield* considerManifest(manifest, trigger);
+  });
+
+  /**
+   * Persist the "this install has updated at least once" bit, before either quit path.
+   *
+   * Written, not just held in memory: the process is about to end, and the only reader is the
+   * build that comes back. Best-effort — a marker that cannot be written costs the user one
+   * repeated note, which is a far smaller failure than refusing the update over it.
+   */
+  const recordHasUpdated = Effect.gen(function* () {
+    yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
+    yield* fileSystem
+      .makeDirectory(environment.path.dirname(updatedMarkerPath), { recursive: true })
+      .pipe(Effect.ignore);
+    yield* fileSystem.writeFileString(updatedMarkerPath, "").pipe(Effect.ignore);
   });
 
   const restartNow = Effect.gen(function* () {
@@ -244,7 +313,7 @@ export const make = Effect.gen(function* () {
       );
       if (!applied) return;
 
-      yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
+      yield* recordHasUpdated;
       yield* restartIntoInstalledBuild({
         execPath: executablePathForBundle(staged.targetPath, staged.appName),
         argv: process.argv.slice(1),
@@ -266,7 +335,7 @@ export const make = Effect.gen(function* () {
     );
     if (!started) return;
 
-    yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
+    yield* recordHasUpdated;
     yield* quitForInstaller();
   });
 

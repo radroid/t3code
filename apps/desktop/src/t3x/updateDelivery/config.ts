@@ -49,6 +49,20 @@ export function resolveRelayUrl(env: Readonly<Record<string, string | undefined>
 }
 
 /**
+ * Marker recording that this install has applied at least one update through this path.
+ *
+ * A file rather than a field in memory, because the fact it records survives exactly one event:
+ * the restart it is about. An in-memory flag set just before `app.exit` is gone by the time the
+ * new build asks the question, so the "macOS will ask for permissions again" note — meant to be
+ * shown once — would be shown on every single update instead, which is how a warning becomes
+ * wallpaper.
+ *
+ * A file rather than `DesktopClientSettings`, because that is an upstream-owned persisted schema
+ * and this is one bit that only the fork cares about.
+ */
+export const UPDATED_MARKER_NAME = ".t3x-has-updated";
+
+/**
  * The build counter of the running app, read out of its own version string.
  *
  * `t3x-release.yml` builds `<base>-t3x.<run_number>` and `build-update-manifest.mjs` asserts that
