@@ -38,6 +38,7 @@ export type UpdateDecision =
 export type UpdateSkipReason =
   | "not-packaged"
   | "unknown-own-commit"
+  | "unknown-own-build-number"
   | "unsupported-platform"
   | "already-running-this-build"
   | "not-newer"
@@ -49,6 +50,8 @@ export function describeSkipReason(reason: UpdateSkipReason): string {
       return "Update delivery is only active in packaged builds.";
     case "unknown-own-commit":
       return "This build has no embedded commit hash, so it cannot tell whether an update applies.";
+    case "unknown-own-build-number":
+      return "This build has no release counter, so it cannot tell which build is newer. Install a released build once to enable updates.";
     case "unsupported-platform":
       return "No artifact is published for this platform and architecture.";
     case "already-running-this-build":
@@ -94,11 +97,25 @@ export function decideUpdateAction(
     return { kind: "skip", reason: "already-running-this-build" };
   }
 
+  // No counter means no way to order, and "cannot order" must not silently mean "accept".
+  //
+  // Only builds from `t3x-release.yml` carry `-t3x.<n>`; anything built locally
+  // (`auto-build-desktop.sh`, a hand-run `build:desktop`) is a bare `0.0.31`. Treating a missing
+  // counter as "no floor" let such a build install ANY announced release over itself — including
+  // one cut from an older commit than the one it was built from. That downgrade reports success,
+  // looks identical to a real update, and is only undone by the next release.
+  //
+  // Refusing instead costs a locally built app its automatic updates until a released build is
+  // installed once. That is a visible, explainable state; a silent downgrade is not.
+  if (installed.buildNumber === undefined) {
+    return { kind: "skip", reason: "unknown-own-build-number" };
+  }
+
   // Strictly greater. A manifest that is merely *different* is not necessarily newer: the release
   // matrix has two legs, and a slow Windows leg from an earlier run can be announced after a
   // later run. Acting on it would move this app backwards onto an older build while every
   // indicator says the update worked.
-  if (installed.buildNumber !== undefined && manifest.buildNumber <= installed.buildNumber) {
+  if (manifest.buildNumber <= installed.buildNumber) {
     return { kind: "skip", reason: "not-newer" };
   }
 
