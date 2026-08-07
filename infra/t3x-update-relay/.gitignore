@@ -1,0 +1,3 @@
+# Wrangler's local state: build cache, dev-server scratch, and deploy bookkeeping.
+# Regenerated on every `wrangler deploy` / `wrangler dev`, machine-specific, never committed.
+.wrangler/
