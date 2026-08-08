@@ -40,3 +40,38 @@ updates:
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
+
+  # The root manifest. Unlike the block above this does NOT ignore everything — it names five
+  # packages, because those five are the ones Dependabot re-attempts and re-fails forever.
+  #
+  # Every one of them is transitive (`pnpm-lock.yaml`, no entry in any package.json) and every run
+  # ends in `security_update_not_possible`. The `uuid` job states the shape plainly:
+  #
+  #     "latest-resolvable-version": "7.0.3", "lowest-non-vulnerable-version": "14.0.0"
+  #
+  # A parent's version range caps the resolvable version below the patched one, so there is no
+  # update for Dependabot to make. It cannot succeed, it retries on every alert refresh, and each
+  # attempt is a red run — five of the last ten `Dependabot Updates` runs were exactly this.
+  #
+  # Suppressing the PR does NOT suppress the alert: these stay visible in the Security tab, which
+  # is where they belong, because the fix is a manual lockfile re-resolution (the playbook that
+  # took this fork from 107 open advisories to 6) and not something Dependabot can automate.
+  #
+  # `open-pull-requests-limit: 0` is required but insufficient, for the reason the block above
+  # documents: it governs version updates only, and security PRs are explicitly exempt from it.
+  # The `ignore` entries are what reach security updates.
+  #
+  # Named rather than wildcarded on purpose. `dependency-name: "*"` here would silence root
+  # security updates entirely, including the fixable ones this repo does want to hear about.
+  # Revisit an entry when its constraint is re-resolved rather than leaving it here forever.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "uuid"
+      - dependency-name: "sharp"
+      - dependency-name: "image-size"
+      - dependency-name: "@hono/node-server"
+      - dependency-name: "@vitest/browser"
