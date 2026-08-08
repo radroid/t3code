@@ -97,7 +97,66 @@ export type UpdateToastView =
       readonly title: string;
       readonly description: string;
       readonly dismissible: true;
+    }
+  | {
+      readonly kind: "updated";
+      readonly title: string;
+      readonly description: string;
+      readonly dismissible: true;
+    }
+  | {
+      readonly kind: "install-failed";
+      readonly title: string;
+      readonly description: string;
+      /** Opens a pre-filled new-issue form. The user reviews and submits; nothing is filed for them. */
+      readonly reportUrl: string;
+      readonly reportLabel: string;
+      readonly dismissible: true;
     };
+
+/** Where a failed install gets reported. The fork's own repo, not upstream's. */
+const FORK_ISSUES_NEW_URL = "https://github.com/radroid/t3code/issues/new";
+
+/**
+ * A pre-filled issue, opened for review rather than filed automatically.
+ *
+ * Deliberately a link and not a `gh issue create`. The repo is public, so anything posted here is
+ * world-readable, and an app that files publicly from the user's account without showing them the
+ * text first is doing something they cannot take back. A link also means no dependency on `gh`
+ * being installed and authenticated, and no chance of an install that fails on every launch
+ * opening an issue on every launch.
+ *
+ * Build identity only. The failing step's message can embed local filesystem paths — on Windows
+ * those contain the username — and none of that is needed to identify which update broke.
+ */
+export function buildInstallFailureReportUrl(input: {
+  readonly expectedShortSha: string;
+  readonly expectedVersion: string;
+  readonly actualShortSha: string | undefined;
+  readonly actualVersion: string;
+  readonly platform: string;
+  readonly arch: string;
+}): string {
+  const body = [
+    "The app restarted to install an update and came back as a different build.",
+    "",
+    "| | Expected | Actual |",
+    "| --- | --- | --- |",
+    `| Commit | \`${input.expectedShortSha}\` | \`${input.actualShortSha ?? "none reported"}\` |`,
+    `| Version | \`${input.expectedVersion}\` | \`${input.actualVersion}\` |`,
+    "",
+    `Platform: \`${input.platform}\` \`${input.arch}\``,
+    "",
+    "_Filed from the in-app update toast. Build identity only — no logs or paths._",
+  ].join("\n");
+
+  const query = new URLSearchParams({
+    title: `Update did not apply: expected ${input.expectedShortSha}, got ${input.actualShortSha ?? "no commit hash"}`,
+    body,
+    labels: "bug",
+  });
+  return `${FORK_ISSUES_NEW_URL}?${query.toString()}`;
+}
 
 /**
  * macOS authorises privacy permissions against the app's code-signing identity, and
@@ -250,6 +309,42 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
             : `${input.status.message} Details: ${input.status.logPath}`,
         dismissible: true,
       };
+
+    case "updated":
+      // Confirmed on the boot after the install, not claimed before it. Matters most on Windows,
+      // where the app is gone for minutes and coming back silently leaves "did that work?"
+      // unanswered — which is how a successful update gets reported as a broken one.
+      return {
+        kind: "updated",
+        title: `Updated to ${input.status.version}`,
+        description: `Now running ${input.status.shortSha}.`,
+        dismissible: true,
+      };
+
+    case "install-failed": {
+      // The app is running a DIFFERENT build than the one it restarted to install. Silent here
+      // would mean a failed update is indistinguishable from a successful one — the exact gap
+      // `installCommands.ts` describes and that nothing had been checking.
+      const actual = input.status.actualShortSha;
+      return {
+        kind: "install-failed",
+        title: "Update did not apply",
+        description:
+          `T3 Code restarted to install ${input.status.expectedVersion} but came back as ` +
+          `${actual === undefined ? "a build that reports no commit" : actual}. ` +
+          "The previous version is still installed and still works.",
+        reportUrl: buildInstallFailureReportUrl({
+          expectedShortSha: input.status.expectedShortSha,
+          expectedVersion: input.status.expectedVersion,
+          actualShortSha: actual,
+          actualVersion: input.status.actualVersion,
+          platform: input.status.platform,
+          arch: input.status.arch,
+        }),
+        reportLabel: "Report this",
+        dismissible: true,
+      };
+    }
   }
 }
 
