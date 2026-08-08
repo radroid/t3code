@@ -9,6 +9,8 @@
 
 import type { T3xUpdateStatus } from "@t3tools/contracts";
 
+import { isMacPlatform, isWindowsPlatform } from "../../lib/utils.ts";
+
 /**
  * Aliased rather than redeclared. The same union crosses the IPC boundary, and two copies of it
  * would drift the moment one side gained a state — with the renderer silently falling through to
@@ -41,6 +43,12 @@ export interface UpdateToastInput {
   readonly status: UpdateDeliveryStatus;
   readonly dismissedShortSha: string | undefined;
   readonly isElectron: boolean;
+  /**
+   * `navigator.platform`, injected rather than read here so the copy is testable — same reason as
+   * `now`. What the click actually does differs enough per platform that one label cannot be
+   * honest for all of them.
+   */
+  readonly platform: string;
   /** True once this app has installed at least one update through this path. */
   readonly hasUpdatedBefore: boolean;
   /** Present while an auto-restart is armed. Owned by main, so it survives a window reload. */
@@ -101,6 +109,20 @@ export type UpdateToastView =
  */
 const FIRST_UPDATE_PERMISSION_NOTE =
   " Because these builds are unsigned, macOS will ask for screen-recording and automation permissions again after restarting.";
+
+/**
+ * Windows is not offered a "Restart", because it is not one.
+ *
+ * On macOS the click is a delete and a rename — staging already did everything expensive, so
+ * "Restart" is honest. On Windows the click hands off to a silent NSIS installer that unpacks
+ * several hundred MB while Defender scans every file of an unsigned build, and the app is GONE for
+ * the duration: no window, and a Start-menu shortcut that reports the app does not exist.
+ *
+ * Presenting those two as the same one-word action is what turns an ordinary wait into "the update
+ * deleted my app" — which is exactly how it was read the first time it ran.
+ */
+const WINDOWS_INSTALL_NOTE =
+  "T3 Code will close, install the update, and reopen itself. This usually takes a few minutes, and the window and Start-menu shortcut are unavailable until it finishes.";
 
 function plural(count: number): string {
   return count === 1 ? "change" : "changes";
@@ -187,11 +209,20 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
             ? `${changes.length} ${plural(changes.length)} ready to run`
             : "Update ready",
         description:
-          "Restart to update T3 Code." +
+          (isWindowsPlatform(input.platform)
+            ? WINDOWS_INSTALL_NOTE
+            : "Restart to update T3 Code.") +
           (expired ? TIMED_OUT_NOTE : "") +
-          (input.hasUpdatedBefore ? "" : FIRST_UPDATE_PERMISSION_NOTE),
-        actionLabel: "Restart",
-        autoRestartLabel: "Restart when idle",
+          // Gated on macOS, not merely on "first update". The note names screen-recording and
+          // automation prompts, which are a macOS concept — every Windows and Linux user was
+          // being told to expect permission dialogs their OS will never show.
+          (isMacPlatform(input.platform) && !input.hasUpdatedBefore
+            ? FIRST_UPDATE_PERMISSION_NOTE
+            : ""),
+        actionLabel: isWindowsPlatform(input.platform) ? "Install and reopen" : "Restart",
+        autoRestartLabel: isWindowsPlatform(input.platform)
+          ? "Install when idle"
+          : "Restart when idle",
         shortSha: input.status.shortSha,
         dismissible: true,
         changes,
