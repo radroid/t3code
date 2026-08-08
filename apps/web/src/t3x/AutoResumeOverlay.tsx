@@ -34,12 +34,21 @@ const COUNTDOWN_TICK_MS = 1_000;
  * can never be found. Roughly a one-line composer plus its bottom padding.
  */
 const COMPOSER_FALLBACK_OFFSET_PX = 76;
-/**
- * The composer overlay stretches to `inset-0` in the draft-hero state, which would fling the
- * capsule to the top of the thread. Clamp to a sane docked height instead of trusting the measure.
- */
-const COMPOSER_MAX_OFFSET_PX = 240;
 const COMPOSER_GAP_PX = 8;
+/**
+ * Tolerance for "the overlay fills its container", i.e. the draft-hero state where the composer
+ * centres itself with `inset-0` instead of docking to the bottom. Detecting that case exactly means
+ * the docked case needs **no** bound on the measurement, which matters: composer banners
+ * (`ComposerBannerStack`, `ThreadSyncStatusPill`, `ThreadOutboxQueueList`) render *in flow inside*
+ * the measured overlay, so it legitimately grows as they appear and the capsule must keep rising
+ * with it.
+ *
+ * Two earlier attempts bounded the measurement instead and both cut in during normal use: a 240px
+ * absolute cap (the docked composer already measures ~204px, so one banner exceeded it) and a
+ * fraction-of-container cap (still bound by a 90px banner on a 600px-tall window). A bound cannot
+ * distinguish "tall because of banners" from "tall because of hero"; the height ratio can.
+ */
+const COMPOSER_FULL_HEIGHT_TOLERANCE_PX = 4;
 
 /**
  * Read-only DOM dependency on upstream's composer overlay — the same element `ChatView` measures
@@ -49,7 +58,14 @@ const COMPOSER_GAP_PX = 8;
  */
 const COMPOSER_OVERLAY_SELECTOR = '[data-chat-composer-overlay="true"]';
 
-/** Tracks the docked composer's height so the capsule sits immediately above it as it grows. */
+/**
+ * Tracks the composer overlay's TOP edge so the capsule sits immediately above whatever the
+ * composer currently renders — the input alone, or the input plus any stack of banners.
+ *
+ * Measures the top edge rather than the height so it stays correct regardless of how the overlay is
+ * anchored, and shares the overlay's own containing block, so the value can be used directly as
+ * this component's `bottom`.
+ */
 function useComposerOffset(): number {
   const [offset, setOffset] = useState(COMPOSER_FALLBACK_OFFSET_PX);
 
@@ -59,16 +75,29 @@ function useComposerOffset(): number {
       return;
     }
     const update = () => {
-      const height = element.getBoundingClientRect().height;
-      if (height <= 0) {
+      const parent = element.offsetParent;
+      const rect = element.getBoundingClientRect();
+      if (!(parent instanceof HTMLElement) || rect.height <= 0) {
         setOffset(COMPOSER_FALLBACK_OFFSET_PX);
         return;
       }
-      setOffset(Math.min(height, COMPOSER_MAX_OFFSET_PX) + COMPOSER_GAP_PX);
+      const parentRect = parent.getBoundingClientRect();
+      // Draft-hero: the overlay spans the whole thread area, so its top edge is meaningless as an
+      // anchor. Everywhere else, track the top edge exactly — banners included.
+      if (rect.height >= parentRect.height - COMPOSER_FULL_HEIGHT_TOLERANCE_PX) {
+        setOffset(COMPOSER_FALLBACK_OFFSET_PX);
+        return;
+      }
+      setOffset(parentRect.bottom - rect.top + COMPOSER_GAP_PX);
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
+    // The bound is relative to the thread area, so a container resize matters even when the
+    // composer itself does not change size.
+    if (element.offsetParent instanceof HTMLElement) {
+      observer.observe(element.offsetParent);
+    }
     return () => observer.disconnect();
   }, []);
 
@@ -132,15 +161,21 @@ export function SegmentedToggle({ enabled, onChange }: SegmentedToggleProps) {
       onKeyDown={handleKeyDown}
       role="radiogroup"
     >
-      {/* Sliding thumb: ONE element that travels between the segments, so the fill reads as a
-          single body of colour flowing across rather than two backgrounds cross-fading.
-          `cubic-bezier(0.34, 1.56, 0.64, 1)` overshoots slightly and settles — the damped-spring
-          feel. Colour is given a shorter plain ease so it has resolved by the time the thumb
-          settles, instead of still shifting during the overshoot. */}
+      {/* The fill: ONE element that physically travels between the two segments, so the motion
+          reads as a filled region sliding left↔right rather than two backgrounds swapping.
+
+          `cubic-bezier(0.34, 1.56, 0.64, 1)` overshoots slightly and settles — the damping, and it
+          is deliberately on the TRAVEL, which is the thing being animated.
+
+          Colour runs for the SAME 320ms so the block stays one object for the whole journey. An
+          earlier version resolved colour in 200ms, which finished the blue→grey change while the
+          fill was still moving and made it look like the colour flipped rather than the fill
+          travelled. Colour uses a plain ease rather than the spring curve because an overshooting
+          curve on a colour interpolation drives it past the target and the browser clamps it. */}
       <span
         aria-hidden="true"
         className={cn(
-          "absolute inset-y-0 left-0 w-1/2 rounded-full will-change-transform [transition:transform_320ms_cubic-bezier(0.34,1.56,0.64,1),background-color_200ms_ease-out] motion-reduce:transition-none",
+          "absolute inset-y-0 left-0 w-1/2 rounded-full will-change-transform [transition:transform_320ms_cubic-bezier(0.34,1.56,0.64,1),background-color_320ms_ease-out] motion-reduce:transition-none",
           enabled ? "translate-x-full bg-primary" : "translate-x-0 bg-accent",
         )}
       />
@@ -245,94 +280,99 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
 
   return (
     <div
-      // Full width + upstream's own `chat-composer-horizontal-inset`, then right-aligned, so the
-      // capsule's right edge lands exactly on the composer's. A fixed `right-3` cannot do this:
-      // that inset is 0.75rem at base but 1.25rem from 40rem up, and it also carries
-      // `env(safe-area-inset-right)` — so a hard-coded value overhangs the composer by 8px on any
-      // wide viewport. Borrowing the class keeps the two edges in sync by construction.
-      className="pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30 flex flex-col-reverse items-end gap-1.5"
+      // Mirrors the composer's own box so the two right edges coincide at every width. That box is
+      // NOT the full content width: `chat-composer-horizontal-inset` supplies the outer padding
+      // (0.75rem, 1.25rem from 40rem up, plus `env(safe-area-inset-right)`), and inside it the
+      // visible card is `mx-auto w-full max-w-3xl` — centred and capped at 768px. Matching only the
+      // inset leaves the capsule hanging ~188px past the card on a wide window; matching only
+      // `max-w-3xl` drifts once the window is narrow enough for the padding to bite. Both are
+      // needed, in this order.
+      className="pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30"
       style={{ bottom: composerOffset }}
     >
-      <Collapsible
-        className="flex flex-col-reverse items-end gap-1.5"
-        onOpenChange={setExpanded}
-        open={expanded}
-      >
-        <div
-          className={cn(
-            "pointer-events-auto flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5 pr-1 text-xs shadow-sm transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
-            entered ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
-          )}
+      <div className="mx-auto flex w-full max-w-3xl flex-col-reverse items-end gap-1.5">
+        <Collapsible
+          className="flex flex-col-reverse items-end gap-1.5"
+          onOpenChange={setExpanded}
+          open={expanded}
         >
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <div>
-                  <SegmentedToggle enabled={state.enabled} onChange={controller.setEnabled} />
-                </div>
-              }
-            />
-            <TooltipPopup side="top" sideOffset={6}>
-              <span className="block font-medium">{tooltip.title}</span>
-              <span className="block text-muted-foreground">{tooltip.detail}</span>
-            </TooltipPopup>
-          </Tooltip>
-
-          <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
-
-          <CollapsibleTrigger
-            aria-label={expanded ? "Hide auto-resume settings" : "Show auto-resume settings"}
-            className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none"
-          >
-            {countdown === null ? null : (
-              // `font-mono`, not just `tabular-nums`: DM Sans Variable does not ship the `tnum`
-              // feature, so `tabular-nums` computes but changes nothing and the digits stay
-              // proportional — "5:11:11" measures 36px against "5:00:00" at 60px, which resized
-              // the capsule under the cursor every second. JetBrains Mono pins the advance width.
-              <span className="font-medium font-mono text-[11px] text-foreground tabular-nums">
-                {countdown}
-              </span>
+          <div
+            className={cn(
+              "pointer-events-auto flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5 pr-1 text-xs shadow-sm transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+              entered ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
             )}
-            <ChevronDownIcon
-              className={cn(
-                "size-3 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none",
-                expanded ? "rotate-0" : "rotate-180",
+          >
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <div>
+                    <SegmentedToggle enabled={state.enabled} onChange={controller.setEnabled} />
+                  </div>
+                }
+              />
+              <TooltipPopup side="top" sideOffset={6}>
+                <span className="block font-medium">{tooltip.title}</span>
+                <span className="block text-muted-foreground">{tooltip.detail}</span>
+              </TooltipPopup>
+            </Tooltip>
+
+            <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
+
+            <CollapsibleTrigger
+              aria-label={expanded ? "Hide auto-resume settings" : "Show auto-resume settings"}
+              className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none"
+            >
+              {countdown === null ? null : (
+                // `font-mono`, not just `tabular-nums`: DM Sans Variable does not ship the `tnum`
+                // feature, so `tabular-nums` computes but changes nothing and the digits stay
+                // proportional — "5:11:11" measures 36px against "5:00:00" at 60px, which resized
+                // the capsule under the cursor every second. JetBrains Mono pins the advance width.
+                <span className="font-medium font-mono text-[11px] text-foreground tabular-nums">
+                  {countdown}
+                </span>
               )}
-            />
-          </CollapsibleTrigger>
-        </div>
-
-        <CollapsiblePanel className="pointer-events-auto">
-          <div className="w-72 max-w-full rounded-lg border border-border/60 bg-card p-3 shadow-md">
-            <p className="font-medium text-xs">Resume after usage limits</p>
-
-            {pending !== null ? (
-              <div className="mt-2 rounded-md border border-primary/20 bg-primary/6 p-2">
-                <p className="font-medium text-xs">
-                  Resuming in{" "}
-                  <span className="font-mono text-[11px] tabular-nums">{countdown}</span>
-                </p>
-                <p className="mt-0.5 text-[11px]/4 text-muted-foreground">
-                  {describePendingReason(pending.reason)} · ~{formatNextAttempt(pending.resumeAtMs)}
-                </p>
-              </div>
-            ) : null}
-
-            <Textarea
-              aria-label="Auto-resume message"
-              className="mt-2"
-              id={promptId}
-              onChange={(event) => controller.setPromptDraft(event.target.value)}
-              placeholder="continue"
-              size="sm"
-              value={snapshot.promptDraft}
-            />
-            <p className="mt-1.5 text-muted-foreground text-xs">
-              Message sent when the thread resumes.
-            </p>
+              <ChevronDownIcon
+                className={cn(
+                  "size-3 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none",
+                  expanded ? "rotate-0" : "rotate-180",
+                )}
+              />
+            </CollapsibleTrigger>
           </div>
-        </CollapsiblePanel>
-      </Collapsible>
+
+          <CollapsiblePanel className="pointer-events-auto">
+            <div className="w-72 max-w-full rounded-lg border border-border/60 bg-card p-3 shadow-md">
+              <p className="font-medium text-xs">Resume after usage limits</p>
+
+              {pending !== null ? (
+                <div className="mt-2 rounded-md border border-primary/20 bg-primary/6 p-2">
+                  <p className="font-medium text-xs">
+                    Resuming in{" "}
+                    <span className="font-mono text-[11px] tabular-nums">{countdown}</span>
+                  </p>
+                  <p className="mt-0.5 text-[11px]/4 text-muted-foreground">
+                    {describePendingReason(pending.reason)} · ~
+                    {formatNextAttempt(pending.resumeAtMs)}
+                  </p>
+                </div>
+              ) : null}
+
+              <Textarea
+                aria-label="Auto-resume message"
+                className="mt-2"
+                id={promptId}
+                onChange={(event) => controller.setPromptDraft(event.target.value)}
+                placeholder="continue"
+                size="sm"
+                value={snapshot.promptDraft}
+              />
+              <p className="mt-1.5 text-muted-foreground text-xs">
+                Message sent when the thread resumes.
+              </p>
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
+      </div>
     </div>
   );
 }

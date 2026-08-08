@@ -48,12 +48,17 @@ describe("SegmentedToggle", () => {
     expect(renderToggle(false)).toContain("translate-x-0");
   });
 
-  it("moves the fill with a damped spring, and settles colour before the overshoot ends", () => {
+  it("moves the fill with a damped spring on the travel", () => {
+    // The damping belongs to the translation — that is the thing the user perceives moving.
+    expect(renderToggle(true)).toContain("transform_320ms_cubic-bezier(0.34,1.56,0.64,1)");
+  });
+
+  it("runs colour for the same duration as the travel so the fill stays one object", () => {
     const html = renderToggle(true);
-    // Overshoot-and-settle curve on transform; colour resolves sooner on a plain ease so it is
-    // not still shifting while the thumb springs back.
-    expect(html).toContain("transform_320ms_cubic-bezier(0.34,1.56,0.64,1)");
-    expect(html).toContain("background-color_200ms_ease-out");
+    // A shorter colour transition finishes the blue->grey change mid-flight and reads as the
+    // colour flipping rather than the fill sliding across.
+    expect(html).toContain("background-color_320ms_ease-out");
+    expect(html).not.toContain("background-color_200ms");
   });
 
   it("carries the fill on a single element so it reads as one body of colour", () => {
