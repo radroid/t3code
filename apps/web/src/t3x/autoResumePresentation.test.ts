@@ -19,16 +19,13 @@ const state = (overrides: Partial<AutoResumeState> = {}): AutoResumeState => ({
 });
 
 describe("formatCountdown", () => {
-  it("formats minutes and zero-padded seconds", () => {
-    expect(formatCountdown(4 * 60_000 + 12_000)).toBe("4:12");
-  });
-
-  it("zero-pads seconds below ten", () => {
-    expect(formatCountdown(60_000 + 5_000)).toBe("1:05");
+  it("zero-pads minutes and seconds", () => {
+    expect(formatCountdown(4 * 60_000 + 12_000)).toBe("04:12");
+    expect(formatCountdown(60_000 + 5_000)).toBe("01:05");
   });
 
   it("rounds partial seconds up so the countdown never shows a value it has passed", () => {
-    expect(formatCountdown(1_500)).toBe("0:02");
+    expect(formatCountdown(1_500)).toBe("00:02");
   });
 
   it("switches to h:mm:ss past an hour", () => {
@@ -36,8 +33,25 @@ describe("formatCountdown", () => {
   });
 
   it("clamps at zero rather than showing a negative countdown", () => {
-    expect(formatCountdown(0)).toBe("0:00");
-    expect(formatCountdown(-90_000)).toBe("0:00");
+    expect(formatCountdown(0)).toBe("00:00");
+    expect(formatCountdown(-90_000)).toBe("00:00");
+  });
+
+  it("holds a constant width for every sub-hour value, so the capsule cannot resize", () => {
+    // The whole point of the padding: `10:00` -> `9:59` used to drop a character and visibly
+    // shrink the control while the user was hovering it.
+    const lengths = new Set<number>();
+    for (const seconds of [0, 1, 9, 59, 60, 599, 600, 601, 3599]) {
+      lengths.add(formatCountdown(seconds * 1000).length);
+    }
+    expect([...lengths]).toEqual([5]);
+  });
+
+  it("uses one stable width above an hour too", () => {
+    const lengths = new Set(
+      [3600, 3661, 7199, 7200, 35_999].map((s) => formatCountdown(s * 1000).length),
+    );
+    expect([...lengths]).toEqual([7]);
   });
 });
 

@@ -29,51 +29,6 @@ export { formatAutoResumeStatus } from "./autoResumePresentation";
 const POLL_INTERVAL_MS = 30_000;
 const COUNTDOWN_TICK_MS = 1_000;
 
-/**
- * Distance to hold above the docked composer, used until the composer has been measured and if it
- * can never be found. Roughly a one-line composer plus its bottom padding.
- */
-const COMPOSER_FALLBACK_OFFSET_PX = 76;
-/**
- * The composer overlay stretches to `inset-0` in the draft-hero state, which would fling the
- * capsule to the top of the thread. Clamp to a sane docked height instead of trusting the measure.
- */
-const COMPOSER_MAX_OFFSET_PX = 240;
-const COMPOSER_GAP_PX = 8;
-
-/**
- * Read-only DOM dependency on upstream's composer overlay — the same element `ChatView` measures
- * for its own `composerOverlayHeight`. The overlay is mounted as a sibling of `<ChatView>` in the
- * route file, so it cannot receive that height as a prop without widening the seam. Degrades to
- * `COMPOSER_FALLBACK_OFFSET_PX` if the attribute ever disappears. Recorded in docs/t3x/SEAMS.md.
- */
-const COMPOSER_OVERLAY_SELECTOR = '[data-chat-composer-overlay="true"]';
-
-function useComposerOffset(): number {
-  const [offset, setOffset] = useState(COMPOSER_FALLBACK_OFFSET_PX);
-
-  useEffect(() => {
-    const element = document.querySelector(COMPOSER_OVERLAY_SELECTOR);
-    if (!(element instanceof HTMLElement)) {
-      return;
-    }
-    const update = () => {
-      const height = element.getBoundingClientRect().height;
-      if (height <= 0) {
-        setOffset(COMPOSER_FALLBACK_OFFSET_PX);
-        return;
-      }
-      setOffset(Math.min(height, COMPOSER_MAX_OFFSET_PX) + COMPOSER_GAP_PX);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  return offset;
-}
-
 /** Re-renders once a second, but only while a resume is actually scheduled. */
 function useCountdownTick(active: boolean): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -131,12 +86,15 @@ export function SegmentedToggle({ enabled, onChange }: SegmentedToggleProps) {
       onKeyDown={handleKeyDown}
       role="radiogroup"
     >
-      {/* Sliding thumb: one element that translates, so the active segment animates between
-          positions instead of two backgrounds cross-fading. */}
+      {/* Sliding thumb: ONE element that travels between the segments, so the fill reads as a
+          single body of colour flowing across rather than two backgrounds cross-fading.
+          `cubic-bezier(0.34, 1.56, 0.64, 1)` overshoots slightly and settles — the damped-spring
+          feel. Colour is given a shorter plain ease so it has resolved by the time the thumb
+          settles, instead of still shifting during the overshoot. */}
       <span
         aria-hidden="true"
         className={cn(
-          "absolute inset-y-0 left-0 w-1/2 rounded-full transition-[transform,background-color] duration-150 ease-out motion-reduce:transition-none",
+          "absolute inset-y-0 left-0 w-1/2 rounded-full will-change-transform [transition:transform_320ms_cubic-bezier(0.34,1.56,0.64,1),background-color_200ms_ease-out] motion-reduce:transition-none",
           enabled ? "translate-x-full bg-primary" : "translate-x-0 bg-accent",
         )}
       />
@@ -173,16 +131,17 @@ interface AutoResumeOverlayProps {
 /**
  * Floating per-thread control for auto-resume (auto-continuing a thread after a usage-limit pause).
  *
- * Anchored bottom-right above the composer rather than under the topbar: the toast viewport is
- * `fixed z-100` in a portal at body level and is top-anchored, so a top-right overlay at `z-30` is
- * covered by any toast — fully so on narrow viewports. Renders nothing until the server confirms
- * the feature is reachable for this thread.
+ * Anchored top-right, under the topbar and clear of the composer. The collapsed capsule spans
+ * roughly 56→82px, which stays just above the toast lane on `sm` and up (toasts start at
+ * `--toast-inset + 52px` = 84px). A toast *will* cover the expanded panel, and will cover the
+ * capsule itself below `sm` where `--toast-inset` drops to 1rem — see docs/t3x/SEAMS.md.
+ *
+ * Renders nothing until the server confirms the feature is reachable for this thread.
  */
 export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const threadId = threadRef.threadId;
   const promptId = useId();
   const [expanded, setExpanded] = useState(false);
-  const composerOffset = useComposerOffset();
 
   const controller = useMemo(
     () => createAutoResumeController({ client: httpAutoResumeClient }),
@@ -237,19 +196,16 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const countdown = pending === null ? null : formatCountdown(pending.resumeAtMs - nowMs);
 
   return (
-    <div
-      className="pointer-events-none absolute right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col-reverse items-end gap-1.5"
-      style={{ bottom: composerOffset }}
-    >
+    <div className="pointer-events-none absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col items-end gap-1.5">
       <Collapsible
-        className="flex flex-col-reverse items-end gap-1.5"
+        className="flex flex-col items-end gap-1.5"
         onOpenChange={setExpanded}
         open={expanded}
       >
         <div
           className={cn(
             "pointer-events-auto flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5 pr-1 text-xs shadow-sm transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
-            entered ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
+            entered ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
           )}
         >
           <Tooltip>
@@ -260,7 +216,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
                 </div>
               }
             />
-            <TooltipPopup side="top" sideOffset={6}>
+            <TooltipPopup side="bottom" sideOffset={6}>
               <span className="block font-medium">{tooltip.title}</span>
               <span className="block text-muted-foreground">{tooltip.detail}</span>
             </TooltipPopup>
@@ -273,12 +229,18 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
             className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none"
           >
             {countdown === null ? null : (
-              <span className="font-medium text-foreground tabular-nums">{countdown}</span>
+              // `font-mono`, not just `tabular-nums`: DM Sans Variable does not ship the `tnum`
+              // feature, so `tabular-nums` computes but changes nothing and the digits stay
+              // proportional — "5:11:11" measures 36px against "5:00:00" at 60px, which resized
+              // the capsule under the cursor every second. JetBrains Mono pins the advance width.
+              <span className="font-medium font-mono text-[11px] text-foreground tabular-nums">
+                {countdown}
+              </span>
             )}
             <ChevronDownIcon
               className={cn(
                 "size-3 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none",
-                expanded ? "rotate-0" : "rotate-180",
+                expanded ? "rotate-180" : "rotate-0",
               )}
             />
           </CollapsibleTrigger>
@@ -291,7 +253,8 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
             {pending !== null ? (
               <div className="mt-2 rounded-md border border-primary/20 bg-primary/6 p-2">
                 <p className="font-medium text-xs">
-                  Resuming in <span className="tabular-nums">{countdown}</span>
+                  Resuming in{" "}
+                  <span className="font-mono text-[11px] tabular-nums">{countdown}</span>
                 </p>
                 <p className="mt-0.5 text-[11px]/4 text-muted-foreground">
                   {describePendingReason(pending.reason)} · ~{formatNextAttempt(pending.resumeAtMs)}

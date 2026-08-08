@@ -48,6 +48,20 @@ describe("SegmentedToggle", () => {
     expect(renderToggle(false)).toContain("translate-x-0");
   });
 
+  it("moves the fill with a damped spring, and settles colour before the overshoot ends", () => {
+    const html = renderToggle(true);
+    // Overshoot-and-settle curve on transform; colour resolves sooner on a plain ease so it is
+    // not still shifting while the thumb springs back.
+    expect(html).toContain("transform_320ms_cubic-bezier(0.34,1.56,0.64,1)");
+    expect(html).toContain("background-color_200ms_ease-out");
+  });
+
+  it("carries the fill on a single element so it reads as one body of colour", () => {
+    const html = renderToggle(true);
+    // Exactly one thumb; two would cross-fade instead of flowing.
+    expect(html.match(/aria-hidden="true"/g)).toHaveLength(1);
+  });
+
   it("respects prefers-reduced-motion on every animated element", () => {
     const html = renderToggle(true);
     // The thumb transition and the label colour transition must both opt out.
