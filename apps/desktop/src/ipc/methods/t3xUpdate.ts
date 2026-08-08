@@ -22,6 +22,12 @@ const UpdateStatus = Schema.Union([
     kind: Schema.Literal("ready"),
     shortSha: Schema.String,
     version: Schema.String,
+    // Optional because the manifest's are: a build published before these fields existed still
+    // has to reach the renderer. A required field here would fail the encode and the toast would
+    // never appear — withholding a real update, which is the failure this feature exists to fix.
+    changes: Schema.optionalKey(Schema.Array(Schema.String)),
+    builtAt: Schema.optionalKey(Schema.String),
+    runUrl: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ kind: Schema.Literal("restarting") }),
   Schema.Struct({
