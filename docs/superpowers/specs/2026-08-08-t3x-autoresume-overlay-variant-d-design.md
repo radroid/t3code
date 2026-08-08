@@ -60,6 +60,37 @@ Consequences of anchoring to the bottom:
 - **The expanded panel grows upward**, via `flex-direction: column-reverse`, so it never pushes down
   into the composer.
 
+### Sharing the band above the composer
+
+Everything else that can appear in this strip, and how the capsule behaves with it:
+
+| Neighbour                                                                                                       | Where it renders                                                                               | Interaction                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ComposerBannerStack` — environment-unavailable, server-version update, thread snoozed/settled, branch-mismatch | **In flow inside** the measured composer overlay                                               | Overlay grows, `ResizeObserver` fires, capsule rises with it. Verified clear at 0/60/90/130/200px banner heights with a constant 16px gap                                    |
+| `ThreadSyncStatusPill`                                                                                          | In flow inside the same overlay                                                                | Same as above                                                                                                                                                                |
+| `ThreadOutboxQueueList` (fork)                                                                                  | Inside the composer card                                                                       | Same as above                                                                                                                                                                |
+| **"Scroll to end" pill**                                                                                        | `absolute`, centred, `bottom: composerOverlayHeight + 4` — a _sibling_, not inside the overlay | **Collides at narrow widths.** Shares the same vertical band (24px overlap) and is centred while the capsule is right-aligned, so they meet once the column is narrow enough |
+| Toast viewport                                                                                                  | `fixed z-100`, top-anchored, body-level portal                                                 | No interaction — the capsule is bottom-anchored                                                                                                                              |
+
+The scroll-to-end overlap is measured, not predicted: at **520px** wide they clear by 34px; at **390px**
+they overlap by **31px**. The crossover is where `capsule.left` falls below the centred pill's right
+edge. It is **not fixed** — every available fix costs either a magic breakpoint or a hard-coded
+assumption about the pill's width, so it is recorded here for a decision rather than guessed at.
+
+### Why the composer measurement tracks the top edge, not the height
+
+The offset is `parentRect.bottom - overlayRect.top`, with the draft-hero state detected by the
+overlay filling its container rather than by any bound on the result. Two earlier versions bounded
+the measurement and both cut in during ordinary use:
+
+- **240px absolute cap** — the docked composer already measures ~204px, so a single banner exceeded
+  it. The capsule froze and banners rendered over it, from 80px of banner upward.
+- **Fraction-of-container cap (0.5, then 0.66)** — still bound by a 90px banner on a 600px-tall
+  window.
+
+A bound cannot tell "tall because of banners" (must track) from "tall because of hero" (must not).
+The height-versus-container ratio can, so the docked path now has no bound at all.
+
 ### Revision history
 
 This placement was briefly changed to **top-right under the topbar** and then changed back, both
