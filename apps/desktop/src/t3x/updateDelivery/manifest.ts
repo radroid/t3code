@@ -52,6 +52,17 @@ export const UpdateManifest = Schema.Struct({
   version: Schema.String,
   releaseTag: Schema.String,
   builtAt: Schema.String,
+  /**
+   * Commit subjects in this build, newest first.
+   *
+   * `optionalKey`, and it must stay that way: a client running this build can be offered a
+   * manifest published *before* the field existed, and a required field would fail the decode —
+   * which this pipeline treats as "no update", silently withholding a real one. The same reason
+   * `runUrl` is optional.
+   */
+  changes: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** The workflow run that produced this build. Built from `run_id`, never `run_number`. */
+  runUrl: Schema.optionalKey(Schema.String),
   assets: Schema.Array(UpdateAsset).check(Schema.isMinLength(1)),
 });
 export type UpdateManifest = typeof UpdateManifest.Type;

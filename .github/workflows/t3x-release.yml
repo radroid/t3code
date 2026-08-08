@@ -47,17 +47,23 @@ jobs:
     name: Resolve build identity
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       sha: ${{ steps.identity.outputs.sha }}
       short_sha: ${{ steps.identity.outputs.short_sha }}
       version: ${{ steps.identity.outputs.version }}
       tag: ${{ steps.identity.outputs.tag }}
+      changes: ${{ steps.identity.outputs.changes }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ env.BUILD_SHA }}
+          # Full history and tags: the changelog is `git log <previous release tag>..<sha>`, and a
+          # shallow clone has neither endpoint. Only this job pays for it; build and publish stay
+          # shallow.
+          fetch-depth: 0
+          fetch-tags: true
           # .repos/ is tracked: 12,961 files, 126 MB. Upstream excludes it from every job.
           sparse-checkout: |
             /*
@@ -115,6 +121,47 @@ jobs:
           echo "short_sha=$short_sha"              >> "$GITHUB_OUTPUT"
           echo "version=${base}-t3x.${BUILD_COUNTER}" >> "$GITHUB_OUTPUT"
           echo "tag=t3x-build-${short_sha}"      >> "$GITHUB_OUTPUT"
+
+          # What changed since the last release we actually published.
+          #
+          # Anchored on the previous RELEASE TAG, not on main's ancestry. The sync playbook
+          # force-pushes main, so "the commits since the last build" cannot be derived from
+          # branch history — a released commit may not even be an ancestor of main. Tags survive
+          # that rewrite, and `git log A..B` is "reachable from B, not from A", which stays
+          # correct when A is not an ancestor of B.
+          #
+          # Newest first. Merge commits are dropped: on a squash-merge fork their subjects are
+          # duplicates of the commit they merged.
+          previous="$(git tag --list 't3x-build-*' --sort=-creatordate | head -n 1 || true)"
+          if [[ -z "$previous" ]]; then
+            # First release ever: there is no range. Emitting the entire history as a "changelog"
+            # would render a toast with thousands of entries.
+            echo "No previous t3x-build-* tag; emitting an empty changelog."
+            changes=""
+          else
+            echo "Changelog range: ${previous}..${sha}"
+            # Capped. An unbounded range after a long CI outage (four straight failures has
+            # happened here) would produce a toast nobody can read, and a manifest nobody wants to
+            # ship. The count in the title still comes from this list, so the cap is visible as
+            # "20 changes" rather than silently truncating a larger number.
+            changes="$(git log "${previous}..${sha}" --no-merges --format=%s --max-count=20 || true)"
+          fi
+
+          # Commit subjects are attacker-influenced content — anyone whose commit reaches main,
+          # including an upstream sync, chooses this text. Two hardening steps, both load-bearing:
+          #
+          # 1. A random delimiter. With a fixed one, a commit subject equal to that literal would
+          #    close the heredoc early and let the rest of the subject write arbitrary job outputs
+          #    (`tag=`, `sha=`) — which this workflow then uses to tag and publish a release.
+          # 2. Control characters stripped, so nothing can smuggle a newline or an escape sequence
+          #    into a value that later lands in an env var and a toast.
+          delim="T3X_CHANGES_$(openssl rand -hex 16)"
+          changes="$(printf '%s' "$changes" | tr -d '\000-\010\013\014\016-\037')"
+          {
+            echo "changes<<${delim}"
+            echo "$changes"
+            echo "${delim}"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.label }}
@@ -388,6 +435,12 @@ jobs:
           VERSION: ${{ needs.resolve.outputs.version }}
           REPOSITORY: ${{ github.repository }}
           RUN_NUMBER: ${{ github.run_number }}
+          # run_id addresses the run URL; run_number is the build counter. Different numbers —
+          # passing run_number here yields a link to whichever run happens to own that id.
+          RUN_ID: ${{ github.run_id }}
+          # Read as an env var, never interpolated into shell source: these are commit subjects,
+          # so the content is chosen by whoever wrote the commit.
+          CHANGES: ${{ needs.resolve.outputs.changes }}
         run: node scripts/t3x/build-update-manifest.mjs staged staged/t3x-latest.json
 
       - name: Create release
