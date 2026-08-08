@@ -47,7 +47,32 @@ export type T3xUpdateStatus =
       readonly runUrl?: string;
     }
   | { readonly kind: "restarting" }
-  | { readonly kind: "failed"; readonly message: string; readonly logPath?: string };
+  | { readonly kind: "failed"; readonly message: string; readonly logPath?: string }
+  /**
+   * The install landed, confirmed on the boot after it.
+   *
+   * Shown once. On macOS the swap is fast enough that the restart is its own confirmation, but on
+   * Windows the app is gone for minutes with no window and a Start-menu shortcut that reports it
+   * does not exist — so coming back with nothing said leaves "did that work?" unanswered.
+   */
+  | { readonly kind: "updated"; readonly shortSha: string; readonly version: string }
+  /**
+   * The app came back as a different build than the one it was told to install.
+   *
+   * The case `installCommands.ts` warned about: without this comparison a silently failed install
+   * is indistinguishable from a successful one. Carries both sides so the report says which build
+   * was expected and what actually turned up.
+   */
+  | {
+      readonly kind: "install-failed";
+      readonly expectedShortSha: string;
+      readonly expectedVersion: string;
+      /** Absent when the running build carries no embedded commit hash at all. */
+      readonly actualShortSha?: string;
+      readonly actualVersion: string;
+      readonly platform: string;
+      readonly arch: string;
+    };
 
 export interface T3xUpdateState {
   readonly status: T3xUpdateStatus;

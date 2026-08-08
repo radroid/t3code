@@ -35,6 +35,22 @@ const UpdateStatus = Schema.Union([
     message: Schema.String,
     logPath: Schema.optionalKey(Schema.String),
   }),
+  Schema.Struct({
+    kind: Schema.Literal("updated"),
+    shortSha: Schema.String,
+    version: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("install-failed"),
+    expectedShortSha: Schema.String,
+    expectedVersion: Schema.String,
+    // Optional for the same reason as the `ready` fields: a build with no embedded commit hash
+    // still has to reach the renderer, and that case is precisely one worth reporting.
+    actualShortSha: Schema.optionalKey(Schema.String),
+    actualVersion: Schema.String,
+    platform: Schema.String,
+    arch: Schema.String,
+  }),
 ]);
 
 const UpdateState = Schema.Struct({
