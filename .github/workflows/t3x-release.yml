@@ -444,7 +444,11 @@ jobs:
         run: node scripts/t3x/build-update-manifest.mjs staged staged/t3x-latest.json
 
       - name: Create release
+        id: create_release
         uses: softprops/action-gh-release@v2
+        # The retry below is the error handling for this step, so a failure here must not end the
+        # job before it runs.
+        continue-on-error: true
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
           target_commitish: ${{ needs.resolve.outputs.sha }}
@@ -488,6 +492,69 @@ jobs:
             `t3x-latest.json` above.
 
             Design: `docs/superpowers/specs/2026-08-03-update-delivery-design.md`.
+
+      # Build 9 (run 31244161522) died here: both matrix legs green, both artifacts uploaded, and
+      # then ~22 minutes of macOS and Windows compute discarded by one 14-second API call that
+      # returned 403 "Resource not accessible by integration".
+      #
+      # Nothing in the repository explains that 403, and it was checked rather than assumed: the
+      # failing job and the job that succeeded 15 minutes later logged IDENTICAL token permissions
+      # (`Contents: write`, `Metadata: read`), the workflow has carried `permissions: contents:
+      # write` in every revision, the repo default is `write`, and there are no rulesets and no tag
+      # protection. So it was transient.
+      #
+      # The action turns a transient fault into a permanent one on purpose — it logs "Skip retry —
+      # your GitHub token/PAT does not have the required permission to create a release" and gives
+      # up, because it reads every 403 as a misconfiguration. That is a reasonable default and the
+      # wrong one here, where the cost of being wrong is a whole build.
+      - name: Retry the release if the action gave up
+        if: ${{ steps.create_release.outcome == 'failure' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Pinned. `gh` defaults to the repo it infers from the checkout, and issue #18 in this
+          # fork was exactly that inference resolving to the PARENT repo.
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_NAME: ${{ needs.resolve.outputs.version }}
+          TARGET_SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -uo pipefail
+          echo "::warning::action-gh-release failed and does not retry; falling back to gh."
+
+          # The notes the action would have published are not reachable from here, so the fallback
+          # release points at the one place that always carries them rather than duplicating the
+          # text and letting the two copies drift.
+          notes="Automated fork build of \`${TARGET_SHA}\`.
+
+          Published by the fallback path after \`action-gh-release\` returned a transient error.
+          Install notes: see any earlier release on this repo, or the design doc at
+          \`docs/superpowers/specs/2026-08-03-update-delivery-design.md\`."
+
+          for attempt in 1 2 3; do
+            # Idempotent by construction. A retry must never create a second release for a tag, and
+            # the previous attempt may have got further than its error suggested — so an existing
+            # release is completed with `upload --clobber` rather than recreated.
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "Release $RELEASE_TAG exists; uploading assets."
+              if gh release upload "$RELEASE_TAG" staged/T3Code-* staged/t3x-latest.json --clobber; then
+                exit 0
+              fi
+            elif gh release create "$RELEASE_TAG" \
+              --target "$TARGET_SHA" \
+              --title "$RELEASE_NAME" \
+              --prerelease \
+              --notes "$notes" \
+              staged/T3Code-* staged/t3x-latest.json; then
+              exit 0
+            fi
+
+            echo "::warning::Attempt $attempt to publish $RELEASE_TAG failed."
+            sleep $((attempt * 15))
+          done
+
+          echo "::error::Could not publish $RELEASE_TAG after three attempts." >&2
+          exit 1
 
       - name: Notify the update relay
         if: ${{ vars.T3X_UPDATE_RELAY_URL != '' }}
