@@ -20,10 +20,13 @@ function input(overrides: Partial<UpdateToastInput> = {}): UpdateToastInput {
     status: { kind: "ready", shortSha: "abc123def456", version: "0.0.31-t3x.abc123def456" },
     dismissedShortSha: undefined,
     isElectron: true,
+    platform: "MacIntel",
     hasUpdatedBefore: true,
     ...overrides,
   };
 }
+
+const WINDOWS = "Win32";
 
 describe("selectUpdateToastView", () => {
   it("offers a restart once a build is staged", () => {
@@ -80,6 +83,44 @@ describe("selectUpdateToastView", () => {
     it("does not repeat it afterwards", () => {
       const view = selectUpdateToastView(input({ hasUpdatedBefore: true }));
       expect(view.kind === "ready" && view.description).not.toContain("permissions again");
+    });
+
+    it("stays off Windows entirely, first update or not", () => {
+      // Screen recording and automation prompts are a macOS concept. Windows was being promised
+      // permission dialogs its OS will never show.
+      const view = selectUpdateToastView(input({ platform: WINDOWS, hasUpdatedBefore: false }));
+      expect(view.kind === "ready" && view.description).not.toContain("permissions again");
+    });
+  });
+
+  describe("what the action actually does, per platform", () => {
+    it('calls it a restart on macOS, because that is what it is', () => {
+      // Delete then rename. Staging already paid for everything expensive.
+      const view = selectUpdateToastView(input());
+      expect(view.kind === "ready" && view.actionLabel).toBe("Restart");
+      expect(view.kind === "ready" && view.autoRestartLabel).toBe("Restart when idle");
+    });
+
+    it("does not call it a restart on Windows, because it is not one", () => {
+      // The click hands off to a silent NSIS installer and the app is gone for minutes. Labelling
+      // that "Restart" is what made a normal install read as the app deleting itself.
+      const view = selectUpdateToastView(input({ platform: WINDOWS }));
+      expect(view.kind === "ready" && view.actionLabel).toBe("Install and reopen");
+      expect(view.kind === "ready" && view.autoRestartLabel).toBe("Install when idle");
+    });
+
+    it("warns Windows that the app disappears and the shortcut breaks", () => {
+      // Both symptoms are named because both were read as evidence of a destroyed install.
+      const view = selectUpdateToastView(input({ platform: WINDOWS }));
+      const description = view.kind === "ready" ? view.description : "";
+      expect(description).toContain("a few minutes");
+      expect(description).toContain("Start-menu shortcut");
+    });
+
+    it("leaves Linux on the neutral wording", () => {
+      const view = selectUpdateToastView(input({ platform: "Linux x86_64" }));
+      expect(view.kind === "ready" && view.actionLabel).toBe("Restart");
+      expect(view.kind === "ready" && view.description).not.toContain("Start-menu");
     });
   });
 
