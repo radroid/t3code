@@ -29,11 +29,14 @@ export function formatAutoResumeStatus(state: AutoResumeState): string {
 }
 
 /**
- * `m:ss`, or `h:mm:ss` past an hour. Clamped at zero: the reactor fires on its own schedule, so a
+ * `mm:ss`, or `h:mm:ss` past an hour. Clamped at zero: the reactor fires on its own schedule, so a
  * countdown that has run out means "any moment now", never a negative number.
  *
- * Rendered with `tabular-nums` at the call site — without it the capsule visibly jitters as the
- * digits tick.
+ * **Minutes are zero-padded so the string length never changes.** `tabular-nums` at the call site
+ * equalises digit *widths*, but it cannot help when the character *count* drops — `10:00` → `9:59`
+ * loses a character and visibly resizes the capsule mid-hover. Padding pins sub-hour countdowns at
+ * exactly five characters, so the only width change in the control's whole life is the one-time
+ * `1:00:00` → `59:59` step.
  */
 export function formatCountdown(remainingMs: number): string {
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -42,10 +45,11 @@ export function formatCountdown(remainingMs: number): string {
   const minutes = totalMinutes % 60;
   const hours = Math.floor(totalMinutes / 60);
   const paddedSeconds = String(seconds).padStart(2, "0");
+  const paddedMinutes = String(minutes).padStart(2, "0");
   if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${paddedSeconds}`;
+    return `${hours}:${paddedMinutes}:${paddedSeconds}`;
   }
-  return `${minutes}:${paddedSeconds}`;
+  return `${paddedMinutes}:${paddedSeconds}`;
 }
 
 export interface AutoResumeTooltipCopy {
