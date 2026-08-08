@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  formatBuiltAgo,
+  AUTO_RESTART_CEILING_MS,
+  autoRestartExpired,
+  countProgressingThreads,
   selectUpdateToastView,
+  shouldArmAutoRestart,
+  shouldAutoRestartNow,
   shouldSendRestart,
+  type ProgressCandidateThread,
   type UpdateToastInput,
 } from "./updateToast.logic.ts";
+
+const ARMED_AT = 1_700_000_000_000;
 
 function input(overrides: Partial<UpdateToastInput> = {}): UpdateToastInput {
   return {
@@ -108,6 +117,232 @@ describe("selectUpdateToastView", () => {
       );
       expect(view.kind).toBe("failed");
     });
+  });
+});
+
+describe("the changelog-forward ready toast", () => {
+  const ready = (extra: Record<string, unknown>) =>
+    selectUpdateToastView(
+      input({
+        status: {
+          kind: "ready",
+          shortSha: "abc123def456",
+          version: "0.0.31-t3x.44",
+          ...extra,
+        } as UpdateToastInput["status"],
+      }),
+    );
+
+  it("leads with the change count", () => {
+    // "3 changes ready to run" answers the question a fork maintainer actually has.
+    const view = ready({ changes: ["a", "b", "c"] });
+    expect(view.kind === "ready" && view.title).toBe("3 changes ready to run");
+  });
+
+  it("does not say '1 changes'", () => {
+    const view = ready({ changes: ["only one"] });
+    expect(view.kind === "ready" && view.title).toBe("1 change ready to run");
+  });
+
+  it("falls back to the generic title rather than '0 changes'", () => {
+    // The manifest does not carry subjects yet, and an older shell never will.
+    const view = ready({});
+    expect(view.kind === "ready" && view.title).toBe("Update ready");
+    expect(view.kind === "ready" && view.changes).toEqual([]);
+  });
+
+  it("omits the age when the manifest omitted builtAt", () => {
+    // Rendering "built undefined ago" is worse than rendering nothing.
+    const view = ready({});
+    expect(view.kind === "ready" && view.builtAgo).toBeUndefined();
+    expect(view.kind === "ready" && view.runUrl).toBeUndefined();
+  });
+
+  it("formats the age when builtAt is present", () => {
+    const now = Date.parse("2026-08-08T12:00:00.000Z");
+    const view = selectUpdateToastView(
+      input({
+        status: {
+          kind: "ready",
+          shortSha: "abc123def456",
+          version: "0.0.31-t3x.44",
+          builtAt: "2026-08-08T11:56:00.000Z",
+        },
+        now,
+      }),
+    );
+    expect(view.kind === "ready" && view.builtAgo).toBe("4 min ago");
+  });
+});
+
+describe("formatBuiltAgo", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const BUILT = "2026-08-08T12:00:00.000Z";
+
+  it.each([
+    ["just now", "2026-08-08T12:00:30.000Z"],
+    ["1 min ago", "2026-08-08T12:01:00.000Z"],
+    ["59 min ago", "2026-08-08T12:59:00.000Z"],
+    ["1h ago", "2026-08-08T13:00:00.000Z"],
+    ["2d ago", "2026-08-10T12:00:00.000Z"],
+  ])("renders %s", (expected, now) => {
+    expect(formatBuiltAgo(BUILT, at(now))).toBe(expected);
+  });
+
+  it("clamps clock skew rather than saying 'in 3 minutes'", () => {
+    // The builder's clock can run ahead of this machine's. A future age reads as an app bug.
+    expect(formatBuiltAgo(BUILT, at("2026-08-08T11:57:00.000Z"))).toBe("just now");
+  });
+
+  it("returns nothing for an unparseable timestamp", () => {
+    expect(formatBuiltAgo("not-a-date", at(BUILT))).toBeUndefined();
+  });
+});
+
+describe("countProgressingThreads", () => {
+  const thread = (over: Partial<ProgressCandidateThread> = {}): ProgressCandidateThread => ({
+    environmentId: "local",
+    latestTurn: { state: "running" },
+    archivedAt: null,
+    settledOverride: null,
+    ...over,
+  });
+
+  it("counts a running turn in the primary environment", () => {
+    expect(countProgressingThreads([thread()], "local")).toBe(1);
+  });
+
+  it("ignores finished turns", () => {
+    expect(countProgressingThreads([thread({ latestTurn: { state: "completed" } })], "local")).toBe(
+      0,
+    );
+  });
+
+  it("ignores threads that never ran", () => {
+    expect(countProgressingThreads([thread({ latestTurn: null })], "local")).toBe(0);
+  });
+
+  it("does not let a remote environment block the restart", () => {
+    // Restarting the desktop app tears down the server it hosts. A thread running on a remote
+    // environment survives that, so blocking on it would wait for something never at risk.
+    expect(countProgressingThreads([thread({ environmentId: "remote-box" })], "local")).toBe(0);
+  });
+
+  it("ignores archived threads", () => {
+    // A thread put away should not hold the app hostage because its last turn was never marked
+    // finished — which is exactly the crash-frozen `running` case.
+    expect(countProgressingThreads([thread({ archivedAt: "2026-08-01T00:00:00Z" })], "local")).toBe(
+      0,
+    );
+  });
+
+  it("ignores threads the user explicitly settled", () => {
+    expect(countProgressingThreads([thread({ settledOverride: "settled" })], "local")).toBe(0);
+  });
+
+  it("reports idle when there is no primary environment", () => {
+    expect(countProgressingThreads([thread()], null)).toBe(0);
+  });
+
+  it("sums across threads", () => {
+    expect(
+      countProgressingThreads(
+        [thread(), thread(), thread({ latestTurn: { state: "completed" } })],
+        "local",
+      ),
+    ).toBe(2);
+  });
+});
+
+describe("restart when idle", () => {
+  const armed = { armedAt: ARMED_AT };
+
+  it("offers the arm control alongside an immediate restart", () => {
+    const view = selectUpdateToastView(input());
+    expect(view.kind === "ready" && view.autoRestartLabel).toBe("Restart when idle");
+    expect(view.kind === "ready" && view.actionLabel).toBe("Restart");
+  });
+
+  it("stays visible while armed", () => {
+    // An armed restart that hides is indistinguishable from one that never fires. The user has
+    // handed over control of when the app disappears; the least it can do is say so.
+    const view = selectUpdateToastView(input({ autoRestart: armed, now: ARMED_AT + 60_000 }));
+    expect(view.kind).toBe("armed");
+    expect(view.kind === "armed" && view.description).toContain("keep working");
+  });
+
+  it("keeps an immediate restart available while armed", () => {
+    // Arming is a preference, not a lock-in.
+    const view = selectUpdateToastView(input({ autoRestart: armed, now: ARMED_AT + 60_000 }));
+    expect(view.kind === "armed" && view.actionLabel).toBe("Restart now");
+    expect(shouldSendRestart(view)).toBe(true);
+  });
+
+  it("cannot be armed twice", () => {
+    const view = selectUpdateToastView(input({ autoRestart: armed, now: ARMED_AT + 60_000 }));
+    expect(shouldArmAutoRestart(view)).toBe(false);
+  });
+
+  describe("the ceiling", () => {
+    it("falls back to prompting rather than waiting forever", () => {
+      // Turns wedge in `running` — "reconcile crash-frozen `running` turns" has landed here more
+      // than once. Waiting forever is #41's silence with extra steps.
+      const view = selectUpdateToastView(
+        input({ autoRestart: armed, now: ARMED_AT + AUTO_RESTART_CEILING_MS }),
+      );
+      expect(view.kind).toBe("ready");
+      expect(view.kind === "ready" && view.autoRestartTimedOut).toBe(true);
+    });
+
+    it("explains why it is asking again", () => {
+      // A bare re-prompt reads as a bug to someone who explicitly asked not to be interrupted.
+      const view = selectUpdateToastView(
+        input({ autoRestart: armed, now: ARMED_AT + AUTO_RESTART_CEILING_MS }),
+      );
+      expect(view.kind === "ready" && view.description).toContain("stood down");
+    });
+
+    it("does not fire the restart once expired", () => {
+      // Standing down must not become "restart under the user anyway" — something is still running.
+      expect(
+        shouldAutoRestartNow({
+          armed,
+          progressingThreadCount: 0,
+          now: ARMED_AT + AUTO_RESTART_CEILING_MS,
+        }),
+      ).toBe(false);
+    });
+
+    it("is not expired one millisecond early", () => {
+      expect(autoRestartExpired(armed, ARMED_AT + AUTO_RESTART_CEILING_MS - 1)).toBe(false);
+    });
+  });
+
+  describe("shouldAutoRestartNow", () => {
+    it("fires only once nothing is running", () => {
+      expect(shouldAutoRestartNow({ armed, progressingThreadCount: 0, now: ARMED_AT + 1000 })).toBe(
+        true,
+      );
+    });
+
+    it("waits while any thread is still working", () => {
+      expect(shouldAutoRestartNow({ armed, progressingThreadCount: 1, now: ARMED_AT + 1000 })).toBe(
+        false,
+      );
+    });
+
+    it("never fires when nothing was armed", () => {
+      expect(
+        shouldAutoRestartNow({ armed: undefined, progressingThreadCount: 0, now: ARMED_AT }),
+      ).toBe(false);
+    });
+  });
+
+  it("hides an armed toast the user dismissed for that build", () => {
+    const view = selectUpdateToastView(
+      input({ autoRestart: armed, now: ARMED_AT + 1000, dismissedShortSha: "abc123def456" }),
+    );
+    expect(view.kind).toBe("hidden");
   });
 });
 
