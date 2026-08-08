@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AutoResumeClient, AutoResumeState, AutoResumeWrite } from "./autoResumeClient";
-import {
-  type AutoResumeTimers,
-  createAutoResumeController,
-} from "./autoResumeController";
+import { type AutoResumeTimers, createAutoResumeController } from "./autoResumeController";
 
 const ENABLED: AutoResumeState = { enabled: true, overridePrompt: null, pending: null };
 const DISABLED: AutoResumeState = { enabled: false, overridePrompt: null, pending: null };
@@ -310,7 +307,7 @@ describe("createAutoResumeController", () => {
     expect(client.writes).toEqual([{ threadId: "thread-a", overridePrompt: "half-typed" }]);
   });
 
-  it("flushes a debounced edit on dispose", async () => {
+  it("flushes a debounced edit on teardown", async () => {
     const { client, controller } = setup();
 
     controller.setThread("thread-a");
@@ -318,9 +315,41 @@ describe("createAutoResumeController", () => {
     await settle();
 
     controller.setPromptDraft("unsaved");
-    controller.dispose();
+    // What the component's effect cleanup calls on unmount.
+    controller.setThread(null);
 
     expect(client.writes).toEqual([{ threadId: "thread-a", overridePrompt: "unsaved" }]);
+  });
+
+  it("re-arms after teardown, because StrictMode remounts share one controller", async () => {
+    const { client, controller } = setup();
+
+    // Mount → cleanup → mount, exactly as React StrictMode does in development. An irreversible
+    // teardown here left the overlay permanently blank: it rendered null forever.
+    controller.setThread("thread-a");
+    controller.setThread(null);
+    controller.setThread("thread-a");
+
+    const lastRead = client.pendingReads.at(-1);
+    expect(lastRead).toBeDefined();
+    lastRead?.resolve(ENABLED);
+    await settle();
+
+    expect(controller.getSnapshot().state).toEqual(ENABLED);
+  });
+
+  it("still accepts writes after a teardown/re-arm cycle", async () => {
+    const { client, controller } = setup();
+
+    controller.setThread("thread-a");
+    controller.setThread(null);
+    controller.setThread("thread-a");
+    client.pendingReads.at(-1)?.resolve(DISABLED);
+    await settle();
+
+    controller.setEnabled(true);
+    expect(controller.getSnapshot().state?.enabled).toBe(true);
+    expect(client.writes).toContainEqual({ threadId: "thread-a", enabled: true });
   });
 
   it("does not write again when the debounce timer already fired", async () => {
@@ -334,7 +363,7 @@ describe("createAutoResumeController", () => {
     timers.flush();
     expect(client.writes).toHaveLength(1);
 
-    controller.dispose();
+    controller.setThread(null);
     expect(client.writes).toHaveLength(1);
   });
 
@@ -379,21 +408,23 @@ describe("createAutoResumeController", () => {
     expect(notifications).toBe(seen);
   });
 
-  it("ignores mutations after dispose", async () => {
+  it("ignores mutations while idle (no thread selected)", async () => {
     const { client, controller } = setup();
 
     controller.setThread("thread-a");
     client.pendingReads[0]?.resolve(ENABLED);
     await settle();
 
-    controller.dispose();
-    const writesAfterDispose = client.writes.length;
+    controller.setThread(null);
+    const writesWhileIdle = client.writes.length;
+    const readsWhileIdle = client.reads.length;
     controller.setEnabled(false);
     controller.setPromptDraft("late");
     controller.refresh();
 
-    expect(client.writes).toHaveLength(writesAfterDispose);
-    expect(controller.getSnapshot().state).toEqual(ENABLED);
+    expect(client.writes).toHaveLength(writesWhileIdle);
+    expect(client.reads).toHaveLength(readsWhileIdle);
+    expect(controller.getSnapshot().state).toBeNull();
   });
 
   it("does nothing when toggled before the first load lands", () => {

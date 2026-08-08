@@ -39,13 +39,19 @@ export interface AutoResumeControllerOptions {
 export interface AutoResumeController {
   readonly subscribe: (listener: () => void) => () => void;
   readonly getSnapshot: () => AutoResumeSnapshot;
-  /** Point the controller at a thread (or `null` to idle). Flushes any debounced edit first. */
+  /**
+   * Point the controller at a thread, or `null` to idle. Flushes any debounced edit first.
+   *
+   * This is also the teardown call: `setThread(null)` on effect cleanup flushes exactly like an
+   * explicit dispose would, but stays **re-armable**. That matters because React StrictMode
+   * double-invokes effects in development (mount → cleanup → mount) while `useMemo` keeps the same
+   * controller instance — an irreversible teardown would leave the overlay permanently dead.
+   */
   readonly setThread: (threadId: string | null) => void;
-  /** Poll tick / window focus. A no-op while a write is in flight. */
+  /** Poll tick / window focus. A no-op while a write is in flight for this thread. */
   readonly refresh: () => void;
   readonly setEnabled: (enabled: boolean) => void;
   readonly setPromptDraft: (value: string) => void;
-  readonly dispose: () => void;
 }
 
 function normalizeOverridePrompt(value: string): string | null {
@@ -67,7 +73,6 @@ export function createAutoResumeController(
   let state: AutoResumeState | null = null;
   /** `null` until the first load lands, so a poll can seed it without clobbering typing. */
   let promptDraft: string | null = null;
-  let disposed = false;
 
   /**
    * Bumped on every thread change so an in-flight read that resolves late is discarded instead of
@@ -130,7 +135,7 @@ export function createAutoResumeController(
     };
 
     const applyWriteResult = (next: AutoResumeState | null) => {
-      if (disposed || threadId !== requestThreadId) {
+      if (threadId !== requestThreadId) {
         return;
       }
       if (next === null && fallback === null) {
@@ -156,7 +161,8 @@ export function createAutoResumeController(
   /**
    * Sends a debounced resume-message edit immediately.
    *
-   * Called on thread change and on dispose. Without it the pending timer is simply dropped: typing
+   * Called on every thread change, including the `setThread(null)` teardown on effect cleanup.
+   * Without it the pending timer is simply dropped: typing
    * in one thread and switching within the debounce window lost the edit silently. Fire-and-forget
    * — it deliberately carries the ORIGINATING threadId and never touches state, since the
    * controller may be going away.
@@ -182,7 +188,7 @@ export function createAutoResumeController(
   };
 
   const refresh = () => {
-    if (disposed || threadId === null) {
+    if (threadId === null) {
       return;
     }
     const requestThreadId = threadId;
@@ -192,7 +198,7 @@ export function createAutoResumeController(
     const requestToken = loadToken;
     void client.read(requestThreadId).then(
       (next) => {
-        if (disposed || requestToken !== loadToken || next === null) {
+        if (requestToken !== loadToken || next === null) {
           return;
         }
         state = next;
@@ -216,7 +222,6 @@ export function createAutoResumeController(
     getSnapshot: () => snapshot,
 
     setThread: (nextThreadId) => {
-      if (disposed) return;
       flushPendingPrompt();
       loadToken += 1;
       threadId = nextThreadId;
@@ -229,7 +234,7 @@ export function createAutoResumeController(
     refresh,
 
     setEnabled: (enabled) => {
-      if (disposed || threadId === null) return;
+      if (threadId === null) return;
       const previous = state;
       if (previous === null) {
         return;
@@ -241,7 +246,7 @@ export function createAutoResumeController(
     },
 
     setPromptDraft: (value) => {
-      if (disposed || threadId === null) return;
+      if (threadId === null) return;
       const requestThreadId = threadId;
       promptDraft = value;
       emit();
@@ -257,13 +262,6 @@ export function createAutoResumeController(
           overridePrompt: normalizeOverridePrompt(value),
         });
       }, promptDebounceMs);
-    },
-
-    dispose: () => {
-      if (disposed) return;
-      flushPendingPrompt();
-      disposed = true;
-      listeners.clear();
     },
   };
 }
