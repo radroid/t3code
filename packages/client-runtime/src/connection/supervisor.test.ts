@@ -1222,8 +1222,12 @@ describe("EnvironmentSupervisor", () => {
           (state) => state.phase === "backoff" && state.attempt === 1,
         );
 
-        // First retry is 1s either way (RETRY_DELAYS_MS[0] === SLOW_RETRY_DELAY_MS).
+        // The first retry now distinguishes the two paths on its own: upstream
+        // raised RETRY_DELAYS_MS[0] to 3s, so the normal ladder no longer starts
+        // at the same 1s as SLOW_RETRY_DELAY_MS. Nothing has moved at 1s.
         yield* TestClock.adjust("1 second");
+        expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("backoff");
+        yield* TestClock.adjust("2 seconds");
         yield* eventuallyState(
           supervisor.state,
           (state) =>
@@ -1236,8 +1240,9 @@ describe("EnvironmentSupervisor", () => {
           supervisor.state,
           (state) => state.phase === "backoff" && state.attempt === 2,
         );
-        // ...and the retry is the exponential 2s, not the tolerant 1s.
-        yield* TestClock.adjust("1 second");
+        // ...and the retry climbs the ladder — retryDelayMs(1) === 4s — rather
+        // than staying on the tolerant 1s.
+        yield* TestClock.adjust("3 seconds");
         expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("backoff");
         yield* TestClock.adjust("1 second");
         yield* eventuallyState(
@@ -1321,8 +1326,9 @@ describe("EnvironmentSupervisor", () => {
       }
 
       // The 4th slow timeout tripped the cap, so attempt 5 uses the exponential
-      // ladder (retryDelayMs(3) === 8s) and the normal 15s budget again.
-      yield* TestClock.adjust("8 seconds");
+      // ladder (retryDelayMs(3) === 16s, the top rung) and the normal 15s budget
+      // again.
+      yield* TestClock.adjust("16 seconds");
       yield* eventuallyState(
         supervisor.state,
         (state) => state.phase === "connecting" && state.attempt === 5,
