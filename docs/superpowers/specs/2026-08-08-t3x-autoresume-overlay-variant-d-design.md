@@ -25,46 +25,58 @@ Two problems with the shipped overlay, found by rendering it against the app's r
 
 ## Decisions
 
-| Decision        | Choice                                                                                               |
-| --------------- | ---------------------------------------------------------------------------------------------------- |
-| Capsule design  | **Variant D** — segmented `Off \| On`, so toggling never requires expanding                          |
-| Tooltip         | **State-aware** — title always `Auto-resume`, second line carries the state detail                   |
-| Tooltip side    | `side="bottom"` — the capsule sits under the topbar, so the tooltip opens down into open chat space  |
-| Accessible name | `role="radiogroup"` + `aria-label="Auto-resume"` — a tooltip is _not_ an accessible name             |
-| Placement       | **Top-right, under the topbar** — chosen by the user after hands-on use; see the revision note below |
-| Testing         | Extract logic into framework-free modules; no new test dependency                                    |
+| Decision        | Choice                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| Capsule design  | **Variant D** — segmented `Off \| On`, so toggling never requires expanding                |
+| Tooltip         | **State-aware** — title always `Auto-resume`, second line carries the state detail         |
+| Tooltip side    | `side="top"` (the `TooltipPopup` default) — correct because the capsule sits at the bottom |
+| Accessible name | `role="radiogroup"` + `aria-label="Auto-resume"` — a tooltip is _not_ an accessible name   |
+| Placement       | **Bottom-right, immediately above the composer** — see the revision history below          |
+| Testing         | Extract logic into framework-free modules; no new test dependency                          |
 
 Variants A/B/C were built as mockups only (`/tmp/t3x-autoresume-gallery/`) and are **not** shipped;
 the runtime variant switcher was dropped once D was chosen.
 
 ## Placement detail
 
-The capsule sits at `top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3` — 56px down, so the
-collapsed control spans roughly **56→82px** and clears the `sm`-and-up toast lane (which starts at
-`--toast-inset + 52px` = 84px) by 2px.
+The capsule sits **bottom-right, immediately above the docked composer**, tracking the composer's
+height so it stays glued to the input as that grows. It reads as belonging to the input rather than
+floating over the transcript, and it inherits a useful property for free: the toast lane is
+top-anchored, so a bottom-anchored capsule can never be covered by a toast.
 
-### Revision, 2026-08-08 — reversed after hands-on use
+The composer's height is dynamic (multi-line input, banner stack), so the offset is measured from
+upstream's existing `[data-chat-composer-overlay="true"]` element via `ResizeObserver` — the same
+element `ChatView` measures for its own `composerOverlayHeight`. The measurement is clamped to
+240px, because that element stretches to `inset-0` in the draft-hero state and an unclamped read
+would fling the capsule to the top of the thread.
 
-An earlier revision of this spec anchored the capsule **bottom-right above the composer**, to escape
-the toast collision documented under "Why". After using the built control the user asked for
-top-right instead, and that is what ships.
+> **New soft seam.** A _read-only DOM dependency_ on an upstream attribute, not a code edit. It
+> degrades gracefully: if the element is absent the overlay falls back to a fixed 76px offset and
+> stays usable. Recorded in `docs/t3x/SEAMS.md`.
 
-Two consequences are accepted deliberately, not overlooked:
+Consequences of anchoring to the bottom:
 
-- A toast **will** cover the **expanded panel**, which opens downward straight into the toast lane.
-- Below `sm`, `--toast-inset` drops to 1rem so the toast lane starts at 68px and spans nearly the
-  full width — it will cover the **collapsed capsule** too.
+- **The tooltip opens upward.** `side="top"` — the `TooltipPopup` default.
+- **The expanded panel grows upward**, via `flex-direction: column-reverse`, so it never pushes down
+  into the composer.
 
-Neither is fixable by z-index: the toast viewport is `fixed z-100` inside a portal at body level and
-the overlay is `z-30` inside `SidebarInset`. If the overlap becomes annoying in practice, the
-options are (a) return to bottom-right, (b) shift the capsule left of the 360px toast column, or
-(c) subscribe to the toast manager and fade the capsule while toasts are visible.
+### Revision history
 
-**This revision deleted a seam.** Bottom anchoring needed the composer's dynamic height, measured
-from upstream's `[data-chat-composer-overlay="true"]` via `ResizeObserver`. Top anchoring needs only
-the `--workspace-topbar-height` CSS variable, so that read-only DOM dependency is gone and its row
-has been removed from `docs/t3x/SEAMS.md`. The fork's upstream surface is back to zero additions
-for this feature.
+This placement was briefly changed to **top-right under the topbar** and then changed back, both
+times at the user's direction after hands-on use. The final ask — "just right above the input box" —
+is the bottom-right anchoring described above.
+
+The top-right detour is worth recording because it had a real cost and a real benefit:
+
+- **Benefit:** it needed only the `--workspace-topbar-height` CSS variable, so it deleted the
+  `ResizeObserver` seam above. Restoring bottom anchoring restores that seam.
+- **Cost:** it reintroduced the toast collision this design originally existed to fix. The toast
+  viewport is `fixed z-100` in a portal at body level; this overlay is `z-30` inside `SidebarInset`,
+  so no z-index change can win. Top-right meant a toast covered the expanded panel, and below `sm`
+  (`--toast-inset` → 1rem, lane starts at 68px, full width) covered the collapsed capsule outright.
+
+Bottom-right avoids the collision entirely and costs one read-only attribute dependency. That is the
+trade this spec settles on.
 
 ## Module split
 
