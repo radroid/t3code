@@ -1,0 +1,42 @@
+# t3x fork Dependabot config. Upstream has no `.github/dependabot.yml`, so this file is
+# fork-owned and costs no seam-ledger row.
+#
+# It configures NO version updates. Its only job is to stop Dependabot opening *security*
+# update PRs against the vendored reference subtrees under `.repos/`.
+#
+# `.repos/effect-smol` and `.repos/alchemy-effect` are `git subtree`s of other projects,
+# maintained by `scripts/sync-reference-repos.ts` (added upstream in #2902 / #2918). They are
+# reference source for agents to read, not code this fork runs:
+#
+#   - no glob in `pnpm-workspace.yaml` matches them, so nothing there is ever installed,
+#     bundled or shipped — an advisory inside them is not reachable from any artifact we build;
+#   - `ci.yml` sparse-checks-out `!/.repos/`, so the code is not even present when CI runs;
+#   - a fork-local edit inside a subtree diverges it from its source, so the next
+#     `subtree pull` conflicts — in a ~30k-line lockfile — and the same hunk is re-conflicted
+#     on every daily rebase onto upstream.
+#
+# They were nonetheless 41 of the fork's 107 open Dependabot alerts, and each alert can spawn a
+# PR: #48 (undici) and #50 (hono) were both closed unmerged for the reasons above.
+#
+# Two details that make this work, both easy to get wrong:
+#
+#   - Per GitHub's docs, a config entry applies to security updates only when `directory` /
+#     `directories` matches the *manifest* locations and no `target-branch` is set. The
+#     manifests here are nested deep (`.repos/effect-smol/packages/platform-node/package.json`,
+#     `.repos/alchemy-effect/packages/alchemy/test/.../react-router-rsc-fixture/package.json`),
+#     hence the `**` globs rather than the two subtree roots.
+#   - `open-pull-requests-limit: 0` alone would NOT do this. It is documented as
+#     version-updates-only, and security PRs are explicitly exempt from that limit. The
+#     wildcard `ignore` is the lever that reaches security updates; the limit is belt-and-braces
+#     against the `schedule` key below (required by the schema) enabling version updates.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - "/.repos/*"
+      - "/.repos/**"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
