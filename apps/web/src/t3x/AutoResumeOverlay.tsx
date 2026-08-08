@@ -1,145 +1,161 @@
-import * as Effect from "effect/Effect";
-import * as ManagedRuntime from "effect/ManagedRuntime";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { ChevronDownIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { Label } from "~/components/ui/label";
-import { Switch } from "~/components/ui/switch";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { Textarea } from "~/components/ui/textarea";
-import { primaryEnvironmentHttpLayer } from "~/environments/primary/httpLayer";
-import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary/target";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
-const AUTO_RESUME_PATH = "/api/t3x/auto-resume";
+import { type AutoResumeThreadRef, httpAutoResumeClient } from "./autoResumeClient";
+import { createAutoResumeController } from "./autoResumeController";
+import {
+  describeAutoResumeTooltip,
+  describePendingReason,
+  formatCountdown,
+  formatNextAttempt,
+} from "./autoResumePresentation";
+
+export type { AutoResumeThreadRef } from "./autoResumeClient";
+export { formatAutoResumeStatus } from "./autoResumePresentation";
+
 const POLL_INTERVAL_MS = 30_000;
-const PROMPT_DEBOUNCE_MS = 600;
+const COUNTDOWN_TICK_MS = 1_000;
 
-export interface AutoResumeThreadRef {
-  readonly environmentId: string;
-  readonly threadId: string;
+/**
+ * Distance to hold above the docked composer, used until the composer has been measured and if it
+ * can never be found. Roughly a one-line composer plus its bottom padding.
+ */
+const COMPOSER_FALLBACK_OFFSET_PX = 76;
+/**
+ * The composer overlay stretches to `inset-0` in the draft-hero state, which would fling the
+ * capsule to the top of the thread. Clamp to a sane docked height instead of trusting the measure.
+ */
+const COMPOSER_MAX_OFFSET_PX = 240;
+const COMPOSER_GAP_PX = 8;
+
+/**
+ * Read-only DOM dependency on upstream's composer overlay — the same element `ChatView` measures
+ * for its own `composerOverlayHeight`. The overlay is mounted as a sibling of `<ChatView>` in the
+ * route file, so it cannot receive that height as a prop without widening the seam. Degrades to
+ * `COMPOSER_FALLBACK_OFFSET_PX` if the attribute ever disappears. Recorded in docs/t3x/SEAMS.md.
+ */
+const COMPOSER_OVERLAY_SELECTOR = '[data-chat-composer-overlay="true"]';
+
+function useComposerOffset(): number {
+  const [offset, setOffset] = useState(COMPOSER_FALLBACK_OFFSET_PX);
+
+  useEffect(() => {
+    const element = document.querySelector(COMPOSER_OVERLAY_SELECTOR);
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+    const update = () => {
+      const height = element.getBoundingClientRect().height;
+      if (height <= 0) {
+        setOffset(COMPOSER_FALLBACK_OFFSET_PX);
+        return;
+      }
+      setOffset(Math.min(height, COMPOSER_MAX_OFFSET_PX) + COMPOSER_GAP_PX);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return offset;
 }
 
-interface AutoResumePending {
-  readonly resumeAtMs: number;
-  readonly reason: string;
+/** Re-renders once a second, but only while a resume is actually scheduled. */
+function useCountdownTick(active: boolean): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    setNowMs(Date.now());
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), COUNTDOWN_TICK_MS);
+    return () => window.clearInterval(intervalId);
+  }, [active]);
+
+  return nowMs;
 }
 
-interface AutoResumeState {
+export interface SegmentedToggleProps {
   readonly enabled: boolean;
-  readonly overridePrompt: string | null;
-  readonly pending: AutoResumePending | null;
-}
-
-interface AutoResumeWrite {
-  readonly threadId: string;
-  readonly enabled?: boolean;
-  readonly overridePrompt?: string | null;
+  readonly onChange: (enabled: boolean) => void;
 }
 
 /**
- * `/api/t3x/auto-resume` is a raw route, so it has to be called the same way
- * `observability/clientTracing.ts` calls `/api/observability/v1/traces`: build the URL with
- * `resolvePrimaryEnvironmentHttpUrl` and run over `primaryEnvironmentHttpLayer`, which is the only
- * place in the web app that knows how to authenticate the primary environment (session cookies for
- * a same-origin browser primary, desktop bearer token otherwise).
+ * `Off | On` as a radiogroup, so auto-resume can be toggled without expanding the panel.
+ *
+ * A tooltip is not an accessible name, so the group carries `aria-label` in its own right. Roving
+ * tabindex keeps the pair to a single tab stop, per the radiogroup pattern.
  */
-const autoResumeRuntime = ManagedRuntime.make(primaryEnvironmentHttpLayer);
+export function SegmentedToggle({ enabled, onChange }: SegmentedToggleProps) {
+  const offRef = useRef<HTMLButtonElement>(null);
+  const onRef = useRef<HTMLButtonElement>(null);
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function parseAutoResumePending(value: unknown): AutoResumePending | null {
-  if (!isJsonObject(value)) {
-    return null;
-  }
-  const { resumeAtMs, reason } = value;
-  if (typeof resumeAtMs !== "number" || !Number.isFinite(resumeAtMs)) {
-    return null;
-  }
-  return { resumeAtMs, reason: typeof reason === "string" ? reason : "" };
-}
-
-function parseAutoResumeState(value: unknown): AutoResumeState | null {
-  if (!isJsonObject(value)) {
-    return null;
-  }
-  const { enabled, overridePrompt, pending } = value;
-  if (typeof enabled !== "boolean") {
-    return null;
-  }
-  return {
-    enabled,
-    overridePrompt:
-      typeof overridePrompt === "string" && overridePrompt !== "" ? overridePrompt : null,
-    pending: parseAutoResumePending(pending),
-  };
-}
-
-/**
- * Auto-resume is an enhancement layered over the thread view: any failure (401, route not deployed,
- * offline) resolves to `null` so the overlay simply disappears instead of degrading the chat.
- */
-async function runAutoResumeRequest<E>(
-  effect: Effect.Effect<AutoResumeState | null, E, HttpClient.HttpClient>,
-): Promise<AutoResumeState | null> {
-  try {
-    return await autoResumeRuntime.runPromise(effect);
-  } catch {
-    return null;
-  }
-}
-
-function readAutoResumeState(threadId: string): Promise<AutoResumeState | null> {
-  const url = resolvePrimaryEnvironmentHttpUrl(AUTO_RESUME_PATH, { threadId });
-  return runAutoResumeRequest(
-    Effect.gen(function* () {
-      const response = yield* HttpClient.get(url);
-      if (response.status !== 200) {
-        return null;
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
       }
-      return parseAutoResumeState(yield* response.json);
-    }),
+      event.preventDefault();
+      const next = event.key === "ArrowRight";
+      onChange(next);
+      (next ? onRef : offRef).current?.focus();
+    },
+    [onChange],
   );
-}
 
-function writeAutoResumeState(body: AutoResumeWrite): Promise<AutoResumeState | null> {
-  const url = resolvePrimaryEnvironmentHttpUrl(AUTO_RESUME_PATH);
-  return runAutoResumeRequest(
-    Effect.gen(function* () {
-      const response = yield* HttpClient.execute(
-        HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url), body),
-      );
-      if (response.status !== 200) {
-        return null;
-      }
-      return parseAutoResumeState(yield* response.json);
-    }),
+  const segmentClass = (active: boolean) =>
+    cn(
+      "relative z-10 rounded-full px-2.5 py-0.5 text-center font-medium text-[11px]/4 transition-colors duration-150 hover:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+      active ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+    );
+
+  return (
+    <div
+      aria-label="Auto-resume"
+      className="relative grid grid-cols-2 items-center"
+      onKeyDown={handleKeyDown}
+      role="radiogroup"
+    >
+      {/* Sliding thumb: one element that translates, so the active segment animates between
+          positions instead of two backgrounds cross-fading. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-y-0 left-0 w-1/2 rounded-full transition-[transform,background-color] duration-150 ease-out motion-reduce:transition-none",
+          enabled ? "translate-x-full bg-primary" : "translate-x-0 bg-accent",
+        )}
+      />
+      <button
+        aria-checked={!enabled}
+        className={cn(segmentClass(false), !enabled && "text-foreground")}
+        onClick={() => onChange(false)}
+        ref={offRef}
+        role="radio"
+        tabIndex={enabled ? -1 : 0}
+        type="button"
+      >
+        Off
+      </button>
+      <button
+        aria-checked={enabled}
+        className={segmentClass(enabled)}
+        onClick={() => onChange(true)}
+        ref={onRef}
+        role="radio"
+        tabIndex={enabled ? 0 : -1}
+        type="button"
+      >
+        On
+      </button>
+    </div>
   );
-}
-
-const nextAttemptFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-function formatNextAttempt(resumeAtMs: number): string {
-  return nextAttemptFormatter.format(new Date(resumeAtMs));
-}
-
-export function formatAutoResumeStatus(state: AutoResumeState): string {
-  if (!state.enabled) {
-    return "Auto-resume: off";
-  }
-  if (state.pending === null) {
-    return "Auto-resume: on";
-  }
-  return `Auto-resume: on · next attempt ~${formatNextAttempt(state.pending.resumeAtMs)}`;
-}
-
-function normalizeOverridePrompt(value: string): string | null {
-  return value.trim() === "" ? null : value;
 }
 
 interface AutoResumeOverlayProps {
@@ -148,235 +164,148 @@ interface AutoResumeOverlayProps {
 
 /**
  * Floating per-thread control for auto-resume (auto-continuing a thread after a usage-limit pause).
- * Renders nothing until the server confirms the feature is reachable for this thread.
+ *
+ * Anchored bottom-right above the composer rather than under the topbar: the toast viewport is
+ * `fixed z-100` in a portal at body level and is top-anchored, so a top-right overlay at `z-30` is
+ * covered by any toast — fully so on narrow viewports. Renders nothing until the server confirms
+ * the feature is reachable for this thread.
  */
 export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const threadId = threadRef.threadId;
-  const switchId = useId();
-  const [state, setState] = useState<AutoResumeState | null>(null);
-  const [promptDraft, setPromptDraft] = useState<string | null>(null);
+  const promptId = useId();
   const [expanded, setExpanded] = useState(false);
+  const composerOffset = useComposerOffset();
 
-  const mountedRef = useRef(true);
-  const threadIdRef = useRef(threadId);
-  const inFlightWritesRef = useRef(0);
-  const promptTimerRef = useRef<number | null>(null);
-  // The edit a debounced write is waiting to send, so it can be flushed rather than
-  // dropped when the thread changes mid-debounce.
-  const pendingPromptRef = useRef<{ threadId: string; value: string } | null>(null);
-
-  useEffect(() => {
-    threadIdRef.current = threadId;
-  }, [threadId]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (promptTimerRef.current !== null) {
-        window.clearTimeout(promptTimerRef.current);
-        promptTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setState(null);
-    setPromptDraft(null);
-    setExpanded(false);
-
-    const load = async () => {
-      // Never let a poll response stomp an optimistic value that has not round-tripped yet.
-      if (inFlightWritesRef.current > 0) {
-        return;
-      }
-      const next = await readAutoResumeState(threadId);
-      if (cancelled || next === null) {
-        return;
-      }
-      setState(next);
-      setPromptDraft((current) => current ?? next.overridePrompt ?? "");
-    };
-
-    void load();
-    const intervalId = window.setInterval(() => void load(), POLL_INTERVAL_MS);
-    const handleFocus = () => void load();
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [threadId]);
-
-  const applyWriteResult = useCallback(
-    (requestThreadId: string, fallback: AutoResumeState | null, next: AutoResumeState | null) => {
-      if (!mountedRef.current || threadIdRef.current !== requestThreadId) {
-        return;
-      }
-      if (next === null && fallback === null) {
-        return;
-      }
-      setState(next ?? fallback);
-    },
+  const controller = useMemo(
+    () => createAutoResumeController({ client: httpAutoResumeClient }),
     [],
   );
 
-  /**
-   * Issues a write and guarantees the in-flight counter is released exactly once.
-   *
-   * The counter gates polling, so a leaked increment stops the overlay refreshing for the
-   * life of the component. `writeAutoResumeState` swallows its own async failures, but URL
-   * construction happens before the promise exists and can throw synchronously — hence the
-   * try/catch around the release rather than relying on `.then` alone.
-   */
-  const submitWrite = useCallback(
-    (requestThreadId: string, fallback: AutoResumeState | null, body: AutoResumeWrite) => {
-      inFlightWritesRef.current += 1;
-      let released = false;
-      const release = () => {
-        if (released) return;
-        released = true;
-        inFlightWritesRef.current -= 1;
-      };
-      try {
-        void writeAutoResumeState(body).then(
-          (next) => {
-            release();
-            applyWriteResult(requestThreadId, fallback, next);
-          },
-          () => release(),
-        );
-      } catch {
-        release();
-      }
-    },
-    [applyWriteResult],
+  const snapshot = useSyncExternalStore(
+    controller.subscribe,
+    controller.getSnapshot,
+    controller.getSnapshot,
   );
 
-  /**
-   * Sends a debounced resume-message edit immediately.
-   *
-   * Called when the thread changes or the overlay unmounts. Without it the pending timer
-   * is simply dropped: typing in one thread and switching within the debounce window lost
-   * the edit silently, because the next keystroke in the new thread cleared the old timer.
-   * Fire-and-forget — it deliberately carries the ORIGINATING threadId and never touches
-   * state, since the component may be unmounting.
-   */
-  const flushPendingPrompt = useCallback(() => {
-    if (promptTimerRef.current !== null) {
-      window.clearTimeout(promptTimerRef.current);
-      promptTimerRef.current = null;
-    }
-    const pending = pendingPromptRef.current;
-    pendingPromptRef.current = null;
-    if (pending === null) {
+  useEffect(() => () => controller.dispose(), [controller]);
+
+  useEffect(() => {
+    setExpanded(false);
+    controller.setThread(threadId);
+
+    const intervalId = window.setInterval(() => controller.refresh(), POLL_INTERVAL_MS);
+    const handleFocus = () => controller.refresh();
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [controller, threadId]);
+
+  const state = snapshot.state;
+  const pending = state?.pending ?? null;
+  const nowMs = useCountdownTick(pending !== null);
+
+  // Entrance transition. The repo has no `tailwindcss-animate` plugin, so `animate-in` utilities
+  // are inert here; a mount-state class flip driven by rAF is the portable equivalent, and it
+  // re-arms whenever the overlay reappears (thread change, or the route becoming reachable).
+  const hasState = state !== null;
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    if (!hasState) {
+      setEntered(false);
       return;
     }
-    try {
-      void writeAutoResumeState({
-        threadId: pending.threadId,
-        overridePrompt: normalizeOverridePrompt(pending.value),
-      });
-    } catch {
-      // A dropped flush is not worth surfacing; the value is still in the textbox.
-    }
-  }, []);
-
-  // Flush on thread change AND on unmount (this cleanup runs for both).
-  useEffect(() => () => flushPendingPrompt(), [threadId, flushPendingPrompt]);
-
-  const handleToggle = useCallback(
-    (checked: boolean) => {
-      const previous = state;
-      if (previous === null) {
-        return;
-      }
-      // Optimistic: `applyWriteResult` puts `previous` back if the write fails.
-      setState({ ...previous, enabled: checked });
-      submitWrite(threadId, previous, { threadId, enabled: checked });
-    },
-    [state, submitWrite, threadId],
-  );
-
-  const handlePromptChange = useCallback(
-    (value: string) => {
-      setPromptDraft(value);
-      pendingPromptRef.current = { threadId, value };
-      if (promptTimerRef.current !== null) {
-        window.clearTimeout(promptTimerRef.current);
-      }
-      promptTimerRef.current = window.setTimeout(() => {
-        promptTimerRef.current = null;
-        pendingPromptRef.current = null;
-        submitWrite(threadId, null, {
-          threadId,
-          overridePrompt: normalizeOverridePrompt(value),
-        });
-      }, PROMPT_DEBOUNCE_MS);
-    },
-    [submitWrite, threadId],
-  );
+    const frameId = window.requestAnimationFrame(() => setEntered(true));
+    return () => window.cancelAnimationFrame(frameId);
+  }, [hasState]);
 
   if (state === null) {
     return null;
   }
 
-  const pending = state.pending;
+  const tooltip = describeAutoResumeTooltip(state);
+  const countdown = pending === null ? null : formatCountdown(pending.resumeAtMs - nowMs);
 
   return (
-    <div className="pointer-events-none absolute top-[calc(var(--workspace-topbar-height)+0.5rem)] right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col items-end gap-1.5">
-      <button
-        aria-expanded={expanded}
-        className="pointer-events-auto flex max-w-full items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:cursor-pointer hover:border-border hover:text-foreground"
-        onClick={() => setExpanded((open) => !open)}
-        type="button"
+    <div
+      className="pointer-events-none absolute right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col-reverse items-end gap-1.5"
+      style={{ bottom: composerOffset }}
+    >
+      <Collapsible
+        className="flex flex-col-reverse items-end gap-1.5"
+        onOpenChange={setExpanded}
+        open={expanded}
       >
-        <span
+        <div
           className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            state.enabled ? "bg-primary" : "bg-muted-foreground/40",
+            "pointer-events-auto flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5 pr-1 text-xs shadow-sm transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+            entered ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
           )}
-        />
-        <span className="truncate">{formatAutoResumeStatus(state)}</span>
-        {expanded ? (
-          <ChevronUpIcon className="size-3 shrink-0" />
-        ) : (
-          <ChevronDownIcon className="size-3 shrink-0" />
-        )}
-      </button>
+        >
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <div>
+                  <SegmentedToggle enabled={state.enabled} onChange={controller.setEnabled} />
+                </div>
+              }
+            />
+            <TooltipPopup side="top" sideOffset={6}>
+              <span className="block font-medium">{tooltip.title}</span>
+              <span className="block text-muted-foreground">{tooltip.detail}</span>
+            </TooltipPopup>
+          </Tooltip>
 
-      {expanded ? (
-        <div className="pointer-events-auto w-72 max-w-full rounded-lg border border-border/60 bg-card p-3 shadow-md">
-          <div className="flex items-center justify-between gap-2">
-            <Label className="text-xs" htmlFor={switchId}>
-              Resume after usage limits
-            </Label>
-            <Switch checked={state.enabled} id={switchId} onCheckedChange={handleToggle} />
-          </div>
+          <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
 
-          {pending !== null ? (
-            <p className="mt-2 text-muted-foreground text-xs">
-              {pending.reason === "" ? "Paused" : `Paused: ${pending.reason}`} · next attempt ~
-              {formatNextAttempt(pending.resumeAtMs)}
-            </p>
-          ) : null}
-
-          <Textarea
-            aria-label="Auto-resume message"
-            className="mt-2"
-            onChange={(event) => handlePromptChange(event.target.value)}
-            placeholder="continue"
-            size="sm"
-            value={promptDraft ?? ""}
-          />
-          <p className="mt-1.5 text-muted-foreground text-xs">
-            Message sent when the thread resumes.
-          </p>
+          <CollapsibleTrigger
+            aria-label={expanded ? "Hide auto-resume settings" : "Show auto-resume settings"}
+            className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none"
+          >
+            {countdown === null ? null : (
+              <span className="font-medium text-foreground tabular-nums">{countdown}</span>
+            )}
+            <ChevronDownIcon
+              className={cn(
+                "size-3 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none",
+                expanded ? "rotate-0" : "rotate-180",
+              )}
+            />
+          </CollapsibleTrigger>
         </div>
-      ) : null}
+
+        <CollapsiblePanel className="pointer-events-auto">
+          <div className="w-72 max-w-full rounded-lg border border-border/60 bg-card p-3 shadow-md">
+            <p className="font-medium text-xs">Resume after usage limits</p>
+
+            {pending !== null ? (
+              <div className="mt-2 rounded-md border border-primary/20 bg-primary/6 p-2">
+                <p className="font-medium text-xs">
+                  Resuming in{" "}
+                  <span className="tabular-nums">{countdown}</span>
+                </p>
+                <p className="mt-0.5 text-[11px]/4 text-muted-foreground">
+                  {describePendingReason(pending.reason)} · ~{formatNextAttempt(pending.resumeAtMs)}
+                </p>
+              </div>
+            ) : null}
+
+            <Textarea
+              aria-label="Auto-resume message"
+              className="mt-2"
+              id={promptId}
+              onChange={(event) => controller.setPromptDraft(event.target.value)}
+              placeholder="continue"
+              size="sm"
+              value={snapshot.promptDraft}
+            />
+            <p className="mt-1.5 text-muted-foreground text-xs">
+              Message sent when the thread resumes.
+            </p>
+          </div>
+        </CollapsiblePanel>
+      </Collapsible>
     </div>
   );
 }
