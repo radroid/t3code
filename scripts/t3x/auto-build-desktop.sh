@@ -581,8 +581,13 @@ EOF
   fi
 
   local label="dev.t3x.autobuild"
-  local x_script x_repo x_log
+  local x_script x_repo x_log x_cargo_bin
   x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
+  # Since upstream v0.0.31 the desktop build shells out to `cargo build` to stage
+  # native/resource-monitor. A launchd job gets no login shell, so the PATH line rustup
+  # writes into the shell profile is never read — without ~/.cargo/bin on the PATH below
+  # every tick dies with `spawn cargo ENOENT` and only backs off, it never alerts.
+  x_cargo_bin="$(xml_escape "$HOME/.cargo/bin")"
   # MAIN_REPO, not REPO: in ref mode REPO is the build worktree, which may not exist
   # until the first tick — and launchd refuses to spawn a job whose WorkingDirectory
   # is missing.
@@ -622,7 +627,7 @@ $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true 
   <key>StandardErrorPath</key><string>${x_log}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${x_cargo_bin}</string>
     <key>T3X_AUTOBUILD_STATE_DIR</key><string>${x_state}</string>
     <key>T3X_AUTOBUILD_APPLICATIONS_DIR</key><string>${x_apps}</string>
     <key>T3CODE_DESKTOP_OUTPUT_DIR</key><string>${x_out}</string>
