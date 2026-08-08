@@ -3,7 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   DEFAULT_RELAY_URL,
   DISABLE_ENV_VAR,
+  encodePendingInstall,
   parseBuildNumber,
+  parsePendingInstall,
   readEmbeddedCommitHash,
   relayEndpoints,
   RELAY_URL_ENV_VAR,
@@ -88,5 +90,36 @@ describe("readEmbeddedCommitHash", () => {
 
   it("is undefined for unparseable JSON rather than throwing", () => {
     expect(readEmbeddedCommitHash("{not json")).toBeUndefined();
+  });
+});
+
+describe("parsePendingInstall", () => {
+  it("reads back what recordPendingInstall wrote", () => {
+    const encoded = encodePendingInstall({
+      shortSha: "dd90bbace7c3",
+      version: "0.0.31-t3x.6",
+    });
+    expect(parsePendingInstall(encoded)).toEqual({
+      shortSha: "dd90bbace7c3",
+      version: "0.0.31-t3x.6",
+    });
+  });
+
+  it("treats the legacy empty marker as 'updated before, nothing pending'", () => {
+    // Every marker written before the target was recorded is an empty file. Reading that as
+    // corruption would re-show the one-time macOS permission note on an app that had seen it.
+    expect(parsePendingInstall("")).toBeUndefined();
+    expect(parsePendingInstall("   \n")).toBeUndefined();
+  });
+
+  it("does not throw on a truncated or garbage marker", () => {
+    // A crash mid-write leaves a partial file. That must degrade to "nothing pending", never to
+    // an exception on the boot path.
+    expect(parsePendingInstall('{"shortSha":"dd90bb')).toBeUndefined();
+    expect(parsePendingInstall("not json at all")).toBeUndefined();
+  });
+
+  it("rejects a well-formed object missing the fields it needs", () => {
+    expect(parsePendingInstall('{"shortSha":"dd90bbace7c3"}')).toBeUndefined();
   });
 });
