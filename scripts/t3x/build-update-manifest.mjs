@@ -33,6 +33,28 @@ const repository = required("REPOSITORY");
 const version = required("VERSION");
 const buildNumber = Number(required("RUN_NUMBER"));
 
+// `run_id` identifies the run; `run_number` counts them. They are different numbers and only the
+// former addresses a URL — using RUN_NUMBER here yields a confident 404. RUN_NUMBER already has a
+// job above (it IS `buildNumber`), so the two are deliberately read from separate variables.
+const runId = required("RUN_ID");
+if (!/^[0-9]+$/u.test(runId)) throw new Error(`RUN_ID must be numeric, got "${runId}".`);
+if (runId === String(buildNumber)) {
+  // Cheap tripwire for the likely wiring mistake. github.run_id is a large opaque id and
+  // github.run_number is a small counter, so equality means the workflow passed the same value to
+  // both — and the run link would point at whatever run happens to have that id.
+  throw new Error(
+    `RUN_ID (${runId}) equals RUN_NUMBER — the workflow is passing github.run_number to both. ` +
+      "The run link needs github.run_id.",
+  );
+}
+
+// Newline-delimited commit subjects, newest first. Absent is legal: the range can genuinely be
+// empty (a re-run of the same commit), and an empty list must not fail the release.
+const changes = (process.env.CHANGES ?? "")
+  .split("\n")
+  .map((line) => line.trim())
+  .filter((line) => line.length > 0);
+
 if (!/^[0-9a-f]{40}$/u.test(sha)) throw new Error(`FULL_SHA is not a 40-char sha: ${sha}`);
 if (!/^[0-9a-f]{12}$/u.test(shortSha)) {
   // 12 exactly. It has to match `git rev-parse --short=12` in build-desktop-artifact.ts and
@@ -95,6 +117,11 @@ const manifest = {
   version,
   releaseTag,
   builtAt: new Date().toISOString(),
+  // Omitted rather than emitted empty. The toast keys "show the disclosure" off the field being
+  // present and non-empty, and `changes: []` would travel as a promise of a changelog that then
+  // renders nothing.
+  ...(changes.length > 0 ? { changes } : {}),
+  runUrl: `https://github.com/${repository}/actions/runs/${runId}`,
   assets,
 };
 
