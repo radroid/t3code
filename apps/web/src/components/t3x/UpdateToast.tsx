@@ -106,6 +106,9 @@ export function T3xUpdateToast() {
         status: state.status,
         dismissedShortSha,
         isElectron: updateBridge() !== undefined,
+        // Read here rather than inside the selector so the copy stays a pure function of its
+        // input, matching `now`.
+        platform: typeof navigator === "undefined" ? "" : navigator.platform,
         hasUpdatedBefore: state.hasUpdatedBefore,
         autoRestart,
         now,
