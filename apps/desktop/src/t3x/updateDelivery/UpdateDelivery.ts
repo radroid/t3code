@@ -35,7 +35,10 @@ import {
   type ReconciliationTrigger,
 } from "./connectionHealth.ts";
 import {
+  encodePendingInstall,
   parseBuildNumber,
+  parsePendingInstall,
+  type PendingInstall,
   readEmbeddedCommitHash,
   relayEndpoints,
   resolveRelayUrl,
@@ -119,8 +122,51 @@ export const make = Effect.gen(function* () {
     .exists(updatedMarkerPath)
     .pipe(Effect.orElseSucceed(() => false));
 
+  /**
+   * The other half of the marker: which build the previous process was quitting to install.
+   *
+   * Read once, here, before anything can overwrite it. Absent for a first run, for an app that
+   * updated on a build older than this code, and for the boot after this check has already
+   * consumed it — all three are "nothing to verify", not errors.
+   */
+  const pendingInstall = hasUpdatedBefore
+    ? yield* fileSystem.readFileString(updatedMarkerPath).pipe(
+        Effect.map(parsePendingInstall),
+        Effect.orElseSucceed(() => undefined),
+      )
+    : undefined;
+
+  /**
+   * Did the install the last process started actually happen?
+   *
+   * Compared here rather than trusted, because the install runs after this process is gone: on
+   * Windows an NSIS installer that fails partway leaves the previous build in place and nothing
+   * anywhere says so. `installCommands.ts` describes exactly this check; it had never been built,
+   * so every install was assumed to have worked.
+   */
+  const verificationStatus: T3xUpdateStatus | undefined =
+    pendingInstall === undefined
+      ? undefined
+      : pendingInstall.shortSha === installedCommitHash
+        ? { kind: "updated", shortSha: pendingInstall.shortSha, version: pendingInstall.version }
+        : {
+            kind: "install-failed",
+            expectedShortSha: pendingInstall.shortSha,
+            expectedVersion: pendingInstall.version,
+            ...(installedCommitHash !== undefined ? { actualShortSha: installedCommitHash } : {}),
+            actualVersion: environment.appVersion,
+            platform: environment.platform,
+            arch: environment.processArch,
+          };
+
+  // Consumed, so the verdict is shown once rather than on every launch until the next update. The
+  // marker itself stays — `hasUpdatedBefore` is a separate, permanent bit.
+  if (pendingInstall !== undefined) {
+    yield* fileSystem.writeFileString(updatedMarkerPath, "").pipe(Effect.ignore);
+  }
+
   const internal = yield* Ref.make<Internal>({
-    status: { kind: "idle" },
+    status: verificationStatus ?? { kind: "idle" },
     staged: undefined,
     inFlightShortSha: undefined,
     hasUpdatedBefore,
@@ -295,13 +341,23 @@ export const make = Effect.gen(function* () {
    * build that comes back. Best-effort — a marker that cannot be written costs the user one
    * repeated note, which is a far smaller failure than refusing the update over it.
    */
-  const recordHasUpdated = Effect.gen(function* () {
-    yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
-    yield* fileSystem
-      .makeDirectory(environment.path.dirname(updatedMarkerPath), { recursive: true })
-      .pipe(Effect.ignore);
-    yield* fileSystem.writeFileString(updatedMarkerPath, "").pipe(Effect.ignore);
-  });
+  /**
+   * Arm the post-install check, immediately before handing off to the installer.
+   *
+   * Written rather than held in memory for the same reason the flag is: this process is about to
+   * exit, and the question "did the build I was told to install actually arrive?" can only be
+   * answered by the process that comes back.
+   */
+  const recordHasUpdated = (target: PendingInstall) =>
+    Effect.gen(function* () {
+      yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
+      yield* fileSystem
+        .makeDirectory(environment.path.dirname(updatedMarkerPath), { recursive: true })
+        .pipe(Effect.ignore);
+      yield* fileSystem
+        .writeFileString(updatedMarkerPath, encodePendingInstall(target))
+        .pipe(Effect.ignore);
+    });
 
   const restartNow = Effect.gen(function* () {
     const snapshot = yield* Ref.get(internal);
@@ -330,7 +386,7 @@ export const make = Effect.gen(function* () {
       );
       if (!applied) return;
 
-      yield* recordHasUpdated;
+      yield* recordHasUpdated({ shortSha: staged.shortSha, version: staged.version });
       yield* restartIntoInstalledBuild({
         execPath: executablePathForBundle(staged.targetPath, staged.appName),
         argv: process.argv.slice(1),
@@ -352,7 +408,7 @@ export const make = Effect.gen(function* () {
     );
     if (!started) return;
 
-    yield* recordHasUpdated;
+    yield* recordHasUpdated({ shortSha: staged.shortSha, version: staged.version });
     yield* quitForInstaller();
   });
 

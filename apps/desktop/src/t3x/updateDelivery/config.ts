@@ -8,6 +8,9 @@
  * table. Env vars here are a development convenience only, and the packaged path never needs one.
  */
 
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
 import { SHORT_SHA_LENGTH } from "./manifest.ts";
 
 /**
@@ -61,6 +64,48 @@ export function resolveRelayUrl(env: Readonly<Record<string, string | undefined>
  * and this is one bit that only the fork cares about.
  */
 export const UPDATED_MARKER_NAME = ".t3x-has-updated";
+
+/**
+ * What the marker records about the install that is about to happen.
+ *
+ * The marker used to be written empty, which made it answer only "has this app ever updated?".
+ * `installCommands.ts` documents a second job for it — "the target is recorded before quitting and
+ * compared against `t3codeCommitHash` when the app comes back" — and that half was never built, so
+ * a silently failed install was indistinguishable from a successful one. On Windows the app is
+ * gone for minutes during the install, so "did that work?" is not a question the user can answer
+ * by looking.
+ *
+ * Written before quitting, read once on the next boot, then cleared. Only the target is stored:
+ * the running build reports its own identity, and comparing two values written at different times
+ * by different processes is the entire point.
+ */
+export const PendingInstall = Schema.Struct({
+  shortSha: Schema.String,
+  version: Schema.String,
+});
+export type PendingInstall = typeof PendingInstall.Type;
+
+/**
+ * A marker written by any build before this change contains an empty string, and one written by a
+ * build after it contains an encoded `PendingInstall`. Both have to decode: the empty case is a
+ * real state ("this app has updated before, and nothing is pending"), not corruption, and treating
+ * it as corruption would resurrect the permission note on an app that had already seen it.
+ */
+/** Compiled once. Both the schema literal and the codec are otherwise rebuilt on every call. */
+const PendingInstallJson = Schema.fromJsonString(PendingInstall);
+const decodePendingInstallJson = Schema.decodeUnknownOption(PendingInstallJson);
+const encodePendingInstallJson = Schema.encodeSync(PendingInstallJson);
+
+export function parsePendingInstall(raw: string): PendingInstall | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  return decodePendingInstallJson(trimmed).pipe(Option.getOrUndefined);
+}
+
+/** The write side of {@link parsePendingInstall}, so both ends of the marker share one schema. */
+export function encodePendingInstall(target: PendingInstall): string {
+  return encodePendingInstallJson(target);
+}
 
 /**
  * The build counter of the running app, read out of its own version string.
