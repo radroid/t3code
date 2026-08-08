@@ -245,7 +245,12 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
 
   return (
     <div
-      className="pointer-events-none absolute right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col-reverse items-end gap-1.5"
+      // Full width + upstream's own `chat-composer-horizontal-inset`, then right-aligned, so the
+      // capsule's right edge lands exactly on the composer's. A fixed `right-3` cannot do this:
+      // that inset is 0.75rem at base but 1.25rem from 40rem up, and it also carries
+      // `env(safe-area-inset-right)` — so a hard-coded value overhangs the composer by 8px on any
+      // wide viewport. Borrowing the class keeps the two edges in sync by construction.
+      className="pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30 flex flex-col-reverse items-end gap-1.5"
       style={{ bottom: composerOffset }}
     >
       <Collapsible
