@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  formatBuiltAgo,
   AUTO_RESTART_CEILING_MS,
   autoRestartExpired,
   selectUpdateToastView,
@@ -114,6 +115,85 @@ describe("selectUpdateToastView", () => {
       );
       expect(view.kind).toBe("failed");
     });
+  });
+});
+
+describe("the changelog-forward ready toast", () => {
+  const ready = (extra: Record<string, unknown>) =>
+    selectUpdateToastView(
+      input({
+        status: {
+          kind: "ready",
+          shortSha: "abc123def456",
+          version: "0.0.31-t3x.44",
+          ...extra,
+        } as UpdateToastInput["status"],
+      }),
+    );
+
+  it("leads with the change count", () => {
+    // "3 changes ready to run" answers the question a fork maintainer actually has.
+    const view = ready({ changes: ["a", "b", "c"] });
+    expect(view.kind === "ready" && view.title).toBe("3 changes ready to run");
+  });
+
+  it("does not say '1 changes'", () => {
+    const view = ready({ changes: ["only one"] });
+    expect(view.kind === "ready" && view.title).toBe("1 change ready to run");
+  });
+
+  it("falls back to the generic title rather than '0 changes'", () => {
+    // The manifest does not carry subjects yet, and an older shell never will.
+    const view = ready({});
+    expect(view.kind === "ready" && view.title).toBe("Update ready");
+    expect(view.kind === "ready" && view.changes).toEqual([]);
+  });
+
+  it("omits the age when the manifest omitted builtAt", () => {
+    // Rendering "built undefined ago" is worse than rendering nothing.
+    const view = ready({});
+    expect(view.kind === "ready" && view.builtAgo).toBeUndefined();
+    expect(view.kind === "ready" && view.runUrl).toBeUndefined();
+  });
+
+  it("formats the age when builtAt is present", () => {
+    const now = Date.parse("2026-08-08T12:00:00.000Z");
+    const view = selectUpdateToastView(
+      input({
+        status: {
+          kind: "ready",
+          shortSha: "abc123def456",
+          version: "0.0.31-t3x.44",
+          builtAt: "2026-08-08T11:56:00.000Z",
+        },
+        now,
+      }),
+    );
+    expect(view.kind === "ready" && view.builtAgo).toBe("4 min ago");
+  });
+});
+
+describe("formatBuiltAgo", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const BUILT = "2026-08-08T12:00:00.000Z";
+
+  it.each([
+    ["just now", "2026-08-08T12:00:30.000Z"],
+    ["1 min ago", "2026-08-08T12:01:00.000Z"],
+    ["59 min ago", "2026-08-08T12:59:00.000Z"],
+    ["1h ago", "2026-08-08T13:00:00.000Z"],
+    ["2d ago", "2026-08-10T12:00:00.000Z"],
+  ])("renders %s", (expected, now) => {
+    expect(formatBuiltAgo(BUILT, at(now))).toBe(expected);
+  });
+
+  it("clamps clock skew rather than saying 'in 3 minutes'", () => {
+    // The builder's clock can run ahead of this machine's. A future age reads as an app bug.
+    expect(formatBuiltAgo(BUILT, at("2026-08-08T11:57:00.000Z"))).toBe("just now");
+  });
+
+  it("returns nothing for an unparseable timestamp", () => {
+    expect(formatBuiltAgo("not-a-date", at(BUILT))).toBeUndefined();
   });
 });
 

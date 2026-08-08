@@ -402,7 +402,14 @@ function mountLiveDemo(): void {
 
   const render = (): void => {
     const input: UpdateToastInput = {
-      status: { kind: "ready", shortSha: "3f2a1b9c4e7d", version: "0.0.31-t3x.44" },
+      status: {
+        kind: "ready",
+        shortSha: "3f2a1b9c4e7d",
+        version: "0.0.31-t3x.44",
+        changes: [...CHANGES],
+        builtAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+        runUrl: "https://github.com/radroid/t3code/actions",
+      },
       dismissedShortSha: undefined,
       isElectron: true,
       hasUpdatedBefore: true,
@@ -424,6 +431,9 @@ function mountLiveDemo(): void {
       onArm: () => {
         armed = { armedAt: Date.now() + clockOffsetMs };
         render();
+      },
+      onOpenRun: (url) => {
+        window.open(url, "_blank");
       },
       onDismiss: () => {
         armed = undefined;

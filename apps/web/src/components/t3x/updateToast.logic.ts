@@ -60,6 +60,12 @@ export type UpdateToastView =
       readonly autoRestartLabel: string;
       readonly shortSha: string;
       readonly dismissible: true;
+      /** Commit subjects for the "What changed" disclosure. Empty when the manifest omitted them. */
+      readonly changes: readonly string[];
+      /** e.g. "4 min ago". Undefined when the manifest omitted `builtAt`. */
+      readonly builtAgo: string | undefined;
+      /** Link target for the age. Undefined when the manifest omitted the run url. */
+      readonly runUrl: string | undefined;
       /**
        * True when an armed auto-restart hit its ceiling and fell back to prompting. The user asked
        * not to be interrupted, so the fallback must say why it is asking again rather than
@@ -96,9 +102,36 @@ export type UpdateToastView =
 const FIRST_UPDATE_PERMISSION_NOTE =
   " Because these builds are unsigned, macOS will ask for screen-recording and automation permissions again after restarting.";
 
+function plural(count: number): string {
+  return count === 1 ? "change" : "changes";
+}
+
 /** Shown when the ceiling fires, so the re-prompt is not mistaken for a fresh one. */
 const TIMED_OUT_NOTE =
   " Something has been running for a while, so the automatic restart stood down.";
+
+/**
+ * The build's age, in the toast's voice.
+ *
+ * Coarse on purpose: the exact second a build was produced is never the question. "just now"
+ * rather than "0 min ago" because a build that finished seconds ago is the common case — the whole
+ * point of this pipeline is that a merge reaches you quickly.
+ *
+ * A negative age means the builder's clock ran ahead of this machine's. Clamped to "just now"
+ * rather than rendering "in 3 minutes", which reads as a bug in the app rather than clock skew.
+ */
+export function formatBuiltAgo(builtAt: string, now: number): string | undefined {
+  const built = Date.parse(builtAt);
+  if (Number.isNaN(built)) return undefined;
+
+  const minutes = Math.floor((now - built) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
 /** Whether an armed auto-restart has outlived its ceiling. */
 export function autoRestartExpired(armed: AutoRestartArmed, now: number): boolean {
@@ -141,17 +174,32 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
         };
       }
 
+      const changes = input.status.changes ?? [];
+      const now = input.now ?? Date.now();
+
       return {
         kind: "ready",
-        title: "Update ready",
+        // The count is the headline when we have it. "3 changes ready to run" answers the question
+        // a fork maintainer actually has; "Update ready" does not. Falls back cleanly to the
+        // generic title when the manifest carried no subjects, rather than saying "0 changes".
+        title:
+          changes.length > 0
+            ? `${changes.length} ${plural(changes.length)} ready to run`
+            : "Update ready",
         description:
-          `Build ${input.status.shortSha} is staged and will apply on restart.` +
+          "Restart to update T3 Code." +
           (expired ? TIMED_OUT_NOTE : "") +
           (input.hasUpdatedBefore ? "" : FIRST_UPDATE_PERMISSION_NOTE),
         actionLabel: "Restart",
         autoRestartLabel: "Restart when idle",
         shortSha: input.status.shortSha,
         dismissible: true,
+        changes,
+        builtAgo:
+          input.status.builtAt === undefined
+            ? undefined
+            : formatBuiltAgo(input.status.builtAt, now),
+        runUrl: input.status.runUrl,
         autoRestartTimedOut: expired,
       };
     }
