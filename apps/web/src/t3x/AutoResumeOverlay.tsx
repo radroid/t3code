@@ -29,6 +29,52 @@ export { formatAutoResumeStatus } from "./autoResumePresentation";
 const POLL_INTERVAL_MS = 30_000;
 const COUNTDOWN_TICK_MS = 1_000;
 
+/**
+ * Distance to hold above the docked composer, used until the composer has been measured and if it
+ * can never be found. Roughly a one-line composer plus its bottom padding.
+ */
+const COMPOSER_FALLBACK_OFFSET_PX = 76;
+/**
+ * The composer overlay stretches to `inset-0` in the draft-hero state, which would fling the
+ * capsule to the top of the thread. Clamp to a sane docked height instead of trusting the measure.
+ */
+const COMPOSER_MAX_OFFSET_PX = 240;
+const COMPOSER_GAP_PX = 8;
+
+/**
+ * Read-only DOM dependency on upstream's composer overlay — the same element `ChatView` measures
+ * for its own `composerOverlayHeight`. The overlay is mounted as a sibling of `<ChatView>` in the
+ * route file, so it cannot receive that height as a prop without widening the seam. Degrades to
+ * `COMPOSER_FALLBACK_OFFSET_PX` if the attribute ever disappears. Recorded in docs/t3x/SEAMS.md.
+ */
+const COMPOSER_OVERLAY_SELECTOR = '[data-chat-composer-overlay="true"]';
+
+/** Tracks the docked composer's height so the capsule sits immediately above it as it grows. */
+function useComposerOffset(): number {
+  const [offset, setOffset] = useState(COMPOSER_FALLBACK_OFFSET_PX);
+
+  useEffect(() => {
+    const element = document.querySelector(COMPOSER_OVERLAY_SELECTOR);
+    if (!(element instanceof HTMLElement)) {
+      return;
+    }
+    const update = () => {
+      const height = element.getBoundingClientRect().height;
+      if (height <= 0) {
+        setOffset(COMPOSER_FALLBACK_OFFSET_PX);
+        return;
+      }
+      setOffset(Math.min(height, COMPOSER_MAX_OFFSET_PX) + COMPOSER_GAP_PX);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return offset;
+}
+
 /** Re-renders once a second, but only while a resume is actually scheduled. */
 function useCountdownTick(active: boolean): number {
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -131,10 +177,11 @@ interface AutoResumeOverlayProps {
 /**
  * Floating per-thread control for auto-resume (auto-continuing a thread after a usage-limit pause).
  *
- * Anchored top-right, under the topbar and clear of the composer. The collapsed capsule spans
- * roughly 56→82px, which stays just above the toast lane on `sm` and up (toasts start at
- * `--toast-inset + 52px` = 84px). A toast *will* cover the expanded panel, and will cover the
- * capsule itself below `sm` where `--toast-inset` drops to 1rem — see docs/t3x/SEAMS.md.
+ * Anchored bottom-right, sitting immediately above the docked composer and tracking its height, so
+ * it reads as belonging to the input rather than floating over the transcript. This also keeps it
+ * clear of the toast lane, which is top-anchored: the toast viewport is `fixed z-100` in a portal
+ * at body level while this overlay is `z-30` inside `SidebarInset`, so a top-anchored placement
+ * could never win on z-index.
  *
  * Renders nothing until the server confirms the feature is reachable for this thread.
  */
@@ -142,6 +189,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const threadId = threadRef.threadId;
   const promptId = useId();
   const [expanded, setExpanded] = useState(false);
+  const composerOffset = useComposerOffset();
 
   const controller = useMemo(
     () => createAutoResumeController({ client: httpAutoResumeClient }),
@@ -196,16 +244,19 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const countdown = pending === null ? null : formatCountdown(pending.resumeAtMs - nowMs);
 
   return (
-    <div className="pointer-events-none absolute top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col items-end gap-1.5">
+    <div
+      className="pointer-events-none absolute right-3 z-30 flex max-w-[min(18rem,calc(100%-1.5rem))] flex-col-reverse items-end gap-1.5"
+      style={{ bottom: composerOffset }}
+    >
       <Collapsible
-        className="flex flex-col items-end gap-1.5"
+        className="flex flex-col-reverse items-end gap-1.5"
         onOpenChange={setExpanded}
         open={expanded}
       >
         <div
           className={cn(
             "pointer-events-auto flex items-center gap-1 rounded-full border border-border/60 bg-card p-0.5 pr-1 text-xs shadow-sm transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
-            entered ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
+            entered ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
           )}
         >
           <Tooltip>
@@ -216,7 +267,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
                 </div>
               }
             />
-            <TooltipPopup side="bottom" sideOffset={6}>
+            <TooltipPopup side="top" sideOffset={6}>
               <span className="block font-medium">{tooltip.title}</span>
               <span className="block text-muted-foreground">{tooltip.detail}</span>
             </TooltipPopup>
@@ -240,7 +291,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
             <ChevronDownIcon
               className={cn(
                 "size-3 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none",
-                expanded ? "rotate-180" : "rotate-0",
+                expanded ? "rotate-0" : "rotate-180",
               )}
             />
           </CollapsibleTrigger>
