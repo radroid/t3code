@@ -360,6 +360,40 @@ export function toastPayload(
     };
   }
 
+  // Confirmation that the install landed. Handled explicitly for the same reason `armed` is: the
+  // fallthrough below renders an ERROR toast, so a successful update would announce itself as a
+  // failure — the exact inversion this state exists to prevent.
+  if (view.kind === "updated") {
+    return {
+      type: "success" as const,
+      title: view.title,
+      description: view.description,
+      timeout: 0,
+      actionProps: undefined,
+      data: { hideCopyButton: true },
+    };
+  }
+
+  // The app came back as a different build than it restarted to install. The report button is the
+  // whole point of the state: without it this is a dead-end error the user can only screenshot.
+  if (view.kind === "install-failed") {
+    return {
+      type: "error" as const,
+      title: view.title,
+      description: view.description,
+      timeout: 0,
+      // Opens a PRE-FILLED issue form for review. Nothing is filed on the user's behalf — the repo
+      // is public, and posting from their account without showing them the text is not undoable.
+      actionProps: {
+        children: view.reportLabel,
+        onClick: () => {
+          handlers.onOpenRun(view.reportUrl);
+        },
+      },
+      data: { hideCopyButton: true },
+    };
+  }
+
   return {
     type: "error" as const,
     title: view.title,

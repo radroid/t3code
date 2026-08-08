@@ -401,3 +401,63 @@ describe("shouldSendRestart", () => {
     expect(shouldSendRestart(selectUpdateToastView(input({ status })))).toBe(false);
   });
 });
+
+describe("the boot after an install", () => {
+  const FAILED = {
+    kind: "install-failed",
+    expectedShortSha: "b23e83fa0258",
+    expectedVersion: "0.0.31-t3x.7",
+    actualShortSha: "dd90bbace7c3",
+    actualVersion: "0.0.31-t3x.6",
+    platform: "win32",
+    arch: "x64",
+  } as const;
+
+  it("confirms a successful update once", () => {
+    const view = selectUpdateToastView(
+      input({ status: { kind: "updated", shortSha: "b23e83fa0258", version: "0.0.31-t3x.7" } }),
+    );
+    expect(view.kind).toBe("updated");
+    expect(view.kind === "updated" && view.title).toContain("0.0.31-t3x.7");
+  });
+
+  it("says the old version still works, so a failure does not read as a broken install", () => {
+    // The Windows failure mode is the app vanishing for minutes. If it comes back and reports a
+    // failure without saying the previous build survived, that reads as data loss.
+    const view = selectUpdateToastView(input({ status: FAILED }));
+    expect(view.kind).toBe("install-failed");
+    expect(view.kind === "install-failed" && view.description).toContain("still works");
+  });
+
+  it("offers a pre-filled report carrying both sides of the comparison", () => {
+    const view = selectUpdateToastView(input({ status: FAILED }));
+    if (view.kind !== "install-failed") throw new Error("expected install-failed");
+
+    const url = new URL(view.reportUrl);
+    expect(url.origin + url.pathname).toBe("https://github.com/radroid/t3code/issues/new");
+    const body = url.searchParams.get("body") ?? "";
+    expect(body).toContain("b23e83fa0258");
+    expect(body).toContain("dd90bbace7c3");
+    expect(url.searchParams.get("title")).toContain("b23e83fa0258");
+  });
+
+  it("keeps machine-identifying detail out of a public repo", () => {
+    // Build identity only. Paths are where usernames leak, and none are needed to identify the
+    // build that failed.
+    const view = selectUpdateToastView(input({ status: FAILED }));
+    if (view.kind !== "install-failed") throw new Error("expected install-failed");
+    const body = new URL(view.reportUrl).searchParams.get("body") ?? "";
+    expect(body).not.toMatch(/[A-Za-z]:\\|\/Users\/|\/home\//);
+  });
+
+  it("still reports when the running build has no commit hash at all", () => {
+    // `actualShortSha` absent is not a reason to stay quiet — it is a build worth reporting.
+    // The key is omitted rather than set to `undefined`: the contract marks it optional, and
+    // `exactOptionalPropertyTypes` treats those as different things.
+    const { actualShortSha: _omitted, ...withoutHash } = FAILED;
+    const view = selectUpdateToastView(input({ status: withoutHash }));
+    if (view.kind !== "install-failed") throw new Error("expected install-failed");
+    expect(view.description).toContain("no commit");
+    expect(new URL(view.reportUrl).searchParams.get("body")).toContain("none reported");
+  });
+});
