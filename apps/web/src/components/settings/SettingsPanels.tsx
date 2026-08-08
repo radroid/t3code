@@ -89,9 +89,7 @@ import {
   primaryServerConfigAtom,
   primaryServerObservabilityAtom,
   primaryServerProvidersAtom,
-  serverEnvironment,
 } from "../../state/server";
-import { usePrimaryEnvironment } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
