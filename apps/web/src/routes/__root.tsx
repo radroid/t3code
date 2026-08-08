@@ -22,6 +22,8 @@ import { ThreadOutboxDrain } from "../outbox/useThreadOutboxDrain";
 import { PushSubscriptionManager } from "../components/PushSubscriptionManager";
 // t3x: fork-owned update delivery.
 import { T3xUpdateToast } from "../components/t3x/UpdateToast";
+// t3x: TEMPORARY design harness for update-toast variants. Remove before commit.
+import { T3xUpdateToastVariantsPreview } from "../components/t3x/UpdateToastVariants.preview";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { Button } from "../components/ui/button";
@@ -145,6 +147,7 @@ function RootRouteView() {
         {primaryEnvironmentAuthenticated ? <ThreadOutboxDrain /> : null}
         <PushSubscriptionManager />
         <T3xUpdateToast />
+        <T3xUpdateToastVariantsPreview />
         {appShell}
       </AnchoredToastProvider>
     </ToastProvider>
