@@ -4,10 +4,12 @@ import {
   formatBuiltAgo,
   AUTO_RESTART_CEILING_MS,
   autoRestartExpired,
+  countProgressingThreads,
   selectUpdateToastView,
   shouldArmAutoRestart,
   shouldAutoRestartNow,
   shouldSendRestart,
+  type ProgressCandidateThread,
   type UpdateToastInput,
 } from "./updateToast.logic.ts";
 
@@ -194,6 +196,61 @@ describe("formatBuiltAgo", () => {
 
   it("returns nothing for an unparseable timestamp", () => {
     expect(formatBuiltAgo("not-a-date", at(BUILT))).toBeUndefined();
+  });
+});
+
+describe("countProgressingThreads", () => {
+  const thread = (over: Partial<ProgressCandidateThread> = {}): ProgressCandidateThread => ({
+    environmentId: "local",
+    latestTurn: { state: "running" },
+    archivedAt: null,
+    settledOverride: null,
+    ...over,
+  });
+
+  it("counts a running turn in the primary environment", () => {
+    expect(countProgressingThreads([thread()], "local")).toBe(1);
+  });
+
+  it("ignores finished turns", () => {
+    expect(countProgressingThreads([thread({ latestTurn: { state: "completed" } })], "local")).toBe(
+      0,
+    );
+  });
+
+  it("ignores threads that never ran", () => {
+    expect(countProgressingThreads([thread({ latestTurn: null })], "local")).toBe(0);
+  });
+
+  it("does not let a remote environment block the restart", () => {
+    // Restarting the desktop app tears down the server it hosts. A thread running on a remote
+    // environment survives that, so blocking on it would wait for something never at risk.
+    expect(countProgressingThreads([thread({ environmentId: "remote-box" })], "local")).toBe(0);
+  });
+
+  it("ignores archived threads", () => {
+    // A thread put away should not hold the app hostage because its last turn was never marked
+    // finished — which is exactly the crash-frozen `running` case.
+    expect(countProgressingThreads([thread({ archivedAt: "2026-08-01T00:00:00Z" })], "local")).toBe(
+      0,
+    );
+  });
+
+  it("ignores threads the user explicitly settled", () => {
+    expect(countProgressingThreads([thread({ settledOverride: "settled" })], "local")).toBe(0);
+  });
+
+  it("reports idle when there is no primary environment", () => {
+    expect(countProgressingThreads([thread()], null)).toBe(0);
+  });
+
+  it("sums across threads", () => {
+    expect(
+      countProgressingThreads(
+        [thread(), thread(), thread({ latestTurn: { state: "completed" } })],
+        "local",
+      ),
+    ).toBe(2);
   });
 });
 

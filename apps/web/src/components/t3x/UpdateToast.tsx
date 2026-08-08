@@ -16,9 +16,13 @@ import { ChevronDownIcon, ChevronUpIcon, CircleFadingArrowUpIcon } from "lucide-
 import type { T3xUpdateBridge, T3xUpdateState } from "@t3tools/contracts";
 
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { useThreadShells } from "~/state/entities";
+import { usePrimaryEnvironment } from "~/state/environments";
 import {
+  countProgressingThreads,
   selectUpdateToastView,
   shouldArmAutoRestart,
+  shouldAutoRestartNow,
   shouldSendRestart,
   type AutoRestartArmed,
   type UpdateToastView,
@@ -108,6 +112,26 @@ export function T3xUpdateToast() {
       }),
     [state, dismissedShortSha, autoRestart, now],
   );
+
+  // The idle signal. Read unconditionally — hooks cannot be called behind a condition — but only
+  // consulted while something is armed.
+  const threadShells = useThreadShells();
+  const primaryEnvironment = usePrimaryEnvironment();
+  const progressingThreadCount = useMemo(
+    () => countProgressingThreads(threadShells, primaryEnvironment?.environmentId ?? null),
+    [threadShells, primaryEnvironment],
+  );
+
+  useEffect(() => {
+    if (!shouldAutoRestartNow({ armed: autoRestart, progressingThreadCount, now: Date.now() })) {
+      return;
+    }
+    // Clear the arm before dispatching. `restartNow` tears the app down asynchronously, and a
+    // re-render in that window would otherwise fire a second restart at a bundle already being
+    // swapped — the exact double-click the main process is single-flight to survive.
+    setAutoRestart(undefined);
+    void updateBridge()?.restartNow();
+  }, [autoRestart, progressingThreadCount]);
 
   // Keyed on the view's content, not its identity. `selectUpdateToastView` returns a fresh object
   // every render, so depending on the object itself would push a toast update on every re-render

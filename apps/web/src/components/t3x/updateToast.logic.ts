@@ -241,6 +241,47 @@ export function shouldArmAutoRestart(view: UpdateToastView): boolean {
 }
 
 /**
+ * The shape this module needs from a thread. Structural on purpose, so the logic stays testable
+ * without constructing a full `EnvironmentThreadShell`.
+ */
+export interface ProgressCandidateThread {
+  readonly environmentId: string;
+  readonly latestTurn: { readonly state: string } | null;
+  readonly archivedAt: string | null;
+  readonly settledOverride: "settled" | "active" | null;
+}
+
+/**
+ * How many threads are still working.
+ *
+ * Keyed on `latestTurn.state`, deliberately NOT on `session.status`. The server's
+ * `threadIsProgressing` checks both, but the Loop Watch design (#38) records that `session.status`
+ * deadlocks on synthetic turns — and here a stuck `session.status` would mean an armed restart
+ * that never fires. The turn state is the narrower, more honest signal; the ceiling covers the
+ * case where even that wedges.
+ *
+ * Scoped to the primary environment. Restarting the desktop app tears down the server it hosts,
+ * so remote-environment threads are not at risk from the restart and must not be able to block it
+ * forever.
+ *
+ * Archived and explicitly-settled threads are excluded: a thread the user has put away should not
+ * hold the app hostage because its last turn was never marked finished.
+ */
+export function countProgressingThreads(
+  threads: readonly ProgressCandidateThread[],
+  primaryEnvironmentId: string | null,
+): number {
+  if (primaryEnvironmentId === null) return 0;
+  return threads.filter(
+    (thread) =>
+      thread.environmentId === primaryEnvironmentId &&
+      thread.archivedAt === null &&
+      thread.settledOverride !== "settled" &&
+      thread.latestTurn?.state === "running",
+  ).length;
+}
+
+/**
  * Whether the main process should fire an armed restart now.
  *
  * Kept pure and separate from the view so the decision can be tested against thread snapshots
