@@ -27,6 +27,8 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
+import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
 import { reconcileInterruptedTurnsOnBoot } from "./CrashRecoveryReconciler.ts";
 
 const MODEL_SELECTION = {
@@ -46,6 +48,12 @@ async function createReconcilerSystem() {
     OrchestrationProjectionSnapshotQueryLive,
     ProjectionTurnRepositoryLive,
   ).pipe(
+    // Shared registries the snapshot query reads, added upstream in #5219 /
+    // #5677. Mirrors orchestration/runtimeLayer.ts, except with `provide`
+    // rather than `provideMerge`: nothing in this test reads them directly, so
+    // they only need satisfying, not re-exporting.
+    Layer.provide(ThreadBackgroundLiveness.layer),
+    Layer.provide(ThreadPlanProgress.layer),
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
