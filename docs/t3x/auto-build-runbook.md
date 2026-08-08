@@ -33,10 +33,10 @@ freshly built `.dmg` and replaces `/Applications/<that same name>.app`.
 The name is **not** a flag — it is derived from the version in
 `apps/desktop/package.json` by `resolveDesktopProductName()`:
 
-| Version                        | Channel  | `.app` produced         |
-| ------------------------------ | -------- | ----------------------- |
-| plain (e.g. `0.0.28`)          | `latest` | `T3 Code (Alpha).app`   |
-| `…-nightly.YYYYMMDD.N`         | nightly  | `T3 Code (Nightly).app` |
+| Version                | Channel  | `.app` produced         |
+| ---------------------- | -------- | ----------------------- |
+| plain (e.g. `0.0.28`)  | `latest` | `T3 Code (Alpha).app`   |
+| `…-nightly.YYYYMMDD.N` | nightly  | `T3 Code (Nightly).app` |
 
 The `latest` name comes from `"productName": "T3 Code (Alpha)"` in
 `apps/desktop/package.json` — **not** the `"T3 Code"` fallback, which only
@@ -193,7 +193,7 @@ TCC-protected repo path.
 > ```
 >
 > The alternative — granting Full Disk Access to `/bin/bash` — works, but grants FDA to
-> *every* bash script on the machine. Not worth it for this. Option 3 needs no move at
+> _every_ bash script on the machine. Not worth it for this. Option 3 needs no move at
 > all, since a terminal already has the grant.
 
 ```bash
@@ -222,6 +222,20 @@ rm ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 `--print-launchd` substitutes the real repo path, script path, interval and log
 path, and mirrors `--install` into the emitted `ProgramArguments`.
 
+> **A plist fix does not reach an already-installed agent.** launchd keeps the copy it was
+> bootstrapped with, so pulling a change to what `--print-launchd` emits — a new environment
+> variable, a wider `PATH` — leaves the running agent on the old one. Regenerate and reload:
+>
+> ```bash
+> launchctl bootout "gui/$UID/dev.t3x.autobuild"
+> scripts/t3x/auto-build-desktop.sh --print-launchd --install --interval 120 \
+>   > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+> launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+> ```
+>
+> Re-run this after any commit that touches the `--print-launchd` block, and pass the same
+> flags you installed with — the emitted plist only carries the ones you give it.
+
 ### Option 2 — git hook (read the warning first)
 
 > **This repo already sets `core.hooksPath = .vite-hooks/_`** and ships a full hook set
@@ -245,7 +259,7 @@ chmod +x .vite-hooks/post-merge
 `scripts/t3x/hooks/post-merge` is the sample body it delegates to; it backgrounds a
 build-only run so `git pull` returns immediately.
 
-**Honestly, prefer Option 1 or 3.** The hook fires a detached build on *every* merge, so
+**Honestly, prefer Option 1 or 3.** The hook fires a detached build on _every_ merge, so
 two quick `git pull`s start two builds. They no longer corrupt each other (the script
 takes a lock and the second exits immediately), but you still get a redundant queued
 rebuild, and a `.vite-hooks/post-merge` file is one more thing for the daily upstream
@@ -265,8 +279,8 @@ out.
 ## Caveats & risks
 
 - **Builds take minutes.** Each poll builds whatever `HEAD` is _now_. Note this does
-  **not** perfectly collapse rapid commits: the SHA is sampled *before* the build and
-  recorded *after*, so a commit landing mid-build causes one redundant rebuild of an
+  **not** perfectly collapse rapid commits: the SHA is sampled _before_ the build and
+  recorded _after_, so a commit landing mid-build causes one redundant rebuild of an
   already-current tree. The bias is deliberate — it can waste a build, never skip one.
 - **`--install` is disruptive.** It quits the running app (`osascript quit`), replaces the
   target in `/Applications`, and copies the new one in. Fine overnight; annoying
