@@ -122,10 +122,28 @@ overrides:
   expo-constants: 57.0.16
   "@pierre/diffs>@shikijs/transformers": ^4.2.0
   "@types/node": "catalog:"
+  # t3x: transitive security bumps. Each key is major-scoped on purpose — a bare
+  # `tar: ^7.5.21` would also rewrite a hypothetical tar@6, and crossing a major in a
+  # dependency nobody in this repo imports directly is how an override breaks a build.
+  # Every entry below is a patch or minor bump inside the major already resolved.
+  # Drop an entry once upstream's tree floats past it on its own; none of these are
+  # load-bearing beyond the advisory they close.
+  "brace-expansion@1": ^1.1.18
+  "brace-expansion@2": ^2.1.4
+  "brace-expansion@5": ^5.0.9
+  "builder-util-runtime@9": ^9.7.0
   effect: "catalog:"
   expo-router: 57.0.17
   "expo-sharing>@expo/config-plugins": 57.0.9
   "expo-sharing>@expo/config-types": 57.0.2
+  "fast-uri@3": ^3.1.5
+  "form-data@4": ^4.0.6
+  "hono@4": ^4.12.34
+  "ip-address@10": ^10.3.1
+  "path-to-regexp@6": ^6.3.0
+  "shell-quote@1": ^1.9.0
+  "tar@7": ^7.5.21
+  "undici@6": ^6.28.0
   vite: "catalog:"
   yaml: "catalog:"
 
