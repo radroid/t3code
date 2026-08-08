@@ -17,9 +17,19 @@ import type { T3xUpdateBridge, T3xUpdateState } from "@t3tools/contracts";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   selectUpdateToastView,
+  shouldArmAutoRestart,
   shouldSendRestart,
+  type AutoRestartArmed,
   type UpdateToastView,
 } from "./updateToast.logic";
+
+/**
+ * How often the armed view re-evaluates its ceiling.
+ *
+ * The ceiling is two hours, so a minute of slack is invisible to the user and costs one render.
+ * Only ticks while something is armed — an idle app should not wake up for this.
+ */
+const CEILING_TICK_MS = 60_000;
 
 const IDLE_STATE: T3xUpdateState = { status: { kind: "idle" }, hasUpdatedBefore: false };
 
@@ -38,7 +48,26 @@ type ToastId = ReturnType<typeof toastManager.add>;
 export function T3xUpdateToast() {
   const [state, setState] = useState<T3xUpdateState>(IDLE_STATE);
   const [dismissedShortSha, setDismissedShortSha] = useState<string | undefined>(undefined);
+  /**
+   * Armed state is renderer-local for now, so it does not survive a reload or reach a second
+   * window. Moving it to main is the follow-up; keeping it here first means the control is real
+   * rather than a button that looks armed and does nothing.
+   */
+  const [autoRestart, setAutoRestart] = useState<AutoRestartArmed | undefined>(undefined);
+  const [now, setNow] = useState(() => Date.now());
   const toastId = useRef<ToastId | undefined>(undefined);
+
+  // Only runs while armed: the ceiling has to be able to fire without a user interaction, or the
+  // stand-down would wait for a render that never comes.
+  useEffect(() => {
+    if (autoRestart === undefined) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, CEILING_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [autoRestart]);
 
   useEffect(() => {
     const bridge = updateBridge();
@@ -73,8 +102,10 @@ export function T3xUpdateToast() {
         dismissedShortSha,
         isElectron: updateBridge() !== undefined,
         hasUpdatedBefore: state.hasUpdatedBefore,
+        autoRestart,
+        now,
       }),
-    [state, dismissedShortSha],
+    [state, dismissedShortSha, autoRestart, now],
   );
 
   // Keyed on the view's content, not its identity. `selectUpdateToastView` returns a fresh object
@@ -96,7 +127,15 @@ export function T3xUpdateToast() {
         if (!shouldSendRestart(view)) return;
         void updateBridge()?.restartNow();
       },
+      onArm: () => {
+        if (!shouldArmAutoRestart(view)) return;
+        setNow(Date.now());
+        setAutoRestart({ armedAt: Date.now() });
+      },
       onDismiss: (shortSha) => {
+        // Dismissing an armed toast cancels the arm. Leaving it armed would restart the app later
+        // from a toast the user has already closed — the least expected thing this feature could do.
+        setAutoRestart(undefined);
         setDismissedShortSha(shortSha);
         // Told to the main process too, so a second window does not immediately re-raise the toast
         // this one just closed.
@@ -114,10 +153,11 @@ export function T3xUpdateToast() {
   return null;
 }
 
-function toastPayload(
+export function toastPayload(
   view: Exclude<UpdateToastView, { kind: "hidden" }>,
   handlers: {
     readonly onRestart: () => void;
+    readonly onArm: () => void;
     readonly onDismiss: (shortSha: string) => void;
   },
 ) {
@@ -138,6 +178,10 @@ function toastPayload(
       actionVariant: "default",
       data: {
         hideCopyButton: true,
+        // The arm control. Ghost rather than a second filled button: restarting now is still the
+        // primary path, and two equally-weighted buttons make the user choose before reading.
+        secondaryActionProps: { children: view.autoRestartLabel, onClick: handlers.onArm },
+        secondaryActionVariant: "ghost",
         onClose: () => {
           handlers.onDismiss(view.shortSha);
         },

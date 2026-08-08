@@ -20,6 +20,12 @@ import {
 } from "lucide-react";
 
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { toastPayload } from "./UpdateToast";
+import {
+  selectUpdateToastView,
+  type AutoRestartArmed,
+  type UpdateToastInput,
+} from "./updateToast.logic";
 
 const SHA = "3f2a1b9c4e7d";
 const SHORT_SHA = "3f2a1b9c";
@@ -380,6 +386,69 @@ const VARIANTS: Record<string, Variant> = {
   },
 };
 
+/**
+ * Drives the SHIPPING logic and payload builder, not a mock of them.
+ *
+ * `selectUpdateToastView` + `toastPayload` are the real functions `T3xUpdateToast` uses; only the
+ * delivery status and the clock are faked, because a browser tab has no `desktopBridge` and there
+ * is no staged bundle to restart into. Clicking "Restart when idle" therefore exercises the actual
+ * state machine — the toast that comes back is the one a packaged build would show.
+ */
+function mountLiveDemo(): void {
+  let armed: AutoRestartArmed | undefined;
+  let id: ReturnType<typeof toastManager.add> | undefined;
+  // Offset rather than a real clock, so the ceiling can be reached without waiting two hours.
+  let clockOffsetMs = 0;
+
+  const render = (): void => {
+    const input: UpdateToastInput = {
+      status: { kind: "ready", shortSha: "3f2a1b9c4e7d", version: "0.0.31-t3x.44" },
+      dismissedShortSha: undefined,
+      isElectron: true,
+      hasUpdatedBefore: true,
+      autoRestart: armed,
+      now: Date.now() + clockOffsetMs,
+    };
+
+    const view = selectUpdateToastView(input);
+    if (view.kind === "hidden") {
+      if (id !== undefined) toastManager.close(id);
+      id = undefined;
+      return;
+    }
+
+    const payload = toastPayload(view, {
+      onRestart: () => {
+        console.info("[toastpreview] restartNow() — no bundle to swap in a browser tab");
+      },
+      onArm: () => {
+        armed = { armedAt: Date.now() + clockOffsetMs };
+        render();
+      },
+      onDismiss: () => {
+        armed = undefined;
+        if (id !== undefined) toastManager.close(id);
+        id = undefined;
+      },
+    });
+
+    if (id === undefined) {
+      id = toastManager.add(payload as never);
+    } else {
+      toastManager.update(id, payload as never);
+    }
+  };
+
+  // Jump the clock past the two-hour ceiling to see the stand-down without waiting for it.
+  (window as unknown as Record<string, unknown>).__toastExpire = () => {
+    clockOffsetMs += 2 * 60 * 60 * 1000 + 1000;
+    render();
+    return "ceiling reached";
+  };
+
+  render();
+}
+
 export function T3xUpdateToastVariantsPreview() {
   useEffect(() => {
     let current: ReturnType<typeof toastManager.add> | undefined;
@@ -389,6 +458,10 @@ export function T3xUpdateToastVariantsPreview() {
     // between shots.
     (window as unknown as Record<string, unknown>).__toastPreview = (id: string) => {
       if (current !== undefined) toastManager.close(current);
+      if (id === "live") {
+        mountLiveDemo();
+        return "Live (real logic + real payload)";
+      }
       const variant = VARIANTS[id];
       if (variant === undefined) {
         console.warn("[toastpreview] unknown variant", id, Object.keys(VARIANTS));
