@@ -184,7 +184,9 @@ export const make = Effect.gen(function* () {
       // Interruption is a supersede, not a failure: a newer build was announced and this download
       // was abandoned deliberately. Clearing the marker is the only thing owed, and the half-
       // written `.part` file is swept on the next run because its bytes were never checksummed.
-      Effect.ensuring(Ref.update(internal, (current) => ({ ...current, inFlightShortSha: undefined }))),
+      Effect.ensuring(
+        Ref.update(internal, (current) => ({ ...current, inFlightShortSha: undefined })),
+      ),
     );
 
     if (staged === undefined) return;
@@ -196,7 +198,20 @@ export const make = Effect.gen(function* () {
       // clicks, this app should ignore anything older than what is already sitting on its disk.
       buildNumberFloor: manifest.buildNumber,
     }));
-    yield* setStatus({ kind: "ready", shortSha: staged.shortSha, version: staged.version });
+    // The display fields ride the manifest, not the staged bundle: they describe the build that
+    // was announced, and `staged` only knows what was written to disk. Spread conditionally so an
+    // older manifest that carried neither produces a status without the keys rather than with
+    // `undefined` values, which the IPC schema would then have to accept.
+    yield* setStatus({
+      kind: "ready",
+      shortSha: staged.shortSha,
+      version: staged.version,
+      ...(manifest.changes !== undefined && manifest.changes.length > 0
+        ? { changes: manifest.changes }
+        : {}),
+      builtAt: manifest.builtAt,
+      ...(manifest.runUrl !== undefined ? { runUrl: manifest.runUrl } : {}),
+    });
     yield* Effect.logInfo(`t3x update: ${staged.shortSha} is staged and ready`);
   });
 
@@ -451,9 +466,7 @@ const spawnAwaited = Effect.fn("t3x.updateDelivery.spawnAwaited")(function* (
     .spawn(
       ChildProcess.make(bin, [...args], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
     )
-    .pipe(
-      Effect.mapError((cause) => new T3xInstallCommandError({ bin, detail: String(cause) })),
-    );
+    .pipe(Effect.mapError((cause) => new T3xInstallCommandError({ bin, detail: String(cause) })));
   const exitCode = yield* handle.exitCode.pipe(
     Effect.mapError((cause) => new T3xInstallCommandError({ bin, detail: String(cause) })),
   );
