@@ -29,7 +29,23 @@ export interface T3xUpdateBuild {
 export type T3xUpdateStatus =
   | { readonly kind: "idle" }
   | { readonly kind: "staging"; readonly shortSha: string }
-  | { readonly kind: "ready"; readonly shortSha: string; readonly version: string }
+  | {
+      readonly kind: "ready";
+      readonly shortSha: string;
+      readonly version: string;
+      /**
+       * Commit subjects in this build, newest first.
+       *
+       * All three fields below are optional on purpose. The manifest does not carry them yet, and
+       * an older desktop shell hosting a newer bundle will not either — so the toast has to render
+       * correctly without them rather than showing an empty disclosure or "built undefined ago".
+       */
+      readonly changes?: readonly string[];
+      /** ISO 8601, from the manifest's existing `builtAt`. */
+      readonly builtAt?: string;
+      /** The workflow run that produced the build, for the age link. Needs `run_id`, not `run_number`. */
+      readonly runUrl?: string;
+    }
   | { readonly kind: "restarting" }
   | { readonly kind: "failed"; readonly message: string; readonly logPath?: string };
 
