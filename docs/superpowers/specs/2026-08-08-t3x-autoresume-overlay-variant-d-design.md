@@ -25,49 +25,55 @@ Two problems with the shipped overlay, found by rendering it against the app's r
 
 ## Decisions
 
-| Decision | Choice |
-|---|---|
-| Capsule design | **Variant D** — segmented `Off \| On`, so toggling never requires expanding |
-| Tooltip | **State-aware** — title always `Auto-resume`, second line carries the state detail |
-| Tooltip side | `side="top"` (the `TooltipPopup` default) — correct *because* of the bottom placement below |
-| Accessible name | `role="radiogroup"` + `aria-label="Auto-resume"` — a tooltip is *not* an accessible name |
-| Placement | **Bottom-right, above the composer** — clear of the top-positioned toast lane at every breakpoint |
-| Testing | Extract logic into framework-free modules; no new test dependency |
+| Decision        | Choice                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| Capsule design  | **Variant D** — segmented `Off \| On`, so toggling never requires expanding                          |
+| Tooltip         | **State-aware** — title always `Auto-resume`, second line carries the state detail                   |
+| Tooltip side    | `side="bottom"` — the capsule sits under the topbar, so the tooltip opens down into open chat space  |
+| Accessible name | `role="radiogroup"` + `aria-label="Auto-resume"` — a tooltip is _not_ an accessible name             |
+| Placement       | **Top-right, under the topbar** — chosen by the user after hands-on use; see the revision note below |
+| Testing         | Extract logic into framework-free modules; no new test dependency                                    |
 
 Variants A/B/C were built as mockups only (`/tmp/t3x-autoresume-gallery/`) and are **not** shipped;
 the runtime variant switcher was dropped once D was chosen.
 
 ## Placement detail
 
-The overlay moves from `top-[calc(var(--workspace-topbar-height)+0.5rem)] right-3` to bottom-right,
-offset above the composer. It adopts the same idiom as upstream's **"Scroll to end"** pill
-(`ChatView.tsx`), which sits just above the composer with identical capsule classes — that pill is
-horizontally *centered*, so a right-aligned capsule does not collide with it.
+The capsule sits at `top-[calc(var(--workspace-topbar-height)+0.25rem)] right-3` — 56px down, so the
+collapsed control spans roughly **56→82px** and clears the `sm`-and-up toast lane (which starts at
+`--toast-inset + 52px` = 84px) by 2px.
 
-The composer's height is dynamic (multi-line input, banner stack), so the offset is measured from
-upstream's existing `[data-chat-composer-overlay="true"]` element via `ResizeObserver`, the same
-element `ChatView` measures for its own `composerOverlayHeight`.
+### Revision, 2026-08-08 — reversed after hands-on use
 
-Two consequences of anchoring to the bottom, both confirmed against the rendered preview:
+An earlier revision of this spec anchored the capsule **bottom-right above the composer**, to escape
+the toast collision documented under "Why". After using the built control the user asked for
+top-right instead, and that is what ships.
 
-- **The tooltip opens upward.** `side="top"` — the `TooltipPopup` default — is now the correct
-  value. (An earlier draft of this spec said `side="bottom"`; that was right only while the capsule
-  sat under the topbar, and is wrong here.)
-- **The expanded panel grows upward**, via `flex-direction: column-reverse` on the overlay
-  container, so it never pushes down into the composer.
+Two consequences are accepted deliberately, not overlooked:
 
-> **New soft seam.** This is a *read-only DOM dependency* on an upstream attribute, not a code edit.
-> It degrades gracefully: if the element is absent the overlay falls back to a fixed offset and stays
-> usable. Recorded in `docs/t3x/SEAMS.md`.
+- A toast **will** cover the **expanded panel**, which opens downward straight into the toast lane.
+- Below `sm`, `--toast-inset` drops to 1rem so the toast lane starts at 68px and spans nearly the
+  full width — it will cover the **collapsed capsule** too.
+
+Neither is fixable by z-index: the toast viewport is `fixed z-100` inside a portal at body level and
+the overlay is `z-30` inside `SidebarInset`. If the overlap becomes annoying in practice, the
+options are (a) return to bottom-right, (b) shift the capsule left of the 360px toast column, or
+(c) subscribe to the toast manager and fade the capsule while toasts are visible.
+
+**This revision deleted a seam.** Bottom anchoring needed the composer's dynamic height, measured
+from upstream's `[data-chat-composer-overlay="true"]` via `ResizeObserver`. Top anchoring needs only
+the `--workspace-topbar-height` CSS variable, so that read-only DOM dependency is gone and its row
+has been removed from `docs/t3x/SEAMS.md`. The fork's upstream surface is back to zero additions
+for this feature.
 
 ## Module split
 
-| Module | Responsibility |
-|---|---|
-| `t3x/autoResumeClient.ts` | Wire parsing + GET/POST over `primaryEnvironmentHttpLayer`. Exposes an `AutoResumeClient` interface so tests inject a fake. |
-| `t3x/autoResumeController.ts` | Framework-free lifecycle machine. Injected `client` + `timers`. Owns poll gating, optimistic toggle/rollback, in-flight counting, prompt debounce, flush-on-thread-change. |
-| `t3x/autoResumePresentation.ts` | Pure formatters: status line, countdown, tooltip copy. |
-| `t3x/AutoResumeOverlay.tsx` | Thin React shell — `useSyncExternalStore` over the controller, renders variant D. |
+| Module                          | Responsibility                                                                                                                                                             |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `t3x/autoResumeClient.ts`       | Wire parsing + GET/POST over `primaryEnvironmentHttpLayer`. Exposes an `AutoResumeClient` interface so tests inject a fake.                                                |
+| `t3x/autoResumeController.ts`   | Framework-free lifecycle machine. Injected `client` + `timers`. Owns poll gating, optimistic toggle/rollback, in-flight counting, prompt debounce, flush-on-thread-change. |
+| `t3x/autoResumePresentation.ts` | Pure formatters: status line, countdown, tooltip copy.                                                                                                                     |
+| `t3x/AutoResumeOverlay.tsx`     | Thin React shell — `useSyncExternalStore` over the controller, renders variant D.                                                                                          |
 
 `getSnapshot()` returns a **cached** object, recreated only when state or draft actually changes.
 `useSyncExternalStore` re-invokes it on every render and will loop forever on a fresh reference.
@@ -78,10 +84,10 @@ These are load-bearing and each gets a test:
 
 - A poll response must never stomp an optimistic value that has not round-tripped (`inFlightWrites > 0` gate).
 - The in-flight counter must be released **exactly once** — including when URL construction throws
-  *synchronously*, before a promise exists. A leaked increment stops polling for the component's life.
+  _synchronously_, before a promise exists. A leaked increment stops polling for the component's life.
 - A write result for a thread the user has already navigated away from is discarded.
 - A debounced prompt edit is **flushed**, not dropped, when the thread changes or the overlay
-  unmounts — and flushed under the *originating* threadId.
+  unmounts — and flushed under the _originating_ threadId.
 - A failed toggle rolls back to the previous state.
 - Any transport failure resolves to `null` so the overlay disappears rather than degrading the chat.
 
@@ -93,26 +99,27 @@ the base-ui `data-starting-style` / `data-ending-style` convention the `ui/` pri
 Every animated element carries `motion-reduce:transition-none` (or `motion-reduce:animate-none`),
 matching `AnimatedHeight.tsx` and `ContextWindowMeter.tsx`.
 
-| Element | Treatment |
-|---|---|
-| Capsule entrance | Opacity + 4px rise, class flip driven by `requestAnimationFrame` on first paint; re-arms whenever the overlay reappears |
-| Off/On thumb | A **single** element that translates (`translate-x-0` ⇄ `translate-x-full`) with `transition-[transform,background-color] duration-150` — a slide, not two backgrounds cross-fading |
-| Segment labels | `transition-colors duration-150` |
-| Panel expand | `CollapsiblePanel` — base-ui height transition already in the primitive, grows upward via `flex-col-reverse` |
-| Chevron | `rotate-180` ⇄ `rotate-0`, `transition-transform duration-200` |
-| Countdown | `tabular-nums`; without it the capsule visibly jitters as digits tick |
-| Tooltip | base-ui `TooltipPopup` scale+opacity, already in the primitive |
+| Element          | Treatment                                                                                                                                                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Capsule entrance | Opacity + 4px drop from above, class flip driven by `requestAnimationFrame` on first paint; re-arms whenever the overlay reappears                                                                                                                                         |
+| Off/On thumb     | A **single** element that translates (`translate-x-0` ⇄ `translate-x-full`) on `cubic-bezier(0.34, 1.56, 0.64, 1)` over 320ms — an overshoot-and-settle damped spring, so the fill reads as one body of colour flowing across rather than two backgrounds cross-fading     |
+| Thumb colour     | 200ms plain ease-out, deliberately shorter than the 320ms travel so the colour has resolved before the spring settles instead of still shifting during the overshoot                                                                                                       |
+| Segment labels   | `transition-colors duration-150`                                                                                                                                                                                                                                           |
+| Panel expand     | `CollapsiblePanel` — base-ui height transition already in the primitive, grows downward from the capsule                                                                                                                                                                   |
+| Chevron          | `rotate-0` ⇄ `rotate-180`, `transition-transform duration-200`                                                                                                                                                                                                             |
+| Countdown        | `tabular-nums` **plus zero-padded minutes**. `tabular-nums` alone equalises digit widths but cannot stop the character _count_ changing — `10:00` → `9:59` drops a character and resized the capsule under the user's cursor. Padding pins sub-hour values at 5 characters |
+| Tooltip          | base-ui `TooltipPopup` scale+opacity, already in the primitive                                                                                                                                                                                                             |
 
 ## Bug found while writing the tests
 
 The in-flight-write counter that stops a poll from stomping an optimistic value was **global**, not
 per-thread — in the shipped code as well as the first draft of the refactor. Switching threads while
-a write was still in flight made the *new* thread skip its initial load, leaving the overlay blank
+a write was still in flight made the _new_ thread skip its initial load, leaving the overlay blank
 for up to `POLL_INTERVAL_MS` (30s).
 
 `inFlightWrites` is now a `Map<string, number>` keyed by thread, and `refresh()` consults only the
-count for the thread it is about to read. Covered by *"loads a newly selected thread even while the
-previous thread's write is in flight"*.
+count for the thread it is about to read. Covered by _"loads a newly selected thread even while the
+previous thread's write is in flight"_.
 
 ## Test plan
 
