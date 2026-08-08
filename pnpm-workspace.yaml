@@ -120,6 +120,11 @@ overrides:
   "form-data@4": ^4.0.6
   "hono@4": ^4.12.34
   "ip-address@10": ^10.3.1
+  # Added 2026-08-08, one commit after the sweep: astro 7.2.0 brought in a fixed
+  # nanoid@3.3.17 but left the old 3.3.12 beside it, and the restructure flipped that
+  # copy's scope from development to runtime — which took GHSA #115/#116 out from under
+  # GitHub's auto-dismiss rule and reopened them. This dedupes the two copies onto 3.3.17.
+  "nanoid@3": ^3.3.17
   "path-to-regexp@6": ^6.3.0
   "shell-quote@1": ^1.9.0
   "tar@7": ^7.5.21
