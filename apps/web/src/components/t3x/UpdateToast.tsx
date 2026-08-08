@@ -15,7 +15,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { T3xUpdateBridge, T3xUpdateState } from "@t3tools/contracts";
 
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { selectUpdateToastView, shouldSendRestart, type UpdateToastView } from "./updateToast.logic";
+import {
+  selectUpdateToastView,
+  shouldSendRestart,
+  type UpdateToastView,
+} from "./updateToast.logic";
 
 const IDLE_STATE: T3xUpdateState = { status: { kind: "idle" }, hasUpdatedBefore: false };
 
@@ -125,6 +129,26 @@ function toastPayload(
   // then ignored at render — the dismiss would never register and the button would render with the
   // wrong variant.
   if (view.kind === "ready") {
+    return stackedThreadToast({
+      type: "info",
+      title: view.title,
+      description: view.description,
+      timeout: 0,
+      actionProps: { children: view.actionLabel, onClick: handlers.onRestart },
+      actionVariant: "default",
+      data: {
+        hideCopyButton: true,
+        onClose: () => {
+          handlers.onDismiss(view.shortSha);
+        },
+      },
+    });
+  }
+
+  // Armed auto-restart. Handled explicitly rather than falling through: the `return` at the bottom
+  // of this function renders as an ERROR toast, so an unhandled state does not merely look wrong,
+  // it tells the user the update failed when it is in fact waiting for them to finish.
+  if (view.kind === "armed") {
     return stackedThreadToast({
       type: "info",
       title: view.title,
