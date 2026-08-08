@@ -1,5 +1,13 @@
 import { ChevronDownIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { Textarea } from "~/components/ui/textarea";
@@ -187,8 +195,6 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
     controller.getSnapshot,
   );
 
-  useEffect(() => () => controller.dispose(), [controller]);
-
   useEffect(() => {
     setExpanded(false);
     controller.setThread(threadId);
@@ -199,6 +205,9 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
     return () => {
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleFocus);
+      // Re-armable teardown: flushes any debounced edit exactly like a dispose would, but survives
+      // StrictMode's mount → cleanup → mount cycle, which shares this same memoised controller.
+      controller.setThread(null);
     };
   }, [controller, threadId]);
 
@@ -282,8 +291,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
             {pending !== null ? (
               <div className="mt-2 rounded-md border border-primary/20 bg-primary/6 p-2">
                 <p className="font-medium text-xs">
-                  Resuming in{" "}
-                  <span className="tabular-nums">{countdown}</span>
+                  Resuming in <span className="tabular-nums">{countdown}</span>
                 </p>
                 <p className="mt-0.5 text-[11px]/4 text-muted-foreground">
                   {describePendingReason(pending.reason)} · ~{formatNextAttempt(pending.resumeAtMs)}
