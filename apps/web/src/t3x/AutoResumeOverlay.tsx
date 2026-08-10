@@ -14,6 +14,12 @@ import { Textarea } from "~/components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
+import {
+  type AnchorRect,
+  COMPOSER_FALLBACK_OFFSET_PX,
+  type ComposerAnchor,
+  resolveComposerAnchor,
+} from "./autoResumeAnchor";
 import { type AutoResumeThreadRef, httpAutoResumeClient } from "./autoResumeClient";
 import { createAutoResumeController } from "./autoResumeController";
 import {
@@ -30,78 +36,88 @@ const POLL_INTERVAL_MS = 30_000;
 const COUNTDOWN_TICK_MS = 1_000;
 
 /**
- * Distance to hold above the docked composer, used until the composer has been measured and if it
- * can never be found. Roughly a one-line composer plus its bottom padding.
- */
-const COMPOSER_FALLBACK_OFFSET_PX = 76;
-const COMPOSER_GAP_PX = 8;
-/**
- * Tolerance for "the overlay fills its container", i.e. the draft-hero state where the composer
- * centres itself with `inset-0` instead of docking to the bottom. Detecting that case exactly means
- * the docked case needs **no** bound on the measurement, which matters: composer banners
- * (`ComposerBannerStack`, `ThreadSyncStatusPill`, `ThreadOutboxQueueList`) render *in flow inside*
- * the measured overlay, so it legitimately grows as they appear and the capsule must keep rising
- * with it.
- *
- * Two earlier attempts bounded the measurement instead and both cut in during normal use: a 240px
- * absolute cap (the docked composer already measures ~204px, so one banner exceeded it) and a
- * fraction-of-container cap (still bound by a 90px banner on a 600px-tall window). A bound cannot
- * distinguish "tall because of banners" from "tall because of hero"; the height ratio can.
- */
-const COMPOSER_FULL_HEIGHT_TOLERANCE_PX = 4;
-
-/**
  * Read-only DOM dependency on upstream's composer overlay — the same element `ChatView` measures
  * for its own `composerOverlayHeight`. The overlay is mounted as a sibling of `<ChatView>` in the
- * route file, so it cannot receive that height as a prop without widening the seam. Degrades to
+ * route file, so it cannot receive that geometry as a prop without widening the seam. Degrades to
  * `COMPOSER_FALLBACK_OFFSET_PX` if the attribute ever disappears. Recorded in docs/t3x/SEAMS.md.
  */
 const COMPOSER_OVERLAY_SELECTOR = '[data-chat-composer-overlay="true"]';
 
+const UNMEASURED_ANCHOR: ComposerAnchor = {
+  visible: true,
+  bottom: COMPOSER_FALLBACK_OFFSET_PX,
+  left: null,
+  width: null,
+};
+
+function toAnchorRect(element: Element | null): AnchorRect | null {
+  if (!(element instanceof HTMLElement)) {
+    return null;
+  }
+  const { top, bottom, left, width, height } = element.getBoundingClientRect();
+  return { top, bottom, left, width, height };
+}
+
+function sameAnchor(a: ComposerAnchor, b: ComposerAnchor): boolean {
+  return (
+    a.visible === b.visible && a.bottom === b.bottom && a.left === b.left && a.width === b.width
+  );
+}
+
 /**
- * Tracks the composer overlay's TOP edge so the capsule sits immediately above whatever the
- * composer currently renders — the input alone, or the input plus any stack of banners.
+ * Mirrors the composer overlay's box onto the capsule, in the capsule's own coordinate space.
  *
- * Measures the top edge rather than the height so it stays correct regardless of how the overlay is
- * anchored, and shares the overlay's own containing block, so the value can be used directly as
- * this component's `bottom`.
+ * `anchorElement` is the capsule's positioned wrapper: it is what supplies the third rect the maths
+ * needs — its `offsetParent` (`SidebarInset`) is the box the returned `bottom`/`left` are resolved
+ * against, and it is the one box the panels do NOT resize. Reading it here rather than assuming it
+ * matches the composer's parent is the whole fix; see `resolveComposerAnchor`.
+ *
+ * Observes all three boxes because each panel perturbs a different one: the right panel changes the
+ * chat column's width, the terminal drawer changes its height, and collapsing the main sidebar
+ * changes `SidebarInset`'s width. A `ResizeObserver` fires per frame during those transitions and
+ * during a drag-resize, so the capsule travels with the composer rather than snapping after it.
  */
-function useComposerOffset(): number {
-  const [offset, setOffset] = useState(COMPOSER_FALLBACK_OFFSET_PX);
+function useComposerAnchor(anchorElement: HTMLElement | null): ComposerAnchor {
+  const [anchor, setAnchor] = useState<ComposerAnchor>(UNMEASURED_ANCHOR);
 
   useEffect(() => {
-    const element = document.querySelector(COMPOSER_OVERLAY_SELECTOR);
-    if (!(element instanceof HTMLElement)) {
+    if (anchorElement === null) {
       return;
     }
-    const update = () => {
-      const parent = element.offsetParent;
-      const rect = element.getBoundingClientRect();
-      if (!(parent instanceof HTMLElement) || rect.height <= 0) {
-        setOffset(COMPOSER_FALLBACK_OFFSET_PX);
-        return;
-      }
-      const parentRect = parent.getBoundingClientRect();
-      // Draft-hero: the overlay spans the whole thread area, so its top edge is meaningless as an
-      // anchor. Everywhere else, track the top edge exactly — banners included.
-      if (rect.height >= parentRect.height - COMPOSER_FULL_HEIGHT_TOLERANCE_PX) {
-        setOffset(COMPOSER_FALLBACK_OFFSET_PX);
-        return;
-      }
-      setOffset(parentRect.bottom - rect.top + COMPOSER_GAP_PX);
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    // The bound is relative to the thread area, so a container resize matters even when the
-    // composer itself does not change size.
-    if (element.offsetParent instanceof HTMLElement) {
-      observer.observe(element.offsetParent);
+    const composer = document.querySelector(COMPOSER_OVERLAY_SELECTOR);
+    if (!(composer instanceof HTMLElement)) {
+      setAnchor(UNMEASURED_ANCHOR);
+      return;
     }
-    return () => observer.disconnect();
-  }, []);
 
-  return offset;
+    const measure = () => {
+      const next = resolveComposerAnchor({
+        composer: toAnchorRect(composer),
+        composerParent: toAnchorRect(composer.offsetParent),
+        anchorParent: toAnchorRect(anchorElement.offsetParent),
+      });
+      // Identity-stable when nothing moved: a drag-resize of the drawer would otherwise re-render
+      // the capsule on every frame for no visible change.
+      setAnchor((previous) => (sameAnchor(previous, next) ? previous : next));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(composer);
+    if (composer.offsetParent instanceof HTMLElement) {
+      observer.observe(composer.offsetParent);
+    }
+    if (anchorElement.offsetParent instanceof HTMLElement) {
+      observer.observe(anchorElement.offsetParent);
+    }
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [anchorElement]);
+
+  return anchor;
 }
 
 /** Re-renders once a second, but only while a resume is actually scheduled. */
@@ -224,7 +240,10 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   const threadId = threadRef.threadId;
   const promptId = useId();
   const [expanded, setExpanded] = useState(false);
-  const composerOffset = useComposerOffset();
+  // State rather than a ref: the wrapper only mounts once the server confirms the feature, so the
+  // measuring effect has to be re-run when it appears.
+  const [anchorElement, setAnchorElement] = useState<HTMLDivElement | null>(null);
+  const anchor = useComposerAnchor(anchorElement);
 
   const controller = useMemo(
     () => createAutoResumeController({ client: httpAutoResumeClient }),
@@ -280,15 +299,29 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
 
   return (
     <div
-      // Mirrors the composer's own box so the two right edges coincide at every width. That box is
-      // NOT the full content width: `chat-composer-horizontal-inset` supplies the outer padding
-      // (0.75rem, 1.25rem from 40rem up, plus `env(safe-area-inset-right)`), and inside it the
-      // visible card is `mx-auto w-full max-w-3xl` — centred and capped at 768px. Matching only the
-      // inset leaves the capsule hanging ~188px past the card on a wide window; matching only
-      // `max-w-3xl` drifts once the window is narrow enough for the padding to bite. Both are
-      // needed, in this order.
-      className="pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30"
-      style={{ bottom: composerOffset }}
+      // Occupies the composer overlay's measured box, then reproduces the composer's own inner
+      // layout inside it. That box is NOT the full content width: `chat-composer-horizontal-inset`
+      // supplies the outer padding (0.75rem, 1.25rem from 40rem up, plus
+      // `env(safe-area-inset-right)`), and inside it the visible card is `mx-auto w-full max-w-3xl`
+      // — centred and capped at 768px. Matching only the inset leaves the capsule hanging ~188px
+      // past the card on a wide window; matching only `max-w-3xl` drifts once the window is narrow
+      // enough for the padding to bite. Both are needed, in this order — and both are only correct
+      // while this wrapper spans the same width the composer does, which is why `left`/`width` are
+      // measured rather than left to `inset-x-0`.
+      //
+      // `invisible` rather than unmounting: the effect measures through this element's
+      // `offsetParent`, so removing it would strand the capsule with no way to measure its way
+      // back. `visibility` also keeps it out of the a11y tree and out of hit-testing.
+      className={cn(
+        "pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30",
+        !anchor.visible && "invisible",
+      )}
+      ref={setAnchorElement}
+      style={{
+        bottom: anchor.bottom,
+        ...(anchor.left === null ? {} : { left: anchor.left }),
+        ...(anchor.width === null ? {} : { width: anchor.width }),
+      }}
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col-reverse items-end gap-1.5">
         <Collapsible
