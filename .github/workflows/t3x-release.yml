@@ -570,28 +570,49 @@ jobs:
           fi
 
           body="$(cat staged/t3x-latest.json)"
-          timestamp="$(date +%s)"
-          # Signed material is "<timestamp>.<body>" — the timestamp is bound into the signature so
-          # it cannot be rewritten in transit to refresh a captured request. It is a separate value
-          # from the manifest's builtAt because uploading ~470 MB routinely takes minutes.
-          signature="$(printf '%s.%s' "$timestamp" "$body" \
-            | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex \
-            | sed 's/^.*= /sha256=/')"
 
-          status="$(curl -sS -o /tmp/notify-response.txt -w '%{http_code}' \
-            -X POST "${RELAY_URL%/}/notify" \
-            -H 'content-type: application/json' \
-            -H "x-t3x-timestamp: $timestamp" \
-            -H "x-t3x-signature: $signature" \
-            --data-binary "$body")"
+          # Build 20 (run 31391175380) died here: the publish had already durably applied — the
+          # relay served the new manifest on /latest — but the Durable Object round trip threw a
+          # transient runtime exception (Cloudflare's `error code: 1101` after a ~30s stall), the
+          # single-shot notify read that as fatal, and one flaky HTTP call reddened a release
+          # whose every real effect had succeeded. Retrying is safe by construction: the relay
+          # orders on buildNumber, so a retry of an already-accepted publish is not-strictly-newer
+          # and comes back 409, which is success below.
+          for attempt in 1 2 3; do
+            # Re-signed each attempt: the timestamp is bound into the signature and the relay
+            # rejects anything older than its skew window, so a reused signature would turn the
+            # backoff itself into a 401.
+            timestamp="$(date +%s)"
+            # Signed material is "<timestamp>.<body>" — the timestamp is bound into the signature so
+            # it cannot be rewritten in transit to refresh a captured request. It is a separate value
+            # from the manifest's builtAt because uploading ~470 MB routinely takes minutes.
+            signature="$(printf '%s.%s' "$timestamp" "$body" \
+              | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex \
+              | sed 's/^.*= /sha256=/')"
 
-          echo "relay responded $status: $(cat /tmp/notify-response.txt)"
-          # 409 means the relay already holds a newer build — a later run won the race. That is the
-          # ordering rule working, not a failure.
-          if [[ "$status" != "200" && "$status" != "409" ]]; then
-            echo "::error::Relay rejected the notification ($status)." >&2
-            exit 1
-          fi
+            # `|| status=000` keeps a connection-level failure (DNS, reset, timeout) inside the
+            # retry loop instead of tripping `set -e` before the loop can do its job.
+            status="$(curl -sS -m 60 -o /tmp/notify-response.txt -w '%{http_code}' \
+              -X POST "${RELAY_URL%/}/notify" \
+              -H 'content-type: application/json' \
+              -H "x-t3x-timestamp: $timestamp" \
+              -H "x-t3x-signature: $signature" \
+              --data-binary "$body")" || status=000
+
+            echo "relay responded $status: $(cat /tmp/notify-response.txt 2>/dev/null)"
+            # 409 means the relay already holds this build or a newer one — a retry landing after
+            # its first attempt was accepted, or a later run winning the race. Either way the
+            # ordering rule is working, not failing.
+            if [[ "$status" == "200" || "$status" == "409" ]]; then
+              exit 0
+            fi
+
+            echo "::warning::Attempt $attempt to notify the relay failed ($status)."
+            sleep $((attempt * 15))
+          done
+
+          echo "::error::Relay rejected the notification after three attempts." >&2
+          exit 1
 
       - name: Prune old prereleases
         shell: bash
