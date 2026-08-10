@@ -104,9 +104,13 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    changed the semantics of an API the fork hooks into. For each seam file,
    `git log <old>..upstream/main -- <file>` and read the diffs; confirm the fork's feature
    still behaves.
-4. If a patch commit went **empty/dropped**, upstream absorbed it — confirm the behaviour now
+4. **Parallel path:** `apps/t3x-home/` duplicates `apps/marketing/`. A copy cannot conflict, so
+   the rebase will never flag it — it just drifts. Check upstream's marketing churn this cycle
+   (`git log <merge-base>..upstream/main --oneline -- apps/marketing`) and either port
+   intentionally or record "nothing worth porting".
+5. If a patch commit went **empty/dropped**, upstream absorbed it — confirm the behaviour now
    exists upstream, drop the patch, and note it.
-5. Verify: `vp run typecheck && vp run lint && vp run test --testTimeout=120000`. Fix the fork's
+6. Verify: `vp run typecheck && vp run lint && vp run test --testTimeout=120000`. Fix the fork's
    patches to match upstream's new internals until green.
 
    Two notes. **`AGENTS.md` says "do not run repo-wide checks" — an upstream sync is the sanctioned
@@ -114,11 +118,11 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    routine feature work. And the `--testTimeout` flag is required (see the section above); it must
    not follow a `--` separator or it is silently ignored.
 
-6. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
+7. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
    and **lands it — see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button);
    the GitHub merge button does not work on a rebased branch.** The recovery tag
    `t3x/last-good-*` from the Action is the rollback point.
-7. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
+8. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
    breaks auto-resume's detection): do NOT open a green PR. Push the branch, open a **draft**
    PR, and comment on the issue with exactly what is blocked and what decision is needed.
 
