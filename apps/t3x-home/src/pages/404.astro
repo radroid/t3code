@@ -1,0 +1,64 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Not found — T3X" description="That page doesn't exist on the T3X site.">
+  <div class="notfound">
+    <p class="notfound-code">404</p>
+    <h1 class="notfound-title">That page doesn't exist.</h1>
+    <p class="notfound-copy">
+      It may have moved, or it may only exist on <a href="/">the T3X home page</a>.
+    </p>
+    <div class="notfound-actions">
+      <a class="btn btn-primary" href="/">Back to T3X</a>
+      <a class="btn btn-ghost" href="/download">Download</a>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .notfound {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 12px;
+    padding: 18vh 24px 12vh;
+  }
+
+  .notfound-code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+  }
+
+  .notfound-title {
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 500;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
+  }
+
+  .notfound-copy {
+    color: var(--fg-muted);
+    font-size: 16px;
+  }
+
+  .notfound-copy a {
+    color: var(--fg);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  .notfound-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 12px;
+  }
+</style>
