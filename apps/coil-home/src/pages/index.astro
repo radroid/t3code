@@ -28,14 +28,16 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
 
     <div class="container hero-inner">
       <h1 class="hero-title display">
-        T3X.<br />T3 Code, one<br />branch ahead.
+        Coil.<br />T3 Code, the way<br />I actually run it.
       </h1>
 
       <p class="hero-sub">
-        A community fork of <a href={UPSTREAM_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">T3 Code</a>
-        {" "}(MIT) — the open-source control plane for coding agents. Same product, rebased onto
-        upstream every day, plus the things we wanted sooner.
+        A personal fork of <a href={UPSTREAM_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">T3 Code</a>
+        {" "}(MIT) by Curly Cloud. I use it every day and keep it rebased on upstream — everything
+        upstream ships, plus the things I wanted sooner.
       </p>
+
+      <p class="hero-direction">Heading toward loops, skills, and building in public.</p>
 
       <div class="hero-actions">
         <div class="hero-dl-row">
@@ -68,7 +70,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
         <figure class="hero-screenshot-frame">
           <img
             src="/updated-screenshot.webp"
-            alt="T3X showing multiple coding agent threads side by side in one workspace"
+            alt="Coil showing multiple coding agent threads side by side in one workspace"
             width="2508"
             height="1682"
             loading="eager"
@@ -79,87 +81,95 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     </div>
   </section>
 
-  <!-- ── Fork graph ────────────────────────────────────────────── -->
-  <!--
-    Structure carries the argument: one `main` rail holding what the core product already does,
-    and a `t3x` rail branching off it holding what this fork adds. Which feature comes from where
-    is legible from the shape, not from a label. Rails and dots are pure CSS — no images, no JS.
-  -->
-  <section id="fork-graph" class="sec-fork-graph" aria-labelledby="fork-graph-title">
+  <!-- ── What's here today ─────────────────────────────────────── -->
+  <section id="today" class="sec-today" aria-labelledby="today-title">
     <div class="container">
       <div class="section-head">
-        <div class="eyebrow">The fork</div>
-        <h2 id="fork-graph-title">Everything T3 Code is. Plus a branch.</h2>
+        <div class="eyebrow">What's here today</div>
+        <h2 id="today-title">Six things upstream doesn't have yet.</h2>
         <p>
-          T3X ships upstream's product unchanged and adds to it. Nothing below is a
-          reimplementation — the <code>main</code> rail is T3 Code's work, the
-          <code>t3x</code> rail is ours.
+          Everything below is merged and in the build you can download from this page. I added each
+          one because my own day was worse without it.
         </p>
       </div>
 
-      <div class="graph">
-        <div class="graph-rail graph-rail--main">
-          <div class="graph-rail-label">
-            <span class="graph-rail-name">main</span>
-            <span class="graph-rail-note">upstream · T3 Tools Inc</span>
-          </div>
-          <ol class="graph-commits">
-            <li class="graph-commit">
-              <h3>Every agent, one workspace</h3>
-              <p>Threads from all your coding agents, side by side in one control plane.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>Bring your own sub</h3>
-              <p>Plug in Claude Code, Codex, or OpenCode. T3 Code doesn't resell tokens.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>⌘⏎ Commit, push, PR</h3>
-              <p>One button from finished diff to open pull request.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>MIT open source</h3>
-              <p>Read it, patch it, fork it.</p>
-            </li>
-          </ol>
-        </div>
+      <ul class="adds">
+        <li class="add">
+          <h3>Auto-updates</h3>
+          <p>New builds announce themselves with a changelog toast and install while I'm idle.</p>
+        </li>
+        <li class="add">
+          <h3>Needs-input notifications</h3>
+          <p>When an agent stalls on a question, my desktop and my phone find out — not the tab I forgot.</p>
+        </li>
+        <li class="add">
+          <h3>Web Push + tolerant reconnect</h3>
+          <p>Notifications reach the browser on my phone, and a slow-but-alive local backend stops reading as "disconnected".</p>
+        </li>
+        <li class="add">
+          <h3>Auto-resume</h3>
+          <p>Interrupted runs pick themselves back up, with a countdown I can cancel.</p>
+        </li>
+        <li class="add">
+          <h3>Daily upstream sync</h3>
+          <p>An automated agent rebases this fork onto upstream every day and keeps a public ledger of every divergence.</p>
+        </li>
+        <li class="add">
+          <h3>Dependency security sweep</h3>
+          <p>Pinned overrides that took open Dependabot alerts from 107 to 6, and survive every sync.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
 
-        <div class="graph-fork" aria-hidden="true">
-          <span class="graph-fork-caption">rebased onto upstream daily</span>
-        </div>
-
-        <div class="graph-rail graph-rail--branch">
-          <div class="graph-rail-label">
-            <span class="graph-rail-name">t3x</span>
-            <span class="graph-rail-note">this fork</span>
-          </div>
-          <ol class="graph-commits">
-            <li class="graph-commit">
-              <h3>Auto-updates</h3>
-              <p>New builds announce themselves with a changelog toast and install while you're idle.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>Needs-input notifications</h3>
-              <p>When an agent stalls on a question, your desktop and your phone find out — not the tab you forgot.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>Web Push + tolerant reconnect</h3>
-              <p>Notifications reach the browser on your phone, and a slow-but-alive local backend stops reading as "disconnected".</p>
-            </li>
-            <li class="graph-commit">
-              <h3>Auto-resume</h3>
-              <p>Interrupted runs pick themselves back up, with a countdown you can cancel.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>Daily upstream sync</h3>
-              <p>An automated agent rebases this fork onto upstream every day and keeps a public ledger of every divergence.</p>
-            </li>
-            <li class="graph-commit">
-              <h3>Dependency security sweep</h3>
-              <p>Pinned overrides that took open Dependabot alerts from 107 to 6, and survive every sync.</p>
-            </li>
-          </ol>
-        </div>
+  <!-- ── Where this is going ───────────────────────────────────── -->
+  <!--
+    Everything in this section is unbuilt, and the markup says so in three places: the preamble,
+    a `planned` tag on every card, and the dashed borders. A roadmap that reads like a feature
+    list is just a lie with better typography.
+  -->
+  <section id="next" class="sec-next" aria-labelledby="next-title">
+    <div class="container">
+      <div class="section-head">
+        <div class="eyebrow">Where this is going</div>
+        <h2 id="next-title">The part I'm actually building toward.</h2>
+        <p>
+          None of this exists yet. It's here so you know what I'm aiming at — and so you can tell me
+          if I'm aiming at the wrong thing.
+        </p>
       </div>
+
+      <ul class="plans">
+        <li class="plan">
+          <div class="plan-head">
+            <h3>Loops</h3>
+            <span class="plan-tag">planned</span>
+          </div>
+          <p>
+            Agents that keep working through a task instead of stopping at every turn. Tracked in{" "}
+            <a href={`${GITHUB_REPOSITORY_URL}/issues/42`} target="_blank" rel="noopener noreferrer">issue #42</a>.
+          </p>
+        </li>
+        <li class="plan">
+          <div class="plan-head">
+            <h3>Skills</h3>
+            <span class="plan-tag">planned</span>
+          </div>
+          <p>Reusable procedures the agent picks up, instead of me re-explaining the same workflow.</p>
+        </li>
+        <li class="plan">
+          <div class="plan-head">
+            <h3>Build in public</h3>
+            <span class="plan-tag">planned</span>
+          </div>
+          <p>The work visible as it happens, not summarised afterwards.</p>
+        </li>
+      </ul>
+
+      <p class="horizon">
+        Further out: the workflows I'm aiming at are the ones where you're dropped into someone
+        else's codebase, on their constraints, and expected to ship in their environment.
+      </p>
     </div>
   </section>
 
@@ -170,7 +180,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
         <h2>Bring your own sub</h2>
         <p>
           T3 Code doesn't resell tokens. Plug in Claude Code, Codex, OpenCode,
-          Cursor, or Grok with the credentials you already have — we orchestrate
+          Cursor, or Grok with the credentials you already have — it orchestrates
           them, you keep your plan.
         </p>
       </div>
@@ -282,77 +292,35 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     </div>
   </section>
 
-  <!-- ── Open source ───────────────────────────────────────────── -->
-  <section id="open" class="sec-open">
+  <!-- ── Ask ───────────────────────────────────────────────────── -->
+  <section id="ask" class="sec-ask" aria-labelledby="ask-title">
     <div class="container">
-      <div class="section-head open-head">
-        <div class="eyebrow">Open source</div>
-        <h2>If you don't like something, fork it.</h2>
+      <div class="section-head ask-head">
+        <div class="eyebrow">Requests</div>
+        <h2 id="ask-title">Tell me what your work needs.</h2>
         <p>
-          So we did. T3X is that fork: same product, same license, plus the things we wanted
-          sooner. Every line we change on top of upstream is{" "}
-          <a
-            href="https://github.com/radroid/t3code/blob/main/docs/t3x/SEAMS.md"
-            target="_blank"
-            rel="noopener noreferrer"
-          >public</a> — additions only, re-checked against upstream every day.
+          I build this against my own workflow, so it fits mine by default. If you want it to fit
+          yours, open a feature request — that's the fastest way to get something built.
         </p>
       </div>
 
-      <div class="open-grid">
-        <div class="tile open-term">
-          <div class="open-term-head">
-            <span></span><span></span><span></span>
-            <span class="open-term-title">~/code</span>
-          </div>
-          <div class="open-term-body">
-            <div><span class="prompt">$</span> gh repo fork radroid/t3code --clone</div>
-            <div class="dim">✓ Cloned t3code into ./t3code</div>
-            <div><span class="prompt">$</span> cd t3code &amp;&amp; vp install</div>
-            <div class="dim">✓ 1 284 packages installed in 4.2s</div>
-            <div><span class="prompt">$</span> vp run dev</div>
-            <div class="dim">▲ T3X dev server → <span class="accent">http://localhost:4001</span></div>
-            <div class="cursor"><span class="prompt">$</span><span class="caret"></span></div>
-          </div>
-        </div>
-
-        <div class="tile open-pitch">
-          <div class="open-pitch-copy">
-            <ul class="open-pitch-list">
-              <li>
-                <span class="open-pitch-mark" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                <span><strong>Change the UI.</strong> Restyle every surface to match your taste.</span>
-              </li>
-              <li>
-                <span class="open-pitch-mark" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                <span><strong>Add an agent.</strong> Wire in your own tools, models, and flows.</span>
-              </li>
-              <li>
-                <span class="open-pitch-mark" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-                <span><strong>Ship your own build.</strong> Self-host it or distribute it as your own.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div class="open-pitch-footer">
-            <div class="open-pitch-meta">
-              <span>MIT licensed</span>
-              <span aria-hidden="true">·</span>
-              <a href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">Open source</a>
-            </div>
-
-            <div class="open-pitch-actions">
-              <a class="btn btn-primary" href={`${GITHUB_REPOSITORY_URL}/fork`} target="_blank" rel="noopener noreferrer">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2.2"/><circle cx="18" cy="5" r="2.2"/><circle cx="12" cy="19" r="2.2"/><path d="M6 7.2v2A3 3 0 009 12.2h6A3 3 0 0018 9.2v-2M12 14v2.8"/></svg>
-                Fork on GitHub
-              </a>
-              <a class="open-source-link" href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
-                Browse source
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>
-              </a>
-            </div>
-          </div>
-        </div>
+      <div class="ask-actions">
+        <a
+          class="btn btn-primary btn-lg"
+          href={`${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Request a feature
+        </a>
+        <a
+          class="btn btn-ghost btn-lg"
+          href={`${GITHUB_REPOSITORY_URL}/issues`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Browse open issues
+        </a>
       </div>
     </div>
   </section>
@@ -364,8 +332,8 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
         Your agents deserve better than a terminal.
       </h2>
       <p class="cta-sub">
-        T3X is free, open source, and current with upstream. Install it, plug in the harness
-        you already pay for, and let your agents get to work.
+        Coil is free, open source, and rebased on upstream every day. Install it, plug in the
+        harness you already pay for, and let your agents get to work.
       </p>
       <div class="cta-actions">
         <a id="cta-download-mac" class="btn btn-primary btn-lg" href="https://github.com/radroid/t3code/releases">
@@ -412,10 +380,12 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
         point("cta-download-win", win.url);
       }
 
-      // The sync strip is the page's one live claim: the version we ship, the upstream version
+      // The sync strip is the page's one live claim: the version this fork ships, the upstream
       // it tracks, and when it was built. Anything less specific would just be a slogan.
       const strip = document.querySelector("[data-sync-strip]");
       if (strip) {
+        // Still `-t3x`: the release pipeline keeps that suffix until issue #71 migrates it.
+        // This parses what the relay actually publishes, not what the site is called.
         const upstream = manifest.version.split("-t3x")[0];
         const built = new Date(manifest.builtAt).toLocaleDateString(undefined, {
           month: "short",
@@ -536,6 +506,14 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
 
   .hero-sub a:hover {
     text-decoration-color: var(--accent);
+  }
+
+  .hero-direction {
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: -0.005em;
+    margin: -20px auto 30px;
+    max-width: 640px;
   }
 
   .hero-actions {
@@ -857,215 +835,124 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
   }
   .harness-footer-item svg { color: var(--ok); }
 
-  /* ── Fork graph ───────────────────────────────────────── */
-  .sec-fork-graph .section-head code {
-    font-family: var(--font-mono);
-    font-size: 0.86em;
-    color: var(--fg);
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 5px;
-    padding: 1px 6px;
-  }
-
-  .graph {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .graph-rail {
-    position: relative;
-    padding-left: 34px;
-  }
-
-  /* The rail itself: a 1px vertical line the commit dots sit on. */
-  .graph-rail::before {
-    content: "";
-    position: absolute;
-    left: 5px;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: var(--border-strong);
-  }
-
-  /*
-   * The branch rail is indented so the divergence is a fact of the layout, not a caption:
-   * `main` runs at x=5, `t3x` runs at x=27, and .graph-fork draws the curve between them.
-   */
-  .graph-rail--branch {
-    padding-left: 56px;
-  }
-
-  .graph-rail--branch::before {
-    left: 27px;
-    background: var(--accent);
-    opacity: 0.55;
-  }
-
-  .graph-rail-label {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    margin-bottom: 18px;
-  }
-
-  .graph-rail-name {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--fg-muted);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 3px 10px;
-    background: var(--bg-card);
-  }
-
-  .graph-rail--branch .graph-rail-name {
-    color: var(--accent);
-    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-    background: var(--accent-dim);
-  }
-
-  .graph-rail-note {
-    font-size: 12px;
-    color: var(--fg-faint);
-  }
-
-  .graph-commits {
+  /* ── What's here today ────────────────────────────────── */
+  .adds {
     list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
 
-  .graph-commit {
-    position: relative;
-  }
-
-  /* Commit dot: hollow on main (upstream's), filled accent on the branch (ours). */
-  .graph-commit::before {
-    content: "";
-    position: absolute;
-    left: -34px;
-    top: 5px;
-    width: 11px;
-    height: 11px;
-    border-radius: 999px;
+  .add {
     background: var(--bg);
-    border: 1.5px solid var(--fg-muted);
-    box-sizing: border-box;
+    padding: 22px 20px;
+    transition: background 0.2s ease;
   }
 
-  .graph-rail--branch .graph-commit::before {
-    background: var(--accent);
-    border-color: var(--accent);
-    box-shadow: 0 0 0 4px var(--accent-dim);
+  .add:hover {
+    background: rgba(255, 255, 255, 0.02);
   }
 
-  .graph-commit h3 {
-    font-size: 16px;
+  .add h3 {
+    font-size: 15px;
     font-weight: 550;
     letter-spacing: -0.015em;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
 
-  .graph-commit p {
+  .add p {
     color: var(--fg-muted);
-    font-size: 14.5px;
+    font-size: 14px;
     line-height: 1.5;
-    max-width: 62ch;
   }
 
-  /* The divergence: the branch rail curving away from main, with the promise on it. */
-  .graph-fork {
-    position: relative;
-    height: 64px;
-    margin: 6px 0 2px;
-    padding-left: 34px;
+  /* ── Where this is going ──────────────────────────────── */
+  /*
+   * Dashed borders and a muted panel, deliberately unlike `.add` above: nothing in this section
+   * is downloadable, and it should not read like the section that is.
+   */
+  .plans {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  .plan {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.012);
+  }
+
+  .plan-head {
     display: flex;
     align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
   }
 
-  /* Down from main's rail, curve right, then down again into the branch's rail. */
-  .graph-fork::before {
-    content: "";
-    position: absolute;
-    left: 5px;
-    top: 0;
-    width: 22px;
-    height: 60%;
-    border-left: 1px solid var(--accent);
-    border-bottom: 1px solid var(--accent);
-    border-bottom-left-radius: 14px;
-    opacity: 0.55;
+  .plan-head h3 {
+    font-size: 15px;
+    font-weight: 550;
+    letter-spacing: -0.015em;
   }
 
-  .graph-fork::after {
-    content: "";
-    position: absolute;
-    left: 27px;
-    top: 60%;
-    bottom: 0;
-    width: 1px;
-    background: var(--accent);
-    opacity: 0.55;
-  }
-
-  .graph-fork-caption {
+  .plan-tag {
     font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.04em;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--accent);
-    margin-left: 22px;
-    align-self: flex-end;
-    transform: translateY(-4px);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--accent-dim);
+    border-radius: 999px;
+    padding: 2px 8px;
+    white-space: nowrap;
   }
 
-  /*
-   * One reveal for the whole branch rail — it earns the emphasis because the divergence is the
-   * page's argument. Nothing else on the page animates on scroll.
-   */
-  @media (prefers-reduced-motion: no-preference) {
-    .graph-rail--branch {
-      animation: fade-in 0.7s ease-out both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 45%;
-    }
+  .plan p {
+    color: var(--fg-muted);
+    font-size: 14px;
+    line-height: 1.5;
   }
 
-  @media (max-width: 720px) {
-    /*
-     * Stacked: at this width the indent eats the copy column and the connector reads as noise,
-     * so both rails run flush and the caption alone marks the divergence.
-     */
-    .graph-rail--branch {
-      padding-left: 34px;
-    }
+  .plan a {
+    color: var(--fg);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    text-underline-offset: 3px;
+  }
 
-    .graph-rail--branch::before {
-      left: 5px;
-    }
+  .horizon {
+    margin-top: 28px;
+    padding-top: 22px;
+    border-top: 1px dashed var(--border);
+    color: var(--fg-dim);
+    font-size: 15px;
+    line-height: 1.6;
+    max-width: 68ch;
+  }
 
-    .graph-fork {
-      height: auto;
-      padding: 4px 0 4px 34px;
-    }
+  /* ── Ask ──────────────────────────────────────────────── */
+  .ask-head {
+    text-align: center;
+    margin: 0 auto 32px;
+  }
 
-    .graph-fork::before,
-    .graph-fork::after {
-      display: none;
-    }
+  .ask-head p {
+    margin: 0 auto;
+  }
 
-    .graph-fork-caption {
-      align-self: flex-start;
-      margin-left: 0;
-      transform: none;
-    }
-
-    .graph-commit p {
-      font-size: 14px;
-    }
+  .ask-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
   /* ── Git ──────────────────────────────────────────────── */
@@ -1143,163 +1030,6 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     padding: 2px 6px; border-radius: 4px;
   }
 
-  /* ── Open source ──────────────────────────────────────── */
-  .open-head {
-    text-align: center;
-    margin: 0 auto 56px;
-  }
-
-  .open-head p {
-    margin: 0 auto;
-  }
-
-  .open-head a {
-    color: var(--fg);
-    text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
-    text-underline-offset: 3px;
-    transition: text-decoration-color 0.18s ease;
-  }
-
-  .open-head a:hover {
-    text-decoration-color: var(--accent);
-  }
-
-  .open-pitch-meta a {
-    color: var(--fg-muted);
-    transition: color 0.18s ease;
-  }
-
-  .open-pitch-meta a:hover {
-    color: var(--fg);
-  }
-
-  .open-grid {
-    display: grid;
-    grid-template-columns: 1.25fr 1fr;
-    gap: 20px;
-  }
-
-  .open-term { padding: 0; overflow: hidden; }
-  .open-term-head {
-    display: flex; align-items: center; gap: 6px;
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.02);
-  }
-  .open-term-head span {
-    width: 10px; height: 10px; border-radius: 999px;
-    background: #2a2a30; display: block;
-  }
-  .open-term-title {
-    margin-left: 10px;
-    font-family: var(--font-mono); font-size: 11px;
-    color: var(--fg-dim); flex: 1; text-align: center;
-    background: transparent !important;
-    width: auto !important; height: auto !important;
-    border-radius: 0 !important;
-  }
-
-  .open-term-body {
-    padding: 20px 22px;
-    font-family: var(--font-mono); font-size: 13px;
-    line-height: 1.7; color: var(--fg);
-  }
-  .open-term-body > div {
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .open-term-body .prompt { color: var(--accent); margin-right: 8px; }
-  .open-term-body .dim { color: var(--fg-dim); }
-  .open-term-body .accent { color: var(--accent); }
-  .open-term-body .cursor { display: flex; align-items: center; }
-  .caret {
-    display: inline-block;
-    width: 7px; height: 14px;
-    background: var(--fg);
-    margin-left: 4px;
-    animation: blink 1s steps(2) infinite;
-  }
-
-  .open-pitch {
-    padding: 32px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 32px;
-    background:
-      radial-gradient(110% 75% at 100% 0%, var(--accent-dim), transparent 60%),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
-  }
-
-  .open-pitch-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .open-pitch-list li {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    font-size: 15px;
-    line-height: 1.5;
-    color: var(--fg-muted);
-  }
-
-  .open-pitch-list strong {
-    color: var(--fg);
-    font-weight: 600;
-  }
-
-  .open-pitch-mark {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    margin-top: 1px;
-    border-radius: 7px;
-    color: var(--accent);
-    background: var(--accent-dim);
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-
-  .open-pitch-footer {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-
-  .open-pitch-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--fg-dim);
-    font-family: var(--font-mono);
-    font-size: 11px;
-  }
-
-  .open-pitch-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-
-  .open-source-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--fg-muted);
-    font-size: 13px;
-    font-weight: 500;
-    transition: color 0.18s ease;
-  }
-
-  .open-source-link:hover {
-    color: var(--fg);
-  }
-
   /* ── Final CTA ────────────────────────────────────────── */
   .sec-cta {
     text-align: center;
@@ -1370,7 +1100,8 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
       border-right: 0;
     }
     .git-inner { grid-template-columns: 1fr; gap: 40px; }
-    .open-grid { grid-template-columns: 1fr; }
+    .adds { grid-template-columns: 1fr 1fr; }
+    .plans { grid-template-columns: 1fr; }
   }
 
   @media (max-width: 820px) {
@@ -1378,5 +1109,6 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     .sec-cta { padding: 96px 0; }
     .container { padding-left: 20px; padding-right: 20px; }
     .hero-preview { display: none; }
+    .adds { grid-template-columns: 1fr; }
   }
 </style>
