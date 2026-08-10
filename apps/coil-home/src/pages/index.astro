@@ -661,7 +661,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     }
 
     .hero-actions {
-      margin-bottom: 96px;
+      margin-bottom: 48px;
     }
 
     .hero-float {
@@ -682,71 +682,29 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
       height: 44px;
     }
 
-    /* Three stacked on the left, two on the right — keeps the center CTA clear. */
+    /*
+     * Only the two top-corner marks survive on mobile. Upstream positioned five of these against a
+     * shorter hero; this one carries an extra direction line, two download buttons, the honesty
+     * line and the sync strip, so the lower three (grok, opencode, cursor) landed on top of the
+     * headline and the download buttons — measured at 3.5k and 5.7k px² of overlap at 390px. They
+     * are decorative and aria-hidden, so dropping them costs nothing a reader can perceive.
+     */
+    .hero-float-mark.hf-grok,
+    .hero-float-mark.hf-opencode,
+    .hero-float-mark.hf-cursor {
+      display: none;
+    }
+
     .hero-float-mark.hf-claude {
       top: 44px;
       left: 10px;
       transform: rotate(-10deg);
     }
 
-    .hero-float-mark.hf-grok {
-      top: 240px;
-      left: 4px;
-      right: auto;
-      transform: rotate(-4deg);
-    }
-
-    .hero-float-mark.hf-opencode {
-      top: 474px;
-      left: 4px;
-      right: auto;
-      transform: rotate(-6deg);
-    }
-
     .hero-float-mark.hf-codex {
       top: 44px;
       right: 10px;
       transform: rotate(8deg);
-    }
-
-    .hero-float-mark.hf-cursor {
-      top: 474px;
-      right: 4px;
-      left: auto;
-      transform: rotate(7deg);
-    }
-  }
-
-  @media (max-width: 340px) {
-    .hero-float-mark.hf-grok {
-      top: 220px;
-      left: 0;
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-    }
-
-    .hero-float-mark.hf-opencode,
-    .hero-float-mark.hf-cursor {
-      top: 580px;
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-    }
-
-    .hero-float-mark.hf-opencode {
-      left: 0;
-    }
-
-    .hero-float-mark.hf-cursor {
-      right: 0;
-    }
-
-    .hero-float-mark.hf-grok img,
-    .hero-float-mark.hf-opencode img,
-    .hero-float-mark.hf-cursor img {
-      width: 30px;
-      height: 30px;
     }
   }
 
@@ -1110,5 +1068,23 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     .container { padding-left: 20px; padding-right: 20px; }
     .hero-preview { display: none; }
     .adds { grid-template-columns: 1fr; }
+  }
+
+  /*
+   * Below 480px every button row wraps. Left alone they wrap to their content widths — 217px next
+   * to 133px — which reads as a mistake rather than a stack. Make the wrap deliberate: one column,
+   * equal width, centred.
+   */
+  @media (max-width: 480px) {
+    .hero-dl-row,
+    .cta-actions,
+    .ask-actions {
+      flex-direction: column;
+      align-items: stretch;
+      width: 100%;
+      max-width: 300px;
+      margin-left: auto;
+      margin-right: auto;
+    }
   }
 </style>
