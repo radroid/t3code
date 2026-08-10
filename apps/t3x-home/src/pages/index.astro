@@ -1,23 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import {
-  ANDROID_PLAY_STORE_URL,
-  GITHUB_REPOSITORY_URL,
-  IOS_APP_STORE_URL,
-  MARKETING_STATS,
-} from "../lib/site";
-import { tweets } from "../lib/tweets";
-
-const desktopEndorsementRows = [
-  tweets.filter((_, index) => index % 2 === 0),
-  tweets.filter((_, index) => index % 2 === 1),
-];
-
-const mobileEndorsementRows = [
-  tweets.filter((_, index) => index % 3 === 0),
-  tweets.filter((_, index) => index % 3 === 1),
-  tweets.filter((_, index) => index % 3 === 2),
-];
+import { GITHUB_REPOSITORY_URL } from "../lib/site";
 ---
 
 <Layout>
@@ -71,12 +54,6 @@ const mobileEndorsementRows = [
           <span>Steal our code (legally)</span>
           <svg class="hero-source-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg>
         </a>
-        <p class="hero-mobile-line">
-          Also on your phone:
-          <a href={IOS_APP_STORE_URL} target="_blank" rel="noopener noreferrer">iOS</a>
-          <span aria-hidden="true">·</span>
-          <a href={ANDROID_PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">Android</a>
-        </p>
       </div>
 
       <div class="hero-preview">
@@ -91,92 +68,6 @@ const mobileEndorsementRows = [
           />
         </figure>
       </div>
-    </div>
-  </section>
-
-  <!-- ── Endorsements ─────────────────────────────────────────── -->
-  <section id="endorsements" class="sec-endorsements" aria-labelledby="endorsements-title">
-    <div class="container">
-      <div class="endorsements-head">
-        <h2 id="endorsements-title">Tolerated by over <span class="endorsements-count">{MARKETING_STATS.users}</span> devs</h2>
-        <p>Some of them even tweeted about it.</p>
-      </div>
-    </div>
-
-    <div class="endorsement-carousel endorsement-carousel--desktop" aria-label="Developer endorsements">
-        {
-          desktopEndorsementRows.map((row, rowIndex) => (
-            <div class:list={["endorsement-row", rowIndex === 1 && "is-reverse"]}>
-              <div class="endorsement-track">
-                {[0, 1].map((groupIndex) => (
-                  <div class="endorsement-track-group" aria-hidden={groupIndex === 1 ? "true" : undefined}>
-                    {row.map((tweet) => (
-                      <a
-                        class="endorsement-card"
-                        href={tweet.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`Read ${tweet.handle}'s post on X`}
-                        tabindex={groupIndex === 1 ? "-1" : undefined}
-                      >
-                        <div class="endorsement-author">
-                          <img
-                            src={`/pfps/${tweet.handle}.webp`}
-                            alt=""
-                            width="28"
-                            height="28"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                          <div class="endorsement-handle">@{tweet.handle}</div>
-                        </div>
-                        <p>{tweet.excerpt ?? tweet.content}</p>
-                      </a>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        }
-    </div>
-
-    <div class="endorsement-carousel endorsement-carousel--mobile" aria-label="Developer endorsements">
-        {
-          mobileEndorsementRows.map((row, rowIndex) => (
-            <div class:list={["endorsement-row", rowIndex === 1 && "is-reverse"]}>
-              <div class="endorsement-track">
-                {[0, 1].map((groupIndex) => (
-                  <div class="endorsement-track-group" aria-hidden={groupIndex === 1 ? "true" : undefined}>
-                    {row.map((tweet) => (
-                      <a
-                        class="endorsement-card"
-                        href={tweet.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`Read ${tweet.handle}'s post on X`}
-                        tabindex={groupIndex === 1 ? "-1" : undefined}
-                      >
-                        <div class="endorsement-author">
-                          <img
-                            src={`/pfps/${tweet.handle}.webp`}
-                            alt=""
-                            width="28"
-                            height="28"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                          <div class="endorsement-handle">@{tweet.handle}</div>
-                        </div>
-                        <p>{tweet.excerpt ?? tweet.content}</p>
-                      </a>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        }
     </div>
   </section>
 
@@ -346,7 +237,7 @@ const mobileEndorsementRows = [
             <div class="open-pitch-meta">
               <span>MIT licensed</span>
               <span aria-hidden="true">·</span>
-              <span>{MARKETING_STATS.githubStars} stars</span>
+              <a href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">Open source</a>
             </div>
 
             <div class="open-pitch-actions">
@@ -587,28 +478,6 @@ const mobileEndorsementRows = [
   .hero-source-link:hover .hero-source-arrow {
     transform: translate(2px, -2px);
     opacity: 1;
-  }
-
-  .hero-mobile-line {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--fg-dim);
-    font-size: 13px;
-    letter-spacing: -0.005em;
-  }
-
-  .hero-mobile-line a {
-    color: var(--fg-muted);
-    text-decoration: underline;
-    text-decoration-color: rgba(161, 161, 170, 0.4);
-    text-underline-offset: 3px;
-    transition: color 0.18s ease, text-decoration-color 0.18s ease;
-  }
-
-  .hero-mobile-line a:hover {
-    color: var(--fg);
-    text-decoration-color: var(--fg);
   }
 
   /* Download button icons (platform-aware) */
@@ -857,152 +726,6 @@ const mobileEndorsementRows = [
   }
   .harness-footer-item svg { color: var(--ok); }
 
-  /* ── Endorsements ─────────────────────────────────────── */
-  .sec-endorsements {
-    overflow: hidden;
-  }
-
-  .endorsements-head {
-    max-width: 720px;
-    margin-bottom: 56px;
-  }
-
-  .endorsements-head h2 {
-    font-size: clamp(32px, 4vw, 48px);
-    font-weight: 500;
-    letter-spacing: -0.035em;
-    line-height: 1.05;
-    margin-bottom: 18px;
-  }
-
-  .endorsements-count {
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .endorsements-head p {
-    color: var(--fg-muted);
-    font-size: 18px;
-    max-width: 620px;
-    letter-spacing: -0.005em;
-  }
-
-  .endorsement-carousel {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .endorsement-carousel--mobile {
-    display: none;
-  }
-
-  .endorsement-carousel::before,
-  .endorsement-carousel::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 2;
-    width: max(48px, calc((100vw - 1240px) / 2 + 56px));
-    pointer-events: none;
-  }
-
-  .endorsement-carousel::before {
-    left: 0;
-    background: linear-gradient(90deg, var(--bg), transparent);
-  }
-
-  .endorsement-carousel::after {
-    right: 0;
-    background: linear-gradient(270deg, var(--bg), transparent);
-  }
-
-  .endorsement-row {
-    overflow: hidden;
-  }
-
-  .endorsement-track {
-    width: max-content;
-    display: flex;
-    animation: endorsementMarquee 76s linear infinite;
-    will-change: transform;
-  }
-
-  .endorsement-track-group {
-    display: flex;
-    gap: 12px;
-    padding-right: 12px;
-  }
-
-  .endorsement-row.is-reverse .endorsement-track {
-    animation-direction: reverse;
-    animation-duration: 84s;
-  }
-
-  .endorsement-carousel:hover .endorsement-track,
-  .endorsement-carousel:focus-within .endorsement-track {
-    animation-play-state: paused;
-  }
-
-  .endorsement-card {
-    position: relative;
-    width: clamp(264px, 22vw, 308px);
-    height: 132px;
-    padding: 14px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.012);
-    transition:
-      border-color 0.18s ease,
-      background 0.18s ease;
-  }
-
-  .endorsement-card:hover {
-    border-color: var(--border-strong);
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  .endorsement-author {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .endorsement-author img {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-
-  .endorsement-handle {
-    color: var(--fg-muted);
-    font-size: 13px;
-    font-weight: 500;
-    letter-spacing: -0.005em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .endorsement-card p {
-    color: var(--fg);
-    font-size: 13.5px;
-    line-height: 1.4;
-    letter-spacing: -0.003em;
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-  }
-
   /* ── Git ──────────────────────────────────────────────── */
   .git-inner {
     display: grid;
@@ -1244,15 +967,6 @@ const mobileEndorsementRows = [
     margin-bottom: 24px;
   }
 
-  @keyframes endorsementMarquee {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(-50%);
-    }
-  }
-
   /* ── Responsive ────────────────────────────────────────── */
   @media (max-width: 960px) {
     .hero-preview {
@@ -1279,32 +993,5 @@ const mobileEndorsementRows = [
     .sec-cta { padding: 96px 0; }
     .container { padding-left: 20px; padding-right: 20px; }
     .hero-preview { display: none; }
-    .endorsements-head {
-      margin-bottom: 40px;
-    }
-    .endorsement-carousel--desktop {
-      display: none;
-    }
-    .endorsement-carousel--mobile {
-      display: flex;
-    }
-    .endorsement-carousel::before,
-    .endorsement-carousel::after {
-      width: 28px;
-    }
-    .endorsement-track {
-      animation-duration: 68s;
-    }
-    .endorsement-row.is-reverse .endorsement-track {
-      animation-duration: 76s;
-    }
-    .endorsement-card {
-      width: 268px;
-      height: 132px;
-      padding: 14px;
-    }
-    .endorsement-card p {
-      font-size: 13px;
-    }
   }
 </style>
