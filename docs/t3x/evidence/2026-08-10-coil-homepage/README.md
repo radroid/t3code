@@ -21,7 +21,7 @@ release identity was not. Issue #71 covers that, and it is deliberately out of s
 | `04-ask.png`         | The feature-request CTA.                                               |
 | `06-download.png`    | Real version, real byte sizes, real changelog from the relay.          |
 | `07-404.png`         | The 404 page.                                                          |
-| `08-` … `10-`        | Hero, roadmap, and download at 390px.                                  |
+| `08-` … `11-`        | Hero, roadmap, download and CTA at 390px, after the mobile fix.        |
 
 ## What to look for
 
@@ -35,6 +35,15 @@ release identity was not. Issue #71 covers that, and it is deliberately out of s
   border style. Loops are the direction, not a feature.
 - **Gone:** the fork graph, and the "If you don't like something, fork it" section. The second was
   redundant on a page that is itself a fork.
+
+## Mobile fix, 2026-08-10
+
+The first mobile capture showed upstream's five floating harness marks colliding with this hero,
+which is taller than the one they were positioned against: `hf-grok` over the headline (3,468 px²)
+and `hf-opencode` / `hf-cursor` over the download buttons (~5,700 px² each) at 390px. The three that
+collide are now hidden below 820px; the two top-corner marks stay. Separately, the button rows
+wrapped to their content widths — a 217px button above a 133px one — and now stack as one column at
+equal width below 480px. Re-measured at 320, 390 and 430: zero overlap, equal widths, no overflow.
 
 ## How these were produced
 
