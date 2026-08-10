@@ -384,6 +384,54 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
   </section>
 </Layout>
 
+<script>
+  import { fetchLatestManifest, findAsset } from "../lib/releases";
+
+  function point(id: string, url: string) {
+    const el = document.getElementById(id) as HTMLAnchorElement | null;
+    if (el) el.href = url;
+  }
+
+  async function init() {
+    const kbd = document.getElementById("pr-button-kbd");
+    if (kbd && !/Mac/i.test(navigator.userAgent)) kbd.textContent = "Ctrl ⏎";
+
+    try {
+      const manifest = await fetchLatestManifest();
+      if (!manifest?.assets) return;
+
+      const mac = findAsset(manifest, "darwin-arm64");
+      if (mac) {
+        point("download-mac", mac.url);
+        point("cta-download-mac", mac.url);
+      }
+
+      const win = findAsset(manifest, "win32-x64");
+      if (win) {
+        point("download-win", win.url);
+        point("cta-download-win", win.url);
+      }
+
+      // The sync strip is the page's one live claim: the version we ship, the upstream version
+      // it tracks, and when it was built. Anything less specific would just be a slogan.
+      const strip = document.querySelector("[data-sync-strip]");
+      if (strip) {
+        const upstream = manifest.version.split("-t3x")[0];
+        const built = new Date(manifest.builtAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+        strip.textContent = `${manifest.version} · tracking upstream v${upstream} · built ${built}`;
+      }
+    } catch {
+      // Nothing to do: the buttons already point at the releases page from the server-rendered
+      // markup, and the strip keeps its static "Rebased onto upstream daily" text.
+    }
+  }
+
+  init();
+</script>
+
 <style>
   /* ── Section base ─────────────────────────────────────────── */
   section {
@@ -840,7 +888,16 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     background: var(--border-strong);
   }
 
+  /*
+   * The branch rail is indented so the divergence is a fact of the layout, not a caption:
+   * `main` runs at x=5, `t3x` runs at x=27, and .graph-fork draws the curve between them.
+   */
+  .graph-rail--branch {
+    padding-left: 56px;
+  }
+
   .graph-rail--branch::before {
+    left: 27px;
     background: var(--accent);
     opacity: 0.55;
   }
@@ -930,25 +987,27 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     align-items: center;
   }
 
+  /* Down from main's rail, curve right, then down again into the branch's rail. */
   .graph-fork::before {
     content: "";
     position: absolute;
     left: 5px;
     top: 0;
     width: 22px;
-    height: 100%;
-    border-left: 1px solid var(--border-strong);
+    height: 60%;
+    border-left: 1px solid var(--accent);
     border-bottom: 1px solid var(--accent);
-    border-bottom-left-radius: 12px;
+    border-bottom-left-radius: 14px;
+    opacity: 0.55;
   }
 
   .graph-fork::after {
     content: "";
     position: absolute;
     left: 27px;
+    top: 60%;
     bottom: 0;
     width: 1px;
-    height: 50%;
     background: var(--accent);
     opacity: 0.55;
   }
@@ -958,9 +1017,9 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     font-size: 11px;
     letter-spacing: 0.04em;
     color: var(--accent);
-    padding-left: 12px;
+    margin-left: 22px;
     align-self: flex-end;
-    transform: translateY(-6px);
+    transform: translateY(-4px);
   }
 
   /*
@@ -976,10 +1035,21 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
   }
 
   @media (max-width: 720px) {
-    /* Stacked: the connector reads as noise at this width, so it goes. */
+    /*
+     * Stacked: at this width the indent eats the copy column and the connector reads as noise,
+     * so both rails run flush and the caption alone marks the divergence.
+     */
+    .graph-rail--branch {
+      padding-left: 34px;
+    }
+
+    .graph-rail--branch::before {
+      left: 5px;
+    }
+
     .graph-fork {
-      height: 26px;
-      padding-left: 0;
+      height: auto;
+      padding: 4px 0 4px 34px;
     }
 
     .graph-fork::before,
@@ -988,8 +1058,8 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
     }
 
     .graph-fork-caption {
-      align-self: center;
-      padding-left: 34px;
+      align-self: flex-start;
+      margin-left: 0;
       transform: none;
     }
 
