@@ -8,10 +8,14 @@ interface Props {
 }
 
 const {
-  title = "T3 Code",
-  description = "T3 Code — The open-source control plane for coding agents.",
+  title = "T3X — a T3 Code fork",
+  description =
+    "T3X — a community fork of T3 Code with auto-updates, push notifications, and a daily upstream sync.",
   pageClass,
 } = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL("/icon.png", Astro.site).href;
 ---
 
 <html lang="en">
@@ -19,6 +23,19 @@ const {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="T3X" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -35,8 +52,8 @@ const {
     <div class:list={["page", pageClass]}>
       <nav class="nav">
         <div class="nav-inner">
-          <a href="/" class="nav-brand" aria-label="T3 Code home">
-            <span class="nav-brand-name">T3 Code</span>
+          <a href="/" class="nav-brand" aria-label="T3X home">
+            <span class="nav-brand-name">T3X</span>
           </a>
           <div class="nav-right">
             <a
@@ -63,7 +80,11 @@ const {
         <div class="footer-inner">
           <div class="footer-brand">
             <img src="/icon.webp" alt="" />
-            <span>&copy; {new Date().getFullYear()} T3 Tools Inc · MIT licensed</span>
+            <span>
+              &copy; {new Date().getFullYear()} T3X contributors · MIT · a fork of{" "}
+              <a href={UPSTREAM_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">T3 Code</a>
+              {" "}by T3 Tools Inc
+            </span>
           </div>
           <div class="footer-links">
             <a href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">GitHub</a>
@@ -103,7 +124,13 @@ const {
     --fg-faint: #52525b;
     --border: rgba(255, 255, 255, 0.08);
     --border-strong: rgba(255, 255, 255, 0.14);
-    --accent-h: 250;
+    /*
+     * The fork's one deliberate divergence from upstream's visual system: violet → diff-green.
+     * Every change this fork makes on top of upstream is an addition — `+N/-0` on every shared
+     * file — and green is the colour of an added line. One variable diverged is also, fittingly,
+     * the smallest possible fork.
+     */
+    --accent-h: 150;
     --accent: oklch(0.68 0.17 var(--accent-h));
     --accent-dim: oklch(0.68 0.17 var(--accent-h) / 0.15);
     --ok: oklch(0.72 0.16 150);
@@ -360,13 +387,7 @@ const {
     background: rgba(255, 255, 255, 0.04);
   }
 
-  .nav-stars strong {
-    color: var(--fg);
-    font-weight: 600;
-  }
-
   .nav-stars svg {
-    color: var(--warn);
     flex-shrink: 0;
   }
 
@@ -405,6 +426,19 @@ const {
     width: 20px;
     height: 20px;
     border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .footer-brand a {
+    color: var(--fg-muted);
+    text-decoration: underline;
+    text-decoration-color: rgba(161, 161, 170, 0.4);
+    text-underline-offset: 3px;
+    transition: color 0.2s ease;
+  }
+
+  .footer-brand a:hover {
+    color: var(--fg);
   }
 
   .footer-links {
