@@ -22,6 +22,7 @@ release identity was not. Issue #71 covers that, and it is deliberately out of s
 | `06-download.png`    | Real version, real byte sizes, real changelog from the relay.          |
 | `07-404.png`         | The 404 page.                                                          |
 | `08-` … `11-`        | Hero, roadmap, download and CTA at 390px, after the mobile fix.        |
+| `12-tablet-hero.png` | The hero at 860px — the band the second mobile pass added cover for.   |
 
 ## What to look for
 
@@ -40,10 +41,20 @@ release identity was not. Issue #71 covers that, and it is deliberately out of s
 
 The first mobile capture showed upstream's five floating harness marks colliding with this hero,
 which is taller than the one they were positioned against: `hf-grok` over the headline (3,468 px²)
-and `hf-opencode` / `hf-cursor` over the download buttons (~5,700 px² each) at 390px. The three that
-collide are now hidden below 820px; the two top-corner marks stay. Separately, the button rows
-wrapped to their content widths — a 217px button above a 133px one — and now stack as one column at
-equal width below 480px. Re-measured at 320, 390 and 430: zero overlap, equal widths, no overflow.
+and `hf-opencode` / `hf-cursor` over the download buttons (~5,700 px² each) at 390px. Separately, the
+button rows wrapped to their content widths — a 217px button above a 133px one — and now stack as
+one column at equal width below 480px.
+
+The first pass simply hid the three colliding marks. The second pass brought all five back: below
+900px the float layer becomes an in-flow row in the hero's own top padding, the band between the
+sticky nav and the headline, which is empty by construction. That is the difference between overlap
+being impossible and overlap being tuned away — the hero text reflows with the viewport, so any
+fixed percentage collides again at some width, which is exactly what 821px was still doing (60–243
+px² into `.hero-sub` and `.hero-title`). Hence the row's own 900px breakpoint, wider than the 820px
+one the rest of the mobile hero uses.
+
+Measured at 320/360/390/430/600/768/820/830/860/899/901/960/1000/1180/1440/1920: five marks visible,
+no mark-on-content or mark-on-mark overlap, no horizontal overflow. Desktop positions are unchanged.
 
 ## How these were produced
 
