@@ -104,7 +104,7 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    changed the semantics of an API the fork hooks into. For each seam file,
    `git log <old>..upstream/main -- <file>` and read the diffs; confirm the fork's feature
    still behaves.
-4. **Parallel path:** `apps/t3x-home/` duplicates `apps/marketing/`. A copy cannot conflict, so
+4. **Parallel path:** `apps/coil-home/` duplicates `apps/marketing/`. A copy cannot conflict, so
    the rebase will never flag it — it just drifts. Check upstream's marketing churn this cycle
    (`git log <merge-base>..upstream/main --oneline -- apps/marketing`) and either port
    intentionally or record "nothing worth porting".
