@@ -68,7 +68,11 @@ async function handleNotify(request: Request, env: Env): Promise<Response> {
   });
   if (!signature.ok) {
     return json(
-      { accepted: false, reason: signature.failure.kind, detail: describeSignatureFailure(signature.failure) },
+      {
+        accepted: false,
+        reason: signature.failure.kind,
+        detail: describeSignatureFailure(signature.failure),
+      },
       401,
     );
   }
@@ -78,15 +82,29 @@ async function handleNotify(request: Request, env: Env): Promise<Response> {
   const parsed = parseNotification(rawBody);
   if (!parsed.ok) {
     return json(
-      { accepted: false, reason: parsed.failure.kind, detail: describeParseFailure(parsed.failure) },
+      {
+        accepted: false,
+        reason: parsed.failure.kind,
+        detail: describeParseFailure(parsed.failure),
+      },
       400,
     );
   }
 
-  const response = await channel(env).fetch("https://channel/internal/publish", {
-    method: "POST",
-    body: rawBody,
-  });
+  // Guarded because a Durable Object stub can throw for reasons that are nobody's bug — a
+  // storage-flush stall or an object reset mid-request. Unguarded, that surfaces to the caller
+  // as Cloudflare's bare `error code: 1101` page, which is what build 20's release run got:
+  // thirty seconds of hang, an opaque 500, and no way to tell that the publish had in fact
+  // durably applied. A 503 with a reason gives the workflow's retry loop something to act on.
+  let response: Response;
+  try {
+    response = await channel(env).fetch("https://channel/internal/publish", {
+      method: "POST",
+      body: rawBody,
+    });
+  } catch (error) {
+    return json({ accepted: false, reason: "channel-unavailable", detail: String(error) }, 503);
+  }
 
   return new Response(await response.text(), {
     status: response.status,
