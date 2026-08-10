@@ -12,7 +12,6 @@
     "deploy": "pnpm dlx wrangler@4 deploy"
   },
   "dependencies": {
-    "@t3tools/shared": "workspace:*",
     "astro": "^7.0.3"
   },
   "devDependencies": {
