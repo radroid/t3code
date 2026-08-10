@@ -1,14 +1,16 @@
 /*
  * Downloads come from the fork's update relay, not GitHub's releases API.
  *
- * Every T3X release is published as a GitHub *pre-release*, and
+ * Every fork release is published as a GitHub *pre-release*, and
  * `api.github.com/repos/radroid/t3code/releases/latest` — which upstream's marketing site uses —
  * skips pre-releases and 404s for this repo. The relay already serves the same manifest the
  * desktop app's updater consumes, so the site and the app agree on what "latest" means by
  * construction rather than by coincidence.
  */
+// This hostname is `t3x`-named on purpose: it is the live relay every installed desktop build
+// polls, and renaming it would strand them. Issue #71 migrates it. Do not sweep it into a rename.
 const MANIFEST_URL = "https://t3x-update-relay.businesses.workers.dev/latest";
-const CACHE_KEY = "t3x-latest-manifest";
+const CACHE_KEY = "coil-latest-manifest";
 
 export const RELEASES_URL = "https://github.com/radroid/t3code/releases";
 

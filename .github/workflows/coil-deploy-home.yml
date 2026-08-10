@@ -1,32 +1,32 @@
-# Deploys the fork's homepage (apps/t3x-home) to the `t3x-home` Cloudflare Worker.
+# Deploys the fork's homepage (apps/coil-home) to the `coil-home` Cloudflare Worker.
 #
 # Requires the repo secret CLOUDFLARE_API_TOKEN (Account → Workers Scripts → Edit) and the repo
 # variable CLOUDFLARE_ACCOUNT_ID. Until the secret exists this job fails at the deploy step;
-# `pnpm run deploy` from apps/t3x-home keeps working in the meantime.
+# `pnpm run deploy` from apps/coil-home keeps working in the meantime.
 #
 # The daily sync force-pushes `main`, and on an undiffable force push GitHub runs `paths`-filtered
 # workflows anyway. That is harmless: `wrangler deploy` is idempotent.
-name: "t3x: deploy homepage"
+name: "coil: deploy homepage"
 
 on:
   push:
     branches:
       - main
     paths:
-      - "apps/t3x-home/**"
-      - ".github/workflows/t3x-deploy-home.yml"
+      - "apps/coil-home/**"
+      - ".github/workflows/coil-deploy-home.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: t3x-home-deploy
+  group: coil-home-deploy
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build and deploy t3x-home
+    name: Build and deploy coil-home
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -45,10 +45,10 @@ jobs:
           cache: true
           run-install: |
             args:
-              - --filter=@t3tools/t3x-home...
+              - --filter=@t3tools/coil-home...
 
       - name: Build
-        run: vp run --filter @t3tools/t3x-home build
+        run: vp run --filter @t3tools/coil-home build
 
       # wrangler is fetched on demand rather than depended on — it drags ~500 lines into
       # pnpm-lock.yaml, which SEAMS.md records as the fork's second-worst rebase-conflict surface.
@@ -59,9 +59,9 @@ jobs:
       # token, with no lockfile or integrity check standing in the way. Pinning keeps the
       # zero-lockfile-rows property that motivated `pnpm dlx` in the first place and makes each
       # wrangler upgrade an explicit, reviewable commit. Keep in step with
-      # apps/t3x-home/package.json's `deploy` script.
+      # apps/coil-home/package.json's `deploy` script.
       - name: Deploy to Cloudflare
-        working-directory: apps/t3x-home
+        working-directory: apps/coil-home
         run: pnpm dlx wrangler@4.120.1 deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -69,5 +69,5 @@ jobs:
 
       - name: Verify live site
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" https://t3x-home.businesses.workers.dev/)
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://coil.curlycloud.dev/)
           test "$code" = "200" || { echo "site returned $code"; exit 1; }
