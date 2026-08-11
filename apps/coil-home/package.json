@@ -8,7 +8,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "typecheck": "astro check",
-    "//deploy": "wrangler is run via `pnpm dlx`, not depended on — it drags ~500 lines into pnpm-lock.yaml, the fork's second-worst rebase-conflict surface, and is only needed at deploy time. The version is pinned exactly because CI runs this while holding CLOUDFLARE_API_TOKEN and `pnpm dlx` has no lockfile to pin it for us; keep it in step with .github/workflows/t3x-deploy-home.yml.",
+    "//deploy": "wrangler is run via `pnpm dlx`, not depended on — it drags ~500 lines into pnpm-lock.yaml, the fork's second-worst rebase-conflict surface, and is only needed at deploy time. The version is pinned exactly because CI runs this while holding CLOUDFLARE_API_TOKEN and `pnpm dlx` has no lockfile to pin it for us; keep it in step with .github/workflows/coil-deploy-home.yml.",
     "deploy": "pnpm dlx wrangler@4.120.1 deploy"
   },
   "dependencies": {
