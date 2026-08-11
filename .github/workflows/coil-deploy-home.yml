@@ -1,8 +1,8 @@
 # Deploys the fork's homepage (apps/coil-home) to the `coil-home` Cloudflare Worker.
 #
 # Requires the repo secret CLOUDFLARE_API_TOKEN (Account → Workers Scripts → Edit) and the repo
-# variable CLOUDFLARE_ACCOUNT_ID. Until the secret exists this job fails at the deploy step;
-# `pnpm run deploy` from apps/coil-home keeps working in the meantime.
+# variable CLOUDFLARE_ACCOUNT_ID; both are set. If either is ever removed this job fails at the
+# deploy step, and `pnpm run deploy` from apps/coil-home is the manual fallback.
 #
 # The daily sync force-pushes `main`, and on an undiffable force push GitHub runs `paths`-filtered
 # workflows anyway. That is harmless: `wrangler deploy` is idempotent.
