@@ -1,8 +1,8 @@
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import test from "node:test";
+import * as NodeTest from "node:test";
 
 import { worklogPaths } from "../lib/paths.mjs";
 import {
@@ -70,150 +70,157 @@ const SAMPLE_YAML = [
   "",
 ].join("\n");
 
-test("a missing registry yields an empty registry and a warning, never a throw", (t) => {
+NodeTest.test("a missing registry yields an empty registry and a warning, never a throw", (t) => {
   const paths = tempPaths(t);
   const { registry, warnings } = loadRegistry(paths);
-  assert.deepEqual(registry, {
+  NodeAssert.deepEqual(registry, {
     version: 1,
     identities: [],
     defaults: { ...DEFAULT_SETTINGS },
     projects: {},
   });
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /No project registry at/u);
-  assert.match(warnings[0], /worklog init/u);
+  NodeAssert.equal(warnings.length, 1);
+  NodeAssert.match(warnings[0], /No project registry at/u);
+  NodeAssert.match(warnings[0], /worklog init/u);
 });
 
-test("a malformed registry yields an empty registry and a warning naming the line", (t) => {
-  const paths = tempPaths(t);
-  writeProjects(paths, "version: 1\nprojects:\n\tt3code:\n");
-  const { registry, warnings } = loadRegistry(paths);
-  assert.deepEqual(registry.projects, {});
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /line 3/u);
-  assert.match(warnings[0], /tabs are not allowed/u);
-});
+NodeTest.test(
+  "a malformed registry yields an empty registry and a warning naming the line",
+  (t) => {
+    const paths = tempPaths(t);
+    writeProjects(paths, "version: 1\nprojects:\n\tt3code:\n");
+    const { registry, warnings } = loadRegistry(paths);
+    NodeAssert.deepEqual(registry.projects, {});
+    NodeAssert.equal(warnings.length, 1);
+    NodeAssert.match(warnings[0], /line 3/u);
+    NodeAssert.match(warnings[0], /tabs are not allowed/u);
+  },
+);
 
-test("a registry that is not a map is ignored with a warning", (t) => {
+NodeTest.test("a registry that is not a map is ignored with a warning", (t) => {
   const paths = tempPaths(t);
   writeProjects(paths, "- one\n- two\n");
   const { registry, warnings } = loadRegistry(paths);
-  assert.deepEqual(registry.projects, {});
-  assert.equal(warnings.length, 1);
+  NodeAssert.deepEqual(registry.projects, {});
+  NodeAssert.equal(warnings.length, 1);
 });
 
-test("an unreadable registry warns instead of throwing", (t) => {
+NodeTest.test("an unreadable registry warns instead of throwing", (t) => {
   const paths = tempPaths(t);
   // A directory where the file should be: readFileSync fails with EISDIR, not ENOENT.
   NodeFS.mkdirSync(paths.projectsYaml, { recursive: true });
   const { registry, warnings } = loadRegistry(paths);
-  assert.deepEqual(registry.projects, {});
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /Could not read the project registry/u);
+  NodeAssert.deepEqual(registry.projects, {});
+  NodeAssert.equal(warnings.length, 1);
+  NodeAssert.match(warnings[0], /Could not read the project registry/u);
 });
 
-test("snake_case on disk becomes camelCase in JS", (t) => {
+NodeTest.test("snake_case on disk becomes camelCase in JS", (t) => {
   const paths = tempPaths(t);
   writeProjects(paths, SAMPLE_YAML);
   const { registry, warnings } = loadRegistry(paths);
-  assert.deepEqual(warnings, []);
-  assert.equal(registry.defaults.activeGapMinutes, 45);
-  assert.equal(registry.defaults.singleEventMinutes, 2);
-  assert.equal(registry.projects.t3code.displayName, "T3 Code (fork)");
-  assert.equal(Object.hasOwn(registry.projects.t3code, "display_name"), false);
-  assert.deepEqual(registry.identities, ["Raj D", "raj@example.com"]);
-  assert.deepEqual(registry.projects.t3code.roots, ["/tmp/dev/t3code", "/tmp/dev/t3code-work"]);
+  NodeAssert.deepEqual(warnings, []);
+  NodeAssert.equal(registry.defaults.activeGapMinutes, 45);
+  NodeAssert.equal(registry.defaults.singleEventMinutes, 2);
+  NodeAssert.equal(registry.projects.t3code.displayName, "T3 Code (fork)");
+  NodeAssert.equal(Object.hasOwn(registry.projects.t3code, "display_name"), false);
+  NodeAssert.deepEqual(registry.identities, ["Raj D", "raj@example.com"]);
+  NodeAssert.deepEqual(registry.projects.t3code.roots, ["/tmp/dev/t3code", "/tmp/dev/t3code-work"]);
 });
 
-test("save then load is lossless", (t) => {
+NodeTest.test("save then load is lossless", (t) => {
   const paths = tempPaths(t);
   writeProjects(paths, SAMPLE_YAML);
   const first = loadRegistry(paths).registry;
 
   saveRegistry(paths, first);
   const second = loadRegistry(paths);
-  assert.deepEqual(second.warnings, []);
-  assert.deepEqual(second.registry, first);
+  NodeAssert.deepEqual(second.warnings, []);
+  NodeAssert.deepEqual(second.registry, first);
 
   // And it is a fixed point: saving what we just loaded produces byte-identical text.
   const textA = NodeFS.readFileSync(paths.projectsYaml, "utf8");
   saveRegistry(paths, second.registry);
-  assert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), textA);
+  NodeAssert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), textA);
 });
 
-test("an empty registry round-trips, and the saved file explains itself", (t) => {
+NodeTest.test("an empty registry round-trips, and the saved file explains itself", (t) => {
   const paths = tempPaths(t);
   const empty = loadRegistry(paths).registry;
   saveRegistry(paths, empty);
 
   const text = NodeFS.readFileSync(paths.projectsYaml, "utf8");
-  assert.match(text, /^# \/worklog project registry/u);
-  assert.match(text, /visibility: public/u);
-  assert.match(text, /\nidentities: \[\]\n/u);
-  assert.match(text, /\nprojects: \{\}\n/u);
-  assert.deepEqual(loadRegistry(paths).registry, empty);
+  NodeAssert.match(text, /^# \/worklog project registry/u);
+  NodeAssert.match(text, /visibility: public/u);
+  NodeAssert.match(text, /\nidentities: \[\]\n/u);
+  NodeAssert.match(text, /\nprojects: \{\}\n/u);
+  NodeAssert.deepEqual(loadRegistry(paths).registry, empty);
 });
 
-test("a save that would erase every classification is refused", (t) => {
+NodeTest.test("a save that would erase every classification is refused", (t) => {
   const paths = tempPaths(t);
   writeProjects(paths, SAMPLE_YAML);
   const before = NodeFS.readFileSync(paths.projectsYaml, "utf8");
 
   // The shape that costs a human their work: a reader degraded an unreadable file to an empty
   // registry, and something wrote that back. One unreadable byte must not erase the answers.
-  assert.throws(
+  NodeAssert.throws(
     () => saveRegistry(paths, { version: 1, identities: [], projects: {} }),
     /Refusing to overwrite/u,
   );
-  assert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), before, "the file is untouched");
+  NodeAssert.equal(
+    NodeFS.readFileSync(paths.projectsYaml, "utf8"),
+    before,
+    "the file is untouched",
+  );
 
   // Identities alone are worth protecting: they decide whose commits count.
   const identitiesOnly = tempPaths(t);
   writeProjects(identitiesOnly, "version: 1\nidentities:\n  - Raj D\nprojects: {}\n");
-  assert.throws(() => saveRegistry(identitiesOnly, {}), /Refusing to overwrite/u);
+  NodeAssert.throws(() => saveRegistry(identitiesOnly, {}), /Refusing to overwrite/u);
 
   // The narrowness matters as much as the rule. Emptying what was already empty is a no-op, and
   // an unparseable file holds no decision anybody can read back.
   const wasEmpty = tempPaths(t);
   writeProjects(wasEmpty, "version: 1\nidentities: []\nprojects: {}\n");
-  assert.doesNotThrow(() => saveRegistry(wasEmpty, {}));
+  NodeAssert.doesNotThrow(() => saveRegistry(wasEmpty, {}));
 
   const junk = tempPaths(t);
   writeProjects(junk, "projects: [not, a, map\n");
-  assert.doesNotThrow(() => saveRegistry(junk, {}));
+  NodeAssert.doesNotThrow(() => saveRegistry(junk, {}));
 
   // And a registry that still names something is written as normal.
   const kept = tempPaths(t);
   writeProjects(kept, SAMPLE_YAML);
-  assert.doesNotThrow(() =>
+  NodeAssert.doesNotThrow(() =>
     saveRegistry(kept, { projects: { a: { displayName: "A", roots: ["/tmp/a"] } } }),
   );
-  assert.equal(loadRegistry(kept).registry.projects.a.displayName, "A");
+  NodeAssert.equal(loadRegistry(kept).registry.projects.a.displayName, "A");
 });
 
-test("save creates the config directory when the repo is bare", (t) => {
+NodeTest.test("save creates the config directory when the repo is bare", (t) => {
   const paths = tempPaths(t);
-  assert.equal(NodeFS.existsSync(paths.config), false);
+  NodeAssert.equal(NodeFS.existsSync(paths.config), false);
   saveRegistry(paths, { projects: { a: { displayName: "A", roots: ["/tmp/a"] } } });
-  assert.equal(NodeFS.existsSync(paths.projectsYaml), true);
-  assert.equal(loadRegistry(paths).registry.projects.a.displayName, "A");
+  NodeAssert.equal(NodeFS.existsSync(paths.projectsYaml), true);
+  NodeAssert.equal(loadRegistry(paths).registry.projects.a.displayName, "A");
 });
 
-test("a save that cannot be written fails loudly and leaves no debris", (t) => {
+NodeTest.test("a save that cannot be written fails loudly and leaves no debris", (t) => {
   const paths = tempPaths(t);
   // A directory where the file belongs: the rename cannot succeed.
   NodeFS.mkdirSync(paths.projectsYaml, { recursive: true });
-  assert.throws(() => saveRegistry(paths, { projects: { a: { displayName: "A" } } }));
-  assert.deepEqual(NodeFS.readdirSync(paths.config), ["projects.yaml"]);
+  NodeAssert.throws(() => saveRegistry(paths, { projects: { a: { displayName: "A" } } }));
+  NodeAssert.deepEqual(NodeFS.readdirSync(paths.config), ["projects.yaml"]);
 });
 
-test("a bare root string is accepted in place of a paths object", (t) => {
+NodeTest.test("a bare root string is accepted in place of a paths object", (t) => {
   const paths = tempPaths(t);
   saveRegistry(paths.root, { projects: { a: { displayName: "A" } } });
-  assert.equal(loadRegistry(paths.root).registry.projects.a.displayName, "A");
+  NodeAssert.equal(loadRegistry(paths.root).registry.projects.a.displayName, "A");
 });
 
-test("unknown fields survive a load/save cycle", (t) => {
+NodeTest.test("unknown fields survive a load/save cycle", (t) => {
   const paths = tempPaths(t);
   writeProjects(
     paths,
@@ -228,17 +235,17 @@ test("unknown fields survive a load/save cycle", (t) => {
     ].join("\n"),
   );
   const { registry } = loadRegistry(paths);
-  assert.equal(registry.note, "hand written");
-  assert.equal(registry.projects.a.owner, "raj");
+  NodeAssert.equal(registry.note, "hand written");
+  NodeAssert.equal(registry.projects.a.owner, "raj");
 
   saveRegistry(paths, registry);
   const text = NodeFS.readFileSync(paths.projectsYaml, "utf8");
-  assert.match(text, /note: hand written/u);
-  assert.match(text, /owner: raj/u);
-  assert.deepEqual(loadRegistry(paths).registry, registry);
+  NodeAssert.match(text, /note: hand written/u);
+  NodeAssert.match(text, /owner: raj/u);
+  NodeAssert.deepEqual(loadRegistry(paths).registry, registry);
 });
 
-test("bad field shapes warn and fall back instead of throwing", (t) => {
+NodeTest.test("bad field shapes warn and fall back instead of throwing", (t) => {
   const paths = tempPaths(t);
   writeProjects(
     paths,
@@ -259,19 +266,19 @@ test("bad field shapes warn and fall back instead of throwing", (t) => {
   );
   const { registry, warnings } = loadRegistry(paths);
 
-  assert.equal(registry.version, 1);
-  assert.deepEqual(registry.identities, []);
-  assert.deepEqual(registry.defaults, { ...DEFAULT_SETTINGS });
-  assert.equal(Object.hasOwn(registry.projects, "b"), false);
-  assert.equal(Object.hasOwn(registry.projects.a, "displayName"), false);
-  assert.deepEqual(registry.projects.a.roots, []);
+  NodeAssert.equal(registry.version, 1);
+  NodeAssert.deepEqual(registry.identities, []);
+  NodeAssert.deepEqual(registry.defaults, { ...DEFAULT_SETTINGS });
+  NodeAssert.equal(Object.hasOwn(registry.projects, "b"), false);
+  NodeAssert.equal(Object.hasOwn(registry.projects.a, "displayName"), false);
+  NodeAssert.deepEqual(registry.projects.a.roots, []);
   // "yes" is not "true", so include fails closed.
-  assert.equal(registry.projects.a.include, false);
-  assert.equal(classify(registry, "a").effective, "excluded");
-  assert.ok(warnings.length >= 6, `expected a warning per problem, got ${warnings.length}`);
+  NodeAssert.equal(registry.projects.a.include, false);
+  NodeAssert.equal(classify(registry, "a").effective, "excluded");
+  NodeAssert.ok(warnings.length >= 6, `expected a warning per problem, got ${warnings.length}`);
 });
 
-test("identities and roots are trimmed and deduplicated", (t) => {
+NodeTest.test("identities and roots are trimmed and deduplicated", (t) => {
   const paths = tempPaths(t);
   writeProjects(
     paths,
@@ -291,108 +298,110 @@ test("identities and roots are trimmed and deduplicated", (t) => {
     ].join("\n"),
   );
   const { registry } = loadRegistry(paths);
-  assert.deepEqual(registry.identities, ["Raj D", "raj@example.com"]);
-  assert.deepEqual(registry.projects.a.roots, ["/tmp/a", "/tmp/b"]);
-  assert.deepEqual(identitiesOf(registry), ["Raj D", "raj@example.com"]);
+  NodeAssert.deepEqual(registry.identities, ["Raj D", "raj@example.com"]);
+  NodeAssert.deepEqual(registry.projects.a.roots, ["/tmp/a", "/tmp/b"]);
+  NodeAssert.deepEqual(identitiesOf(registry), ["Raj D", "raj@example.com"]);
 });
 
-test("settingsOf merges over the defaults and rejects nonsense", () => {
-  assert.deepEqual(settingsOf(null), { ...DEFAULT_SETTINGS });
-  assert.deepEqual(settingsOf({}), { ...DEFAULT_SETTINGS });
-  assert.deepEqual(settingsOf({ defaults: { activeGapMinutes: 15 } }), {
+NodeTest.test("settingsOf merges over the defaults and rejects nonsense", () => {
+  NodeAssert.deepEqual(settingsOf(null), { ...DEFAULT_SETTINGS });
+  NodeAssert.deepEqual(settingsOf({}), { ...DEFAULT_SETTINGS });
+  NodeAssert.deepEqual(settingsOf({ defaults: { activeGapMinutes: 15 } }), {
     activeGapMinutes: 15,
     singleEventMinutes: DEFAULT_SETTINGS.singleEventMinutes,
   });
-  assert.deepEqual(settingsOf({ defaults: { singleEventMinutes: 0 } }), {
+  NodeAssert.deepEqual(settingsOf({ defaults: { singleEventMinutes: 0 } }), {
     activeGapMinutes: DEFAULT_SETTINGS.activeGapMinutes,
     singleEventMinutes: 0,
   });
   // Snake_case is tolerated in case a raw document reaches this function.
-  assert.equal(settingsOf({ defaults: { active_gap_minutes: 20 } }).activeGapMinutes, 20);
-  assert.deepEqual(settingsOf({ defaults: { activeGapMinutes: -5 } }), { ...DEFAULT_SETTINGS });
-  assert.deepEqual(settingsOf({ defaults: { activeGapMinutes: "abc" } }), { ...DEFAULT_SETTINGS });
-  assert.deepEqual(settingsOf({ defaults: "nope" }), { ...DEFAULT_SETTINGS });
+  NodeAssert.equal(settingsOf({ defaults: { active_gap_minutes: 20 } }).activeGapMinutes, 20);
+  NodeAssert.deepEqual(settingsOf({ defaults: { activeGapMinutes: -5 } }), { ...DEFAULT_SETTINGS });
+  NodeAssert.deepEqual(settingsOf({ defaults: { activeGapMinutes: "abc" } }), {
+    ...DEFAULT_SETTINGS,
+  });
+  NodeAssert.deepEqual(settingsOf({ defaults: "nope" }), { ...DEFAULT_SETTINGS });
 });
 
-test("identitiesOf survives a junk registry", () => {
-  assert.deepEqual(identitiesOf(undefined), []);
-  assert.deepEqual(identitiesOf({ identities: "one" }), []);
-  assert.deepEqual(identitiesOf({ identities: ["a", 7, null, "a"] }), ["a"]);
+NodeTest.test("identitiesOf survives a junk registry", () => {
+  NodeAssert.deepEqual(identitiesOf(undefined), []);
+  NodeAssert.deepEqual(identitiesOf({ identities: "one" }), []);
+  NodeAssert.deepEqual(identitiesOf({ identities: ["a", 7, null, "a"] }), ["a"]);
 });
 
-test("projectKeyFor slugifies and disambiguates", () => {
-  assert.equal(projectKeyFor("T3 Code (fork)", []), "t3-code-fork");
-  assert.equal(projectKeyFor("t3code", ["t3code"]), "t3code-2");
-  assert.equal(projectKeyFor("t3code", ["t3code", "t3code-2"]), "t3code-3");
-  assert.equal(projectKeyFor("t3code", new Set(["t3code"])), "t3code-2");
+NodeTest.test("projectKeyFor slugifies and disambiguates", () => {
+  NodeAssert.equal(projectKeyFor("T3 Code (fork)", []), "t3-code-fork");
+  NodeAssert.equal(projectKeyFor("t3code", ["t3code"]), "t3code-2");
+  NodeAssert.equal(projectKeyFor("t3code", ["t3code", "t3code-2"]), "t3code-3");
+  NodeAssert.equal(projectKeyFor("t3code", new Set(["t3code"])), "t3code-2");
   // A registry's projects map is a natural argument.
-  assert.equal(projectKeyFor("t3code", { t3code: {}, "t3code-2": {} }), "t3code-3");
-  assert.equal(projectKeyFor("Café Ops", []), "cafe-ops");
-  assert.equal(projectKeyFor("", []), "unknown");
-  assert.equal(projectKeyFor("!!!", ["unknown"]), "unknown-2");
+  NodeAssert.equal(projectKeyFor("t3code", { t3code: {}, "t3code-2": {} }), "t3code-3");
+  NodeAssert.equal(projectKeyFor("Café Ops", []), "cafe-ops");
+  NodeAssert.equal(projectKeyFor("", []), "unknown");
+  NodeAssert.equal(projectKeyFor("!!!", ["unknown"]), "unknown-2");
 });
 
-test("upsertProject creates, shallow-merges, and unions roots", () => {
+NodeTest.test("upsertProject creates, shallow-merges, and unions roots", () => {
   const registry = { projects: {} };
 
   upsertProject(registry, "t3code", { displayName: "T3 Code", roots: ["/tmp/a"] });
-  assert.deepEqual(registry.projects.t3code, { roots: ["/tmp/a"], displayName: "T3 Code" });
+  NodeAssert.deepEqual(registry.projects.t3code, { roots: ["/tmp/a"], displayName: "T3 Code" });
 
   upsertProject(registry, "t3code", { roots: ["/tmp/b", "/tmp/a"], visibility: "public" });
-  assert.deepEqual(registry.projects.t3code.roots, ["/tmp/a", "/tmp/b"]);
-  assert.equal(registry.projects.t3code.visibility, "public");
-  assert.equal(registry.projects.t3code.displayName, "T3 Code");
+  NodeAssert.deepEqual(registry.projects.t3code.roots, ["/tmp/a", "/tmp/b"]);
+  NodeAssert.equal(registry.projects.t3code.visibility, "public");
+  NodeAssert.equal(registry.projects.t3code.displayName, "T3 Code");
 
   // Undefined leaves a field alone; null clears it.
   upsertProject(registry, "t3code", { displayName: undefined, blurb: null });
-  assert.equal(registry.projects.t3code.displayName, "T3 Code");
-  assert.equal(registry.projects.t3code.blurb, null);
+  NodeAssert.equal(registry.projects.t3code.displayName, "T3 Code");
+  NodeAssert.equal(registry.projects.t3code.blurb, null);
 
   // Roots are deduplicated by their resolved form, keeping the first spelling.
   upsertProject(registry, "t3code", { roots: ["/tmp/a/", "/tmp/./b"] });
-  assert.deepEqual(registry.projects.t3code.roots, ["/tmp/a", "/tmp/b"]);
+  NodeAssert.deepEqual(registry.projects.t3code.roots, ["/tmp/a", "/tmp/b"]);
 
-  assert.equal(upsertProject(registry, "t3code", {}), registry);
-  assert.equal(upsertProject(registry, "", { displayName: "X" }), registry);
-  assert.deepEqual(Object.keys(registry.projects), ["t3code"]);
+  NodeAssert.equal(upsertProject(registry, "t3code", {}), registry);
+  NodeAssert.equal(upsertProject(registry, "", { displayName: "X" }), registry);
+  NodeAssert.deepEqual(Object.keys(registry.projects), ["t3code"]);
 });
 
-test("upsertProject builds a projects map when the registry has none", () => {
+NodeTest.test("upsertProject builds a projects map when the registry has none", () => {
   const registry = {};
   upsertProject(registry, "a", { roots: "/tmp/a" });
-  assert.deepEqual(registry.projects.a.roots, ["/tmp/a"]);
+  NodeAssert.deepEqual(registry.projects.a.roots, ["/tmp/a"]);
 });
 
-test("a __proto__ project key cannot reach Object.prototype", (t) => {
+NodeTest.test("a __proto__ project key cannot reach Object.prototype", (t) => {
   const paths = tempPaths(t);
   const registry = { projects: {} };
   upsertProject(registry, "__proto__", { displayName: "nope" });
-  assert.equal({}.displayName, undefined);
-  assert.equal(registry.projects.__proto__.displayName, "nope");
-  assert.equal(classify(registry, "__proto__").effective, "unconfirmed");
+  NodeAssert.equal({}.displayName, undefined);
+  NodeAssert.equal(registry.projects.__proto__.displayName, "nope");
+  NodeAssert.equal(classify(registry, "__proto__").effective, "unconfirmed");
 
   saveRegistry(paths, registry);
   const reloaded = loadRegistry(paths).registry;
-  assert.equal(reloaded.projects.__proto__.displayName, "nope");
-  assert.equal({}.displayName, undefined);
+  NodeAssert.equal(reloaded.projects.__proto__.displayName, "nope");
+  NodeAssert.equal({}.displayName, undefined);
 });
 
-test("classify: an unknown project fails closed", () => {
+NodeTest.test("classify: an unknown project fails closed", () => {
   const registry = { projects: { a: { confirmed: true, visibility: "public" } } };
   for (const key of ["missing", "", null, undefined, "__proto__", "toString"]) {
     const classification = classify(registry, key);
-    assert.equal(classification.effective, "excluded", `key ${String(key)}`);
-    assert.equal(classification.entry, null);
-    assert.equal(classification.include, false);
-    assert.equal(isNameable(classification), false);
-    assert.equal(isDescribable(classification), false);
-    assert.equal(isCountable(classification), false);
+    NodeAssert.equal(classification.effective, "excluded", `key ${String(key)}`);
+    NodeAssert.equal(classification.entry, null);
+    NodeAssert.equal(classification.include, false);
+    NodeAssert.equal(isNameable(classification), false);
+    NodeAssert.equal(isDescribable(classification), false);
+    NodeAssert.equal(isCountable(classification), false);
   }
-  assert.equal(classify(null, "a").effective, "excluded");
-  assert.equal(classify({ projects: "nope" }, "a").effective, "excluded");
+  NodeAssert.equal(classify(null, "a").effective, "excluded");
+  NodeAssert.equal(classify({ projects: "nope" }, "a").effective, "excluded");
 });
 
-test("classify: the visibility matrix", () => {
+NodeTest.test("classify: the visibility matrix", () => {
   const registry = {
     projects: {
       pub: { visibility: "public", confirmed: true },
@@ -406,18 +415,18 @@ test("classify: the visibility matrix", () => {
   };
   const effective = (key) => classify(registry, key).effective;
 
-  assert.equal(effective("pub"), "public");
-  assert.equal(effective("gen"), "generic");
-  assert.equal(effective("priv"), "private");
-  assert.equal(effective("unconfirmed"), "unconfirmed");
-  assert.equal(effective("excluded"), "excluded");
+  NodeAssert.equal(effective("pub"), "public");
+  NodeAssert.equal(effective("gen"), "generic");
+  NodeAssert.equal(effective("priv"), "private");
+  NodeAssert.equal(effective("unconfirmed"), "unconfirmed");
+  NodeAssert.equal(effective("excluded"), "excluded");
   // An unrecognised visibility degrades to generic; a missing one defaults to it.
-  assert.equal(effective("weird"), "generic");
-  assert.equal(classify(registry, "weird").visibility, "generic");
-  assert.equal(effective("bare"), "generic");
+  NodeAssert.equal(effective("weird"), "generic");
+  NodeAssert.equal(classify(registry, "weird").visibility, "generic");
+  NodeAssert.equal(effective("bare"), "generic");
   // `include` defaults to true, and the raw entry comes back for the caller.
-  assert.equal(classify(registry, "pub").include, true);
-  assert.equal(classify(registry, "pub").entry, registry.projects.pub);
+  NodeAssert.equal(classify(registry, "pub").include, true);
+  NodeAssert.equal(classify(registry, "pub").entry, registry.projects.pub);
 
   const expected = {
     pub: [true, true, true],
@@ -428,23 +437,23 @@ test("classify: the visibility matrix", () => {
   };
   for (const [key, [nameable, describable, countable]] of Object.entries(expected)) {
     const classification = classify(registry, key);
-    assert.equal(isNameable(classification), nameable, `${key} nameable`);
-    assert.equal(isDescribable(classification), describable, `${key} describable`);
-    assert.equal(isCountable(classification), countable, `${key} countable`);
+    NodeAssert.equal(isNameable(classification), nameable, `${key} nameable`);
+    NodeAssert.equal(isDescribable(classification), describable, `${key} describable`);
+    NodeAssert.equal(isCountable(classification), countable, `${key} countable`);
   }
 });
 
-test("the visibility predicates are null-safe", () => {
+NodeTest.test("the visibility predicates are null-safe", () => {
   for (const junk of [null, undefined, {}, { effective: "nonsense" }]) {
-    assert.equal(isNameable(junk), false);
-    assert.equal(isDescribable(junk), false);
+    NodeAssert.equal(isNameable(junk), false);
+    NodeAssert.equal(isDescribable(junk), false);
   }
-  assert.equal(isCountable(null), false);
-  assert.equal(isCountable({}), false);
-  assert.equal(isCountable({ effective: "nonsense" }), true);
+  NodeAssert.equal(isCountable(null), false);
+  NodeAssert.equal(isCountable({}), false);
+  NodeAssert.equal(isCountable({ effective: "nonsense" }), true);
 });
 
-test("matchProjectByRoot: longest root wins and containment is by segment", () => {
+NodeTest.test("matchProjectByRoot: longest root wins and containment is by segment", () => {
   const registry = {
     projects: {
       outer: { roots: ["/tmp/dev"] },
@@ -455,19 +464,19 @@ test("matchProjectByRoot: longest root wins and containment is by segment", () =
     },
   };
 
-  assert.equal(matchProjectByRoot(registry, "/tmp/dev/t3code/apps/server/index.ts"), "inner");
-  assert.equal(matchProjectByRoot(registry, "/tmp/dev/t3code"), "inner");
-  assert.equal(matchProjectByRoot(registry, "/tmp/dev/other"), "outer");
+  NodeAssert.equal(matchProjectByRoot(registry, "/tmp/dev/t3code/apps/server/index.ts"), "inner");
+  NodeAssert.equal(matchProjectByRoot(registry, "/tmp/dev/t3code"), "inner");
+  NodeAssert.equal(matchProjectByRoot(registry, "/tmp/dev/other"), "outer");
   // /tmp/dev/t3code-work is a sibling of the root, not a child of it.
-  assert.equal(matchProjectByRoot(registry, "/tmp/dev/t3code-work"), "outer");
-  assert.equal(matchProjectByRoot(registry, "/tmp/development/x"), "sibling");
-  assert.equal(matchProjectByRoot(registry, "/tmp/elsewhere"), null);
-  assert.equal(matchProjectByRoot(registry, ""), null);
-  assert.equal(matchProjectByRoot(registry, null), null);
-  assert.equal(matchProjectByRoot(null, "/tmp/dev"), null);
+  NodeAssert.equal(matchProjectByRoot(registry, "/tmp/dev/t3code-work"), "outer");
+  NodeAssert.equal(matchProjectByRoot(registry, "/tmp/development/x"), "sibling");
+  NodeAssert.equal(matchProjectByRoot(registry, "/tmp/elsewhere"), null);
+  NodeAssert.equal(matchProjectByRoot(registry, ""), null);
+  NodeAssert.equal(matchProjectByRoot(registry, null), null);
+  NodeAssert.equal(matchProjectByRoot(null, "/tmp/dev"), null);
 });
 
-test("matchProjectByRoot expands ~ on both sides", (t) => {
+NodeTest.test("matchProjectByRoot expands ~ on both sides", (t) => {
   const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "worklog-home-"));
   const previous = process.env.HOME;
   process.env.HOME = home;
@@ -477,23 +486,26 @@ test("matchProjectByRoot expands ~ on both sides", (t) => {
   });
 
   const registry = { projects: { a: { roots: ["~/Developer/a"] } } };
-  assert.equal(matchProjectByRoot(registry, NodePath.join(home, "Developer/a/src/index.ts")), "a");
-  assert.equal(matchProjectByRoot(registry, "~/Developer/a"), "a");
-  assert.equal(matchProjectByRoot(registry, "~/Developer/b"), null);
+  NodeAssert.equal(
+    matchProjectByRoot(registry, NodePath.join(home, "Developer/a/src/index.ts")),
+    "a",
+  );
+  NodeAssert.equal(matchProjectByRoot(registry, "~/Developer/a"), "a");
+  NodeAssert.equal(matchProjectByRoot(registry, "~/Developer/b"), null);
 });
 
-test("redaction: missing, malformed and valid files", (t) => {
+NodeTest.test("redaction: missing, malformed and valid files", (t) => {
   const paths = tempPaths(t);
 
   const missing = loadRedaction(paths);
-  assert.deepEqual(missing.redaction, { alwaysRedact: [], replacements: {} });
-  assert.equal(missing.warnings.length, 1);
+  NodeAssert.deepEqual(missing.redaction, { alwaysRedact: [], replacements: {} });
+  NodeAssert.equal(missing.warnings.length, 1);
 
   NodeFS.mkdirSync(paths.config, { recursive: true });
   NodeFS.writeFileSync(paths.redactionYaml, "always_redact:\n  - [oops]\n", "utf8");
   const broken = loadRedaction(paths);
-  assert.deepEqual(broken.redaction, { alwaysRedact: [], replacements: {} });
-  assert.match(broken.warnings[0], /line 2/u);
+  NodeAssert.deepEqual(broken.redaction, { alwaysRedact: [], replacements: {} });
+  NodeAssert.match(broken.warnings[0], /line 2/u);
 
   NodeFS.writeFileSync(
     paths.redactionYaml,
@@ -511,12 +523,12 @@ test("redaction: missing, malformed and valid files", (t) => {
     "utf8",
   );
   const { redaction, warnings } = loadRedaction(paths);
-  assert.deepEqual(redaction.alwaysRedact, ["Some Client Name"]);
-  assert.deepEqual(redaction.replacements, { "Some Client Name": "a client" });
-  assert.equal(warnings.length, 2);
+  NodeAssert.deepEqual(redaction.alwaysRedact, ["Some Client Name"]);
+  NodeAssert.deepEqual(redaction.replacements, { "Some Client Name": "a client" });
+  NodeAssert.equal(warnings.length, 2);
 });
 
-test("redaction: save then load is lossless", (t) => {
+NodeTest.test("redaction: save then load is lossless", (t) => {
   const paths = tempPaths(t);
   const redaction = {
     alwaysRedact: ["Acme Corp", "Project Nimbus"],
@@ -525,30 +537,30 @@ test("redaction: save then load is lossless", (t) => {
   saveRedaction(paths, redaction);
 
   const text = NodeFS.readFileSync(paths.redactionYaml, "utf8");
-  assert.match(text, /^# \/worklog redaction list/u);
-  assert.match(text, /version: 1/u);
+  NodeAssert.match(text, /^# \/worklog redaction list/u);
+  NodeAssert.match(text, /version: 1/u);
 
   const loaded = loadRedaction(paths);
-  assert.deepEqual(loaded.warnings, []);
-  assert.deepEqual(loaded.redaction, redaction);
+  NodeAssert.deepEqual(loaded.warnings, []);
+  NodeAssert.deepEqual(loaded.redaction, redaction);
 
   // Empty is a legal state too.
   saveRedaction(paths, {});
-  assert.deepEqual(loadRedaction(paths).redaction, { alwaysRedact: [], replacements: {} });
+  NodeAssert.deepEqual(loadRedaction(paths).redaction, { alwaysRedact: [], replacements: {} });
 });
 
-test("no public function throws on junk input", (t) => {
+NodeTest.test("no public function throws on junk input", (t) => {
   const paths = tempPaths(t);
   for (const junk of [null, undefined, 42, "string", [], { projects: [] }]) {
-    assert.doesNotThrow(() => settingsOf(junk));
-    assert.doesNotThrow(() => identitiesOf(junk));
-    assert.doesNotThrow(() => classify(junk, "a"));
-    assert.doesNotThrow(() => matchProjectByRoot(junk, "/tmp/a"));
-    assert.doesNotThrow(() => upsertProject(junk, "a", { roots: junk }));
-    assert.doesNotThrow(() => projectKeyFor(junk, junk));
-    assert.doesNotThrow(() => saveRegistry(paths, junk));
-    assert.doesNotThrow(() => saveRedaction(paths, junk));
-    assert.doesNotThrow(() => loadRegistry(paths));
-    assert.doesNotThrow(() => loadRedaction(paths));
+    NodeAssert.doesNotThrow(() => settingsOf(junk));
+    NodeAssert.doesNotThrow(() => identitiesOf(junk));
+    NodeAssert.doesNotThrow(() => classify(junk, "a"));
+    NodeAssert.doesNotThrow(() => matchProjectByRoot(junk, "/tmp/a"));
+    NodeAssert.doesNotThrow(() => upsertProject(junk, "a", { roots: junk }));
+    NodeAssert.doesNotThrow(() => projectKeyFor(junk, junk));
+    NodeAssert.doesNotThrow(() => saveRegistry(paths, junk));
+    NodeAssert.doesNotThrow(() => saveRedaction(paths, junk));
+    NodeAssert.doesNotThrow(() => loadRegistry(paths));
+    NodeAssert.doesNotThrow(() => loadRedaction(paths));
   }
 });

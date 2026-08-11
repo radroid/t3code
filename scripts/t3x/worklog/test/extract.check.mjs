@@ -6,12 +6,12 @@
 // (in both directions) and the guarantee that no tool result and no absolute path survives into a
 // slice. Every fixture is synthetic; the real ~/.t3 and ~/.claude are never touched.
 
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import test, { after, before } from "node:test";
+import * as NodeSqlite from "node:sqlite";
+import * as NodeTest from "node:test";
 
 import {
   EXTRACT_SCHEMA_VERSION,
@@ -50,7 +50,7 @@ let roots = 0;
 let bases = 0;
 const savedHome = process.env.HOME;
 
-before(() => {
+NodeTest.before(() => {
   sandbox = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "worklog-"));
   // Nothing here resolves a default worklog root, but a bug that did must not be able to reach the
   // real home directory.
@@ -58,7 +58,7 @@ before(() => {
   NodeFS.mkdirSync(process.env.HOME, { recursive: true });
 });
 
-after(() => {
+NodeTest.after(() => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
   if (sandbox !== "") NodeFS.rmSync(sandbox, { recursive: true, force: true });
@@ -103,7 +103,7 @@ function newT3BaseDir({ threadId = "alpha", messages = [], activities = [] } = {
   bases += 1;
   const baseDir = NodePath.join(sandbox, `t3-${bases}`);
   NodeFS.mkdirSync(baseDir, { recursive: true });
-  const db = new DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
+  const db = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
   for (const statement of T3_SCHEMA) db.exec(statement);
 
   const insertMessage = db.prepare(
@@ -217,48 +217,54 @@ function inputFixture(overrides = {}) {
 
 // --- extractPath / loadExtract ------------------------------------------------------------------
 
-test("extractPath keeps every session in <root>/extracts as one filesystem-safe file", () => {
-  const root = newRoot();
-  const paths = worklogPaths(root);
+NodeTest.test(
+  "extractPath keeps every session in <root>/extracts as one filesystem-safe file",
+  () => {
+    const root = newRoot();
+    const paths = worklogPaths(root);
 
-  assert.equal(extractPath(root, "t3-alpha"), NodePath.join(paths.extracts, "t3-alpha.json"));
-  assert.equal(extractPath(paths, "t3-alpha"), NodePath.join(paths.extracts, "t3-alpha.json"));
+    NodeAssert.equal(extractPath(root, "t3-alpha"), NodePath.join(paths.extracts, "t3-alpha.json"));
+    NodeAssert.equal(
+      extractPath(paths, "t3-alpha"),
+      NodePath.join(paths.extracts, "t3-alpha.json"),
+    );
 
-  // A key is attacker-shaped only by accident (it comes from a session id), but it still becomes a
-  // filename, so traversal must be impossible.
-  const hostile = extractPath(root, "cc-../../etc/passwd");
-  assert.equal(NodePath.dirname(hostile), paths.extracts);
-  assert.ok(!NodePath.basename(hostile).includes(NodePath.sep));
-});
+    // A key is attacker-shaped only by accident (it comes from a session id), but it still becomes a
+    // filename, so traversal must be impossible.
+    const hostile = extractPath(root, "cc-../../etc/passwd");
+    NodeAssert.equal(NodePath.dirname(hostile), paths.extracts);
+    NodeAssert.ok(!NodePath.basename(hostile).includes(NodePath.sep));
+  },
+);
 
-test("loadExtract returns null for anything it cannot trust, and never throws", () => {
+NodeTest.test("loadExtract returns null for anything it cannot trust, and never throws", () => {
   const root = newRoot();
   const paths = worklogPaths(root);
   NodeFS.mkdirSync(paths.extracts, { recursive: true });
 
   const write = (key, text) => NodeFS.writeFileSync(extractPath(root, key), text, "utf8");
 
-  assert.equal(loadExtract(root, "missing"), null);
+  NodeAssert.equal(loadExtract(root, "missing"), null);
   write("corrupt", "{ this is not json");
-  assert.equal(loadExtract(root, "corrupt"), null);
+  NodeAssert.equal(loadExtract(root, "corrupt"), null);
   write("array", "[1, 2, 3]");
-  assert.equal(loadExtract(root, "array"), null);
+  NodeAssert.equal(loadExtract(root, "array"), null);
   write("future", JSON.stringify({ schemaVersion: 99, extract: payloadFixture() }));
-  assert.equal(loadExtract(root, "future"), null);
+  NodeAssert.equal(loadExtract(root, "future"), null);
   write(
     "hollow",
     JSON.stringify({ schemaVersion: 1, extract: { problem: "", approach: "", outcome: "" } }),
   );
-  assert.equal(loadExtract(root, "hollow"), null);
+  NodeAssert.equal(loadExtract(root, "hollow"), null);
   write(
     "no-extract",
     JSON.stringify({ schemaVersion: 1, cursor: { lastEventAt: "2026-08-10T15:00:00.000Z" } }),
   );
-  assert.equal(loadExtract(root, "no-extract"), null);
-  assert.equal(loadExtract(root, ""), null);
+  NodeAssert.equal(loadExtract(root, "no-extract"), null);
+  NodeAssert.equal(loadExtract(root, ""), null);
 });
 
-test("loadExtract normalises a partial file instead of trusting its shape", () => {
+NodeTest.test("loadExtract normalises a partial file instead of trusting its shape", () => {
   const root = newRoot();
   NodeFS.mkdirSync(worklogPaths(root).extracts, { recursive: true });
   NodeFS.writeFileSync(
@@ -279,14 +285,14 @@ test("loadExtract normalises a partial file instead of trusting its shape", () =
   );
 
   const loaded = loadExtract(root, "t3-alpha");
-  assert.equal(loaded.sessionKey, "t3-alpha");
+  NodeAssert.equal(loaded.sessionKey, "t3-alpha");
   // A missing cursor reads as "never read anything", which re-extracts once rather than skipping.
-  assert.deepEqual(loaded.cursor, { lastEventAt: null, lastTurnId: null, turnsProcessed: 0 });
-  assert.deepEqual(loaded.extract.artifacts, ["x"]);
-  assert.equal(loaded.history.length, 1);
+  NodeAssert.deepEqual(loaded.cursor, { lastEventAt: null, lastTurnId: null, turnsProcessed: 0 });
+  NodeAssert.deepEqual(loaded.extract.artifacts, ["x"]);
+  NodeAssert.equal(loaded.history.length, 1);
 });
 
-test("loadExtracts maps only the keys that have a usable file", () => {
+NodeTest.test("loadExtracts maps only the keys that have a usable file", () => {
   const root = newRoot();
   commitExtract({
     paths: root,
@@ -296,73 +302,76 @@ test("loadExtracts maps only the keys that have a usable file", () => {
   });
 
   const map = loadExtracts(root, ["t3-alpha", "t3-alpha", "cc-nothing", "", null]);
-  assert.ok(map instanceof Map);
-  assert.deepEqual([...map.keys()], ["t3-alpha"]);
-  assert.equal(map.get("t3-alpha").extract.status, "shipped");
-  assert.deepEqual([...loadExtracts(root, null).keys()], []);
+  NodeAssert.ok(map instanceof Map);
+  NodeAssert.deepEqual([...map.keys()], ["t3-alpha"]);
+  NodeAssert.equal(map.get("t3-alpha").extract.status, "shipped");
+  NodeAssert.deepEqual([...loadExtracts(root, null).keys()], []);
 });
 
 // --- needsExtraction ------------------------------------------------------------------------------
 
-test("needsExtraction clears the materiality bar on files, tool activity, or two prompts", () => {
-  const withFiles = needsExtraction(
-    sessionFixture({ materiality: { turnsWithFiles: 1, toolActivities: 0, userPrompts: 0 } }),
-    null,
-  );
-  assert.equal(withFiles.needed, true);
-  assert.match(withFiles.reason, /first extraction/u);
+NodeTest.test(
+  "needsExtraction clears the materiality bar on files, tool activity, or two prompts",
+  () => {
+    const withFiles = needsExtraction(
+      sessionFixture({ materiality: { turnsWithFiles: 1, toolActivities: 0, userPrompts: 0 } }),
+      null,
+    );
+    NodeAssert.equal(withFiles.needed, true);
+    NodeAssert.match(withFiles.reason, /first extraction/u);
 
-  const withTools = needsExtraction(
-    sessionFixture({
-      files: [],
-      materiality: { turnsWithFiles: 0, toolActivities: 3, userPrompts: 1 },
-    }),
-    null,
-  );
-  assert.equal(withTools.needed, true);
+    const withTools = needsExtraction(
+      sessionFixture({
+        files: [],
+        materiality: { turnsWithFiles: 0, toolActivities: 3, userPrompts: 1 },
+      }),
+      null,
+    );
+    NodeAssert.equal(withTools.needed, true);
 
-  const withPrompts = needsExtraction(
-    sessionFixture({
-      files: [],
-      materiality: { turnsWithFiles: 0, toolActivities: 0, userPrompts: 2 },
-    }),
-    null,
-  );
-  assert.equal(withPrompts.needed, true);
+    const withPrompts = needsExtraction(
+      sessionFixture({
+        files: [],
+        materiality: { turnsWithFiles: 0, toolActivities: 0, userPrompts: 2 },
+      }),
+      null,
+    );
+    NodeAssert.equal(withPrompts.needed, true);
 
-  // The raw shapes both stores produce work without a `materiality` block.
-  const rawClaudeSession = needsExtraction(
-    { key: "cc-1", endedAt: "2026-08-10T15:00:00.000Z", promptCount: 1, toolUseCount: 9 },
-    null,
-  );
-  assert.equal(rawClaudeSession.needed, true);
+    // The raw shapes both stores produce work without a `materiality` block.
+    const rawClaudeSession = needsExtraction(
+      { key: "cc-1", endedAt: "2026-08-10T15:00:00.000Z", promptCount: 1, toolUseCount: 9 },
+      null,
+    );
+    NodeAssert.equal(rawClaudeSession.needed, true);
 
-  // A bundle session carries no counts at all — only `files` and `turnCount`.
-  const bundleShaped = needsExtraction(
-    { key: "t3-1", endedAt: "2026-08-10T15:00:00.000Z", turnCount: 4, files: [], signals: [] },
-    null,
-  );
-  assert.equal(bundleShaped.needed, true);
-});
+    // A bundle session carries no counts at all — only `files` and `turnCount`.
+    const bundleShaped = needsExtraction(
+      { key: "t3-1", endedAt: "2026-08-10T15:00:00.000Z", turnCount: 4, files: [], signals: [] },
+      null,
+    );
+    NodeAssert.equal(bundleShaped.needed, true);
+  },
+);
 
-test("needsExtraction takes the collector's verdict as a boost, never as a veto", () => {
+NodeTest.test("needsExtraction takes the collector's verdict as a boost, never as a veto", () => {
   const thin = { key: "t3-1", endedAt: "2026-08-10T15:00:00.000Z", turnCount: 1, files: [] };
 
-  assert.equal(needsExtraction(thin, null).needed, false);
+  NodeAssert.equal(needsExtraction(thin, null).needed, false);
   // The collector counted tool events this module cannot see, so it may add the session back.
-  assert.equal(needsExtraction({ ...thin, needsExtraction: true }, null).needed, true);
-  assert.equal(needsExtraction({ ...thin, material: true }, null).needed, true);
+  NodeAssert.equal(needsExtraction({ ...thin, needsExtraction: true }, null).needed, true);
+  NodeAssert.equal(needsExtraction({ ...thin, material: true }, null).needed, true);
   // It may not take one away: a session with real material stays queued whatever the flag says.
   const material = sessionFixture({ needsExtraction: false, material: false });
-  assert.equal(needsExtraction(material, null).needed, true);
+  NodeAssert.equal(needsExtraction(material, null).needed, true);
   // And it can never re-open a cursor that has already passed the session's last event.
   const done = needsExtraction(sessionFixture({ needsExtraction: true }), {
     cursor: { lastEventAt: "2026-08-10T15:00:00.000Z" },
   });
-  assert.equal(done.needed, false);
+  NodeAssert.equal(done.needed, false);
 });
 
-test("needsExtraction refuses a session below the bar and says why", () => {
+NodeTest.test("needsExtraction refuses a session below the bar and says why", () => {
   const thin = needsExtraction(
     sessionFixture({
       files: [],
@@ -370,17 +379,17 @@ test("needsExtraction refuses a session below the bar and says why", () => {
     }),
     null,
   );
-  assert.equal(thin.needed, false);
-  assert.equal(thin.newEvents, 0);
-  assert.match(thin.reason, /below the materiality bar/u);
-  assert.match(thin.reason, /0 turns with files, 2 tool activities, 1 prompt/u);
+  NodeAssert.equal(thin.needed, false);
+  NodeAssert.equal(thin.newEvents, 0);
+  NodeAssert.match(thin.reason, /below the materiality bar/u);
+  NodeAssert.match(thin.reason, /0 turns with files, 2 tool activities, 1 prompt/u);
 
-  assert.deepEqual(needsExtraction(null, null), {
+  NodeAssert.deepEqual(needsExtraction(null, null), {
     needed: false,
     reason: "not a session",
     newEvents: 0,
   });
-  assert.match(
+  NodeAssert.match(
     needsExtraction({ key: "t3-x", turnCount: 9 }, null).reason,
     /no timestamped events/u,
   );
@@ -389,11 +398,11 @@ test("needsExtraction refuses a session below the bar and says why", () => {
     sessionFixture({ excluded: { reason: "t3code-driven", linkedTo: "thread-1" } }),
     null,
   );
-  assert.equal(excluded.needed, false);
-  assert.match(excluded.reason, /excluded \(t3code-driven\)/u);
+  NodeAssert.equal(excluded.needed, false);
+  NodeAssert.match(excluded.reason, /excluded \(t3code-driven\)/u);
 });
 
-test("needsExtraction compares against the cursor, not the calendar", () => {
+NodeTest.test("needsExtraction compares against the cursor, not the calendar", () => {
   const session = sessionFixture({
     eventTimes: [
       "2026-08-10T12:00:00.000Z",
@@ -405,22 +414,25 @@ test("needsExtraction compares against the cursor, not the calendar", () => {
   const behind = { cursor: { lastEventAt: "2026-08-10T12:30:00.000Z" } };
   const ahead = { cursor: { lastEventAt: "2026-08-11T09:00:00.000Z" } };
 
-  assert.equal(needsExtraction(session, atCursor).needed, false);
-  assert.match(needsExtraction(session, atCursor).reason, /already extracted through/u);
-  assert.equal(needsExtraction(session, ahead).needed, false);
+  NodeAssert.equal(needsExtraction(session, atCursor).needed, false);
+  NodeAssert.match(needsExtraction(session, atCursor).reason, /already extracted through/u);
+  NodeAssert.equal(needsExtraction(session, ahead).needed, false);
 
   const resumed = needsExtraction(session, behind);
-  assert.equal(resumed.needed, true);
-  assert.equal(resumed.newEvents, 2);
-  assert.match(resumed.reason, /2 new events since 2026-08-10T12:30:00.000Z/u);
+  NodeAssert.equal(resumed.needed, true);
+  NodeAssert.equal(resumed.newEvents, 2);
+  NodeAssert.match(resumed.reason, /2 new events since 2026-08-10T12:30:00.000Z/u);
 
   // An unparseable cursor is treated as no cursor at all rather than as "up to date".
-  assert.equal(needsExtraction(session, { cursor: { lastEventAt: "not a date" } }).needed, true);
+  NodeAssert.equal(
+    needsExtraction(session, { cursor: { lastEventAt: "not a date" } }).needed,
+    true,
+  );
 });
 
 // --- buildSlice -----------------------------------------------------------------------------------
 
-test("buildSlice renders every section from the session's own material", () => {
+NodeTest.test("buildSlice renders every section from the session's own material", () => {
   const slice = buildSlice(sessionFixture(), { ...inputFixture(), homeDir: HOME });
 
   for (const heading of [
@@ -431,39 +443,42 @@ test("buildSlice renders every section from the session's own material", () => {
     "## Files",
     "## Commits",
   ]) {
-    assert.ok(slice.includes(heading), `expected ${heading} in the slice`);
+    NodeAssert.ok(slice.includes(heading), `expected ${heading} in the slice`);
   }
-  assert.ok(slice.includes("- title: Ship the worklog skill"));
-  assert.ok(slice.includes("- branch: t3x/worklog"));
-  assert.ok(slice.includes("- turns: 6"));
-  assert.ok(slice.includes("- window: 2026-08-10T12:00:00.000Z -> 2026-08-10T15:00:00.000Z"));
-  assert.ok(slice.includes("1. Build the extraction cache."));
-  assert.ok(slice.includes("2. Cap the slice at 12k chars."));
-  assert.ok(slice.includes("First reply: Starting with the cursor."));
-  assert.ok(slice.includes("Last reply: Cap enforced by dropping sections."));
-  assert.ok(slice.includes("- extract.mjs +120/-4"));
-  assert.ok(slice.includes("- feat(t3x): add the extraction cache"));
+  NodeAssert.ok(slice.includes("- title: Ship the worklog skill"));
+  NodeAssert.ok(slice.includes("- branch: t3x/worklog"));
+  NodeAssert.ok(slice.includes("- turns: 6"));
+  NodeAssert.ok(slice.includes("- window: 2026-08-10T12:00:00.000Z -> 2026-08-10T15:00:00.000Z"));
+  NodeAssert.ok(slice.includes("1. Build the extraction cache."));
+  NodeAssert.ok(slice.includes("2. Cap the slice at 12k chars."));
+  NodeAssert.ok(slice.includes("First reply: Starting with the cursor."));
+  NodeAssert.ok(slice.includes("Last reply: Cap enforced by dropping sections."));
+  NodeAssert.ok(slice.includes("- extract.mjs +120/-4"));
+  NodeAssert.ok(slice.includes("- feat(t3x): add the extraction cache"));
   // The file's directory is a location; only the basename may travel.
-  assert.ok(!slice.includes(HOME));
+  NodeAssert.ok(!slice.includes(HOME));
 });
 
-test("buildSlice reduces deep paths to basenames but leaves owner/repo and branches alone", () => {
-  const slice = buildSlice(sessionFixture(), {
-    homeDir: HOME,
-    activities: [
-      { detail: "Edit: scripts/t3x/worklog/lib/extract.mjs" },
-      { detail: "Bash: git push origin t3x/worklog" },
-      { detail: "Bash: gh pr list --repo radroid/t3code" },
-    ],
-  });
+NodeTest.test(
+  "buildSlice reduces deep paths to basenames but leaves owner/repo and branches alone",
+  () => {
+    const slice = buildSlice(sessionFixture(), {
+      homeDir: HOME,
+      activities: [
+        { detail: "Edit: scripts/t3x/worklog/lib/extract.mjs" },
+        { detail: "Bash: git push origin t3x/worklog" },
+        { detail: "Bash: gh pr list --repo radroid/t3code" },
+      ],
+    });
 
-  assert.ok(slice.includes("- Edit: extract.mjs"));
-  assert.ok(!slice.includes("scripts/t3x/worklog/lib"));
-  assert.ok(slice.includes("git push origin t3x/worklog"));
-  assert.ok(slice.includes("--repo radroid/t3code"));
-});
+    NodeAssert.ok(slice.includes("- Edit: extract.mjs"));
+    NodeAssert.ok(!slice.includes("scripts/t3x/worklog/lib"));
+    NodeAssert.ok(slice.includes("git push origin t3x/worklog"));
+    NodeAssert.ok(slice.includes("--repo radroid/t3code"));
+  },
+);
 
-test("buildSlice never lets a tool result or a secret out of an activity", () => {
+NodeTest.test("buildSlice never lets a tool result or a secret out of an activity", () => {
   const slice = buildSlice(sessionFixture(), {
     homeDir: HOME,
     activities: [
@@ -478,15 +493,15 @@ test("buildSlice never lets a tool result or a secret out of an activity", () =>
     ],
   });
 
-  assert.ok(!slice.includes("SUPER-SECRET-RESULT-BLOB"));
-  assert.ok(!slice.includes(["AKIA", "IOSFODNN7EXAMPLE"].join("")));
-  assert.ok(!slice.includes(["ghp", "_abcdefghijklmnopqrstuvwxyz012345"].join("")));
-  assert.ok(!slice.includes(HOME));
+  NodeAssert.ok(!slice.includes("SUPER-SECRET-RESULT-BLOB"));
+  NodeAssert.ok(!slice.includes(["AKIA", "IOSFODNN7EXAMPLE"].join("")));
+  NodeAssert.ok(!slice.includes(["ghp", "_abcdefghijklmnopqrstuvwxyz012345"].join("")));
+  NodeAssert.ok(!slice.includes(HOME));
   // The shape of the work still survives the scrub, which is the point of a slice.
-  assert.ok(slice.includes(".env"));
+  NodeAssert.ok(slice.includes(".env"));
 });
 
-test("buildSlice applies the configured redaction terms", () => {
+NodeTest.test("buildSlice applies the configured redaction terms", () => {
   const slice = buildSlice(sessionFixture({ title: "Northwind Books migration" }), {
     homeDir: HOME,
     messages: [{ role: "user", text: "Finish the Northwind Books import." }],
@@ -496,11 +511,11 @@ test("buildSlice applies the configured redaction terms", () => {
     },
   });
 
-  assert.ok(!slice.includes("Northwind Books"));
-  assert.ok(slice.includes("a client"));
+  NodeAssert.ok(!slice.includes("Northwind Books"));
+  NodeAssert.ok(slice.includes("a client"));
 });
 
-test("buildSlice caps prompts, prompt length, activity lines, and files", () => {
+NodeTest.test("buildSlice caps prompts, prompt length, activity lines, and files", () => {
   const messages = [];
   for (let index = 0; index < 15; index += 1) {
     messages.push({ role: "user", text: `prompt ${index} ${"x".repeat(2000)}` });
@@ -525,74 +540,80 @@ test("buildSlice caps prompts, prompt length, activity lines, and files", () => 
     maxChars: 200_000,
   });
 
-  assert.ok(slice.includes("12. prompt 11"));
-  assert.ok(!slice.includes("13. prompt 12"));
-  assert.ok(slice.includes("(3 later prompts omitted)"));
+  NodeAssert.ok(slice.includes("12. prompt 11"));
+  NodeAssert.ok(!slice.includes("13. prompt 12"));
+  NodeAssert.ok(slice.includes("(3 later prompts omitted)"));
 
   const promptLine = slice.split("\n").find((line) => line.startsWith("1. prompt 0"));
-  assert.equal(promptLine.length, "1. ".length + 1200);
-  assert.ok(promptLine.endsWith("…"));
+  NodeAssert.equal(promptLine.length, "1. ".length + 1200);
+  NodeAssert.ok(promptLine.endsWith("…"));
 
   const activityCount = slice.split("\n").filter((line) => line.startsWith("- Bash: step ")).length;
-  assert.equal(activityCount, 40);
-  assert.ok(slice.includes("(20 more distinct activities omitted)"));
+  NodeAssert.equal(activityCount, 40);
+  NodeAssert.ok(slice.includes("(20 more distinct activities omitted)"));
 
   const fileCount = slice.split("\n").filter((line) => /^- file-\d+\.ts /u.test(line)).length;
-  assert.equal(fileCount, 30);
-  assert.ok(slice.includes("(10 more files omitted)"));
+  NodeAssert.equal(fileCount, 30);
+  NodeAssert.ok(slice.includes("(10 more files omitted)"));
 });
 
-test("buildSlice enforces maxChars by dropping low-value sections from the bottom up", () => {
-  const messages = [];
-  for (let index = 0; index < 6; index += 1) {
-    messages.push({ role: "user", text: `prompt ${index} ${"y".repeat(1200)}` });
-    messages.push({ role: "assistant", text: `reply ${index} ${"z".repeat(900)}` });
-  }
-  const activities = [];
-  for (let index = 0; index < 40; index += 1) {
-    activities.push({ detail: `Bash: a long command number ${index} ${"q".repeat(150)}` });
-  }
-  const files = [];
-  for (let index = 0; index < 30; index += 1) {
-    files.push({ path: `long-file-name-${index}.ts`, additions: 1, deletions: 1 });
-  }
-  const commits = [];
-  for (let index = 0; index < 30; index += 1) commits.push({ subject: `commit subject ${index}` });
+NodeTest.test(
+  "buildSlice enforces maxChars by dropping low-value sections from the bottom up",
+  () => {
+    const messages = [];
+    for (let index = 0; index < 6; index += 1) {
+      messages.push({ role: "user", text: `prompt ${index} ${"y".repeat(1200)}` });
+      messages.push({ role: "assistant", text: `reply ${index} ${"z".repeat(900)}` });
+    }
+    const activities = [];
+    for (let index = 0; index < 40; index += 1) {
+      activities.push({ detail: `Bash: a long command number ${index} ${"q".repeat(150)}` });
+    }
+    const files = [];
+    for (let index = 0; index < 30; index += 1) {
+      files.push({ path: `long-file-name-${index}.ts`, additions: 1, deletions: 1 });
+    }
+    const commits = [];
+    for (let index = 0; index < 30; index += 1)
+      commits.push({ subject: `commit subject ${index}` });
 
-  const options = { messages, activities, commits, homeDir: HOME };
-  const capped = buildSlice(sessionFixture({ files }), options);
+    const options = { messages, activities, commits, homeDir: HOME };
+    const capped = buildSlice(sessionFixture({ files }), options);
 
-  assert.ok(capped.length <= 12_000, `slice was ${capped.length} chars`);
-  assert.ok(capped.includes("## Session"));
-  assert.ok(capped.includes("## Prompts"));
-  assert.ok(capped.includes("## Assistant"));
-  // Dropped bottom-up, and the note that says so sits above the prompts so truncation cannot eat it.
-  const lines = capped.split("\n");
-  const noteIndex = lines.indexOf("_Omitted to fit the size cap: Commits, Files, Activity._");
-  assert.notEqual(noteIndex, -1);
-  assert.ok(noteIndex < lines.indexOf("## Prompts"));
-  assert.ok(!capped.includes("commit subject 0"));
-  assert.ok(!capped.includes("long-file-name-0.ts"));
-  assert.ok(!capped.includes("a long command number 0"));
-  assert.ok(!capped.endsWith("[slice truncated to fit the size cap]"));
+    NodeAssert.ok(capped.length <= 12_000, `slice was ${capped.length} chars`);
+    NodeAssert.ok(capped.includes("## Session"));
+    NodeAssert.ok(capped.includes("## Prompts"));
+    NodeAssert.ok(capped.includes("## Assistant"));
+    // Dropped bottom-up, and the note that says so sits above the prompts so truncation cannot eat it.
+    const lines = capped.split("\n");
+    const noteIndex = lines.indexOf("_Omitted to fit the size cap: Commits, Files, Activity._");
+    NodeAssert.notEqual(noteIndex, -1);
+    NodeAssert.ok(noteIndex < lines.indexOf("## Prompts"));
+    NodeAssert.ok(!capped.includes("commit subject 0"));
+    NodeAssert.ok(!capped.includes("long-file-name-0.ts"));
+    NodeAssert.ok(!capped.includes("a long command number 0"));
+    NodeAssert.ok(!capped.endsWith("[slice truncated to fit the size cap]"));
 
-  // Below the size of the two pinned sections there is nothing left to drop, so it truncates.
-  const tiny = buildSlice(sessionFixture({ files }), { ...options, maxChars: 900 });
-  assert.ok(tiny.length <= 900, `slice was ${tiny.length} chars`);
-  assert.ok(tiny.endsWith("[slice truncated to fit the size cap]"));
-  assert.ok(tiny.includes("_Omitted to fit the size cap: Commits, Files, Activity, Assistant._"));
-});
+    // Below the size of the two pinned sections there is nothing left to drop, so it truncates.
+    const tiny = buildSlice(sessionFixture({ files }), { ...options, maxChars: 900 });
+    NodeAssert.ok(tiny.length <= 900, `slice was ${tiny.length} chars`);
+    NodeAssert.ok(tiny.endsWith("[slice truncated to fit the size cap]"));
+    NodeAssert.ok(
+      tiny.includes("_Omitted to fit the size cap: Commits, Files, Activity, Assistant._"),
+    );
+  },
+);
 
-test("buildSlice degrades instead of throwing", () => {
-  assert.equal(typeof buildSlice(null, null), "string");
-  assert.equal(typeof buildSlice(undefined), "string");
-  assert.equal(
+NodeTest.test("buildSlice degrades instead of throwing", () => {
+  NodeAssert.equal(typeof buildSlice(null, null), "string");
+  NodeAssert.equal(typeof buildSlice(undefined), "string");
+  NodeAssert.equal(
     buildSlice(sessionFixture(), { messages: "not an array" }).includes("## Session"),
     true,
   );
 });
 
-test("buildSlice falls back to a Claude Code session's own prompts", () => {
+NodeTest.test("buildSlice falls back to a Claude Code session's own prompts", () => {
   const slice = buildSlice(
     {
       key: "cc-1",
@@ -604,13 +625,13 @@ test("buildSlice falls back to a Claude Code session's own prompts", () => {
     },
     { homeDir: HOME },
   );
-  assert.ok(slice.includes("1. Set up the release relay."));
-  assert.ok(slice.includes("2. Ship it."));
+  NodeAssert.ok(slice.includes("1. Set up the release relay."));
+  NodeAssert.ok(slice.includes("2. Ship it."));
 });
 
 // --- queue / commitExtract ------------------------------------------------------------------------
 
-test("no message is ever read twice: queue -> commit -> queue queues nothing", () => {
+NodeTest.test("no message is ever read twice: queue -> commit -> queue queues nothing", () => {
   const root = newRoot();
   const alpha = sessionFixture();
   const beta = sessionFixture({
@@ -632,18 +653,18 @@ test("no message is ever read twice: queue -> commit -> queue queues nothing", (
   };
 
   const first = queue({ bundle, paths: root, deps, redaction: REDACTION });
-  assert.deepEqual(first.warnings, []);
-  assert.equal(first.queued.length, 2);
-  assert.deepEqual(first.skipped, []);
-  assert.deepEqual(
+  NodeAssert.deepEqual(first.warnings, []);
+  NodeAssert.equal(first.queued.length, 2);
+  NodeAssert.deepEqual(first.skipped, []);
+  NodeAssert.deepEqual(
     calls.map((call) => call.afterIso),
     [null, null],
   );
   for (const entry of first.queued) {
-    assert.ok(NodeFS.existsSync(entry.slicePath));
-    assert.equal(NodePath.dirname(entry.slicePath), worklogPaths(root).slices);
-    assert.ok(NodeFS.readFileSync(entry.slicePath, "utf8").includes("## Session"));
-    assert.ok(entry.newEvents >= 1);
+    NodeAssert.ok(NodeFS.existsSync(entry.slicePath));
+    NodeAssert.equal(NodePath.dirname(entry.slicePath), worklogPaths(root).slices);
+    NodeAssert.ok(NodeFS.readFileSync(entry.slicePath, "utf8").includes("## Session"));
+    NodeAssert.ok(entry.newEvents >= 1);
   }
 
   const byKey = new Map([
@@ -660,24 +681,24 @@ test("no message is ever read twice: queue -> commit -> queue queues nothing", (
   }
 
   const second = queue({ bundle, paths: root, deps, redaction: REDACTION });
-  assert.deepEqual(second.queued, []);
-  assert.equal(second.skipped.length, 2);
-  for (const entry of second.skipped) assert.match(entry.reason, /already extracted through/u);
+  NodeAssert.deepEqual(second.queued, []);
+  NodeAssert.equal(second.skipped.length, 2);
+  for (const entry of second.skipped) NodeAssert.match(entry.reason, /already extracted through/u);
   // The real proof: the second run never asked for the material at all.
-  assert.equal(calls.length, 2);
+  NodeAssert.equal(calls.length, 2);
 
   // New events after the cursor put the session back in the queue, reading only what is new.
   alpha.endedAt = "2026-08-10T18:00:00.000Z";
   const third = queue({ bundle, paths: root, deps, redaction: REDACTION });
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     third.queued.map((entry) => entry.sessionKey),
     ["t3-alpha"],
   );
-  assert.equal(calls.length, 3);
-  assert.equal(calls[2].afterIso, "2026-08-10T15:00:00.000Z");
+  NodeAssert.equal(calls.length, 3);
+  NodeAssert.equal(calls[2].afterIso, "2026-08-10T15:00:00.000Z");
 });
 
-test("queue orders by material value and honours the per-run limit", () => {
+NodeTest.test("queue orders by material value and honours the per-run limit", () => {
   const root = newRoot();
   const sessions = [
     sessionFixture({
@@ -699,17 +720,17 @@ test("queue orders by material value and honours the per-run limit", () => {
   ];
 
   const all = queue({ bundle: { sessions }, paths: worklogPaths(root), limit: 8 });
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     all.queued.map((entry) => entry.sessionKey),
     ["t3-big-edit", "t3-small-edit", "t3-chatty"],
   );
 
   const capped = queue({ bundle: { sessions }, paths: root, limit: 2 });
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     capped.queued.map((entry) => entry.sessionKey),
     ["t3-big-edit", "t3-small-edit"],
   );
-  assert.deepEqual(capped.skipped, [
+  NodeAssert.deepEqual(capped.skipped, [
     {
       sessionKey: "t3-chatty",
       title: "Ship the worklog skill",
@@ -719,7 +740,7 @@ test("queue orders by material value and honours the per-run limit", () => {
   ]);
 });
 
-test("queue skips immaterial and excluded sessions, and reports the reason", () => {
+NodeTest.test("queue skips immaterial and excluded sessions, and reports the reason", () => {
   const root = newRoot();
   const sessions = [
     sessionFixture({
@@ -735,83 +756,89 @@ test("queue skips immaterial and excluded sessions, and reports the reason", () 
   ];
 
   const result = queue({ bundle: { sessions }, paths: root });
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     result.queued.map((entry) => entry.sessionKey),
     ["t3-real"],
   );
-  assert.deepEqual(result.skipped.map((entry) => entry.sessionKey).sort(), [
+  NodeAssert.deepEqual(result.skipped.map((entry) => entry.sessionKey).sort(), [
     "cc-linked",
     "t3-thin",
   ]);
-  assert.ok(!NodeFS.existsSync(NodePath.join(worklogPaths(root).slices, "t3-thin.md")));
+  NodeAssert.ok(!NodeFS.existsSync(NodePath.join(worklogPaths(root).slices, "t3-thin.md")));
 });
 
-test("queue degrades a missing bundle, a keyless session, and a failing loader into warnings", () => {
-  const root = newRoot();
+NodeTest.test(
+  "queue degrades a missing bundle, a keyless session, and a failing loader into warnings",
+  () => {
+    const root = newRoot();
 
-  const nothing = queue({ paths: root });
-  assert.deepEqual(nothing.queued, []);
-  assert.match(nothing.warnings[0], /No evidence bundle/u);
+    const nothing = queue({ paths: root });
+    NodeAssert.deepEqual(nothing.queued, []);
+    NodeAssert.match(nothing.warnings[0], /No evidence bundle/u);
 
-  const empty = queue({ bundle: { sessions: [] }, paths: root });
-  assert.match(empty.warnings[0], /no sessions/u);
+    const empty = queue({ bundle: { sessions: [] }, paths: root });
+    NodeAssert.match(empty.warnings[0], /no sessions/u);
 
-  const keyless = queue({ bundle: { sessions: [sessionFixture({ key: "" })] }, paths: root });
-  assert.deepEqual(keyless.queued, []);
-  assert.match(keyless.warnings[0], /no key/u);
+    const keyless = queue({ bundle: { sessions: [sessionFixture({ key: "" })] }, paths: root });
+    NodeAssert.deepEqual(keyless.queued, []);
+    NodeAssert.match(keyless.warnings[0], /no key/u);
 
-  const thrown = queue({
-    bundle: { sessions: [sessionFixture()] },
-    paths: root,
-    deps: {
-      loadInput: () => {
-        throw new Error(`could not open ${HOME}/Developer/t3code/state.sqlite`);
+    const thrown = queue({
+      bundle: { sessions: [sessionFixture()] },
+      paths: root,
+      deps: {
+        loadInput: () => {
+          throw new Error(`could not open ${HOME}/Developer/t3code/state.sqlite`);
+        },
       },
-    },
-  });
-  // The session is still queued from what the bundle already knows, and the warning cannot leak
-  // the path that failed.
-  assert.equal(thrown.queued.length, 1);
-  assert.match(thrown.warnings[0], /Could not read new material for t3-alpha/u);
-  assert.ok(!thrown.warnings[0].includes(HOME));
+    });
+    // The session is still queued from what the bundle already knows, and the warning cannot leak
+    // the path that failed.
+    NodeAssert.equal(thrown.queued.length, 1);
+    NodeAssert.match(thrown.warnings[0], /Could not read new material for t3-alpha/u);
+    NodeAssert.ok(!thrown.warnings[0].includes(HOME));
 
-  const async = queue({
-    bundle: { sessions: [sessionFixture()] },
-    paths: root,
-    deps: { loadInput: async () => inputFixture() },
-  });
-  assert.equal(async.queued.length, 1);
-  assert.match(async.warnings[0], /must be synchronous/u);
-});
+    const async = queue({
+      bundle: { sessions: [sessionFixture()] },
+      paths: root,
+      deps: { loadInput: async () => inputFixture() },
+    });
+    NodeAssert.equal(async.queued.length, 1);
+    NodeAssert.match(async.warnings[0], /must be synchronous/u);
+  },
+);
 
-test("queue warns when it has no redaction list, and never takes one off the bundle", () => {
-  const root = newRoot();
-  // `collect()` emits no `redaction` field. The fallback that used to read `bundle.redaction` here
-  // meant the configured terms were applied to exactly zero real slices — and said nothing.
-  const bundle = {
-    ...bundleFixture({ sessions: [sessionFixture({ title: "Northwind Books migration" })] }),
-    redaction: REDACTION,
-  };
-  const deps = { loadInput: () => inputFixture() };
+NodeTest.test(
+  "queue warns when it has no redaction list, and never takes one off the bundle",
+  () => {
+    const root = newRoot();
+    // `collect()` emits no `redaction` field. The fallback that used to read `bundle.redaction` here
+    // meant the configured terms were applied to exactly zero real slices — and said nothing.
+    const bundle = {
+      ...bundleFixture({ sessions: [sessionFixture({ title: "Northwind Books migration" })] }),
+      redaction: REDACTION,
+    };
+    const deps = { loadInput: () => inputFixture() };
 
-  const unwired = queue({ bundle, paths: root, deps });
-  assert.equal(unwired.queued.length, 1);
-  assert.ok(
-    unwired.warnings.some((warning) => /No always-redact terms were supplied/u.test(warning)),
-    `expected a redaction warning, got ${JSON.stringify(unwired.warnings)}`,
-  );
-  assert.ok(sliceTextOf(unwired).includes("Northwind Books"));
+    const unwired = queue({ bundle, paths: root, deps });
+    NodeAssert.equal(unwired.queued.length, 1);
+    NodeAssert.ok(
+      unwired.warnings.some((warning) => /No always-redact terms were supplied/u.test(warning)),
+      `expected a redaction warning, got ${JSON.stringify(unwired.warnings)}`,
+    );
+    NodeAssert.ok(sliceTextOf(unwired).includes("Northwind Books"));
 
-  const wired = queue({ bundle, paths: newRoot(), deps, redaction: REDACTION });
-  assert.deepEqual(wired.warnings, []);
-  const slice = sliceTextOf(wired);
-  assert.ok(!slice.includes("Northwind Books"));
-  assert.ok(slice.includes("a client"));
-});
+    const wired = queue({ bundle, paths: newRoot(), deps, redaction: REDACTION });
+    NodeAssert.deepEqual(wired.warnings, []);
+    const slice = sliceTextOf(wired);
+    NodeAssert.ok(!slice.includes("Northwind Books"));
+    NodeAssert.ok(slice.includes("a client"));
+  },
+);
 
 // --- the default loader ---------------------------------------------------------------------------
 
-test("the default loader bounds a first extraction to the collected window", () => {
+NodeTest.test("the default loader bounds a first extraction to the collected window", () => {
   const root = newRoot();
   const t3BaseDirs = [
     newT3BaseDir({
@@ -831,16 +858,19 @@ test("the default loader bounds a first extraction to the collected window", () 
     redaction: REDACTION,
   });
 
-  assert.deepEqual(result.warnings, []);
+  NodeAssert.deepEqual(result.warnings, []);
   const slice = sliceTextOf(result);
-  assert.ok(slice.includes("Today: bound the extraction read."));
+  NodeAssert.ok(slice.includes("Today: bound the extraction read."));
   // With only the cursor as a bound — null on a first run — the read starts at the beginning of
   // the thread, so a thread opened days ago gets summarised as today's work and cached that way.
-  assert.ok(!slice.includes("Old day work"), "a message from before the window reached the slice");
-  assert.ok(!slice.includes("Tomorrow:"), "a message from after the window reached the slice");
+  NodeAssert.ok(
+    !slice.includes("Old day work"),
+    "a message from before the window reached the slice",
+  );
+  NodeAssert.ok(!slice.includes("Tomorrow:"), "a message from after the window reached the slice");
 });
 
-test("the default loader will not let a stale cursor reach back past the window", () => {
+NodeTest.test("the default loader will not let a stale cursor reach back past the window", () => {
   const root = newRoot();
   const t3BaseDirs = [
     newT3BaseDir({
@@ -871,18 +901,21 @@ test("the default loader will not let a stale cursor reach back past the window"
     redaction: REDACTION,
   });
 
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     result.queued.map((entry) => entry.sessionKey),
     ["t3-alpha"],
   );
   const slice = sliceTextOf(result);
-  assert.ok(slice.includes("Today: bound the extraction read."));
-  assert.ok(slice.includes("- Bash: an in-window command"));
-  assert.ok(!slice.includes("Last week:"), "the cursor out-ranked the window for messages");
-  assert.ok(!slice.includes("an old-day command"), "the cursor out-ranked the window for activity");
+  NodeAssert.ok(slice.includes("Today: bound the extraction read."));
+  NodeAssert.ok(slice.includes("- Bash: an in-window command"));
+  NodeAssert.ok(!slice.includes("Last week:"), "the cursor out-ranked the window for messages");
+  NodeAssert.ok(
+    !slice.includes("an old-day command"),
+    "the cursor out-ranked the window for activity",
+  );
 });
 
-test("the default loader gives a session only the commits inside its own window", () => {
+NodeTest.test("the default loader gives a session only the commits inside its own window", () => {
   const root = newRoot();
   const session = {
     key: "cc-1",
@@ -916,12 +949,12 @@ test("the default loader gives a session only the commits inside its own window"
   });
 
   const slice = sliceTextOf(result);
-  assert.ok(slice.includes("feat: the session's own commit"));
+  NodeAssert.ok(slice.includes("feat: the session's own commit"));
   // A commit is usually the last thing that happens after the final recorded event, so a short
   // grace keeps it; everything else belongs to some other session's story.
-  assert.ok(slice.includes("docs: committed right after the last event"));
-  assert.ok(!slice.includes("an earlier session's commit"));
-  assert.ok(!slice.includes("a later session's commit"));
+  NodeAssert.ok(slice.includes("docs: committed right after the last event"));
+  NodeAssert.ok(!slice.includes("an earlier session's commit"));
+  NodeAssert.ok(!slice.includes("a later session's commit"));
 
   // With no window to judge against there is nothing to narrow by, so the evidence is kept.
   const undated = queue({
@@ -932,51 +965,54 @@ test("the default loader gives a session only the commits inside its own window"
     paths: newRoot(),
     redaction: REDACTION,
   });
-  assert.ok(sliceTextOf(undated).includes("chore: an earlier session's commit"));
+  NodeAssert.ok(sliceTextOf(undated).includes("chore: an earlier session's commit"));
 });
 
-test("the default loader says so when a Claude Code session carries no prompt text", () => {
-  const root = newRoot();
-  const quiet = {
-    key: "cc-quiet",
-    kind: "claude-code",
-    projectKey: "t3code",
-    title: "A terminal day",
-    startedAt: at(9),
-    endedAt: at(11),
-    turnCount: 3,
-    files: [],
-    signals: ["Bash: pnpm test"],
-  };
+NodeTest.test(
+  "the default loader says so when a Claude Code session carries no prompt text",
+  () => {
+    const root = newRoot();
+    const quiet = {
+      key: "cc-quiet",
+      kind: "claude-code",
+      projectKey: "t3code",
+      title: "A terminal day",
+      startedAt: at(9),
+      endedAt: at(11),
+      turnCount: 3,
+      files: [],
+      signals: ["Bash: pnpm test"],
+    };
 
-  const result = queue({
-    bundle: bundleFixture({ sessions: [quiet] }),
-    paths: root,
-    redaction: REDACTION,
-  });
-  assert.deepEqual(
-    result.queued.map((entry) => entry.sessionKey),
-    ["cc-quiet"],
-  );
-  assert.ok(
-    result.warnings.some(
-      (warning) => warning.includes("cc-quiet") && /No prompt text is recorded/u.test(warning),
-    ),
-    `expected a named warning, got ${JSON.stringify(result.warnings)}`,
-  );
+    const result = queue({
+      bundle: bundleFixture({ sessions: [quiet] }),
+      paths: root,
+      redaction: REDACTION,
+    });
+    NodeAssert.deepEqual(
+      result.queued.map((entry) => entry.sessionKey),
+      ["cc-quiet"],
+    );
+    NodeAssert.ok(
+      result.warnings.some(
+        (warning) => warning.includes("cc-quiet") && /No prompt text is recorded/u.test(warning),
+      ),
+      `expected a named warning, got ${JSON.stringify(result.warnings)}`,
+    );
 
-  const loud = queue({
-    bundle: bundleFixture({
-      sessions: [{ ...quiet, key: "cc-loud", firstPrompt: "Set up the release relay." }],
-    }),
-    paths: newRoot(),
-    redaction: REDACTION,
-  });
-  assert.deepEqual(loud.warnings, []);
-  assert.ok(sliceTextOf(loud).includes("1. Set up the release relay."));
-});
+    const loud = queue({
+      bundle: bundleFixture({
+        sessions: [{ ...quiet, key: "cc-loud", firstPrompt: "Set up the release relay." }],
+      }),
+      paths: newRoot(),
+      redaction: REDACTION,
+    });
+    NodeAssert.deepEqual(loud.warnings, []);
+    NodeAssert.ok(sliceTextOf(loud).includes("1. Set up the release relay."));
+  },
+);
 
-test("commitExtract writes the documented shape and advances the cursor", () => {
+NodeTest.test("commitExtract writes the documented shape and advances the cursor", () => {
   const root = newRoot();
   const session = sessionFixture({ lastTurnId: "turn-6" });
 
@@ -988,9 +1024,9 @@ test("commitExtract writes the documented shape and advances the cursor", () => 
     now: "2026-08-10T16:00:00.000Z",
   });
 
-  assert.equal(file, extractPath(root, "t3-alpha"));
-  assert.ok(file.startsWith(root));
-  assert.deepEqual(document, {
+  NodeAssert.equal(file, extractPath(root, "t3-alpha"));
+  NodeAssert.ok(file.startsWith(root));
+  NodeAssert.deepEqual(document, {
     schemaVersion: EXTRACT_SCHEMA_VERSION,
     sessionKey: "t3-alpha",
     kind: "t3code",
@@ -1007,31 +1043,34 @@ test("commitExtract writes the documented shape and advances the cursor", () => 
     },
     history: [],
   });
-  assert.deepEqual(JSON.parse(NodeFS.readFileSync(file, "utf8")), document);
+  NodeAssert.deepEqual(JSON.parse(NodeFS.readFileSync(file, "utf8")), document);
 });
 
-test("commitExtract scrubs the title it writes, because publish git-adds this file", () => {
-  const root = newRoot();
-  const { file, document } = commitExtract({
-    paths: root,
-    sessionKey: "t3-alpha",
-    extract: payloadFixture(),
-    session: sessionFixture({
-      title: `Northwind Books import at ${HOME}/Developer/clients/import.ts`,
-    }),
-    homeDir: HOME,
-    redaction: REDACTION,
-  });
+NodeTest.test(
+  "commitExtract scrubs the title it writes, because publish git-adds this file",
+  () => {
+    const root = newRoot();
+    const { file, document } = commitExtract({
+      paths: root,
+      sessionKey: "t3-alpha",
+      extract: payloadFixture(),
+      session: sessionFixture({
+        title: `Northwind Books import at ${HOME}/Developer/clients/import.ts`,
+      }),
+      homeDir: HOME,
+      redaction: REDACTION,
+    });
 
-  // A thread title is model-generated from the work itself, so it carries whatever the work was
-  // about — a client's name, the path being edited.
-  assert.equal(document.title, "a client import at import.ts");
-  const onDisk = JSON.parse(NodeFS.readFileSync(file, "utf8"));
-  assert.equal(onDisk.title, "a client import at import.ts");
-  assert.ok(!onDisk.title.includes(HOME));
-});
+    // A thread title is model-generated from the work itself, so it carries whatever the work was
+    // about — a client's name, the path being edited.
+    NodeAssert.equal(document.title, "a client import at import.ts");
+    const onDisk = JSON.parse(NodeFS.readFileSync(file, "utf8"));
+    NodeAssert.equal(onDisk.title, "a client import at import.ts");
+    NodeAssert.ok(!onDisk.title.includes(HOME));
+  },
+);
 
-test("commitExtract never rewinds a cursor", () => {
+NodeTest.test("commitExtract never rewinds a cursor", () => {
   const root = newRoot();
   const session = sessionFixture();
   commitExtract({ paths: root, sessionKey: session.key, extract: payloadFixture(), session });
@@ -1042,8 +1081,8 @@ test("commitExtract never rewinds a cursor", () => {
     extract: payloadFixture({ outcome: "re-ran an older range" }),
     session: sessionFixture({ endedAt: "2026-08-09T09:00:00.000Z", turnCount: 3 }),
   });
-  assert.equal(older.document.cursor.lastEventAt, "2026-08-10T15:00:00.000Z");
-  assert.equal(older.document.cursor.turnsProcessed, 6);
+  NodeAssert.equal(older.document.cursor.lastEventAt, "2026-08-10T15:00:00.000Z");
+  NodeAssert.equal(older.document.cursor.turnsProcessed, 6);
 
   const newer = commitExtract({
     paths: root,
@@ -1051,11 +1090,11 @@ test("commitExtract never rewinds a cursor", () => {
     extract: payloadFixture(),
     session: sessionFixture({ endedAt: "2026-08-11T09:00:00.000Z", turnCount: 2 }),
   });
-  assert.equal(newer.document.cursor.lastEventAt, "2026-08-11T09:00:00.000Z");
-  assert.equal(newer.document.cursor.turnsProcessed, 8);
+  NodeAssert.equal(newer.document.cursor.lastEventAt, "2026-08-11T09:00:00.000Z");
+  NodeAssert.equal(newer.document.cursor.turnsProcessed, 8);
 });
 
-test("commitExtract keeps the last 20 prior outcomes in history", () => {
+NodeTest.test("commitExtract keeps the last 20 prior outcomes in history", () => {
   const root = newRoot();
   const session = sessionFixture();
 
@@ -1072,18 +1111,18 @@ test("commitExtract keeps the last 20 prior outcomes in history", () => {
   }
 
   const stored = loadExtract(root, session.key);
-  assert.equal(stored.extract.outcome, "outcome 24");
-  assert.equal(stored.history.length, 20);
-  assert.equal(stored.history[0].outcome, "outcome 4");
-  assert.equal(stored.history[19].outcome, "outcome 23");
-  assert.equal(stored.history[19].at, "2026-08-10T13:23:00.000Z");
+  NodeAssert.equal(stored.extract.outcome, "outcome 24");
+  NodeAssert.equal(stored.history.length, 20);
+  NodeAssert.equal(stored.history[0].outcome, "outcome 4");
+  NodeAssert.equal(stored.history[19].outcome, "outcome 23");
+  NodeAssert.equal(stored.history[19].at, "2026-08-10T13:23:00.000Z");
 });
 
-test("commitExtract rejects each bad field with a message that names it", () => {
+NodeTest.test("commitExtract rejects each bad field with a message that names it", () => {
   const root = newRoot();
   const session = sessionFixture();
   const reject = (overrides, pattern) => {
-    assert.throws(
+    NodeAssert.throws(
       () =>
         commitExtract({
           paths: root,
@@ -1100,7 +1139,10 @@ test("commitExtract rejects each bad field with a message that names it", () => 
   reject({ approach: null }, /"approach" must be text/u);
   reject({ outcome: "x".repeat(601) }, /"outcome" is 601 characters; the limit is 600/u);
   reject({ artifacts: "one.ts" }, /"artifacts" must be an array of text entries/u);
-  reject({ artifacts: new Array(13).fill("a.ts") }, /"artifacts" has 13 entries; the limit is 12/u);
+  reject(
+    { artifacts: Array.from({ length: 13 }, () => "a.ts") },
+    /"artifacts" has 13 entries; the limit is 12/u,
+  );
   reject({ artifacts: ["a.ts", 7] }, /"artifacts\[1\]" must be non-empty text/u);
   reject(
     { status: "done" },
@@ -1108,17 +1150,17 @@ test("commitExtract rejects each bad field with a message that names it", () => 
   );
   reject({ status: undefined }, /"status" must be one of/u);
 
-  assert.throws(
+  NodeAssert.throws(
     () => commitExtract({ paths: root, sessionKey: "t3-alpha", extract: "not an object", session }),
     /expected an object with problem, approach, outcome, artifacts and status/u,
   );
-  assert.throws(
+  NodeAssert.throws(
     () => commitExtract({ paths: root, extract: payloadFixture(), session: {} }),
     /needs a sessionKey/u,
   );
 
   // Every violation is reported at once, so a subagent reply is fixed in one round trip.
-  assert.throws(
+  NodeAssert.throws(
     () =>
       commitExtract({
         paths: root,
@@ -1134,10 +1176,10 @@ test("commitExtract rejects each bad field with a message that names it", () => 
   );
 
   // Nothing was written by any rejected commit.
-  assert.equal(loadExtract(root, "t3-alpha"), null);
+  NodeAssert.equal(loadExtract(root, "t3-alpha"), null);
 });
 
-test("commitExtract accepts an omitted artifacts list as none", () => {
+NodeTest.test("commitExtract accepts an omitted artifacts list as none", () => {
   const root = newRoot();
   const payload = payloadFixture();
   delete payload.artifacts;
@@ -1147,63 +1189,66 @@ test("commitExtract accepts an omitted artifacts list as none", () => {
     extract: payload,
     session: sessionFixture(),
   });
-  assert.deepEqual(document.extract.artifacts, []);
+  NodeAssert.deepEqual(document.extract.artifacts, []);
 });
 
 // --- parseExtractPayload --------------------------------------------------------------------------
 
-test("parseExtractPayload recovers an object from every shape a subagent replies in", () => {
-  const expected = {
-    problem: "p",
-    approach: "a",
-    outcome: "o",
-    artifacts: ["x.ts"],
-    status: "shipped",
-  };
-  const json = JSON.stringify(expected);
-
-  assert.deepEqual(parseExtractPayload(json), expected);
-  assert.deepEqual(parseExtractPayload(`\n  ${json}\n`), expected);
-  assert.deepEqual(parseExtractPayload("```json\n" + json + "\n```"), expected);
-  assert.deepEqual(parseExtractPayload("```\n" + json + "\n```"), expected);
-  assert.deepEqual(
-    parseExtractPayload(
-      `Here is the extract you asked for:\n\n\`\`\`json\n${json}\n\`\`\`\n\nHope that helps!`,
-    ),
-    expected,
-  );
-  assert.deepEqual(parseExtractPayload(`Sure — ${json} — done.`), expected);
-  // Trailing prose containing its own brace defeats a naive first-{ to last-} slice.
-  assert.deepEqual(
-    parseExtractPayload(`Result: ${json}\nNote: a closing brace } in prose.`),
-    expected,
-  );
-  // A brace inside a string value must not be treated as structure.
-  assert.deepEqual(
-    parseExtractPayload(`Reply: {"problem":"fix the } brace","status":"shipped"} thanks`),
-    {
-      problem: "fix the } brace",
+NodeTest.test(
+  "parseExtractPayload recovers an object from every shape a subagent replies in",
+  () => {
+    const expected = {
+      problem: "p",
+      approach: "a",
+      outcome: "o",
+      artifacts: ["x.ts"],
       status: "shipped",
-    },
-  );
-});
+    };
+    const json = JSON.stringify(expected);
 
-test("parseExtractPayload fails loudly when there is no object to recover", () => {
-  assert.throws(() => parseExtractPayload(""), /was empty/u);
-  assert.throws(() => parseExtractPayload("   \n "), /was empty/u);
-  assert.throws(() => parseExtractPayload(null), /was empty/u);
-  assert.throws(
+    NodeAssert.deepEqual(parseExtractPayload(json), expected);
+    NodeAssert.deepEqual(parseExtractPayload(`\n  ${json}\n`), expected);
+    NodeAssert.deepEqual(parseExtractPayload("```json\n" + json + "\n```"), expected);
+    NodeAssert.deepEqual(parseExtractPayload("```\n" + json + "\n```"), expected);
+    NodeAssert.deepEqual(
+      parseExtractPayload(
+        `Here is the extract you asked for:\n\n\`\`\`json\n${json}\n\`\`\`\n\nHope that helps!`,
+      ),
+      expected,
+    );
+    NodeAssert.deepEqual(parseExtractPayload(`Sure — ${json} — done.`), expected);
+    // Trailing prose containing its own brace defeats a naive first-{ to last-} slice.
+    NodeAssert.deepEqual(
+      parseExtractPayload(`Result: ${json}\nNote: a closing brace } in prose.`),
+      expected,
+    );
+    // A brace inside a string value must not be treated as structure.
+    NodeAssert.deepEqual(
+      parseExtractPayload(`Reply: {"problem":"fix the } brace","status":"shipped"} thanks`),
+      {
+        problem: "fix the } brace",
+        status: "shipped",
+      },
+    );
+  },
+);
+
+NodeTest.test("parseExtractPayload fails loudly when there is no object to recover", () => {
+  NodeAssert.throws(() => parseExtractPayload(""), /was empty/u);
+  NodeAssert.throws(() => parseExtractPayload("   \n "), /was empty/u);
+  NodeAssert.throws(() => parseExtractPayload(null), /was empty/u);
+  NodeAssert.throws(
     () => parseExtractPayload("I could not summarise this session."),
     /Could not find a JSON object/u,
   );
-  assert.throws(() => parseExtractPayload("[1, 2, 3]"), /Could not find a JSON object/u);
-  assert.throws(
+  NodeAssert.throws(() => parseExtractPayload("[1, 2, 3]"), /Could not find a JSON object/u);
+  NodeAssert.throws(
     () => parseExtractPayload("```json\n{ not json at all\n```"),
     /Could not find a JSON object/u,
   );
 });
 
-test("a parsed reply flows straight into commitExtract", () => {
+NodeTest.test("a parsed reply flows straight into commitExtract", () => {
   const root = newRoot();
   const reply = [
     "Here's the extract:",
@@ -1224,7 +1269,7 @@ test("a parsed reply flows straight into commitExtract", () => {
     extract: parseExtractPayload(reply),
     session: sessionFixture(),
   });
-  assert.equal(document.extract.status, "shipped");
-  assert.deepEqual(document.extract.artifacts, ["PR #66"]);
-  assert.equal(loadExtract(root, "t3-alpha").extract.artifacts[0], "PR #66");
+  NodeAssert.equal(document.extract.status, "shipped");
+  NodeAssert.deepEqual(document.extract.artifacts, ["PR #66"]);
+  NodeAssert.equal(loadExtract(root, "t3-alpha").extract.artifacts[0], "PR #66");
 });

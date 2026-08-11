@@ -9,7 +9,7 @@
 // upstream-owned vite.config.ts, which would have cost the fork a new seam-ledger row for a
 // naming convention. Renaming is free.
 
-import { spawnSync } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -30,5 +30,7 @@ if (files.length === 0) {
   process.exit(2);
 }
 
-const result = spawnSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
+const result = NodeChildProcess.spawnSync(process.execPath, ["--test", ...files], {
+  stdio: "inherit",
+});
 process.exit(result.status ?? 1);

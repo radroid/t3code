@@ -4,9 +4,9 @@
 // from `~/.t3/userdata/state.sqlite`, so column sets, NOT NULL constraints, and defaults match
 // production. The user's real databases are never opened.
 
-import { after, describe, it } from "node:test";
-import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeSqlite from "node:sqlite";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -94,7 +94,7 @@ const WINDOW = { start: DAY_START, end: DAY_END };
 const tmpRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "worklog-"));
 const openHandles = [];
 
-after(() => {
+NodeTest.after(() => {
   closeDatabases(openHandles.flat());
   NodeFS.rmSync(tmpRoot, { recursive: true, force: true });
 });
@@ -105,7 +105,7 @@ let fixtureCounter = 0;
 function makeBaseDir(name) {
   const baseDir = NodePath.join(tmpRoot, `${name}-${(fixtureCounter += 1)}`);
   NodeFS.mkdirSync(baseDir, { recursive: true });
-  const db = new DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
+  const db = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
   for (const statement of SCHEMA) db.exec(statement);
   return { baseDir, db };
 }
@@ -211,8 +211,8 @@ function open(baseDirs) {
   return opened;
 }
 
-describe("openT3Databases", () => {
-  it("skips absent databases silently and opens the ones that exist", () => {
+NodeTest.describe("openT3Databases", () => {
+  NodeTest.it("skips absent databases silently and opens the ones that exist", () => {
     const alpha = makeBaseDir("open-alpha");
     alpha.db.close();
     const empty = NodePath.join(tmpRoot, "open-nothing-here");
@@ -220,26 +220,26 @@ describe("openT3Databases", () => {
 
     const { handles, warnings } = open([alpha.baseDir, empty, "", null, undefined]);
 
-    assert.equal(handles.length, 1);
-    assert.equal(handles[0].baseDir, alpha.baseDir);
-    assert.equal(handles[0].dbPath, NodePath.join(alpha.baseDir, "state.sqlite"));
-    assert.ok(handles[0].db);
-    assert.deepEqual(warnings, []);
+    NodeAssert.equal(handles.length, 1);
+    NodeAssert.equal(handles[0].baseDir, alpha.baseDir);
+    NodeAssert.equal(handles[0].dbPath, NodePath.join(alpha.baseDir, "state.sqlite"));
+    NodeAssert.ok(handles[0].db);
+    NodeAssert.deepEqual(warnings, []);
   });
 
-  it("warns instead of throwing when a state.sqlite exists but cannot be opened", () => {
+  NodeTest.it("warns instead of throwing when a state.sqlite exists but cannot be opened", () => {
     const broken = NodePath.join(tmpRoot, "open-broken");
     // A directory where the database should be: present on disk, impossible to open.
     NodeFS.mkdirSync(NodePath.join(broken, "state.sqlite"), { recursive: true });
 
     const { handles, warnings } = open([broken]);
 
-    assert.deepEqual(handles, []);
-    assert.equal(warnings.length, 1);
-    assert.match(warnings[0], /state\.sqlite/u);
+    NodeAssert.deepEqual(handles, []);
+    NodeAssert.equal(warnings.length, 1);
+    NodeAssert.match(warnings[0], /state\.sqlite/u);
   });
 
-  it("opens a database once even when two base dirs resolve to the same file", () => {
+  NodeTest.it("opens a database once even when two base dirs resolve to the same file", () => {
     const real = makeBaseDir("open-real");
     real.db.close();
     const link = NodePath.join(tmpRoot, "open-link");
@@ -247,21 +247,21 @@ describe("openT3Databases", () => {
 
     const { handles, warnings } = open([real.baseDir, link]);
 
-    assert.equal(handles.length, 1, "a symlinked base dir must not double every row");
-    assert.deepEqual(warnings, []);
+    NodeAssert.equal(handles.length, 1, "a symlinked base dir must not double every row");
+    NodeAssert.deepEqual(warnings, []);
   });
 
-  it("tolerates a non-array argument", () => {
-    assert.deepEqual(openT3Databases(undefined), { handles: [], warnings: [] });
-    assert.deepEqual(openT3Databases("nope"), { handles: [], warnings: [] });
+  NodeTest.it("tolerates a non-array argument", () => {
+    NodeAssert.deepEqual(openT3Databases(undefined), { handles: [], warnings: [] });
+    NodeAssert.deepEqual(openT3Databases("nope"), { handles: [], warnings: [] });
   });
 });
 
-describe("closeDatabases", () => {
-  it("never throws, whatever it is handed", () => {
-    assert.doesNotThrow(() => closeDatabases(undefined));
-    assert.doesNotThrow(() => closeDatabases([null, {}, { db: {} }]));
-    assert.doesNotThrow(() =>
+NodeTest.describe("closeDatabases", () => {
+  NodeTest.it("never throws, whatever it is handed", () => {
+    NodeAssert.doesNotThrow(() => closeDatabases(undefined));
+    NodeAssert.doesNotThrow(() => closeDatabases([null, {}, { db: {} }]));
+    NodeAssert.doesNotThrow(() =>
       closeDatabases([
         {
           db: {
@@ -275,8 +275,8 @@ describe("closeDatabases", () => {
   });
 });
 
-describe("readProjects", () => {
-  it("merges rows from every base dir and carries the source base dir", () => {
+NodeTest.describe("readProjects", () => {
+  NodeTest.it("merges rows from every base dir and carries the source base dir", () => {
     const alpha = makeBaseDir("projects-alpha");
     insertProject(alpha.db, { projectId: "p-1", title: "t3code", workspaceRoot: "/tmp/a/t3code" });
     insertProject(alpha.db, {
@@ -294,7 +294,7 @@ describe("readProjects", () => {
     const { handles } = open([alpha.baseDir, beta.baseDir]);
     const projects = readProjects(handles);
 
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       projects.map((p) => [p.projectId, p.title, p.workspaceRoot, p.deletedAt]),
       [
         ["p-1", "t3code", "/tmp/a/t3code", null],
@@ -302,19 +302,19 @@ describe("readProjects", () => {
         ["p-3", "worklog", "/tmp/b/worklog", null],
       ],
     );
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       projects.map((p) => p.baseDir),
       [alpha.baseDir, alpha.baseDir, beta.baseDir],
     );
   });
 
-  it("returns nothing for no handles", () => {
-    assert.deepEqual(readProjects([]), []);
-    assert.deepEqual(readProjects(undefined), []);
+  NodeTest.it("returns nothing for no handles", () => {
+    NodeAssert.deepEqual(readProjects([]), []);
+    NodeAssert.deepEqual(readProjects(undefined), []);
   });
 });
 
-describe("readThreads", () => {
+NodeTest.describe("readThreads", () => {
   const alpha = makeBaseDir("threads-alpha");
 
   insertThread(alpha.db, {
@@ -372,9 +372,9 @@ describe("readThreads", () => {
 
   const { handles } = open([alpha.baseDir, beta.baseDir]);
 
-  it("includes only threads whose activity window overlaps the range", () => {
+  NodeTest.it("includes only threads whose activity window overlaps the range", () => {
     const ids = readThreads(handles, WINDOW).map((t) => t.threadId);
-    assert.deepEqual(ids.slice().sort(), [
+    NodeAssert.deepEqual(ids.slice().sort(), [
       "archived-and-deleted",
       "edge-start",
       "in-window",
@@ -383,10 +383,10 @@ describe("readThreads", () => {
     ]);
   });
 
-  it("maps every field and merges base dirs", () => {
+  NodeTest.it("maps every field and merges base dirs", () => {
     const threads = readThreads(handles, WINDOW);
     const found = threads.find((t) => t.threadId === "in-window");
-    assert.deepEqual(found, {
+    NodeAssert.deepEqual(found, {
       baseDir: alpha.baseDir,
       threadId: "in-window",
       projectId: "proj-1",
@@ -400,29 +400,29 @@ describe("readThreads", () => {
       models: ["claude-opus-4-8"],
       latestUserMessageAt: "2026-08-10T17:00:00.000Z",
     });
-    assert.equal(threads.find((t) => t.threadId === "other-base").baseDir, beta.baseDir);
+    NodeAssert.equal(threads.find((t) => t.threadId === "other-base").baseDir, beta.baseDir);
   });
 
-  it("keeps deleted and archived timestamps rather than filtering them out", () => {
+  NodeTest.it("keeps deleted and archived timestamps rather than filtering them out", () => {
     const found = readThreads(handles, WINDOW).find((t) => t.threadId === "archived-and-deleted");
-    assert.equal(found.archivedAt, "2026-08-10T09:30:00.000Z");
-    assert.equal(found.deletedAt, "2026-08-10T09:40:00.000Z");
+    NodeAssert.equal(found.archivedAt, "2026-08-10T09:30:00.000Z");
+    NodeAssert.equal(found.deletedAt, "2026-08-10T09:40:00.000Z");
   });
 
-  it("tolerates malformed, absent, and model-less model_selection_json", () => {
+  NodeTest.it("tolerates malformed, absent, and model-less model_selection_json", () => {
     const byId = new Map(readThreads(handles, WINDOW).map((t) => [t.threadId, t.models]));
-    assert.deepEqual(byId.get("long-running"), []);
-    assert.deepEqual(byId.get("edge-start"), []);
-    assert.deepEqual(byId.get("other-base"), []);
+    NodeAssert.deepEqual(byId.get("long-running"), []);
+    NodeAssert.deepEqual(byId.get("edge-start"), []);
+    NodeAssert.deepEqual(byId.get("other-base"), []);
   });
 
-  it("treats a missing window as unbounded", () => {
-    assert.equal(readThreads(handles, {}).length, 7);
-    assert.equal(readThreads(handles, undefined).length, 7);
+  NodeTest.it("treats a missing window as unbounded", () => {
+    NodeAssert.equal(readThreads(handles, {}).length, 7);
+    NodeAssert.equal(readThreads(handles, undefined).length, 7);
   });
 });
 
-describe("readTurns", () => {
+NodeTest.describe("readTurns", () => {
   const base = makeBaseDir("turns");
   const NOW = "2026-08-10T20:00:00.000Z";
 
@@ -480,17 +480,17 @@ describe("readTurns", () => {
 
   const { handles } = open([base.baseDir]);
 
-  it("selects turns whose run span overlaps the window", () => {
+  NodeTest.it("selects turns whose run span overlaps the window", () => {
     const ids = readTurns(handles, ["t-1"], { ...WINDOW, now: NOW }).map((t) => t.turnId);
-    assert.deepEqual(ids, ["turn-edge-start", "turn-inside", "turn-running"]);
+    NodeAssert.deepEqual(ids, ["turn-edge-start", "turn-inside", "turn-running"]);
   });
 
-  it("treats a running turn as still running now", () => {
+  NodeTest.it("treats a running turn as still running now", () => {
     const running = readTurns(handles, ["t-1"], { ...WINDOW, now: NOW }).find(
       (t) => t.turnId === "turn-running",
     );
-    assert.equal(running.completedAt, null);
-    assert.equal(running.state, "running");
+    NodeAssert.equal(running.completedAt, null);
+    NodeAssert.equal(running.state, "running");
 
     // A window that has not opened yet cannot contain a turn that is running now.
     const future = readTurns(handles, ["t-1"], {
@@ -498,30 +498,30 @@ describe("readTurns", () => {
       end: "2027-01-02T00:00:00.000Z",
       now: NOW,
     });
-    assert.deepEqual(future, []);
+    NodeAssert.deepEqual(future, []);
   });
 
-  it("parses checkpoint files and drops unusable entries", () => {
+  NodeTest.it("parses checkpoint files and drops unusable entries", () => {
     const turn = readTurns(handles, ["t-1"], { ...WINDOW, now: NOW }).find(
       (t) => t.turnId === "turn-inside",
     );
-    assert.deepEqual(turn.files, [
+    NodeAssert.deepEqual(turn.files, [
       { path: "apps/server/src/t3x/a.ts", kind: "modified", additions: 12, deletions: 3 },
       { path: "b.ts", kind: null, additions: 7, deletions: 0 },
     ]);
   });
 
-  it("defaults malformed checkpoint_files_json to an empty list", () => {
+  NodeTest.it("defaults malformed checkpoint_files_json to an empty list", () => {
     const turn = readTurns(handles, ["t-2"], { ...WINDOW, now: NOW })[0];
-    assert.deepEqual(turn.files, []);
-    assert.equal(turn.threadId, "t-2");
-    assert.equal(turn.baseDir, base.baseDir);
+    NodeAssert.deepEqual(turn.files, []);
+    NodeAssert.equal(turn.threadId, "t-2");
+    NodeAssert.equal(turn.baseDir, base.baseDir);
   });
 
-  it("returns nothing for an empty thread list and everything for no list", () => {
-    assert.deepEqual(readTurns(handles, [], { ...WINDOW, now: NOW }), []);
+  NodeTest.it("returns nothing for an empty thread list and everything for no list", () => {
+    NodeAssert.deepEqual(readTurns(handles, [], { ...WINDOW, now: NOW }), []);
     const all = readTurns(handles, null, { ...WINDOW, now: NOW }).map((t) => t.turnId);
-    assert.deepEqual(all.slice().sort(), [
+    NodeAssert.deepEqual(all.slice().sort(), [
       "turn-edge-start",
       "turn-inside",
       "turn-other-thread",
@@ -529,11 +529,11 @@ describe("readTurns", () => {
     ]);
   });
 
-  it("chunks a thread list larger than SQLite's parameter budget", () => {
+  NodeTest.it("chunks a thread list larger than SQLite's parameter budget", () => {
     const ids = Array.from({ length: 900 }, (_, index) => `filler-${index}`);
     ids.splice(450, 0, "t-1");
     const turns = readTurns(handles, ids, { ...WINDOW, now: NOW });
-    assert.deepEqual(turns.map((t) => t.turnId).sort(), [
+    NodeAssert.deepEqual(turns.map((t) => t.turnId).sort(), [
       "turn-edge-start",
       "turn-inside",
       "turn-running",
@@ -541,7 +541,7 @@ describe("readTurns", () => {
   });
 });
 
-describe("readActivities", () => {
+NodeTest.describe("readActivities", () => {
   // Split so the literal never sits in a source file for a secret scanner to flag.
   const SECRET = ["ghp", "_FAKE0SECRET0VALUE0DO0NOT0LEAK"].join("");
   const LONG_DETAIL = `Bash: ${"x".repeat(600)}`;
@@ -635,21 +635,24 @@ describe("readActivities", () => {
 
   const { handles } = open([alpha.baseDir, beta.baseDir]);
 
-  it("never returns tool input or result, and never the generic summary column", () => {
+  NodeTest.it("never returns tool input or result, and never the generic summary column", () => {
     const activities = readActivities(handles, ["t-1"], WINDOW);
     const serialised = JSON.stringify(activities);
 
-    assert.ok(!serialised.includes(SECRET), "payload.data.result / .input must never escape t3db");
-    assert.ok(!serialised.includes("whole file dump"));
-    assert.ok(!serialised.includes("export TOKEN"));
-    assert.ok(
+    NodeAssert.ok(
+      !serialised.includes(SECRET),
+      "payload.data.result / .input must never escape t3db",
+    );
+    NodeAssert.ok(!serialised.includes("whole file dump"));
+    NodeAssert.ok(!serialised.includes("export TOKEN"));
+    NodeAssert.ok(
       !serialised.includes("GENERIC-SUMMARY-LABEL"),
       "the summary column is a label, not a summary",
     );
 
     // And nothing sneaks through as an unexpected extra field.
     for (const activity of activities) {
-      assert.deepEqual(Object.keys(activity).sort(), [
+      NodeAssert.deepEqual(Object.keys(activity).sort(), [
         "baseDir",
         "createdAt",
         "detail",
@@ -665,64 +668,64 @@ describe("readActivities", () => {
     }
   });
 
-  it("extracts detail, toolName, taskId, title, and tokens from the payload", () => {
+  NodeTest.it("extracts detail, toolName, taskId, title, and tokens from the payload", () => {
     const activities = readActivities(handles, ["t-1"], WINDOW);
     const tool = activities.find((a) => a.detail === "Bash: git status");
-    assert.equal(tool.toolName, "Bash");
-    assert.equal(tool.turnId, "turn-1");
-    assert.equal(tool.sequence, 2);
-    assert.equal(tool.taskId, null);
-    assert.equal(tool.tokens, null);
+    NodeAssert.equal(tool.toolName, "Bash");
+    NodeAssert.equal(tool.turnId, "turn-1");
+    NodeAssert.equal(tool.sequence, 2);
+    NodeAssert.equal(tool.taskId, null);
+    NodeAssert.equal(tool.tokens, null);
 
     const task = activities.find((a) => a.taskId === "task-a");
-    assert.equal(task.taskTitle, "Rebase the fork onto upstream");
-    assert.equal(task.detail, "Reading SEAMS.md");
-    assert.equal(task.tokens, 1200);
-    assert.equal(task.toolName, null, "lastToolName is not data.toolName");
+    NodeAssert.equal(task.taskTitle, "Rebase the fork onto upstream");
+    NodeAssert.equal(task.detail, "Reading SEAMS.md");
+    NodeAssert.equal(task.tokens, 1200);
+    NodeAssert.equal(task.toolName, null, "lastToolName is not data.toolName");
   });
 
-  it("truncates detail to 240 characters", () => {
+  NodeTest.it("truncates detail to 240 characters", () => {
     const long = readActivities(handles, ["t-1"], WINDOW).find(
       (a) => a.detail !== null && a.detail.startsWith("Bash: xxx"),
     );
-    assert.equal(long.detail.length, 240);
-    assert.ok(long.detail.endsWith("…"));
+    NodeAssert.equal(long.detail.length, 240);
+    NodeAssert.ok(long.detail.endsWith("…"));
   });
 
-  it("keeps a row whose payload will not parse, with null facts", () => {
+  NodeTest.it("keeps a row whose payload will not parse, with null facts", () => {
     const activities = readActivities(handles, ["t-1"], WINDOW);
     const broken = activities.filter(
       (a) => a.createdAt === "2026-08-10T10:02:00.000Z" && a.kind === "task.progress",
     );
-    assert.equal(broken.length, 1);
-    assert.deepEqual(
+    NodeAssert.equal(broken.length, 1);
+    NodeAssert.deepEqual(
       { d: broken[0].detail, t: broken[0].toolName, i: broken[0].taskId, k: broken[0].tokens },
       { d: null, t: null, i: null, k: null },
     );
   });
 
-  it("applies the window with an inclusive start and an exclusive end", () => {
-    const details = readActivities(handles, ["t-1"], WINDOW).map((a) => a.detail);
-    assert.ok(details.includes("exactly at the start"));
-    assert.ok(!details.includes("too early"));
-    assert.ok(!details.includes("too late"));
+  NodeTest.it("applies the window with an inclusive start and an exclusive end", () => {
+    const details = new Set(readActivities(handles, ["t-1"], WINDOW).map((a) => a.detail));
+    NodeAssert.ok(details.has("exactly at the start"));
+    NodeAssert.ok(!details.has("too early"));
+    NodeAssert.ok(!details.has("too late"));
   });
 
-  it("filters by kind whitelist, and returns nothing for an empty whitelist", () => {
+  NodeTest.it("filters by kind whitelist, and returns nothing for an empty whitelist", () => {
     const tasks = readActivities(handles, ["t-1"], { ...WINDOW, kinds: ["task.progress"] });
-    assert.deepEqual(new Set(tasks.map((a) => a.kind)), new Set(["task.progress"]));
-    assert.equal(tasks.length, 3);
-    assert.deepEqual(readActivities(handles, ["t-1"], { ...WINDOW, kinds: [] }), []);
-    assert.deepEqual(readActivities(handles, [], WINDOW), []);
+    NodeAssert.deepEqual(new Set(tasks.map((a) => a.kind)), new Set(["task.progress"]));
+    NodeAssert.equal(tasks.length, 3);
+    NodeAssert.deepEqual(readActivities(handles, ["t-1"], { ...WINDOW, kinds: [] }), []);
+    NodeAssert.deepEqual(readActivities(handles, [], WINDOW), []);
   });
 
-  it("merges base dirs into one chronological timeline", () => {
+  NodeTest.it("merges base dirs into one chronological timeline", () => {
     const activities = readActivities(handles, ["t-1"], WINDOW);
     const stamps = activities.map((a) => a.createdAt);
-    assert.deepEqual(stamps, stamps.slice().sort());
+    NodeAssert.deepEqual(stamps, stamps.slice().sort());
     const fromBeta = activities.find((a) => a.taskId === "task-b");
-    assert.equal(fromBeta.baseDir, beta.baseDir);
-    assert.equal(
+    NodeAssert.equal(fromBeta.baseDir, beta.baseDir);
+    NodeAssert.equal(
       activities.indexOf(fromBeta),
       2,
       "the beta row sorts between the two 10:00 alpha rows",
@@ -730,8 +733,8 @@ describe("readActivities", () => {
   });
 });
 
-describe("tokensByTask", () => {
-  it("takes the max per task because usage.total_tokens is cumulative", () => {
+NodeTest.describe("tokensByTask", () => {
+  NodeTest.it("takes the max per task because usage.total_tokens is cumulative", () => {
     const activities = [
       { taskId: "task-a", tokens: 100 },
       { taskId: "task-a", tokens: 500 },
@@ -740,11 +743,11 @@ describe("tokensByTask", () => {
       { taskId: "task-b", tokens: 900 },
     ];
     // A naive sum would report 2750.
-    assert.equal(tokensByTask(activities), 2100);
+    NodeAssert.equal(tokensByTask(activities), 2100);
   });
 
-  it("ignores rows that cannot be attributed or counted", () => {
-    assert.equal(
+  NodeTest.it("ignores rows that cannot be attributed or counted", () => {
+    NodeAssert.equal(
       tokensByTask([
         { taskId: null, tokens: 999 },
         { taskId: "task-c", tokens: null },
@@ -755,11 +758,11 @@ describe("tokensByTask", () => {
       ]),
       10,
     );
-    assert.equal(tokensByTask([]), 0);
-    assert.equal(tokensByTask(undefined), 0);
+    NodeAssert.equal(tokensByTask([]), 0);
+    NodeAssert.equal(tokensByTask(undefined), 0);
   });
 
-  it("works end to end against rows read from a database", () => {
+  NodeTest.it("works end to end against rows read from a database", () => {
     const base = makeBaseDir("tokens");
     const cumulative = [
       ["task-a", 100],
@@ -791,10 +794,10 @@ describe("tokensByTask", () => {
 
     const { handles } = open([base.baseDir]);
     const activities = readActivities(handles, ["t-1"], WINDOW);
-    assert.equal(tokensByTask(activities), 640 + 4000 + 7);
+    NodeAssert.equal(tokensByTask(activities), 640 + 4000 + 7);
   });
 
-  it("counts a workflow once, not once per child task", () => {
+  NodeTest.it("counts a workflow once, not once per child task", () => {
     // Real shape, from `~/.t3/userdata/state.sqlite`: a `local_workflow` task `wrv3655vp` whose
     // children are `wrv3655vp:wf:<n>`. The parent's cumulative total was 1,713,516 — exactly the
     // sum of its twelve children, because the parent's counter already includes them.
@@ -809,13 +812,13 @@ describe("tokensByTask", () => {
     ];
 
     // Summing parent and children alike would report exactly double.
-    assert.equal(tokensByTask(activities), parentTotal);
+    NodeAssert.equal(tokensByTask(activities), parentTotal);
   });
 
-  it("still counts a child whose parent is outside the window", () => {
+  NodeTest.it("still counts a child whose parent is outside the window", () => {
     // A day that catches the tail of a workflow started yesterday has the children but not the
     // parent row; dropping them unconditionally would lose the day's real token spend.
-    assert.equal(
+    NodeAssert.equal(
       tokensByTask([
         { taskId: "wrv3655vp:wf:1", tokens: 100 },
         { taskId: "wrv3655vp:wf:2", tokens: 250 },
@@ -824,8 +827,8 @@ describe("tokensByTask", () => {
     );
   });
 
-  it("collapses a three-level nest onto the outermost task", () => {
-    assert.equal(
+  NodeTest.it("collapses a three-level nest onto the outermost task", () => {
+    NodeAssert.equal(
       tokensByTask([
         { taskId: "abc", tokens: 900 },
         { taskId: "abc:wf:1", tokens: 500 },
@@ -834,7 +837,7 @@ describe("tokensByTask", () => {
       900,
     );
     // A middle level missing from the window must not orphan the deepest one back into the total.
-    assert.equal(
+    NodeAssert.equal(
       tokensByTask([
         { taskId: "abc", tokens: 900 },
         { taskId: "abc:wf:1:wf:2", tokens: 200 },
@@ -842,7 +845,7 @@ describe("tokensByTask", () => {
       900,
     );
     // With the outermost absent, the deepest still rolls up to the nearest ancestor present.
-    assert.equal(
+    NodeAssert.equal(
       tokensByTask([
         { taskId: "abc:wf:1", tokens: 500 },
         { taskId: "abc:wf:1:wf:2", tokens: 200 },
@@ -851,9 +854,9 @@ describe("tokensByTask", () => {
     );
   });
 
-  it("treats a shared prefix that is not a nesting boundary as two separate tasks", () => {
+  NodeTest.it("treats a shared prefix that is not a nesting boundary as two separate tasks", () => {
     // Independent tasks that merely share a prefix.
-    assert.equal(
+    NodeAssert.equal(
       tokensByTask([
         { taskId: "abc123", tokens: 30 },
         { taskId: "abc1234", tokens: 4 },
@@ -862,7 +865,7 @@ describe("tokensByTask", () => {
     );
     // And the case that actually occurs: sibling workflow steps, where `:wf:1` is a textual prefix
     // of `:wf:10`. Only the alphanumeric character after the prefix distinguishes them.
-    assert.equal(
+    NodeAssert.equal(
       tokensByTask([
         { taskId: "wrv3655vp:wf:1", tokens: 7 },
         { taskId: "wrv3655vp:wf:10", tokens: 11 },
@@ -872,7 +875,7 @@ describe("tokensByTask", () => {
     );
   });
 
-  it("rolls nested task rows up end to end from a database", () => {
+  NodeTest.it("rolls nested task rows up end to end from a database", () => {
     const base = makeBaseDir("tokens-nested");
     const rows = [
       ["wq0ltrafo", 900],
@@ -893,11 +896,11 @@ describe("tokensByTask", () => {
 
     const { handles } = open([base.baseDir]);
     const activities = readActivities(handles, ["t-1"], WINDOW);
-    assert.equal(tokensByTask(activities), 900 + 25);
+    NodeAssert.equal(tokensByTask(activities), 900 + 25);
   });
 });
 
-describe("readThreadMessages", () => {
+NodeTest.describe("readThreadMessages", () => {
   const alpha = makeBaseDir("messages-alpha");
   insertMessage(alpha.db, {
     messageId: "m-1",
@@ -942,13 +945,13 @@ describe("readThreadMessages", () => {
 
   const { handles } = open([alpha.baseDir, beta.baseDir]);
 
-  it("returns one thread's messages oldest first, across base dirs", () => {
+  NodeTest.it("returns one thread's messages oldest first, across base dirs", () => {
     const messages = readThreadMessages(handles, "t-1", {});
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       messages.map((m) => m.messageId),
       ["m-1", "m-5", "m-2", "m-3"],
     );
-    assert.deepEqual(messages[0], {
+    NodeAssert.deepEqual(messages[0], {
       messageId: "m-1",
       threadId: "t-1",
       turnId: "turn-1",
@@ -958,35 +961,35 @@ describe("readThreadMessages", () => {
     });
   });
 
-  it("treats afterIso as an exclusive cursor", () => {
+  NodeTest.it("treats afterIso as an exclusive cursor", () => {
     const messages = readThreadMessages(handles, "t-1", { afterIso: "2026-08-10T09:01:00.000Z" });
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       messages.map((m) => m.messageId),
       ["m-3"],
     );
   });
 
-  it("filters by role and applies a global limit", () => {
-    assert.deepEqual(
+  NodeTest.it("filters by role and applies a global limit", () => {
+    NodeAssert.deepEqual(
       readThreadMessages(handles, "t-1", { roles: ["user"] }).map((m) => m.messageId),
       ["m-1", "m-5", "m-3"],
     );
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       readThreadMessages(handles, "t-1", { limit: 2 }).map((m) => m.messageId),
       ["m-1", "m-5"],
       "the limit must apply to the merged result, not per database",
     );
-    assert.deepEqual(readThreadMessages(handles, "t-1", { roles: [] }), []);
+    NodeAssert.deepEqual(readThreadMessages(handles, "t-1", { roles: [] }), []);
   });
 
-  it("returns nothing for an unknown or missing thread id", () => {
-    assert.deepEqual(readThreadMessages(handles, "nope", {}), []);
-    assert.deepEqual(readThreadMessages(handles, "", {}), []);
-    assert.deepEqual(readThreadMessages(handles, undefined, {}), []);
+  NodeTest.it("returns nothing for an unknown or missing thread id", () => {
+    NodeAssert.deepEqual(readThreadMessages(handles, "nope", {}), []);
+    NodeAssert.deepEqual(readThreadMessages(handles, "", {}), []);
+    NodeAssert.deepEqual(readThreadMessages(handles, undefined, {}), []);
   });
 });
 
-describe("firstUserPromptsByThread", () => {
+NodeTest.describe("firstUserPromptsByThread", () => {
   const base = makeBaseDir("first-prompts");
   insertMessage(base.db, {
     threadId: "t-1",
@@ -1022,49 +1025,49 @@ describe("firstUserPromptsByThread", () => {
 
   const { handles } = open([base.baseDir]);
 
-  it("returns the earliest in-window user message per thread", () => {
+  NodeTest.it("returns the earliest in-window user message per thread", () => {
     const prompts = firstUserPromptsByThread(handles, WINDOW);
-    assert.ok(prompts instanceof Map);
-    assert.equal(prompts.size, 2);
-    assert.deepEqual(prompts.get("t-1"), {
+    NodeAssert.ok(prompts instanceof Map);
+    NodeAssert.equal(prompts.size, 2);
+    NodeAssert.deepEqual(prompts.get("t-1"), {
       text: "Earliest in window",
       createdAt: "2026-08-10T08:00:00.000Z",
     });
-    assert.deepEqual(prompts.get("t-2"), {
+    NodeAssert.deepEqual(prompts.get("t-2"), {
       text: "Today, first inside the window",
       createdAt: "2026-08-10T06:00:00.000Z",
     });
   });
 
-  it("ignores assistant messages and messages outside the window", () => {
+  NodeTest.it("ignores assistant messages and messages outside the window", () => {
     const prompts = firstUserPromptsByThread(handles, {
       start: "2026-08-10T08:15:00.000Z",
       end: DAY_END,
     });
-    assert.deepEqual([...prompts.keys()], ["t-1"]);
-    assert.equal(prompts.get("t-1").text, "Later in window");
+    NodeAssert.deepEqual([...prompts.keys()], ["t-1"]);
+    NodeAssert.equal(prompts.get("t-1").text, "Later in window");
   });
 });
 
-describe("normalizePrompt and promptHash", () => {
-  it("trims, collapses whitespace, lowercases, and caps at 400 characters", () => {
-    assert.equal(normalizePrompt("  Sync   the\n\tFork  "), "sync the fork");
-    assert.equal(normalizePrompt("A".repeat(500)).length, 400);
-    assert.equal(normalizePrompt(""), "");
-    assert.equal(normalizePrompt(null), "");
-    assert.equal(normalizePrompt(42), "");
+NodeTest.describe("normalizePrompt and promptHash", () => {
+  NodeTest.it("trims, collapses whitespace, lowercases, and caps at 400 characters", () => {
+    NodeAssert.equal(normalizePrompt("  Sync   the\n\tFork  "), "sync the fork");
+    NodeAssert.equal(normalizePrompt("A".repeat(500)).length, 400);
+    NodeAssert.equal(normalizePrompt(""), "");
+    NodeAssert.equal(normalizePrompt(null), "");
+    NodeAssert.equal(normalizePrompt(42), "");
   });
 
-  it("hashes two spellings of the same prompt identically", () => {
-    assert.equal(promptHash("Sync the fork"), promptHash("  sync   THE\n fork "));
-    assert.notEqual(promptHash("Sync the fork"), promptHash("Sync the forks"));
-    assert.match(promptHash("anything"), /^[0-9a-f]{64}$/u);
+  NodeTest.it("hashes two spellings of the same prompt identically", () => {
+    NodeAssert.equal(promptHash("Sync the fork"), promptHash("  sync   THE\n fork "));
+    NodeAssert.notEqual(promptHash("Sync the fork"), promptHash("Sync the forks"));
+    NodeAssert.match(promptHash("anything"), /^[0-9a-f]{64}$/u);
     // Only the first 400 characters count, so a longer prompt with a shared prefix collides.
-    assert.equal(promptHash("b".repeat(400)), promptHash(`${"b".repeat(400)} tail`));
+    NodeAssert.equal(promptHash("b".repeat(400)), promptHash(`${"b".repeat(400)} tail`));
   });
 });
 
-describe("promptHashIndex", () => {
+NodeTest.describe("promptHashIndex", () => {
   const base = makeBaseDir("hash-index");
   insertMessage(base.db, {
     threadId: "t-1",
@@ -1094,51 +1097,51 @@ describe("promptHashIndex", () => {
 
   const { handles } = open([base.baseDir]);
 
-  it("indexes in-window user prompts by hash, earliest thread winning", () => {
+  NodeTest.it("indexes in-window user prompts by hash, earliest thread winning", () => {
     const index = promptHashIndex(handles, WINDOW);
     const hit = index.get(promptHash("Rebase the fork onto upstream"));
-    assert.deepEqual(hit, { threadId: "t-1", createdAt: "2026-08-10T08:00:00.000Z" });
-    assert.equal(index.size, 1, "blank prompts and assistant messages must not be indexed");
+    NodeAssert.deepEqual(hit, { threadId: "t-1", createdAt: "2026-08-10T08:00:00.000Z" });
+    NodeAssert.equal(index.size, 1, "blank prompts and assistant messages must not be indexed");
   });
 
-  it("respects the window", () => {
+  NodeTest.it("respects the window", () => {
     const index = promptHashIndex(handles, {
       start: "2026-08-10T08:30:00.000Z",
       end: DAY_END,
     });
-    assert.equal(index.get(promptHash("Rebase the fork onto upstream")).threadId, "t-2");
+    NodeAssert.equal(index.get(promptHash("Rebase the fork onto upstream")).threadId, "t-2");
   });
 });
 
-describe("degrading instead of throwing", () => {
-  it("returns empty results and warnings for a database with no projection tables", () => {
+NodeTest.describe("degrading instead of throwing", () => {
+  NodeTest.it("returns empty results and warnings for a database with no projection tables", () => {
     const baseDir = NodePath.join(tmpRoot, "empty-db");
     NodeFS.mkdirSync(baseDir, { recursive: true });
-    const writer = new DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
+    const writer = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
     writer.exec("CREATE TABLE unrelated (id TEXT)");
     writer.close();
 
     const { handles, warnings } = open([baseDir]);
-    assert.equal(handles.length, 1);
-    assert.deepEqual(warnings, []);
+    NodeAssert.equal(handles.length, 1);
+    NodeAssert.deepEqual(warnings, []);
 
     const projects = readProjects(handles);
-    assert.deepEqual(projects, []);
-    assert.equal(projects.warnings.length, 1);
-    assert.match(projects.warnings[0], /projection_projects is missing/u);
+    NodeAssert.deepEqual(projects, []);
+    NodeAssert.equal(projects.warnings.length, 1);
+    NodeAssert.match(projects.warnings[0], /projection_projects is missing/u);
 
-    assert.deepEqual(readThreads(handles, WINDOW), []);
-    assert.deepEqual(readTurns(handles, ["t-1"], WINDOW), []);
-    assert.deepEqual(readActivities(handles, ["t-1"], WINDOW), []);
-    assert.deepEqual(readThreadMessages(handles, "t-1", {}), []);
-    assert.equal(firstUserPromptsByThread(handles, WINDOW).size, 0);
-    assert.equal(promptHashIndex(handles, WINDOW).size, 0);
+    NodeAssert.deepEqual(readThreads(handles, WINDOW), []);
+    NodeAssert.deepEqual(readTurns(handles, ["t-1"], WINDOW), []);
+    NodeAssert.deepEqual(readActivities(handles, ["t-1"], WINDOW), []);
+    NodeAssert.deepEqual(readThreadMessages(handles, "t-1", {}), []);
+    NodeAssert.equal(firstUserPromptsByThread(handles, WINDOW).size, 0);
+    NodeAssert.equal(promptHashIndex(handles, WINDOW).size, 0);
   });
 
-  it("skips a table that lost a column it cannot work without", () => {
+  NodeTest.it("skips a table that lost a column it cannot work without", () => {
     const baseDir = NodePath.join(tmpRoot, "drifted-db");
     NodeFS.mkdirSync(baseDir, { recursive: true });
-    const writer = new DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
+    const writer = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
     // `updated_at` has gone away — the overlap filter cannot be expressed any more.
     writer.exec(
       "CREATE TABLE projection_threads (thread_id TEXT PRIMARY KEY, created_at TEXT NOT NULL)",
@@ -1148,25 +1151,25 @@ describe("degrading instead of throwing", () => {
 
     const { handles } = open([baseDir]);
     const threads = readThreads(handles, WINDOW);
-    assert.deepEqual(threads, []);
-    assert.match(threads.warnings[0], /missing updated_at/u);
+    NodeAssert.deepEqual(threads, []);
+    NodeAssert.match(threads.warnings[0], /missing updated_at/u);
   });
 
-  it("tolerates missing and malformed handles everywhere", () => {
+  NodeTest.it("tolerates missing and malformed handles everywhere", () => {
     for (const handles of [undefined, null, [], [null], [{}], [{ db: null }], "nope"]) {
-      assert.deepEqual(readProjects(handles), []);
-      assert.deepEqual(readThreads(handles, WINDOW), []);
-      assert.deepEqual(readTurns(handles, null, WINDOW), []);
-      assert.deepEqual(readActivities(handles, null, WINDOW), []);
-      assert.deepEqual(readThreadMessages(handles, "t-1", {}), []);
-      assert.equal(firstUserPromptsByThread(handles, WINDOW).size, 0);
-      assert.equal(promptHashIndex(handles, WINDOW).size, 0);
+      NodeAssert.deepEqual(readProjects(handles), []);
+      NodeAssert.deepEqual(readThreads(handles, WINDOW), []);
+      NodeAssert.deepEqual(readTurns(handles, null, WINDOW), []);
+      NodeAssert.deepEqual(readActivities(handles, null, WINDOW), []);
+      NodeAssert.deepEqual(readThreadMessages(handles, "t-1", {}), []);
+      NodeAssert.equal(firstUserPromptsByThread(handles, WINDOW).size, 0);
+      NodeAssert.equal(promptHashIndex(handles, WINDOW).size, 0);
     }
   });
 });
 
-describe("warnings channel", () => {
-  it("is non-enumerable so results still behave like plain arrays", () => {
+NodeTest.describe("warnings channel", () => {
+  NodeTest.it("is non-enumerable so results still behave like plain arrays", () => {
     // The fixture name must not contain "warnings" — it lands in baseDir and would fool the
     // serialisation assertion below.
     const base = makeBaseDir("result-shape");
@@ -1176,9 +1179,9 @@ describe("warnings channel", () => {
     const { handles } = open([base.baseDir]);
     const projects = readProjects(handles);
 
-    assert.ok(Array.isArray(projects.warnings));
-    assert.deepEqual(Object.keys(projects), ["0"]);
-    assert.ok(!JSON.stringify(projects).includes("warnings"));
-    assert.equal([...projects].length, 1);
+    NodeAssert.ok(Array.isArray(projects.warnings));
+    NodeAssert.deepEqual(Object.keys(projects), ["0"]);
+    NodeAssert.ok(!JSON.stringify(projects).includes("warnings"));
+    NodeAssert.equal([...projects].length, 1);
   });
 });
