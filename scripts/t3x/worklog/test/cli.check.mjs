@@ -14,6 +14,7 @@
 // no fallbacks left — a module that does not answer is a crash (exit 3), not a quiet degradation.
 
 import assert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -161,14 +162,16 @@ function repoRun(root, overrides = {}) {
     if (key === "git rev-parse --short HEAD") return { ok: true, code: 0, stdout: "abc1234\n" };
     if (key.startsWith("git status")) return { ok: true, code: 0, stdout: ` M days/${DAY}.md\n` };
     if (key.startsWith("git add")) return { ok: true, code: 0 };
-    // `git diff --cached --quiet` exits 1 when there IS something staged.
-    if (key.startsWith("git diff")) return { ok: false, code: 1 };
+    // `git diff --cached --name-only -z` answers with the NUL-separated staged paths — that list
+    // is both the "is there anything to commit" test and the commit's pathspec.
+    if (key.startsWith("git diff")) return { ok: true, code: 0, stdout: `days/${DAY}.md\0` };
     if (key.startsWith("git commit"))
       return { ok: true, code: 0, stdout: "[main abc1234] worklog\n" };
     if (key.startsWith("git config --get user.name"))
       return { ok: true, code: 0, stdout: "Raj D\n" };
     if (key.startsWith("git config --get user.email"))
       return { ok: true, code: 0, stdout: "raj@example.com\n" };
+    if (key.startsWith("gh api user")) return { ok: true, code: 0, stdout: "radroid\n" };
     return { ok: false, code: 127, stderr: "not found" };
   });
 }
@@ -271,6 +274,64 @@ function fakeInit(result = {}) {
 
 function parseJson(text) {
   return JSON.parse(text);
+}
+
+// One test in this file drives publish against REAL git, because a fake runner cannot see the
+// difference between a pathspec git accepts and one it calls fatal — and that difference is what
+// makes `git commit -- <paths>` safe to use. It is skipped where git is absent.
+const GIT_AVAILABLE = (() => {
+  try {
+    const probe = NodeChildProcess.spawnSync("git", ["--version"], { encoding: "utf8" });
+    return probe.error == null && probe.status === 0;
+  } catch {
+    return false;
+  }
+})();
+
+/** Runs git in the fixture repo, ignoring the developer's own git config. */
+function git(cwd, args) {
+  const result = NodeChildProcess.spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: NodeOS.devNull,
+      GIT_CONFIG_SYSTEM: NodeOS.devNull,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_TERMINAL_PROMPT: "0",
+    },
+  });
+  if (result.error != null || result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.error?.message}`);
+  }
+  return result.stdout;
+}
+
+/** Writes config/redaction.yaml in the sandbox, in the subset lib/yamlLite.mjs accepts. */
+function writeRedaction(root, alwaysRedact, replacements = {}) {
+  const lines = ["version: 1", "always_redact:"];
+  for (const term of alwaysRedact) lines.push(`  - ${term}`);
+  lines.push("replacements:");
+  for (const [term, replacement] of Object.entries(replacements))
+    lines.push(`  ${term}: ${replacement}`);
+  const file = NodePath.join(root, "config", "redaction.yaml");
+  NodeFS.mkdirSync(NodePath.dirname(file), { recursive: true });
+  NodeFS.writeFileSync(file, `${lines.join("\n")}\n`, "utf8");
+  return file;
+}
+
+/** Writes config/projects.yaml verbatim — including deliberately broken YAML. */
+function writeRegistry(root, text) {
+  const file = NodePath.join(root, "config", "projects.yaml");
+  NodeFS.mkdirSync(NodePath.dirname(file), { recursive: true });
+  NodeFS.writeFileSync(file, text, "utf8");
+  return file;
+}
+
+/** Overwrites the sandbox bundle with one that reports an unclassified project. */
+function writeBundleWithUnclassified(bundlePath, entry) {
+  NodeFS.writeFileSync(bundlePath, JSON.stringify({ ...BUNDLE, unclassified: [entry] }), "utf8");
+  return bundlePath;
 }
 
 // --- usage, help and dispatch ---------------------------------------------------------------------
@@ -600,6 +661,98 @@ test("lint --allow suppresses a rule by id", async (t) => {
   assert.match(allowed.out, /No redaction findings\./u);
 });
 
+test("a registry that cannot be parsed makes the gate refuse, not pass", async (t) => {
+  const box = scenario(t);
+  // A tab is all it takes, and the README invites hand edits. Before this, the gate treated an
+  // unparseable registry as an empty one: private-project and private-branch stopped firing,
+  // `lint` exited 0 and `publish` committed.
+  writeRegistry(box.root, "version: 1\nprojects:\n\tacme:\n\t\tinclude: true\n");
+  const run = repoRun(box.root);
+
+  const lint = await runCli(["lint", "--file", box.dayFile, "--root", box.root]);
+  assert.equal(lint.code, 1);
+  assert.match(lint.err, /The redaction gate cannot run/u);
+  assert.match(lint.err, /config\/projects\.yaml/u);
+  assert.match(lint.err, /tabs are not allowed/u, "the parse error itself must be quoted");
+  assert.match(lint.err, /move it aside/u, "a refusal has to say how to proceed");
+
+  const publish = await runCli(["publish", "--date", DAY, "--root", box.root], { deps: { run } });
+  assert.equal(publish.code, 1);
+  assert.match(publish.err, /The redaction gate cannot run/u);
+  assert.deepEqual(run.calls, [], "nothing may be staged when the gate could not be evaluated");
+
+  const asJson = await runCli(["lint", "--json", "--file", box.dayFile, "--root", box.root]);
+  assert.equal(asJson.code, 1);
+  const payload = parseJson(asJson.out);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.registry, NodePath.join(box.root, "config", "projects.yaml"));
+});
+
+test("a registry that is merely absent still lints, with a warning", async (t) => {
+  const box = scenario(t);
+  // The pre-`init` state is not a broken state: there is nothing to evaluate yet, so the run is
+  // honest about what it skipped and carries on.
+  assert.equal(NodeFS.existsSync(NodePath.join(box.root, "config", "projects.yaml")), false);
+  const result = await runCli(["lint", "--file", box.dayFile, "--root", box.root]);
+  assert.equal(result.code, 0);
+  assert.match(result.out, /warning: No project registry at/u);
+});
+
+test("lint --bundle checks the names of projects the registry has never heard of", async (t) => {
+  const box = scenario(t);
+  writeBundleWithUnclassified(box.bundlePath, {
+    key: "acme-billing",
+    displayName: "Acme Billing",
+    roots: [NodePath.join(box.dir, "Developer", "acme-billing")],
+    evidence: { sessions: 2 },
+  });
+  NodeFS.writeFileSync(box.dayFile, "# 2026-08-10\n\nSpent the day in Acme Billing.\n", "utf8");
+
+  const withBundle = await runCli([
+    "lint",
+    "--json",
+    "--file",
+    box.dayFile,
+    "--bundle",
+    box.bundlePath,
+    "--root",
+    box.root,
+  ]);
+  const payload = parseJson(withBundle.out);
+  // The key, the display name and the root basename all go in; the basename repeats the key, so
+  // two distinct terms survive.
+  assert.equal(payload.unclassifiedTerms, 2);
+  assert.equal(withBundle.code, 1, "an unclassified project name is a blocking finding");
+  assert.ok(
+    payload.findings.some((finding) => finding.rule === "unclassified-project"),
+    `expected an unclassified-project finding, got ${JSON.stringify(payload.findings)}`,
+  );
+
+  // Without the bundle the same file passes — which is exactly why the weaker run has to say so.
+  const without = await runCli(["lint", "--json", "--file", box.dayFile, "--root", box.root]);
+  const bare = parseJson(without.out);
+  assert.equal(bare.unclassifiedTerms, 0);
+  assert.ok(
+    bare.warnings.some((warning) => warning.includes("No --bundle given")),
+    `expected a warning about the missing bundle, got ${JSON.stringify(bare.warnings)}`,
+  );
+});
+
+test("lint --bundle rejects a bundle path it cannot read rather than checking less", async (t) => {
+  const box = scenario(t);
+  const result = await runCli([
+    "lint",
+    "--file",
+    box.dayFile,
+    "--bundle",
+    "nope.json",
+    "--root",
+    box.root,
+  ]);
+  assert.equal(result.code, 2);
+  assert.match(result.err, /No bundle at nope\.json/u);
+});
+
 test("lint on an unreadable file fails closed", async (t) => {
   const box = scenario(t);
   const result = await runCli([
@@ -623,7 +776,9 @@ test("publish commits the day file and never pushes", async (t) => {
   assert.equal(result.code, 0);
   const commit = run.calls.find((call) => call.key.startsWith("git commit"));
   assert.ok(commit, "expected a git commit");
-  assert.deepEqual(commit.args, ["commit", "-m", `worklog: ${DAY}`]);
+  // The pathspec is not cosmetic: without it, anything the human had already staged in the worklog
+  // repo is swept into a commit that only `staged` was ever linted for.
+  assert.deepEqual(commit.args, ["commit", "-m", `worklog: ${DAY}`, "--", "days/2026-08-10.md"]);
   assert.equal(commit.cwd, box.root);
   assert.ok(run.calls.some((call) => call.key.startsWith("git add -- days/2026-08-10.md")));
   assert.ok(!run.calls.some((call) => call.key.includes("push")), "publish must never push");
@@ -637,7 +792,41 @@ test("publish --message overrides the commit message", async (t) => {
     deps: { run },
   });
   const commit = run.calls.find((call) => call.key.startsWith("git commit"));
-  assert.deepEqual(commit.args, ["commit", "-m", "log: the gate"]);
+  assert.deepEqual(commit.args, ["commit", "-m", "log: the gate", "--", "days/2026-08-10.md"]);
+});
+
+test("publish commits the staged paths git resolved, never a bare index sweep", async (t) => {
+  const box = scenario(t);
+  // config/ and extracts/ exist, so `git add` is asked for all three — but the commit may only
+  // name paths git actually knows: `git commit -- extracts` is fatal while that directory is
+  // still empty, which it is until the first extract lands. So the pathspec comes from what the
+  // diff reported, and nothing a human staged by hand is in it.
+  NodeFS.mkdirSync(NodePath.join(box.root, "config"), { recursive: true });
+  NodeFS.mkdirSync(NodePath.join(box.root, "extracts"), { recursive: true });
+  const diffKey = `git diff --cached --name-only --no-renames -z -- days/${DAY}.md config extracts`;
+  const run = repoRun(box.root, {
+    [diffKey]: {
+      ok: true,
+      code: 0,
+      stdout: `days/${DAY}.md\0config/projects.yaml\0`,
+    },
+  });
+
+  const result = await runCli(["publish", "--date", DAY, "--root", box.root], { deps: { run } });
+  assert.equal(result.code, 0);
+
+  const add = run.calls.find((call) => call.key.startsWith("git add"));
+  assert.deepEqual(add.args, ["add", "--", `days/${DAY}.md`, "config", "extracts"]);
+
+  const commit = run.calls.find((call) => call.key.startsWith("git commit"));
+  assert.deepEqual(commit.args, [
+    "commit",
+    "-m",
+    `worklog: ${DAY}`,
+    "--",
+    `days/${DAY}.md`,
+    "config/projects.yaml",
+  ]);
 });
 
 test("publish refuses when the day file has findings, before touching git", async (t) => {
@@ -667,15 +856,25 @@ test("publish refuses politely when the day file does not exist", async (t) => {
 
 test("publish refuses when nothing changed", async (t) => {
   const box = scenario(t);
-  // `git diff --cached --quiet` exiting 0 means the index matches HEAD.
-  const run = repoRun(box.root, {
-    "git diff --cached --quiet -- days/2026-08-10.md": { ok: true, code: 0 },
-  });
+  // An empty `git diff --cached --name-only` means the index matches HEAD.
+  const diffKey = `git diff --cached --name-only --no-renames -z -- days/${DAY}.md`;
+  const run = repoRun(box.root, { [diffKey]: { ok: true, code: 0, stdout: "" } });
   const result = await runCli(["publish", "--date", DAY, "--root", box.root], { deps: { run } });
 
   assert.equal(result.code, 1);
   assert.match(result.err, /Nothing to commit/u);
   assert.ok(!run.calls.some((call) => call.key.startsWith("git commit")));
+
+  // A git that fails outright is a different answer from "nothing changed", and must not commit.
+  const broken = repoRun(box.root, {
+    [diffKey]: { ok: false, code: 128, stderr: "fatal: not a git repository\n" },
+  });
+  const failed = await runCli(["publish", "--date", DAY, "--root", box.root], {
+    deps: { run: broken },
+  });
+  assert.equal(failed.code, 1);
+  assert.match(failed.err, /Could not inspect the worklog index/u);
+  assert.ok(!broken.calls.some((call) => call.key.startsWith("git commit")));
 });
 
 test("publish --dry-run reports without staging", async (t) => {
@@ -690,6 +889,123 @@ test("publish --dry-run reports without staging", async (t) => {
   assert.match(result.out, /would commit: worklog: 2026-08-10/u);
   assert.ok(!run.calls.some((call) => call.key.startsWith("git add")));
   assert.ok(!run.calls.some((call) => call.key.startsWith("git commit")));
+});
+
+test("against real git, publish commits only the cleared file and leaves a hand-staged one behind", async (t) => {
+  if (!GIT_AVAILABLE) return t.skip("git is not available");
+  const box = scenario(t);
+  withEnv(t, {
+    GIT_CONFIG_GLOBAL: NodeOS.devNull,
+    GIT_CONFIG_SYSTEM: NodeOS.devNull,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+  });
+  git(box.root, ["init", "-q", "-b", "main", "."]);
+  git(box.root, ["config", "user.name", "Raj D"]);
+  git(box.root, ["config", "user.email", "raj@example.com"]);
+  git(box.root, ["config", "commit.gpgsign", "false"]);
+
+  writeRegistry(
+    box.root,
+    "version: 1\nidentities:\n  - Raj D\nprojects:\n  worklog:\n    display_name: Worklog\n    roots:\n      - /nonexistent/worklog\n    include: true\n    visibility: public\n    confirmed: true\n",
+  );
+  // Empty on purpose: `extracts/` exists from `worklog init` and stays empty until the first
+  // extract lands. `git add -- extracts` shrugs; `git commit -- extracts` is fatal.
+  NodeFS.mkdirSync(NodePath.join(box.root, "extracts"), { recursive: true });
+
+  const leaky = NodePath.join(box.root, "days", "2026-08-09.md");
+  NodeFS.writeFileSync(leaky, LEAKY_DAY_FILE, "utf8");
+  git(box.root, ["add", "--", "days/2026-08-09.md"]);
+
+  // No injected runner: this is the real lib/git.mjs runner talking to the real git.
+  const result = await runCli(["publish", "--date", DAY, "--root", box.root]);
+  assert.equal(result.code, 0, result.all);
+
+  const committed = git(box.root, ["show", "--name-only", "--format=", "HEAD"])
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .sort();
+  assert.deepEqual(committed, ["config/projects.yaml", `days/${DAY}.md`]);
+  // The leak the human staged by hand never passed the gate, so it is still sitting in the index.
+  assert.match(git(box.root, ["status", "--porcelain"]), /^A {2}days\/2026-08-09\.md$/mu);
+});
+
+test("publish finds the day's bundle itself and refuses on an unclassified project name", async (t) => {
+  const box = scenario(t);
+  writeBundleWithUnclassified(box.bundlePath, {
+    key: "acme-billing",
+    displayName: "Acme Billing",
+    roots: [NodePath.join(box.dir, "Developer", "acme-billing")],
+  });
+  const run = repoRun(box.root);
+
+  // Nobody publishing a day file is going to remember a --bundle flag, so publish locates
+  // .worklog-tmp/bundles/bundle-<date>_<date>.json on its own.
+  const clean = await runCli(
+    ["publish", "--json", "--date", DAY, "--dry-run", "--root", box.root],
+    { deps: { run } },
+  );
+  assert.equal(clean.code, 0);
+  assert.equal(parseJson(clean.out).unclassifiedTerms, 2);
+
+  NodeFS.writeFileSync(box.dayFile, "# 2026-08-10\n\nShipped Acme Billing's importer.\n", "utf8");
+  const leaky = await runCli(["publish", "--date", DAY, "--root", box.root], { deps: { run } });
+  assert.equal(leaky.code, 1);
+  assert.match(leaky.out, /unclassified-project/u);
+  assert.ok(!run.calls.some((call) => call.key.startsWith("git commit")));
+});
+
+test("publish says so when the day's bundle is missing or unreadable", async (t) => {
+  const box = scenario(t);
+  const run = repoRun(box.root);
+
+  NodeFS.rmSync(box.bundlePath, { force: true });
+  const missing = await runCli(
+    ["publish", "--json", "--date", DAY, "--dry-run", "--root", box.root],
+    { deps: { run } },
+  );
+  assert.equal(missing.code, 0);
+  const missingPayload = parseJson(missing.out);
+  assert.equal(missingPayload.unclassifiedTerms, 0);
+  assert.ok(
+    missingPayload.warnings.some((warning) => warning.includes("No evidence bundle at")),
+    `expected a warning naming the bundle it looked for, got ${JSON.stringify(missingPayload.warnings)}`,
+  );
+
+  // A corrupt bundle is the same story: quieter checking is never allowed to be silent.
+  NodeFS.writeFileSync(box.bundlePath, "{ not json", "utf8");
+  const corrupt = await runCli(
+    ["publish", "--json", "--date", DAY, "--dry-run", "--root", box.root],
+    { deps: { run } },
+  );
+  assert.equal(corrupt.code, 0);
+  assert.ok(
+    parseJson(corrupt.out).warnings.some((warning) =>
+      warning.includes("Could not read the evidence bundle"),
+    ),
+  );
+});
+
+test("publish --range looks for the range's own bundle", async (t) => {
+  const box = scenario(t);
+  const label = `2026-08-04..${DAY}`;
+  NodeFS.mkdirSync(NodePath.join(box.root, "ranges"), { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(box.root, "ranges", `${label}.md`),
+    "# The week\n\nShipped Acme Billing's importer.\n",
+    "utf8",
+  );
+  writeBundleWithUnclassified(
+    NodePath.join(box.root, ".worklog-tmp", "bundles", `bundle-2026-08-04_${DAY}.json`),
+    { key: "acme-billing", displayName: "Acme Billing", roots: [] },
+  );
+
+  const result = await runCli(["publish", "--range", label, "--root", box.root], {
+    deps: { run: repoRun(box.root) },
+  });
+  assert.equal(result.code, 1);
+  assert.match(result.out, /unclassified-project/u);
 });
 
 test("publish refuses when the worklog root is not a git repo", async (t) => {
@@ -895,7 +1211,27 @@ test("init seeds identities from git config when the registry has none", async (
   assert.match(yaml, /identities:/u);
   assert.match(yaml, /^\s+- Raj D$/mu);
   assert.match(yaml, /^\s+- raj@example\.com$/mu);
+  // The GitHub login is seeded alongside them: it is what `mergedPrs` filters on, and without it
+  // every PR merged in a repo the user touched would be counted as theirs.
+  assert.match(yaml, /^\s+- "@radroid"$/mu);
   assert.doesNotMatch(result.out, /warning: No git identity/u);
+  assert.doesNotMatch(result.out, /warning: `gh` could not name/u);
+
+  // A signed-out `gh` still leaves a usable registry — it just cannot attribute pull requests,
+  // and says which line to add rather than silently counting everybody's.
+  const noGh = NodePath.join(box.dir, "worklog-no-gh");
+  const noGhInit = fakeInit({ root: noGh });
+  const signedOut = await runCli(["init", "--root", noGh], {
+    deps: {
+      init: noGhInit.module,
+      run: repoRun(noGh, { "gh api user -q .login": { ok: false, code: 1, stderr: "no auth" } }),
+    },
+  });
+  assert.equal(signedOut.code, 0);
+  assert.match(signedOut.out, /warning: `gh` could not name the signed-in user/u);
+  const noGhYaml = NodeFS.readFileSync(NodePath.join(noGh, "config", "projects.yaml"), "utf8");
+  assert.match(noGhYaml, /^\s+- Raj D$/mu);
+  assert.doesNotMatch(noGhYaml, /^\s+- "?@/mu);
 
   // With no git identity to borrow, the CLI says so instead of inventing one.
   const bare = NodePath.join(box.dir, "worklog-bare");
@@ -1047,6 +1383,37 @@ test("extract-queue resolves a bundle by bare filename and lists the slices", as
   );
   assert.equal(limited.code, 0);
   assert.equal(capped.queued[0].limit, 5);
+});
+
+test("extract-queue hands the always-redact list to the slice writer", async (t) => {
+  const box = scenario(t);
+  // A slice is the one artefact of this pipeline that reaches another model, and the bundle
+  // carries no redaction list — so if the CLI does not read config/redaction.yaml here, every
+  // always-redact term is written into the slice verbatim on every real run.
+  writeRedaction(box.root, ["Northwind Retail"], { "Northwind Retail": "a retail client" });
+  const extract = fakeExtract();
+
+  const result = await runCli(["extract-queue", "--bundle", box.bundlePath, "--root", box.root], {
+    deps: { extract: extract.module },
+  });
+
+  assert.equal(result.code, 0);
+  assert.deepEqual(extract.queued[0].redaction.alwaysRedact, ["Northwind Retail"]);
+  assert.deepEqual(extract.queued[0].redaction.replacements, {
+    "Northwind Retail": "a retail client",
+  });
+});
+
+test("extract-queue says so when there is no always-redact list to apply", async (t) => {
+  const box = scenario(t);
+  const extract = fakeExtract();
+  const result = await runCli(["extract-queue", "--bundle", box.bundlePath, "--root", box.root], {
+    deps: { extract: extract.module },
+  });
+
+  assert.equal(result.code, 0);
+  assert.deepEqual(extract.queued[0].redaction, { alwaysRedact: [], replacements: {} });
+  assert.match(result.out, /warning: No redaction list at/u);
 });
 
 test("extract-queue rejects a bundle it cannot read", async (t) => {

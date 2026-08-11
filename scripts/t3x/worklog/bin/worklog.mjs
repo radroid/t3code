@@ -27,7 +27,7 @@ import * as NodePath from "node:path";
 
 import { listSessionFiles } from "../lib/claudeCode.mjs";
 import { eachDay, formatNumber, parseLocalDate, timezoneName } from "../lib/format.mjs";
-import { createRunner } from "../lib/git.mjs";
+import { createRunner, githubLoginIdentity } from "../lib/git.mjs";
 import {
   claudeProjectsDir,
   expandHome,
@@ -166,8 +166,15 @@ const COMMANDS = [
   {
     name: "lint",
     summary: "The redaction gate. Exit 1 on any blocking finding.",
+    details:
+      "Pass --bundle to check the names of projects the registry has never heard of; `publish` finds that bundle by itself.",
     flags: {
       file: { type: "string", value: "F", required: true, describe: "Markdown file to check." },
+      bundle: {
+        type: "string",
+        value: "F",
+        describe: "Evidence bundle, so unclassified project names are checked too.",
+      },
       allow: {
         type: "list",
         value: "RULES",
@@ -642,7 +649,7 @@ async function runInit(ctx) {
   // Reading is safe; overwriting a file we could not understand is not.
   const registryExisted = NodeFS.existsSync(paths.projectsYaml);
   if (registryExisted) {
-    const parseError = yamlParseError(paths.projectsYaml);
+    const parseError = yamlLoadError(paths.projectsYaml);
     if (parseError !== null) {
       throw new RefusedError(
         `${tildify(paths.projectsYaml)} could not be parsed (${parseError}). Fix it or move it aside — init did not touch it.`,
@@ -683,12 +690,22 @@ async function runInit(ctx) {
   if (identitiesOf(registry).length === 0) {
     const name = gitConfig(ctx, paths.root, "user.name");
     const email = gitConfig(ctx, paths.root, "user.email");
-    registry.identities = [name, email].filter(
+    // The GitHub login belongs in the same list: without it `mergedPrs` has nothing to filter on,
+    // so every PR merged in a repo the user touched — a colleague's, Dependabot's — is counted as
+    // theirs. `gh` may be absent or signed out, which is why the seed is best-effort and the
+    // collector warns at report time instead of failing here.
+    const login = githubLoginIdentity(ctx.run);
+    registry.identities = [name, email, login].filter(
       (value) => typeof value === "string" && value !== "",
     );
     if (registry.identities.length === 0) {
       warnings.push("No git identity configured, so `identities:` is empty — add yours by hand.");
     } else {
+      if (login == null) {
+        warnings.push(
+          "`gh` could not name the signed-in user, so merged PRs cannot be attributed — add `@your-login` to `identities:`.",
+        );
+      }
       saveRegistry(paths, registry);
     }
   }
@@ -867,17 +884,26 @@ async function runExtractQueue(ctx) {
   const paths = worklogPaths(ctx.flags.root);
   const { bundle, bundlePath } = readBundle(ctx, paths, ctx.flags.bundle);
 
+  // The always-redact list has to be read here: the bundle does not carry one, so a queue called
+  // without it scrubs paths and secret shapes but writes every named term straight into a slice —
+  // and a slice is the one artefact of this pipeline that is handed to another model.
+  const loadedRedaction = loadRedaction(paths);
+
   const extract = await loadModule(ctx, "extract");
 
   const produced = await extract.queue({
     bundle,
     paths,
+    redaction: loadedRedaction.redaction,
     ...(ctx.flags.limit === undefined ? {} : { limit: ctx.flags.limit }),
   });
 
   const slices = toArray(produced?.queued);
   const skipped = toArray(produced?.skipped);
-  const warnings = toStringArray(produced?.warnings);
+  const warnings = [
+    ...toStringArray(loadedRedaction.warnings),
+    ...toStringArray(produced?.warnings),
+  ];
   const lines = [];
   if (slices.length === 0) {
     lines.push("Nothing new to extract — every session in this bundle is already up to date.");
@@ -974,10 +1000,22 @@ async function runLint(ctx) {
   const allow = validateAllow(ctx.flags.allow, ctx.command);
   const context = lintContext(paths);
 
-  const findings = lintFile(file, { ...context.options, allow });
+  // An explicit --bundle that cannot be read is a typo (exit 2 from readBundle), not a licence to
+  // check less; a missing --bundle is legal but weaker, so it says so rather than checking quietly.
+  const gateBundle =
+    ctx.flags.bundle === undefined ? null : readBundle(ctx, paths, ctx.flags.bundle).bundle;
+  const extraTerms = unclassifiedTerms(gateBundle);
+  const warnings = [...context.warnings];
+  if (gateBundle === null) {
+    warnings.push(
+      "No --bundle given — projects the registry has never heard of were not checked. Pass the day's bundle from `worklog collect`.",
+    );
+  }
+
+  const findings = lintFile(file, { ...context.options, allow, extraTerms });
   const blocking = hasErrors(findings);
   const lines = [formatFindings(findings)];
-  for (const warning of context.warnings) lines.push(`warning: ${warning}`);
+  for (const warning of warnings) lines.push(`warning: ${warning}`);
   if (blocking) {
     lines.push("");
     lines.push(
@@ -988,30 +1026,81 @@ async function runLint(ctx) {
   return {
     code: blocking ? EXIT.refused : EXIT.ok,
     lines,
-    json: { file, findings, errors: findings.filter((f) => f.severity === "error").length, allow },
-    warnings: context.warnings,
+    json: {
+      file,
+      findings,
+      errors: findings.filter((f) => f.severity === "error").length,
+      allow,
+      // The count, never the names: this output is read back by a model that must not learn them.
+      unclassifiedTerms: extraTerms.length,
+    },
+    warnings,
   };
 }
 
 function lintContext(paths) {
-  const loadedRegistry = loadRegistry(paths);
-  const loadedRedaction = loadRedaction(paths);
   const warnings = [];
-  if (!NodeFS.existsSync(paths.projectsYaml)) {
-    // Said out loud because the gate is materially weaker without it — no project name is known,
-    // so the private-project and private-branch rules cannot fire at all.
+  const hasRegistry = NodeFS.existsSync(paths.projectsYaml);
+
+  // Absent and unreadable are different states, and only one of them is safe to continue from.
+  // An absent registry is the pre-`init` state: nothing has been classified yet, so the
+  // project-name rules have nothing to say and a warning is honest. A registry that is THERE but
+  // cannot be parsed means the gate cannot evaluate its own rules — and a gate that cannot
+  // evaluate must refuse, because failing open here silently disarmed private-project and
+  // private-branch and let `publish` commit. One tab in a hand edit is enough to reach it.
+  if (!hasRegistry) {
     warnings.push(
       `No project registry at ${tildify(paths.projectsYaml)} — the project-name rules were not applied.`,
     );
   } else {
-    warnings.push(...toStringArray(loadedRegistry.warnings));
+    const unreadable = yamlLoadError(paths.projectsYaml);
+    if (unreadable !== null) {
+      throw new RefusedError(
+        `The redaction gate cannot run: ${tildify(paths.projectsYaml)} could not be read (${unreadable}). ` +
+          "It decides which projects may be named, so nothing here can be cleared. Fix the file, " +
+          "or move it aside to run with the project-name rules switched off.",
+        { registry: paths.projectsYaml },
+      );
+    }
   }
+
+  const loadedRegistry = loadRegistry(paths);
+  const loadedRedaction = loadRedaction(paths);
+  if (hasRegistry) warnings.push(...toStringArray(loadedRegistry.warnings));
   if (NodeFS.existsSync(paths.redactionYaml))
     warnings.push(...toStringArray(loadedRedaction.warnings));
   return {
     warnings,
     options: { registry: loadedRegistry.registry, redaction: loadedRedaction.redaction },
   };
+}
+
+/**
+ * The names of projects the registry has never heard of, as extra non-public terms for the gate.
+ * Only the collector knows them — they are in the bundle precisely because no classification
+ * exists — and an unreviewed project is the one class that must never be named, so the gate is
+ * blind to exactly the projects it should be strictest about unless they are fed in here.
+ */
+function unclassifiedTerms(bundle) {
+  const terms = [];
+  const seen = new Set();
+  for (const entry of toArray(bundle?.unclassified)) {
+    if (entry === null || typeof entry !== "object") continue;
+    const names = [entry.key, entry.displayName, entry.display_name];
+    // A root's basename is how the directory shows up in prose ("worked in acme-billing today").
+    for (const root of toArray(entry.roots)) {
+      const resolved = expandHome(root);
+      if (resolved !== "") names.push(NodePath.basename(resolved));
+    }
+    for (const name of names) {
+      const term = typeof name === "string" ? name.trim() : "";
+      const fingerprint = term.toLowerCase();
+      if (term === "" || seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+      terms.push({ term, rule: "unclassified-project" });
+    }
+  }
+  return terms;
 }
 
 function validateAllow(allow, command) {
@@ -1053,6 +1142,7 @@ function resolvePublishTarget(ctx) {
       label: date,
       relative: `days/${date}.md`,
       file: NodePath.join(paths.days, `${date}.md`),
+      bundleFile: NodePath.join(paths.bundles, `bundle-${date}_${date}.json`),
     };
   }
 
@@ -1069,7 +1159,39 @@ function resolvePublishTarget(ctx) {
     label,
     relative: `ranges/${label}.md`,
     file: NodePath.join(paths.ranges, `${label}.md`),
+    bundleFile: NodePath.join(paths.bundles, `bundle-${from}_${to}.json`),
   };
+}
+
+/**
+ * The evidence bundle behind what `publish` is committing, found without being told. Nobody
+ * publishing a day file is going to remember a --bundle flag, and the unclassified-project rule is
+ * only as strong as the names it is given — so a bundle that is missing or unreadable is said out
+ * loud rather than quietly shrinking the gate.
+ */
+function readGateBundle(target) {
+  const file = target.bundleFile;
+  const where = tildify(file);
+  if (!isFile(file)) {
+    return {
+      bundle: null,
+      warnings: [
+        `No evidence bundle at ${where} — projects the registry has never heard of were not checked. Run \`worklog collect\` for ${target.label} first.`,
+      ],
+    };
+  }
+  try {
+    const parsed = JSON.parse(NodeFS.readFileSync(file, "utf8"));
+    if (parsed === null || typeof parsed !== "object") throw new Error("it is not a JSON object");
+    return { bundle: parsed, warnings: [] };
+  } catch (error) {
+    return {
+      bundle: null,
+      warnings: [
+        `Could not read the evidence bundle at ${where} (${describeError(error)}) — projects the registry has never heard of were not checked.`,
+      ],
+    };
+  }
 }
 
 async function runPublish(ctx) {
@@ -1084,7 +1206,9 @@ async function runPublish(ctx) {
   }
 
   const context = lintContext(paths);
-  const findings = lintFile(file, { ...context.options, allow });
+  const gate = readGateBundle(target);
+  const extraTerms = unclassifiedTerms(gate.bundle);
+  const findings = lintFile(file, { ...context.options, allow, extraTerms });
   if (hasErrors(findings)) {
     throw new RefusedError(
       `Refusing to publish ${relative} — the redaction gate found blocking issues.`,
@@ -1114,7 +1238,7 @@ async function runPublish(ctx) {
     relative,
     ...["config", "extracts"].filter((dir) => isDirectory(NodePath.join(paths.root, dir))),
   ];
-  const warnings = [...context.warnings];
+  const warnings = [...context.warnings, ...gate.warnings];
 
   if (ctx.flags.dryRun === true) {
     const status = ctx.run("git", ["status", "--porcelain", "--", ...staged], { cwd: paths.root });
@@ -1135,7 +1259,16 @@ async function runPublish(ctx) {
         `  would commit: ${message}`,
         ...warnings.map((warning) => `warning: ${warning}`),
       ],
-      json: { date, file, dryRun: true, committed: false, staged, message, findings },
+      json: {
+        date,
+        file,
+        dryRun: true,
+        committed: false,
+        staged,
+        message,
+        findings,
+        unclassifiedTerms: extraTerms.length,
+      },
       warnings,
     };
   }
@@ -1148,13 +1281,18 @@ async function runPublish(ctx) {
     });
   }
 
-  // `git diff --cached --quiet` exits 0 when the index matches HEAD, i.e. nothing changed.
-  const diff = ctx.run("git", ["diff", "--cached", "--quiet", "--", ...staged], {
-    cwd: paths.root,
-  });
-  if (diff.ok)
-    throw new RefusedError(`Nothing to commit: ${relative} is unchanged.`, { file, date });
-  if (diff.code !== 1) {
+  // One question, two answers: whether anything changed, and which paths the commit may name.
+  // It has to be the resolved file list rather than `staged`, because `git commit -- <pathspec>`
+  // is fatal on a pathspec git has never heard of, and `extracts/` is an empty directory until the
+  // first extract lands — `git add` tolerates that, `git commit` does not. `-z` keeps a path with
+  // a space or a non-ASCII byte intact (git would otherwise quote it), and `--no-renames` lists
+  // both sides of a rename so the deletion cannot be left behind.
+  const diff = ctx.run(
+    "git",
+    ["diff", "--cached", "--name-only", "--no-renames", "-z", "--", ...staged],
+    { cwd: paths.root },
+  );
+  if (!diff.ok) {
     throw new RefusedError(
       `Could not inspect the worklog index: ${firstLine(diff.stderr) || "git failed"}`,
       {
@@ -1163,8 +1301,18 @@ async function runPublish(ctx) {
       },
     );
   }
+  const changed = String(diff.stdout ?? "")
+    .split("\0")
+    .filter((path) => path !== "");
+  if (changed.length === 0) {
+    throw new RefusedError(`Nothing to commit: ${relative} is unchanged.`, { file, date });
+  }
 
-  const commit = ctx.run("git", ["commit", "-m", message], { cwd: paths.root });
+  // The pathspec is the point: only these paths passed the redaction gate, and without it whatever
+  // the human had already staged by hand — a leaky draft of yesterday, say — rides along in a
+  // commit that nothing ever checked. `git add` ran on the same paths a moment ago, so the index
+  // and the working tree agree and committing by pathspec commits exactly what was cleared.
+  const commit = ctx.run("git", ["commit", "-m", message, "--", ...changed], { cwd: paths.root });
   if (!commit.ok) {
     throw new RefusedError(
       `\`git commit\` failed: ${firstLine(commit.stderr) || firstLine(commit.stdout)}`,
@@ -1184,7 +1332,16 @@ async function runPublish(ctx) {
       "  Nothing was pushed; this repo has no remote by design.",
       ...warnings.map((warning) => `warning: ${warning}`),
     ],
-    json: { date, file, dryRun: false, committed: true, staged, message, sha },
+    json: {
+      date,
+      file,
+      dryRun: false,
+      committed: true,
+      staged,
+      message,
+      sha,
+      unclassifiedTerms: extraTerms.length,
+    },
     warnings,
   };
 }
@@ -1497,13 +1654,20 @@ function discoverProjectsDefault() {
   return { candidates, warnings };
 }
 
-function yamlParseError(file) {
+/** Why a config file cannot be used, or null when it can. Unreadable and unparseable both count. */
+function yamlLoadError(file) {
+  let doc;
   try {
-    parseYaml(NodeFS.readFileSync(file, "utf8"));
-    return null;
+    doc = parseYaml(NodeFS.readFileSync(file, "utf8"));
   } catch (error) {
     return describeError(error);
   }
+  // An empty file parses to an empty map, which is usable. A list or a bare scalar is not: every
+  // reader of these files asks it for keys.
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
+    return "it is not a map of settings";
+  }
+  return null;
 }
 
 function countFiles(dir, suffix) {

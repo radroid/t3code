@@ -127,10 +127,12 @@ scalars, tabs, sequences of maps. The writer emits canonical, round-trippable ou
 
 ```yaml
 version: 1
-# Identities that count as "my" commits.
+# Identities that count as "my" commits, and — via the @login — as "my" merged pull requests.
+# `init` seeds all three: git's user.name, user.email, and whoever `gh api user` says is signed in.
 identities:
   - 25481060+radroid@users.noreply.github.com
   - Raj D
+  - "@radroid"
 defaults:
   active_gap_minutes: 30
   single_event_minutes: 1
@@ -165,6 +167,18 @@ replacements:
 | `private` + confirmed   | no             | no                                   | yes                                       |
 | any, `confirmed: false` | no             | no                                   | yes, **and flagged in the report header** |
 | `include: false`        | no             | no                                   | no                                        |
+
+**The registry is the one file worth protecting.** `loadRegistry` deliberately degrades a file it
+cannot read into an _empty_ registry plus a warning, because a reader should still be able to draft
+a report. That is a trap for writers: load-then-save would turn one unreadable byte into the
+permanent loss of every classification a human has given. `saveRegistry` therefore refuses one
+narrow shape — a file that currently names projects or identities, being replaced by one that names
+neither. Scaffolding a missing file and re-emptying an already-empty one are unaffected.
+
+This is not hypothetical: during the build an agent deleted `config/` and a later `init` recreated
+the scaffold, losing 13 classifications until they were recovered from the previous commit. Which
+is also the second line of defence — the registry lives in the worklog repo, so `git checkout` puts
+it back.
 
 ## 5. Time metrics
 
