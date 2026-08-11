@@ -42,8 +42,40 @@ scripts/t3x/worklog/
   test/run.mjs                # `node scripts/t3x/worklog/test/run.mjs [name ...]`
 ```
 
-Installed machine-wide by symlink: `~/.claude/skills/worklog -> ~/Developer/t3code/scripts/t3x/worklog`
-(the same pattern as the other skills in `~/.claude/skills`, which are all symlinks).
+### Installing it machine-wide
+
+A skill only exists for a session that can see it, and a path inside this repo is visible only
+when you are working in this repo. `~/.claude/skills/` is the machine-wide directory, and every
+entry in it is a symlink, so:
+
+```bash
+ln -s ~/Developer/t3code/scripts/t3x/worklog ~/.claude/skills/worklog
+```
+
+That is the end state, and it depends on `~/Developer/t3code` being checked out somewhere that
+has this directory — i.e. on `main`, after the feature has landed. Symlinking into a checkout
+that moves between branches means the skill appears and disappears with `git checkout`.
+
+Until it lands, the install points at a **dedicated worktree pinned to the reviewed commit**,
+which is immune to what any other checkout is doing and costs ~1 MB rather than 236 MB:
+
+```bash
+git worktree add --detach ~/Developer/t3code-skills <commit>
+git -C ~/Developer/t3code-skills sparse-checkout set --no-cone scripts/t3x/worklog
+ln -s ~/Developer/t3code-skills/scripts/t3x/worklog ~/.claude/skills/worklog
+```
+
+Being pinned is the point and the catch: the installed skill is exactly the reviewed commit and
+will not drift under you, but it also will not pick up new commits. To move it to a newer one,
+`git -C ~/Developer/t3code-skills checkout <commit>`. After the feature is on `main`, re-point
+the symlink at the line above and `git worktree remove ~/Developer/t3code-skills`.
+
+Verify an install by resolving it the way `SKILL.md` does, from a directory that has nothing to
+do with this repo:
+
+```bash
+cd /tmp && node ~/.claude/skills/worklog/bin/worklog.mjs doctor
+```
 
 Generated data (separate private repo, created by `worklog init`):
 
