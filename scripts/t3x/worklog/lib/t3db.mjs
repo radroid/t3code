@@ -14,7 +14,7 @@
 // that want diagnostics can read `rows.warnings` while `JSON.stringify`, spreads, and iteration
 // stay completely unaffected.
 
-import { DatabaseSync } from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -102,7 +102,7 @@ function chunk(items, size) {
 }
 
 function placeholders(count) {
-  return new Array(count).fill("?").join(", ");
+  return Array.from({ length: count }, () => "?").join(", ");
 }
 
 function windowBounds(options) {
@@ -231,7 +231,11 @@ export function openT3Databases(baseDirs) {
     seen.add(identity);
 
     try {
-      handles.push({ baseDir, dbPath, db: new DatabaseSync(dbPath, { readOnly: true }) });
+      handles.push({
+        baseDir,
+        dbPath,
+        db: new NodeSqlite.DatabaseSync(dbPath, { readOnly: true }),
+      });
     } catch (error) {
       warnings.push(`Could not open ${dbPath} read-only: ${describeError(error)}`);
     }

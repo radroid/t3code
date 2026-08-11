@@ -55,6 +55,7 @@ const DOUBLE_QUOTE_ENCODES = new Map([
 
 // C0 controls plus DEL. Valid YAML forbids these in a plain scalar, so the writer quotes and
 // `\u`-escapes them rather than emitting a file no other reader would accept.
+// oxlint-disable-next-line eslint/no-control-regex -- matching them is the whole point.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/u;
 
 /** Parse/serialise failure that names the offending line (1-based) and carries its raw text. */

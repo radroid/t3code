@@ -1,5 +1,5 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeTest from "node:test";
 
 import { parseYaml, stringifyYaml, YamlLiteError } from "../lib/yamlLite.mjs";
 
@@ -8,20 +8,20 @@ function parseError(text) {
   try {
     parseYaml(text);
   } catch (error) {
-    assert.ok(error instanceof YamlLiteError, `expected a YamlLiteError, got ${error}`);
+    NodeAssert.ok(error instanceof YamlLiteError, `expected a YamlLiteError, got ${error}`);
     return error;
   }
-  return assert.fail(`expected a YamlLiteError for:\n${text}`);
+  return NodeAssert.fail(`expected a YamlLiteError for:\n${text}`);
 }
 
 /** Asserts the round-trip invariant: parse(stringify(x)) deep-equals x. */
 function roundTrip(value, options) {
   const text = stringifyYaml(value, options);
-  assert.deepEqual(parseYaml(text), value, `round-trip failed for:\n${text}`);
+  NodeAssert.deepEqual(parseYaml(text), value, `round-trip failed for:\n${text}`);
   return text;
 }
 
-test("parses the registry shape from the design doc", () => {
+NodeTest.test("parses the registry shape from the design doc", () => {
   const text = [
     "version: 1",
     "# Identities that count as my commits.",
@@ -43,7 +43,7 @@ test("parses the registry shape from the design doc", () => {
     "",
   ].join("\n");
 
-  assert.deepEqual(parseYaml(text), {
+  NodeAssert.deepEqual(parseYaml(text), {
     version: 1,
     identities: ["25481060+radroid@users.noreply.github.com", "Raj D"],
     defaults: { active_gap_minutes: 30, single_event_minutes: 1 },
@@ -60,13 +60,13 @@ test("parses the registry shape from the design doc", () => {
   });
 });
 
-test("an empty or comment-only document is an empty map", () => {
-  assert.deepEqual(parseYaml(""), {});
-  assert.deepEqual(parseYaml("\n\n   \n"), {});
-  assert.deepEqual(parseYaml("# just a note\n#and another\n"), {});
+NodeTest.test("an empty or comment-only document is an empty map", () => {
+  NodeAssert.deepEqual(parseYaml(""), {});
+  NodeAssert.deepEqual(parseYaml("\n\n   \n"), {});
+  NodeAssert.deepEqual(parseYaml("# just a note\n#and another\n"), {});
 });
 
-test("scalar types", () => {
+NodeTest.test("scalar types", () => {
   const parsed = parseYaml(
     [
       "t: true",
@@ -88,7 +88,7 @@ test("scalar types", () => {
       "colonInside: a:b",
     ].join("\n"),
   );
-  assert.deepEqual(parsed, {
+  NodeAssert.deepEqual(parsed, {
     t: true,
     tUpper: true,
     f: false,
@@ -110,7 +110,7 @@ test("scalar types", () => {
   });
 });
 
-test("quoted scalars and their escapes", () => {
+NodeTest.test("quoted scalars and their escapes", () => {
   const parsed = parseYaml(
     [
       'dq: "hello world"',
@@ -127,7 +127,7 @@ test("quoted scalars and their escapes", () => {
       'trailing: "kept"   # a comment',
     ].join("\n"),
   );
-  assert.deepEqual(parsed, {
+  NodeAssert.deepEqual(parsed, {
     dq: "hello world",
     withNewline: "line one\nline two",
     withQuote: 'she said "hi"',
@@ -143,7 +143,7 @@ test("quoted scalars and their escapes", () => {
   });
 });
 
-test("comments: full-line, trailing, and comment-as-value", () => {
+NodeTest.test("comments: full-line, trailing, and comment-as-value", () => {
   const parsed = parseYaml(
     [
       "# leading",
@@ -158,7 +158,7 @@ test("comments: full-line, trailing, and comment-as-value", () => {
       "  - two",
     ].join("\n"),
   );
-  assert.deepEqual(parsed, {
+  NodeAssert.deepEqual(parsed, {
     a: 1,
     b: "two#notacomment",
     c: { d: 4 },
@@ -166,120 +166,120 @@ test("comments: full-line, trailing, and comment-as-value", () => {
   });
 });
 
-test("empty containers survive the round-trip as themselves", () => {
-  assert.deepEqual(parseYaml("a: {}\nb: []\n"), { a: {}, b: [] });
-  assert.deepEqual(parseYaml("a: { }\nb: [ ]\n"), { a: {}, b: [] });
-  assert.equal(stringifyYaml({ a: {}, b: [] }), "a: {}\nb: []\n");
+NodeTest.test("empty containers survive the round-trip as themselves", () => {
+  NodeAssert.deepEqual(parseYaml("a: {}\nb: []\n"), { a: {}, b: [] });
+  NodeAssert.deepEqual(parseYaml("a: { }\nb: [ ]\n"), { a: {}, b: [] });
+  NodeAssert.equal(stringifyYaml({ a: {}, b: [] }), "a: {}\nb: []\n");
   roundTrip({ a: {}, b: [], c: { d: [] } });
 });
 
-test("a key with no value and no block is null", () => {
-  assert.deepEqual(parseYaml("a:\nb: 1\n"), { a: null, b: 1 });
+NodeTest.test("a key with no value and no block is null", () => {
+  NodeAssert.deepEqual(parseYaml("a:\nb: 1\n"), { a: null, b: 1 });
 });
 
-test("sequences may be written flush with their key or indented", () => {
+NodeTest.test("sequences may be written flush with their key or indented", () => {
   const flush = parseYaml(["identities:", "- one", "- two", "next: 1"].join("\n"));
   const indented = parseYaml(["identities:", "  - one", "  - two", "next: 1"].join("\n"));
-  assert.deepEqual(flush, { identities: ["one", "two"], next: 1 });
-  assert.deepEqual(flush, indented);
+  NodeAssert.deepEqual(flush, { identities: ["one", "two"], next: 1 });
+  NodeAssert.deepEqual(flush, indented);
   // Output is always canonical (indented), whichever form came in.
-  assert.equal(stringifyYaml(flush), "identities:\n  - one\n  - two\nnext: 1\n");
+  NodeAssert.equal(stringifyYaml(flush), "identities:\n  - one\n  - two\nnext: 1\n");
 });
 
-test("deeply nested maps", () => {
+NodeTest.test("deeply nested maps", () => {
   const parsed = parseYaml(["a:", "  b:", "    c:", "      d: deep", "e: shallow"].join("\n"));
-  assert.deepEqual(parsed, { a: { b: { c: { d: "deep" } } }, e: "shallow" });
+  NodeAssert.deepEqual(parsed, { a: { b: { c: { d: "deep" } } }, e: "shallow" });
 });
 
-test("keys may contain spaces, and quoted keys are supported", () => {
+NodeTest.test("keys may contain spaces, and quoted keys are supported", () => {
   const parsed = parseYaml(["Some Client Name: a client", '"weird: key": value'].join("\n"));
-  assert.deepEqual(parsed, { "Some Client Name": "a client", "weird: key": "value" });
+  NodeAssert.deepEqual(parsed, { "Some Client Name": "a client", "weird: key": "value" });
 });
 
-test("a __proto__ key stays an ordinary own property", () => {
+NodeTest.test("a __proto__ key stays an ordinary own property", () => {
   const parsed = parseYaml("__proto__: polluted\nother: 1\n");
-  assert.equal(Object.getPrototypeOf(parsed), Object.prototype);
-  assert.equal(Object.hasOwn(parsed, "__proto__"), true);
-  assert.equal({}.polluted, undefined);
-  assert.equal(roundTrip(parsed).startsWith("__proto__: polluted"), true);
+  NodeAssert.equal(Object.getPrototypeOf(parsed), Object.prototype);
+  NodeAssert.equal(Object.hasOwn(parsed, "__proto__"), true);
+  NodeAssert.equal({}.polluted, undefined);
+  NodeAssert.equal(roundTrip(parsed).startsWith("__proto__: polluted"), true);
 });
 
-test("rejects tabs for indentation, naming the line", () => {
+NodeTest.test("rejects tabs for indentation, naming the line", () => {
   const error = parseError("a:\n\tb: 1\n");
-  assert.equal(error.line, 2);
-  assert.match(error.message, /^line 2: tabs are not allowed/u);
-  assert.equal(error.snippet, "\tb: 1");
+  NodeAssert.equal(error.line, 2);
+  NodeAssert.match(error.message, /^line 2: tabs are not allowed/u);
+  NodeAssert.equal(error.snippet, "\tb: 1");
 });
 
-test("rejects odd indentation", () => {
+NodeTest.test("rejects odd indentation", () => {
   const error = parseError("a:\n   b: 1\n");
-  assert.equal(error.line, 2);
-  assert.match(error.message, /multiple of two spaces/u);
+  NodeAssert.equal(error.line, 2);
+  NodeAssert.match(error.message, /multiple of two spaces/u);
 });
 
-test("rejects an indentation jump of more than one level", () => {
+NodeTest.test("rejects an indentation jump of more than one level", () => {
   const error = parseError("a:\n    b: 1\n");
-  assert.equal(error.line, 2);
-  assert.match(error.message, /exactly two spaces/u);
+  NodeAssert.equal(error.line, 2);
+  NodeAssert.match(error.message, /exactly two spaces/u);
 });
 
-test("rejects anchors and aliases", () => {
-  assert.match(parseError("a: &anchor 1\n").message, /anchors and aliases/u);
+NodeTest.test("rejects anchors and aliases", () => {
+  NodeAssert.match(parseError("a: &anchor 1\n").message, /anchors and aliases/u);
   const alias = parseError("a: 1\nb: *anchor\n");
-  assert.equal(alias.line, 2);
-  assert.match(alias.message, /anchors and aliases/u);
+  NodeAssert.equal(alias.line, 2);
+  NodeAssert.match(alias.message, /anchors and aliases/u);
 });
 
-test("rejects non-empty flow collections", () => {
-  assert.match(parseError("a: {b: 1}\n").message, /flow collections/u);
+NodeTest.test("rejects non-empty flow collections", () => {
+  NodeAssert.match(parseError("a: {b: 1}\n").message, /flow collections/u);
   const seq = parseError("a: 1\nb: [1, 2]\n");
-  assert.equal(seq.line, 2);
-  assert.match(seq.message, /flow collections/u);
+  NodeAssert.equal(seq.line, 2);
+  NodeAssert.match(seq.message, /flow collections/u);
 });
 
-test("rejects multiline scalars", () => {
-  assert.match(parseError("a: |\n  text\n").message, /multiline scalars/u);
-  assert.match(parseError("a: >-\n  text\n").message, /multiline scalars/u);
+NodeTest.test("rejects multiline scalars", () => {
+  NodeAssert.match(parseError("a: |\n  text\n").message, /multiline scalars/u);
+  NodeAssert.match(parseError("a: >-\n  text\n").message, /multiline scalars/u);
 });
 
-test("rejects sequences whose items are maps", () => {
+NodeTest.test("rejects sequences whose items are maps", () => {
   const inline = parseError("projects:\n  - key: value\n");
-  assert.equal(inline.line, 2);
-  assert.match(inline.message, /must be scalars/u);
+  NodeAssert.equal(inline.line, 2);
+  NodeAssert.match(inline.message, /must be scalars/u);
 
   const nested = parseError("projects:\n  -\n    key: value\n");
-  assert.match(nested.message, /must be scalars/u);
+  NodeAssert.match(nested.message, /must be scalars/u);
 });
 
-test("rejects duplicate keys in the same map", () => {
+NodeTest.test("rejects duplicate keys in the same map", () => {
   const error = parseError("a: 1\nb: 2\na: 3\n");
-  assert.equal(error.line, 3);
-  assert.match(error.message, /duplicate key "a"/u);
+  NodeAssert.equal(error.line, 3);
+  NodeAssert.match(error.message, /duplicate key "a"/u);
   // The same key at different depths is fine.
-  assert.deepEqual(parseYaml("a: 1\nb:\n  a: 2\n"), { a: 1, b: { a: 2 } });
+  NodeAssert.deepEqual(parseYaml("a: 1\nb:\n  a: 2\n"), { a: 1, b: { a: 2 } });
 });
 
-test("rejects a document that is not a map at the root", () => {
-  assert.match(parseError("- one\n- two\n").message, /root must be a map/u);
-  assert.match(parseError("just a scalar\n").message, /expected a 'key: value' entry/u);
-  assert.match(parseError("  a: 1\n").message, /must start at column 0/u);
+NodeTest.test("rejects a document that is not a map at the root", () => {
+  NodeAssert.match(parseError("- one\n- two\n").message, /root must be a map/u);
+  NodeAssert.match(parseError("just a scalar\n").message, /expected a 'key: value' entry/u);
+  NodeAssert.match(parseError("  a: 1\n").message, /must start at column 0/u);
 });
 
-test("rejects malformed quoting", () => {
-  assert.match(parseError('a: "unterminated\n').message, /unterminated quoted scalar/u);
-  assert.match(parseError('a: "bad \\q escape"\n').message, /unsupported escape sequence/u);
-  assert.match(
+NodeTest.test("rejects malformed quoting", () => {
+  NodeAssert.match(parseError('a: "unterminated\n').message, /unterminated quoted scalar/u);
+  NodeAssert.match(parseError('a: "bad \\q escape"\n').message, /unsupported escape sequence/u);
+  NodeAssert.match(
     parseError('a: "quoted" trailing\n').message,
     /unexpected text after a quoted scalar/u,
   );
 });
 
-test("rejects a non-string input", () => {
-  assert.throws(() => parseYaml(null), YamlLiteError);
-  assert.throws(() => parseYaml({ a: 1 }), YamlLiteError);
+NodeTest.test("rejects a non-string input", () => {
+  NodeAssert.throws(() => parseYaml(null), YamlLiteError);
+  NodeAssert.throws(() => parseYaml({ a: 1 }), YamlLiteError);
 });
 
-test("the writer quotes everything that would otherwise change meaning", () => {
+NodeTest.test("the writer quotes everything that would otherwise change meaning", () => {
   const value = {
     emptyString: "",
     leadingSpace: " x",
@@ -307,21 +307,21 @@ test("the writer quotes everything that would otherwise change meaning", () => {
   const text = roundTrip(value);
   // Everything above must survive as a string, not as the type it resembles.
   for (const parsed of Object.values(parseYaml(text))) {
-    assert.equal(typeof parsed, "string");
+    NodeAssert.equal(typeof parsed, "string");
   }
   // An apostrophe alone does not need quoting; a leading one would.
-  assert.match(text, /apostrophe: it's/u);
+  NodeAssert.match(text, /apostrophe: it's/u);
 });
 
-test("control characters are \\u-escaped rather than emitted raw", () => {
+NodeTest.test("control characters are \\u-escaped rather than emitted raw", () => {
   const bell = "a\u0007b";
   const text = stringifyYaml({ note: bell });
-  assert.equal(text, 'note: "a\\u0007b"\n');
-  assert.deepEqual(parseYaml(text), { note: bell });
-  assert.match(parseError('a: "bad \\u00zz escape"').message, /four hex digits/u);
+  NodeAssert.equal(text, 'note: "a\\u0007b"\n');
+  NodeAssert.deepEqual(parseYaml(text), { note: bell });
+  NodeAssert.match(parseError('a: "bad \\u00zz escape"').message, /four hex digits/u);
 });
 
-test("round-trips every supported shape", () => {
+NodeTest.test("round-trips every supported shape", () => {
   roundTrip({});
   roundTrip({ a: 1, b: "two", c: true, d: null, e: 1.25, f: -3 });
   roundTrip({ list: ["a", "b", "c"], mixed: [1, true, null, "x"] });
@@ -350,13 +350,13 @@ test("round-trips every supported shape", () => {
   });
 });
 
-test("output preserves key insertion order", () => {
+NodeTest.test("output preserves key insertion order", () => {
   const text = stringifyYaml({ zebra: 1, apple: 2, mango: { pear: 3, kiwi: 4 } });
-  assert.equal(text, "zebra: 1\napple: 2\nmango:\n  pear: 3\n  kiwi: 4\n");
-  assert.deepEqual(Object.keys(parseYaml(text)), ["zebra", "apple", "mango"]);
+  NodeAssert.equal(text, "zebra: 1\napple: 2\nmango:\n  pear: 3\n  kiwi: 4\n");
+  NodeAssert.deepEqual(Object.keys(parseYaml(text)), ["zebra", "apple", "mango"]);
 });
 
-test("comments are emitted above the addressed key, at its indent", () => {
+NodeTest.test("comments are emitted above the addressed key, at its indent", () => {
   const text = stringifyYaml(
     { version: 1, defaults: { gap: 30 }, projects: { t3code: { include: true } } },
     {
@@ -368,7 +368,7 @@ test("comments are emitted above the addressed key, at its indent", () => {
       },
     },
   );
-  assert.equal(
+  NodeAssert.equal(
     text,
     [
       "# Schema version.",
@@ -385,41 +385,44 @@ test("comments are emitted above the addressed key, at its indent", () => {
       "",
     ].join("\n"),
   );
-  assert.deepEqual(parseYaml(text), {
+  NodeAssert.deepEqual(parseYaml(text), {
     version: 1,
     defaults: { gap: 30 },
     projects: { t3code: { include: true } },
   });
 });
 
-test("the writer skips undefined values", () => {
-  assert.equal(stringifyYaml({ a: 1, b: undefined, c: 3 }), "a: 1\nc: 3\n");
-  assert.equal(stringifyYaml({ a: { b: undefined } }), "a: {}\n");
+NodeTest.test("the writer skips undefined values", () => {
+  NodeAssert.equal(stringifyYaml({ a: 1, b: undefined, c: 3 }), "a: 1\nc: 3\n");
+  NodeAssert.equal(stringifyYaml({ a: { b: undefined } }), "a: {}\n");
 });
 
-test("the writer refuses what it cannot represent", () => {
-  assert.throws(() => stringifyYaml(null), YamlLiteError);
-  assert.throws(() => stringifyYaml([1, 2]), YamlLiteError);
-  assert.throws(() => stringifyYaml("scalar"), YamlLiteError);
-  assert.throws(() => stringifyYaml({ a: [{ b: 1 }] }), /sequence items must be scalars/u);
-  assert.throws(() => stringifyYaml({ a: [[1]] }), /sequence items must be scalars/u);
-  assert.throws(
+NodeTest.test("the writer refuses what it cannot represent", () => {
+  NodeAssert.throws(() => stringifyYaml(null), YamlLiteError);
+  NodeAssert.throws(() => stringifyYaml([1, 2]), YamlLiteError);
+  NodeAssert.throws(() => stringifyYaml("scalar"), YamlLiteError);
+  NodeAssert.throws(() => stringifyYaml({ a: [{ b: 1 }] }), /sequence items must be scalars/u);
+  NodeAssert.throws(() => stringifyYaml({ a: [[1]] }), /sequence items must be scalars/u);
+  NodeAssert.throws(
     () => stringifyYaml({ a: Number.POSITIVE_INFINITY }),
     /cannot represent the number/u,
   );
-  assert.throws(() => stringifyYaml({ a: Number.NaN }), /cannot represent the number/u);
-  assert.throws(() => stringifyYaml({ a: 1n }), /cannot represent a value of type bigint/u);
-  assert.throws(() => stringifyYaml({ a: new Date() }), /cannot represent a value of type object/u);
+  NodeAssert.throws(() => stringifyYaml({ a: Number.NaN }), /cannot represent the number/u);
+  NodeAssert.throws(() => stringifyYaml({ a: 1n }), /cannot represent a value of type bigint/u);
+  NodeAssert.throws(
+    () => stringifyYaml({ a: new Date() }),
+    /cannot represent a value of type object/u,
+  );
 
   const cycle = { a: {} };
   cycle.a.self = cycle;
-  assert.throws(() => stringifyYaml(cycle), /circular reference/u);
+  NodeAssert.throws(() => stringifyYaml(cycle), /circular reference/u);
 });
 
-test("YamlLiteError carries a line and a snippet", () => {
+NodeTest.test("YamlLiteError carries a line and a snippet", () => {
   const error = parseError("ok: 1\nbad: [1]\n");
-  assert.ok(error instanceof Error);
-  assert.equal(error.name, "YamlLiteError");
-  assert.equal(error.line, 2);
-  assert.equal(error.snippet, "bad: [1]");
+  NodeAssert.ok(error instanceof Error);
+  NodeAssert.equal(error.name, "YamlLiteError");
+  NodeAssert.equal(error.line, 2);
+  NodeAssert.equal(error.snippet, "bad: [1]");
 });
