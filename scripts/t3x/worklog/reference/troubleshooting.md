@@ -4,6 +4,27 @@ Every command treats a missing database, a missing `gh`, or an offline network a
 not a failure. So the usual symptom is not a crash — it is a report that is quietly wrong.
 Read the `warnings` block in the collect summary before you read the numbers.
 
+## The skill is not available outside this repo
+
+`/worklog` works while you are in the t3code checkout and nowhere else, or the resolver at the
+top of `SKILL.md` prints `NOT FOUND`.
+
+A skill is only visible to a session that can see its directory, so a path inside a repo is a
+per-repo install. The machine-wide directory is `~/.claude/skills/`, and every entry in it is a
+symlink:
+
+```bash
+ls -l ~/.claude/skills/worklog
+```
+
+No such file means it was never installed — see the install section in
+`docs/t3x/worklog-design.md`. A symlink whose target does not exist means it points into a
+checkout that has since moved to a branch without this directory, which is the failure mode of
+symlinking into a working checkout rather than a pinned one.
+
+Either way, nothing about the worklog repo or its config is affected: the install is a pointer,
+and re-creating it restores everything.
+
 ## No databases found
 
 `doctor` reports no T3code state database, or `collect` returns zero sessions on a day the
