@@ -592,6 +592,32 @@ jobs:
           CHANGES: ${{ needs.resolve.outputs.changes }}
         run: node scripts/t3x/build-update-manifest.mjs staged staged/t3x-latest.json
 
+      # The install steps used to live inline in this file, which made the release body the only
+      # place they existed — and the download page pointed at "the release notes" without linking
+      # them, so a first-time reader could go from the landing page to an app macOS calls damaged
+      # having never seen one (issue #72). Both surfaces now render
+      # scripts/t3x/install-instructions.json.
+      #
+      # A rendering failure must not cost a release: by the time this step runs, both matrix legs
+      # have finished and ~22 minutes of macOS and Windows compute is already spent. So a failure
+      # here degrades to a minimal body that still points at the download page, and warns.
+      - name: Render the release notes
+        id: notes
+        shell: bash
+        env:
+          FULL_SHA: ${{ needs.resolve.outputs.sha }}
+          SHORT_SHA: ${{ needs.resolve.outputs.short_sha }}
+          NOTES_PATH: ${{ runner.temp }}/release-notes.md
+        run: |
+          set -uo pipefail
+          if ! node scripts/t3x/render-release-notes.mjs \
+            --sha "$FULL_SHA" --short-sha "$SHORT_SHA" > "$NOTES_PATH"; then
+            echo "::warning::Could not render the install notes; publishing a minimal body. This is a bug in scripts/t3x/render-release-notes.mjs — the release itself is fine."
+            printf 'Automated fork build of `%s`.\n\nInstall instructions: https://coil.curlycloud.dev/download\n' \
+              "$FULL_SHA" > "$NOTES_PATH"
+          fi
+          echo "path=$NOTES_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -607,40 +633,7 @@ jobs:
             staged/T3Code-*
             staged/t3x-latest.json
           fail_on_unmatched_files: true
-          # The manual-install commands are here rather than in a doc because this page is where
-          # someone stands when they need them. Both platforms' in-app updaters already handle
-          # this — macAttachCommands/macCopyCommands strip quarantine from the dmg and the staged
-          # bundle — so ONLY a hand-downloaded copy hits it, which is exactly the bootstrap case:
-          # the first install on a machine, and any install after the updater itself breaks.
-          body: |
-            Automated fork build of `${{ needs.resolve.outputs.sha }}`.
-
-            Unsigned. In-app updates strip quarantine themselves; a **manually downloaded** copy
-            does not go through that path and needs one command by hand.
-
-            **macOS** — drag the app to `/Applications` FIRST. Launching from the mounted dmg
-            triggers App Translocation, and the updater refuses to replace a translocated app.
-            Then:
-
-            ```
-            xattr -dr com.apple.quarantine "/Applications/T3 Code (Alpha).app"
-            ```
-
-            Without this, Gatekeeper calls the app *damaged* rather than merely unsigned — the
-            bundle carries Electron's inherited ad-hoc linker signature with no sealed resources —
-            and right-click → Open does NOT bypass that.
-
-            **Windows** — clear Mark-of-the-Web, then choose *More info → Run anyway* at the
-            SmartScreen prompt:
-
-            ```
-            Unblock-File -Path .\T3Code-${{ needs.resolve.outputs.short_sha }}-x64.exe
-            ```
-
-            Windows x64 only; there is no arm64 asset. SHA-256 for every asset is in
-            `t3x-latest.json` above.
-
-            Design: `docs/superpowers/specs/2026-08-03-update-delivery-design.md`.
+          body_path: ${{ steps.notes.outputs.path }}
 
       # Build 9 (run 31244161522) died here: both matrix legs green, both artifacts uploaded, and
       # then ~22 minutes of macOS and Windows compute discarded by one 14-second API call that
@@ -684,18 +677,21 @@ jobs:
           RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
           RELEASE_NAME: ${{ needs.resolve.outputs.version }}
           TARGET_SHA: ${{ needs.resolve.outputs.sha }}
+          NOTES_FILE: ${{ steps.notes.outputs.path }}
         run: |
           set -uo pipefail
           echo "::warning::action-gh-release failed and does not retry; falling back to gh."
 
-          # The notes the action would have published are not reachable from here, so the fallback
-          # release points at the one place that always carries them rather than duplicating the
-          # text and letting the two copies drift.
-          notes="Automated fork build of \`${TARGET_SHA}\`.
-
-          Published by the fallback path after \`action-gh-release\` returned a transient error.
-          Install notes: see any earlier release on this repo, or the design doc at
-          \`docs/superpowers/specs/2026-08-03-update-delivery-design.md\`."
+          # The fallback publishes the SAME notes the action would have. It used to say "see any
+          # earlier release" instead, because the action's inline body was not reachable from
+          # here — now that the notes are rendered to a file before either path runs, a release
+          # that lands via the fallback is no longer a second-class one.
+          if [[ ! -s "${NOTES_FILE:-}" ]]; then
+            echo "::warning::No rendered notes at '${NOTES_FILE:-}'; writing a minimal body."
+            NOTES_FILE="$RUNNER_TEMP/fallback-release-notes.md"
+            printf 'Automated fork build of `%s`.\n\nInstall instructions: https://coil.curlycloud.dev/download\n' \
+              "$TARGET_SHA" > "$NOTES_FILE"
+          fi
 
           # Five attempts at 0s, 30s, 90s, 210s and 450s. The empty final element is what makes the
           # last attempt run without a trailing sleep.
@@ -715,7 +711,7 @@ jobs:
               --target "$TARGET_SHA" \
               --title "$RELEASE_NAME" \
               --prerelease \
-              --notes "$notes" \
+              --notes-file "$NOTES_FILE" \
               staged/T3Code-* staged/t3x-latest.json; then
               exit 0
             fi
