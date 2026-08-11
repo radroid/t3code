@@ -420,12 +420,16 @@ test("the bundle carries every field §7 promises", async (t) => {
     [
       "activeMs",
       "agentRuntimeMs",
+      "awaitingInputMs",
       "branch",
       "excluded",
       "extract",
       "files",
+      "filesApproximate",
+      "firstPrompt",
       "key",
       "kind",
+      "lastPrompt",
       "materiality",
       "models",
       "needsExtraction",
@@ -435,6 +439,7 @@ test("the bundle carries every field §7 promises", async (t) => {
       "tokens",
       "title",
       "turnCount",
+      "withheldExtract",
       "endedAt",
     ].sort(),
   );
@@ -454,8 +459,10 @@ test("the bundle carries every field §7 promises", async (t) => {
     "activeBlocks",
     "activeMs",
     "agentRuntimeMs",
+    "awaitingInputMs",
     "commits",
     "filesTouched",
+    "filesTouchedApproximate",
     "linesAdded",
     "linesRemoved",
     "projectsTouched",
@@ -485,6 +492,62 @@ test("the bundle carries every field §7 promises", async (t) => {
   assert.equal(repo.nameWithOwner, "radroid/t3code");
   assert.equal(repo.projectKey, "t3code");
   assert.equal(repo.commits.length, 1);
+});
+
+test("a standalone Claude Code session carries the prompts that are its only prose", async (t) => {
+  const root = tempRoot(t);
+  const long = `Investigate the flaky auth test. ${"more detail ".repeat(400)}`;
+  const { bundle } = await collectFixture(t, {
+    root,
+    claudeCode: fakeClaudeCode([
+      ccSession({
+        sessionId: "prose",
+        cwd: `${root}/dev/client-x`,
+        firstPrompt: long,
+        lastPrompt: "Ship it",
+      }),
+    ]),
+  });
+
+  // lib/extract.mjs's default slice loader builds a Claude Code slice out of exactly these two
+  // fields — there are no `summary` records in this user's history — so dropping them left every
+  // terminal-only day reaching the model with no prose at all.
+  const session = bundle.sessions.find((entry) => entry.key === "cc-prose");
+  assert.ok(session.firstPrompt.startsWith("Investigate the flaky auth test."));
+  assert.equal(session.lastPrompt, "Ship it");
+  // Carried whole, but never unbounded: the bundle is the model's budget.
+  assert.equal(session.firstPrompt.length, 2000);
+  assert.ok(session.firstPrompt.endsWith("…"));
+
+  // A T3code thread's prose lives in projection_thread_messages, which lib/extract.mjs reads from
+  // the database itself; the field is present and null rather than absent, so there is one shape.
+  const thread1 = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
+  assert.equal(thread1.firstPrompt, null);
+  assert.equal(thread1.lastPrompt, null);
+});
+
+test("checkpoint file lists travel flagged, because a snapshot diff is not a census", async (t) => {
+  const { bundle } = await collectFixture(t);
+
+  // Upstream derives a turn's files by diffing workspace snapshots (CheckpointReactor.ts), so a
+  // `git pull` or a rebase landing between turns is in there too. It cannot be corrected from the
+  // stored payload — only declared, so the summary and the docs stop reading it as a census.
+  const thread1 = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
+  assert.equal(thread1.filesApproximate, true);
+  assert.ok(thread1.files.length > 0);
+  const cc = bundle.sessions.find((entry) => entry.key === "cc-cc-session-1");
+  assert.equal(cc.filesApproximate, false);
+  assert.ok(bundle.stats.filesTouched > 0);
+  assert.equal(bundle.stats.filesTouchedApproximate, true);
+
+  // Nothing contributed checkpoint files, so nothing is qualified.
+  const { bundle: quiet } = await collectFixture(t, {
+    t3db: fakeT3Db(),
+    claudeCode: fakeClaudeCode([]),
+    repos: [],
+  });
+  assert.equal(quiet.stats.filesTouched, 0);
+  assert.equal(quiet.stats.filesTouchedApproximate, false);
 });
 
 test("a private project keeps its work in the totals but travels with its classification", async (t) => {
@@ -570,6 +633,153 @@ test("agent runtime counts overlap twice, and a running turn is clipped at `now`
   const minutes = (ms) => Math.round(ms / 60000);
   assert.equal(minutes(bundle.stats.agentRuntimeMs), 60 + 60 + 60);
   assert.ok(bundle.stats.activeMs < bundle.stats.agentRuntimeMs);
+  assert.equal(bundle.stats.awaitingInputMs, 0);
+});
+
+/** One T3code thread whose turns and activities are exactly what the test hands it. */
+function threadOnly(root, { turns, activities }) {
+  return {
+    root,
+    t3db: fakeT3Db({
+      projects: [
+        {
+          baseDir: "/fake/t3",
+          projectId: "project-1",
+          title: "t3code",
+          workspaceRoot: `${root}/dev/t3code`,
+          deletedAt: null,
+        },
+      ],
+      threads: [thread({ createdAt: at(DAY_A, 0, 1), updatedAt: at(DAY_B, 23, 59) })],
+      turns,
+      activities,
+    }),
+    claudeCode: fakeClaudeCode([]),
+    repos: [],
+  };
+}
+
+test("a turn blocked on the human is not billed as agent runtime", async (t) => {
+  const root = tempRoot(t);
+  const { bundle } = await collectFixture(
+    t,
+    threadOnly(root, {
+      turns: [
+        // Three hours of wall clock, ninety minutes of it parked at a question.
+        turn({
+          turnId: "asked",
+          requestedAt: at(DAY_A, 9, 0),
+          startedAt: at(DAY_A, 9, 0),
+          completedAt: at(DAY_A, 12, 0),
+        }),
+        // A question that was never answered: the turn sat there until it ended.
+        turn({
+          turnId: "unanswered",
+          requestedAt: at(DAY_A, 13, 0),
+          startedAt: at(DAY_A, 13, 0),
+          completedAt: at(DAY_A, 15, 0),
+        }),
+      ],
+      activities: [
+        activity({ turnId: "asked", kind: "user-input.requested", createdAt: at(DAY_A, 10, 0) }),
+        activity({ turnId: "asked", kind: "user-input.resolved", createdAt: at(DAY_A, 11, 30) }),
+        activity({
+          turnId: "unanswered",
+          kind: "user-input.requested",
+          createdAt: at(DAY_A, 14, 0),
+        }),
+      ],
+    }),
+  );
+
+  const hours = (ms) => ms / 3_600_000;
+  const session = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
+  // 5h of turn wall clock; 2.5h of it was the human, not the machine.
+  assert.equal(hours(session.agentRuntimeMs), 2.5);
+  assert.equal(hours(session.awaitingInputMs), 2.5);
+  assert.equal(hours(bundle.stats.agentRuntimeMs), 2.5);
+  // The correction is published, not just applied — the reader can add it back.
+  assert.equal(hours(bundle.stats.awaitingInputMs), 2.5);
+  assert.equal(hours(bundle.projects.find((p) => p.key === "t3code").stats.awaitingInputMs), 2.5);
+  assert.equal(hours(bundle.byDay[DAY_A].awaitingInputMs), 2.5);
+});
+
+test("a wait is clipped and split like any other interval", async (t) => {
+  const root = tempRoot(t);
+  const spanningTurn = turn({
+    turnId: "midnight",
+    requestedAt: at(DAY_A, 23, 0),
+    startedAt: at(DAY_A, 23, 0),
+    completedAt: at(DAY_B, 2, 0),
+  });
+
+  const { bundle: range } = await collectFixture(t, {
+    ...threadOnly(root, {
+      turns: [spanningTurn],
+      activities: [
+        activity({
+          turnId: "midnight",
+          kind: "user-input.requested",
+          createdAt: at(DAY_A, 23, 20),
+        }),
+        activity({ turnId: "midnight", kind: "user-input.resolved", createdAt: at(DAY_B, 0, 30) }),
+      ],
+    }),
+    from: DAY_A,
+    to: DAY_B,
+  });
+
+  const minutes = (ms) => Math.round(ms / 60000);
+  assert.equal(minutes(range.stats.awaitingInputMs), 70);
+  assert.equal(minutes(range.stats.agentRuntimeMs), 180 - 70);
+  for (const field of ["agentRuntimeMs", "awaitingInputMs"]) {
+    const summed = Object.values(range.byDay).reduce((total, day) => total + day[field], 0);
+    assert.equal(summed, range.stats[field], `byDay.${field} must sum to stats.${field}`);
+  }
+  assert.equal(minutes(range.byDay[DAY_A].awaitingInputMs), 40);
+  assert.equal(minutes(range.byDay[DAY_B].awaitingInputMs), 30);
+
+  // Collected for DAY_B alone, the window query never returns the `requested` row — it is on the
+  // far side of midnight. The lone resolve still proves the turn was blocked when the day opened.
+  const { bundle: dayOnly } = await collectFixture(t, {
+    ...threadOnly(root, {
+      turns: [spanningTurn],
+      activities: [
+        activity({ turnId: "midnight", kind: "user-input.resolved", createdAt: at(DAY_B, 0, 30) }),
+      ],
+    }),
+    from: DAY_B,
+    to: DAY_B,
+  });
+  assert.equal(minutes(dayOnly.stats.awaitingInputMs), 30);
+  assert.equal(minutes(dayOnly.stats.agentRuntimeMs), 120 - 30);
+});
+
+test("a turn still waiting on an unanswered question stops billing at the question", async (t) => {
+  const root = tempRoot(t);
+  const { bundle } = await collectFixture(t, {
+    ...threadOnly(root, {
+      turns: [
+        turn({
+          turnId: "waiting",
+          requestedAt: at(DAY_B, 20, 0),
+          startedAt: at(DAY_B, 20, 0),
+          completedAt: null,
+        }),
+      ],
+      activities: [
+        activity({ turnId: "waiting", kind: "user-input.requested", createdAt: at(DAY_B, 21, 0) }),
+      ],
+    }),
+    from: DAY_B,
+    to: DAY_B,
+  });
+
+  const minutes = (ms) => Math.round(ms / 60000);
+  // NOW is DAY_B 23:30, so a running turn closes there rather than at the window edge — and the
+  // hours since the question went unanswered are the human's, not the machine's.
+  assert.equal(minutes(bundle.stats.agentRuntimeMs), 60);
+  assert.equal(minutes(bundle.stats.awaitingInputMs), 150);
 });
 
 // --- dedup --------------------------------------------------------------------------------------
@@ -862,6 +1072,7 @@ test("byDay sums back to the range totals across two days", async (t) => {
     "tokens",
     "activeMs",
     "agentRuntimeMs",
+    "awaitingInputMs",
   ]) {
     const summed = Object.values(bundle.byDay).reduce((total, day) => total + day[field], 0);
     assert.equal(summed, bundle.stats[field], `byDay.${field} must sum to stats.${field}`);
@@ -1096,6 +1307,76 @@ test("extraction is queued only for material sessions with new material", async 
   assert.ok(bundle.warnings.some((warning) => warning.includes("unreadable or empty")));
   // One prompt and no tools is not material — a quiet session must cost zero model tokens.
   assert.equal(byKey.get("cc-tiny").needsExtraction, false);
+  // The cached extract is about this window, so it is published rather than withheld.
+  assert.equal(byKey.get("cc-cached").withheldExtract, null);
+});
+
+test("an extract about another day never lands in this day's bundle", async (t) => {
+  const root = tempRoot(t);
+  const paths = writeRegistry(root, defaultRegistry(root));
+  NodeFS.mkdirSync(paths.extracts, { recursive: true });
+  // Written by a /worklog run for DAY_B. Re-running for DAY_A must not file DAY_B's story under
+  // DAY_A's date — an extract is per session, not per day, so only its cursor can date it.
+  NodeFS.writeFileSync(
+    NodePath.join(paths.extracts, "cc-later.json"),
+    extractDocument("cc-later", {
+      cursorAt: at(DAY_B, 18, 0),
+      problem: "the relay notify 500ed after the publish applied",
+      approach: "retried the notify",
+      outcome: "tomorrow's outcome",
+    }),
+    "utf8",
+  );
+  // And one whose story is entirely older than the window: the day's work is unsummarised.
+  NodeFS.writeFileSync(
+    NodePath.join(paths.extracts, "cc-earlier.json"),
+    extractDocument("cc-earlier", {
+      cursorAt: at("2026-08-09", 18, 0),
+      problem: "an older sync",
+      approach: "rebased",
+      outcome: "last week's outcome",
+    }),
+    "utf8",
+  );
+
+  const { bundle } = await collectFixture(t, {
+    root,
+    t3db: fakeT3Db(),
+    claudeCode: fakeClaudeCode([
+      ccSession({
+        sessionId: "later",
+        cwd: `${root}/dev/client-x`,
+        eventTimes: [at(DAY_A, 9, 0), at(DAY_A, 9, 30)],
+      }),
+      ccSession({
+        sessionId: "earlier",
+        cwd: `${root}/dev/client-x`,
+        promptHashes: [promptHash("earlier")],
+        eventTimes: [at(DAY_A, 11, 0), at(DAY_A, 11, 30)],
+      }),
+    ]),
+    repos: [],
+  });
+
+  const byKey = new Map(bundle.sessions.map((session) => [session.key, session]));
+  const later = byKey.get("cc-later");
+  assert.equal(later.extract, null);
+  assert.equal(later.withheldExtract.cursorAt, at(DAY_B, 18, 0));
+  assert.match(later.withheldExtract.reason, /after this window/u);
+  // The cursor still rules the queue: `extract-queue` re-reads the file from disk and would skip
+  // this session, so the bundle must not advertise an extraction nobody would run.
+  assert.equal(later.needsExtraction, false);
+
+  const earlier = byKey.get("cc-earlier");
+  assert.equal(earlier.extract, null);
+  assert.match(earlier.withheldExtract.reason, /before this window/u);
+  assert.equal(earlier.needsExtraction, true);
+
+  // Withheld, not flagged: a flag only helps a reader that checks it, and every renderer would
+  // have to opt in. A null cannot be misread.
+  const summary = renderSummary(bundle);
+  assert.ok(!summary.includes("tomorrow's outcome"));
+  assert.ok(!summary.includes("last week's outcome"));
 });
 
 // --- summary ------------------------------------------------------------------------------------
