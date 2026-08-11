@@ -407,7 +407,9 @@ jobs:
     name: Publish and notify
     needs: [resolve, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15: the release fallback below can now spend 7.5 minutes retrying a transient 403,
+    # and that has to fit alongside the artifact download with headroom to spare.
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -507,6 +509,23 @@ jobs:
       # your GitHub token/PAT does not have the required permission to create a release" and gives
       # up, because it reads every 403 as a misconfiguration. That is a reasonable default and the
       # wrong one here, where the cost of being wrong is a whole build.
+      #
+      # Build 24 (run 31453501389, 2026-08-11) hit the identical 403 and this fallback still lost
+      # the build, because the original window was far too small for the fault: attempts fired at
+      # 0s/15s/45s and gave up 91 seconds in, while the same call succeeded for the next commit
+      # 13 minutes later. Three failures inside 91 seconds says nothing about a fault on that
+      # timescale. Hence the wider schedule below.
+      #
+      # It is not widened to cover the full ~13 minutes, because `concurrency` here is
+      # `cancel-in-progress: false`: a run that sits retrying blocks the queued release for a NEWER
+      # commit behind it. 7.5 minutes is the compromise — long enough to outlast a fault of the
+      # observed shape, short enough that a doomed build does not hold up its own successor for
+      # long. When merges land close together the newer build supersedes this one anyway; the case
+      # that actually needs the window is a failure on the last merge of the day, where nothing
+      # comes along to heal it.
+      #
+      # If it still gives up, the build is recoverable without a new commit — this workflow takes a
+      # `sha` input, so `gh workflow run t3x-release.yml -f sha=<sha>` republishes it.
       - name: Retry the release if the action gave up
         if: ${{ steps.create_release.outcome == 'failure' }}
         shell: bash
@@ -531,7 +550,12 @@ jobs:
           Install notes: see any earlier release on this repo, or the design doc at
           \`docs/superpowers/specs/2026-08-03-update-delivery-design.md\`."
 
-          for attempt in 1 2 3; do
+          # Five attempts at 0s, 30s, 90s, 210s and 450s. The empty final element is what makes the
+          # last attempt run without a trailing sleep.
+          attempt=0
+          for backoff in 30 60 120 240 ""; do
+            attempt=$((attempt + 1))
+
             # Idempotent by construction. A retry must never create a second release for a tag, and
             # the previous attempt may have got further than its error suggested — so an existing
             # release is completed with `upload --clobber` rather than recreated.
@@ -550,10 +574,16 @@ jobs:
             fi
 
             echo "::warning::Attempt $attempt to publish $RELEASE_TAG failed."
-            sleep $((attempt * 15))
+            # An explicit `if` rather than `[ -n "$backoff" ] && sleep ...`: this step runs under
+            # the `bash` shell's default `-e`, and a bare test-and-command whose test fails is a
+            # trap worth not setting for whoever edits this next.
+            if [ -n "$backoff" ]; then
+              sleep "$backoff"
+            fi
           done
 
-          echo "::error::Could not publish $RELEASE_TAG after three attempts." >&2
+          echo "::error::Could not publish $RELEASE_TAG after $attempt attempts over 7.5 minutes." >&2
+          echo "::error::Republish without a new commit: gh workflow run t3x-release.yml -f sha=$TARGET_SHA" >&2
           exit 1
 
       - name: Notify the update relay
