@@ -15,6 +15,14 @@
 //      attributed to the day the thing started, clamped into the window. (The one exception is
 //      `filesTouched`, which is a distinct count and therefore cannot sum — see `byDay` below.)
 //
+// Two numbers are honest only because they are qualified in the data rather than in prose:
+//
+//   * `agentRuntimeMs` excludes the stretches a turn spent BLOCKED ON THE HUMAN — see
+//     `humanWaits` — and the subtracted total ships beside it as `awaitingInputMs` so the
+//     correction is auditable instead of invisible.
+//   * `files`/`filesTouched` come from turn checkpoints, which upstream computes as a diff between
+//     workspace SNAPSHOTS, so they are an upper bound and say so: `filesApproximate`.
+//
 // Every collector is wrapped: a missing database, a corrupt payload, an absent `gh` or a dead
 // network becomes a warning and an empty result. The only thing `collect` throws for is an
 // unparseable `--from`/`--to`, which is a usage error the CLI must surface rather than paper over.
@@ -48,6 +56,17 @@ const TITLE_MAX_CHARS = 100;
 
 /** Distinct task titles kept per session. The narrative needs a hint, not a transcript. */
 const MAX_TASK_SIGNALS = 4;
+
+// The scanner already truncates to the same limit; re-applying it here is what stops a bundle from
+// inheriting a fake's (or a future scanner's) unbounded prompt. The bundle IS the model's budget.
+const PROMPT_MAX_CHARS = 2000;
+
+// T3code's names for "the turn stopped and is waiting for the human" and "the answer landed".
+const INPUT_REQUESTED = "user-input.requested";
+const INPUT_RESOLVED = "user-input.resolved";
+
+/** "Still running" while a span is being split; `timeline.mjs` wants it back as a `null` end. */
+const OPEN_END = Number.POSITIVE_INFINITY;
 
 /**
  * Build the evidence bundle for `[from, to]` (inclusive, local days).
@@ -497,9 +516,27 @@ function buildThreadSession({
   // that were merely still open — no in-window event means no work today.
   if (stamps.length === 0) return null;
 
-  const spans = turns
-    .map((turn) => ({ start: turn.startedAt ?? turn.requestedAt, end: turn.completedAt ?? null }))
-    .filter((span) => span.start !== null && span.start !== undefined);
+  // Agent runtime is turn wall-clock, and a turn that stopped to ask a question keeps running while
+  // the human is asleep — so the raw span bills hours of waiting as "machine time I directed". Each
+  // turn's span is therefore SPLIT around the stretches it spent blocked, and the removed pieces
+  // ship as `awaitingInputMs`. Splitting rather than subtracting a scalar is what keeps the
+  // per-day clipping in `rollUp` honest: both halves are still intervals.
+  const activitiesByTurn = groupBy(activities, (activity) => activity.turnId);
+  const spans = [];
+  const waitSpans = [];
+  for (const turn of turns) {
+    const start = toMs(turn.startedAt ?? turn.requestedAt);
+    // An unparseable start contributed nothing to the runtime before this change either.
+    if (start === null) continue;
+    const end = toMs(turn.completedAt);
+    const split = splitAroundWaits(
+      start,
+      end,
+      humanWaits(activitiesByTurn.get(turn.turnId) ?? [], start, end),
+    );
+    spans.push(...split.spans);
+    waitSpans.push(...split.waits);
+  }
 
   const project = t3.projects.get(projectRowKey(thread.baseDir, thread.projectId));
   const workspaceRoot = firstNonEmpty(project?.workspaceRoot, thread.worktreePath);
@@ -532,8 +569,11 @@ function buildThreadSession({
     models: Array.isArray(thread.models) ? thread.models : [],
     stamps,
     spans,
+    waitSpans,
     turnCount: turns.length,
     files,
+    // Checkpoint file lists are a snapshot diff, never a census of what this session edited (§4).
+    filesApproximate: true,
     signals,
     tokens:
       attempt(
@@ -596,8 +636,17 @@ function buildClaudeSession({ session, window, blockOptions, nowMs, paths, proje
     models: Array.isArray(session.models) ? session.models : [],
     stamps,
     spans,
+    // A Claude Code span already ends at the last record before the next prompt, so the time the
+    // human spent thinking between prompts was never inside it. There is nothing to subtract.
+    waitSpans: [],
     turnCount: session.promptCount ?? 0,
+    // The transcript is the only prose a standalone Claude Code session has: there are no `summary`
+    // records in this user's history, so `lib/extract.mjs` builds its slice out of exactly these
+    // two fields. Dropping them left every terminal-only day with a prompt-less slice.
+    firstPrompt: clampPrompt(session.firstPrompt),
+    lastPrompt: clampPrompt(session.lastPrompt),
     files: [],
+    filesApproximate: false,
     signals,
     tokens: 0,
     excluded,
@@ -639,8 +688,12 @@ function finishSession({
   models,
   stamps,
   spans,
+  waitSpans = [],
   turnCount,
+  firstPrompt = null,
+  lastPrompt = null,
   files,
+  filesApproximate = false,
   signals,
   tokens,
   excluded,
@@ -652,7 +705,7 @@ function finishSession({
   warnings,
 }) {
   const timeline = activeTimeline(stamps, blockOptions);
-  const extract = readExtract(paths, key, warnings);
+  const cached = readExtract(paths, key, window, warnings);
 
   const session = {
     key,
@@ -664,13 +717,20 @@ function finishSession({
     startedAt: toIso(Math.min(...stamps)),
     endedAt: toIso(Math.max(...stamps)),
     turnCount,
+    // Null on a T3code session on purpose: a thread's prose lives in `projection_thread_messages`,
+    // which `lib/extract.mjs` reads from the database itself rather than through the bundle.
+    firstPrompt,
+    lastPrompt,
     agentRuntimeMs: spanMs(spans, window, { now: nowMs }),
+    awaitingInputMs: spanMs(waitSpans, window, { now: nowMs }),
     activeMs: timeline.activeMs,
     files,
+    filesApproximate,
     signals,
     tokens: Number.isFinite(tokens) ? tokens : 0,
     materiality,
-    extract,
+    extract: cached.extract,
+    withheldExtract: cached.withheld,
     needsExtraction: false,
     excluded,
   };
@@ -678,8 +738,10 @@ function finishSession({
   // The §8 decision — cursor, materiality bar and the "already told by its T3code thread" rule —
   // belongs to lib/extract.mjs, which also owns the file format. Asking it here is what keeps the
   // queue the collector advertises identical to the one `worklog extract-queue` actually builds.
+  // It is asked with the ON-DISK extract, not the one the bundle publishes: `queue()` re-reads the
+  // file itself, so answering from a withheld extract would advertise a queue nobody would build.
   const verdict = attempt(
-    () => needsExtractionOf(session, extract),
+    () => needsExtractionOf(session, cached.onDisk),
     () => ({ needed: false }),
     `Deciding whether ${key} needs extraction`,
     warnings,
@@ -692,33 +754,162 @@ function finishSession({
     projectKey: projectKey ?? null,
     stamps,
     spans,
+    waitSpans,
     dayKey: dayOf(Math.min(...stamps), window),
   };
 }
 
 /**
- * The stored extract for a session, or null. `loadExtract` treats an unusable file as absent — the
- * safe reading, since one wasted extraction beats trusting a cursor we cannot parse — but it does
- * so silently, and a file that exists yet will not load is worth saying out loud.
+ * The stored extract for a session as `{ onDisk, extract, withheld }`. `loadExtract` treats an
+ * unusable file as absent — the safe reading, since one wasted extraction beats trusting a cursor
+ * we cannot parse — but it does so silently, and a file that exists yet will not load is worth
+ * saying out loud.
+ *
+ * `extract` is the one the bundle publishes and is null unless the file is demonstrably ABOUT this
+ * window. An extract is per session, not per day: run `/worklog` for today and then for yesterday
+ * and the session's one extract — written about today — would otherwise be attached under
+ * yesterday's date, putting the wrong day's work in a dated report.
+ *
+ * It is WITHHELD rather than flagged because a flag only helps a reader that checks it, and every
+ * renderer downstream would have to opt in; a null cannot be misread. `onDisk` is kept so the
+ * cursor still drives `needsExtraction`.
  */
-function readExtract(paths, key, warnings) {
-  const extract = attempt(
+function readExtract(paths, key, window, warnings) {
+  const onDisk = attempt(
     () => loadExtract(paths, key),
     () => null,
     `Reading the extract for ${key}`,
     warnings,
   );
-  if (extract !== null) return extract;
-  const file = attempt(
-    () => extractPath(paths, key),
-    () => "",
-    `Locating the extract for ${key}`,
-    warnings,
-  );
-  if (file !== "" && NodeFS.existsSync(file)) {
-    warnings.push(`The extract at ${file} is unreadable or empty; ${key} will be extracted again.`);
+  if (onDisk === null) {
+    const file = attempt(
+      () => extractPath(paths, key),
+      () => "",
+      `Locating the extract for ${key}`,
+      warnings,
+    );
+    if (file !== "" && NodeFS.existsSync(file)) {
+      warnings.push(
+        `The extract at ${file} is unreadable or empty; ${key} will be extracted again.`,
+      );
+    }
+    return { onDisk: null, extract: null, withheld: null };
   }
-  return null;
+
+  // The cursor is the newest event the extract summarised, so it is the one field that says which
+  // work the prose is about.
+  const cursorAt = onDisk.cursor?.lastEventAt ?? null;
+  const cursorMs = toMs(cursorAt);
+  if (cursorMs === null) {
+    return {
+      onDisk,
+      extract: null,
+      withheld: { cursorAt: null, reason: "its cursor records no event time" },
+    };
+  }
+  if (cursorMs >= window.end) {
+    return {
+      onDisk,
+      extract: null,
+      withheld: { cursorAt, reason: `it summarises work through ${cursorAt}, after this window` },
+    };
+  }
+  if (cursorMs < window.start) {
+    return {
+      onDisk,
+      extract: null,
+      withheld: { cursorAt, reason: `it summarises work through ${cursorAt}, before this window` },
+    };
+  }
+  return { onDisk, extract: onDisk, withheld: null };
+}
+
+/**
+ * Human-wait intervals inside ONE turn, clamped to that turn's own span. A `null` end means the
+ * turn is still blocked; `splitAroundWaits` turns that into "nothing ran after this point".
+ *
+ * Pairing is positional, not by `payload.requestId`: `readActivities` deliberately does not surface
+ * the request id, and across every turn in the real store the two kinds strictly alternate (a turn
+ * can only have one question outstanding), so "the next resolve closes the open request" IS the id
+ * pairing. Two rules were checked against real data rather than guessed:
+ *
+ *   * A request with no resolve stays open to the end of the turn. During a wait the only activity
+ *     a turn emits is a single `context-window.updated` a few ms later — there is never evidence of
+ *     the agent resuming — so an unanswered question really did block the turn until it ended or
+ *     was interrupted (three such turns sat blocked ~12 h before the human interrupted them).
+ *   * A resolve with nothing open answers a question asked BEFORE the window, whose `requested` row
+ *     the window query never returned. It opens at the end of the previous wait (the turn's start,
+ *     the first time), which can only ever reach back to material the window already clips off.
+ */
+function humanWaits(activities, spanStart, spanEnd) {
+  const waits = [];
+  const limit = spanEnd === null ? OPEN_END : spanEnd;
+  let openAt = null;
+  let floor = spanStart;
+
+  for (const activity of activities) {
+    const kind = activity?.kind;
+    if (kind !== INPUT_REQUESTED && kind !== INPUT_RESOLVED) continue;
+    const at = toMs(activity.createdAt);
+    if (at === null) continue;
+    if (kind === INPUT_REQUESTED) {
+      if (openAt === null) openAt = clamp(at, floor, limit);
+      continue;
+    }
+    const start = openAt ?? floor;
+    const end = clamp(at, start, limit);
+    if (end > start) waits.push({ start, end });
+    // Never rewind past a wait already closed, so a duplicated resolve is a no-op rather than a
+    // second subtraction of the same minutes.
+    floor = end;
+    openAt = null;
+  }
+
+  if (openAt !== null) waits.push({ start: openAt, end: spanEnd });
+  return waits;
+}
+
+/**
+ * Splits `[start, end]` around `waits`, returning the pieces that actually ran and the pieces spent
+ * waiting. `end === null` means "still running" and survives onto whichever piece ends the turn —
+ * `lib/timeline.mjs` closes that at `min(window end, now)`, which the window end alone is not.
+ */
+function splitAroundWaits(start, end, waits) {
+  const limit = end === null ? OPEN_END : end;
+  const blocked = [];
+  for (const wait of waits) {
+    const from = clamp(wait.start, start, limit);
+    const to = clamp(wait.end === null ? limit : wait.end, from, limit);
+    if (to > from) blocked.push({ start: from, end: to });
+  }
+  blocked.sort((left, right) => left.start - right.start || left.end - right.end);
+
+  const merged = [];
+  for (const wait of blocked) {
+    const last = merged.at(-1);
+    if (last !== undefined && wait.start <= last.end) {
+      if (wait.end > last.end) last.end = wait.end;
+      continue;
+    }
+    merged.push({ ...wait });
+  }
+
+  const spans = [];
+  let cursor = start;
+  for (const wait of merged) {
+    if (wait.start > cursor) spans.push(spanOf(cursor, wait.start));
+    cursor = Math.max(cursor, wait.end);
+  }
+  if (cursor < limit) spans.push(spanOf(cursor, limit));
+  return { spans, waits: merged.map((wait) => spanOf(wait.start, wait.end)) };
+}
+
+function spanOf(start, end) {
+  return { start, end: end === OPEN_END ? null : end };
+}
+
+function clamp(value, low, high) {
+  return Math.min(Math.max(value, low), high);
 }
 
 // --- git ----------------------------------------------------------------------------------------
@@ -803,13 +994,15 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
   const totals = newStats();
   const totalFiles = new Set();
   const allSpans = [];
+  const allWaitSpans = [];
+  let filesApproximate = false;
 
   const bucketFor = (key) => {
     const row = projects.get(key);
     if (row === null || row === undefined) return null;
     let bucket = perProject.get(key);
     if (bucket === undefined) {
-      bucket = { row, stats: newStats(), files: new Set(), stamps: [], spans: [] };
+      bucket = { row, stats: newStats(), files: new Set(), stamps: [], spans: [], waitSpans: [] };
       perProject.set(key, bucket);
     }
     return bucket;
@@ -836,9 +1029,11 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
 
     mergedStamps.push(...contribution.stamps);
     allSpans.push(...contribution.spans);
+    allWaitSpans.push(...contribution.waitSpans);
     if (bucket !== null) {
       bucket.stamps.push(...contribution.stamps);
       bucket.spans.push(...contribution.spans);
+      bucket.waitSpans.push(...contribution.waitSpans);
       bucket.stats.sessions += 1;
       bucket.stats.turns += session.turnCount;
       bucket.stats.tokens += session.tokens;
@@ -854,6 +1049,8 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
       day.sessionKeys.push(session.key);
     }
 
+    // Only a session that actually contributed paths can qualify `filesTouched`.
+    if (session.filesApproximate === true && session.files.length > 0) filesApproximate = true;
     for (const file of session.files) {
       totalFiles.add(file.path);
       bucket?.files.add(file.path);
@@ -903,6 +1100,7 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
   const merged = activeTimeline(mergedStamps, blockOptions);
   totals.activeMs = merged.activeMs;
   totals.agentRuntimeMs = spanMs(allSpans, window, { now: nowMs });
+  totals.awaitingInputMs = spanMs(allWaitSpans, window, { now: nowMs });
   totals.filesTouched = totalFiles.size;
 
   // Durations are CLIPPED into each day rather than attributed to one, and the days partition the
@@ -912,6 +1110,7 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
     bucket.stats.filesTouched = bucket.files.size;
     bucket.stats.activeMs = sumMs(dayBlocks.get(day));
     bucket.stats.agentRuntimeMs = spanMs(allSpans, dayWindowOf(day), { now: nowMs });
+    bucket.stats.awaitingInputMs = spanMs(allWaitSpans, dayWindowOf(day), { now: nowMs });
   }
 
   const projectsOut = [];
@@ -919,6 +1118,7 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
     const timeline = activeTimeline(bucket.stamps, blockOptions);
     bucket.stats.activeMs = timeline.activeMs;
     bucket.stats.agentRuntimeMs = spanMs(bucket.spans, window, { now: nowMs });
+    bucket.stats.awaitingInputMs = spanMs(bucket.waitSpans, window, { now: nowMs });
     bucket.stats.filesTouched = bucket.files.size;
     projectsOut.push({
       key: bucket.row.key,
@@ -978,6 +1178,13 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
       tokens: totals.tokens,
       activeMs: totals.activeMs,
       agentRuntimeMs: totals.agentRuntimeMs,
+      awaitingInputMs: totals.awaitingInputMs,
+      // Every `filesTouched` in this bundle — range, per project, per day — is an upper bound when
+      // this is true. Upstream derives a turn's file list by diffing workspace SNAPSHOTS
+      // (apps/server/src/orchestration/Layers/CheckpointReactor.ts), so a branch switch, a `git
+      // pull` or a rebase landing between turns is indistinguishable from work the session did.
+      // The stored diff carries no provenance, so this cannot be corrected — only declared.
+      filesTouchedApproximate: filesApproximate,
       activeBlocks: merged.blocks,
     },
     byDay,
@@ -996,6 +1203,7 @@ function newStats() {
     tokens: 0,
     activeMs: 0,
     agentRuntimeMs: 0,
+    awaitingInputMs: 0,
   };
 }
 
@@ -1102,7 +1310,14 @@ function sumMs(pieces) {
   return total;
 }
 
-/** Sums churn per path. Checkpoint paths are already repo-relative; absolute ones are reduced. */
+/**
+ * Sums churn per path. Checkpoint paths are already repo-relative; absolute ones are reduced.
+ *
+ * The input is a per-turn diff of workspace SNAPSHOTS, so summing it inflates both the file count
+ * and the per-file churn by whatever else touched the tree between two turns. Nothing in the stored
+ * payload distinguishes the two, so the totals travel flagged (`filesApproximate`) rather than
+ * cleaned — see `stats.filesTouchedApproximate`.
+ */
 function mergeFiles(files, root) {
   const byPath = new Map();
   for (const file of Array.isArray(files) ? files : []) {
@@ -1138,6 +1353,12 @@ function cleanTitle(text) {
   return collapsed.length <= TITLE_MAX_CHARS
     ? collapsed
     : `${collapsed.slice(0, TITLE_MAX_CHARS - 1)}…`;
+}
+
+/** Prompt text as the bundle carries it: whole (newlines and all), just never unbounded. */
+function clampPrompt(text) {
+  if (!isText(text)) return null;
+  return text.length <= PROMPT_MAX_CHARS ? text : `${text.slice(0, PROMPT_MAX_CHARS - 1)}…`;
 }
 
 function shortId(id) {

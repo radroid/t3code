@@ -42,6 +42,12 @@ const EXCLUDED_REF_GLOBS = ["refs/t3/*", "refs/notes/*", "refs/stash"];
 
 const NUMSTAT_ROW = /^(\d+|-)\t(\d+|-)\t(.*)$/u;
 
+// A GitHub login is 1–39 characters of alphanumerics with single interior hyphens — never a space,
+// a dot or an "@". That is precisely what makes a login separable from the git names and emails
+// sharing the `identities` list, so one list can answer both "are these my commits" and "is this
+// my pull request".
+const LOGIN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/iu;
+
 /** Build a spawnSync-backed shell runner that reports failure as data instead of throwing. */
 export function createRunner({ timeoutMs = DEFAULT_TIMEOUT_MS, env } = {}) {
   return function run(cmd, args = [], options = {}) {
@@ -138,6 +144,10 @@ export function mergedPrs(nameWithOwner, window = {}, run = createRunner()) {
 
   const startMs = toEpochMs(window.start, Number.NEGATIVE_INFINITY);
   const endMs = toEpochMs(window.end, Number.POSITIVE_INFINITY);
+  // Commits are filtered by identity, so pull requests must be too or the two headline numbers are
+  // computed to different standards: every PR anyone merged in a repo the user touched — a
+  // colleague's, Dependabot's — would otherwise land in "N PRs merged" as the user's own work.
+  const logins = loginsFrom(window.identities);
 
   try {
     const args = [
@@ -184,6 +194,10 @@ export function mergedPrs(nameWithOwner, window = {}, run = createRunner()) {
       // day on each side (see searchQualifier) and the real boundary is enforced right here.
       const mergedMs = toEpochMs(mergedAt, Number.NaN);
       if (!Number.isFinite(mergedMs) || mergedMs < startMs || mergedMs >= endMs) continue;
+      const author = typeof row.author?.login === "string" ? row.author.login : null;
+      // A known login is filtered strictly, an unattributable row included: the safe reading of a
+      // configured registry is "only mine", the same rule the commit scan applies.
+      if (logins.size > 0 && (author == null || !logins.has(author.toLowerCase()))) continue;
       prs.push({
         number: typeof row.number === "number" ? row.number : null,
         title: typeof row.title === "string" ? row.title : "",
@@ -191,15 +205,38 @@ export function mergedPrs(nameWithOwner, window = {}, run = createRunner()) {
         mergedAt,
         additions: toCount(row.additions),
         deletions: toCount(row.deletions),
-        author: typeof row.author?.login === "string" ? row.author.login : null,
+        author,
         headRefName: typeof row.headRefName === "string" ? row.headRefName : null,
       });
     }
     prs.sort((left, right) => toEpochMs(left.mergedAt, 0) - toEpochMs(right.mergedAt, 0));
+    // Dropping every PR when no login is known would hide real work, and keeping them silently
+    // would credit other people's; the honest third option is to keep them and say so. Nothing to
+    // caveat when the window held no PRs at all.
+    if (logins.size === 0 && prs.length > 0) {
+      warnings.push(
+        `Merged PRs for ${repo} could not be attributed to you — no GitHub login in \`identities\`, so they may include other people's.`,
+      );
+    }
     return { prs, warnings };
   } catch (error) {
     warnings.push(`Merged PR lookup for ${repo} failed: ${String(error?.message ?? error)}`);
     return { prs: [], warnings };
+  }
+}
+
+/** Ask `gh` who is signed in, as the `@login` entry the registry's `identities` list expects. */
+export function githubLoginIdentity(run = createRunner()) {
+  // `init` calls this once to seed the login; without it every merged PR in a repo the user
+  // touched is attributed to them. The "@" is what tells a login apart from a one-word git author
+  // name later — a bare `radroid` in `identities` is ambiguous, `@radroid` never is.
+  try {
+    const result = run("gh", ["api", "user", "-q", ".login"], {});
+    if (!result.ok) return null;
+    const login = firstLine(result.stdout);
+    return LOGIN.test(login) ? `@${login}` : null;
+  } catch {
+    return null;
   }
 }
 
@@ -297,7 +334,7 @@ function readCommits(root, window = {}, run = createRunner()) {
       };
     }
 
-    const bySha = new Map();
+    const byPatch = new Map();
     for (const chunk of result.stdout.split(RECORD_SEPARATOR)) {
       if (chunk.trim() === "") continue;
       const commit = parseCommitRecord(chunk);
@@ -305,17 +342,22 @@ function readCommits(root, window = {}, run = createRunner()) {
       if (!Number.isFinite(commit.atMs) || commit.atMs < startMs || commit.atMs >= endMs) continue;
       if (filterByAuthor && !matchesIdentity(commit, identities)) continue;
 
-      const existing = bySha.get(commit.sha);
+      const key = patchIdentity(commit);
+      const existing = byPatch.get(key);
       if (existing == null) {
-        bySha.set(commit.sha, commit);
+        byPatch.set(key, commit);
+      } else if (existing.branches.length === 0 && commit.branches.length > 0) {
+        // Both copies are the same patch, so the count is already right either way; this only
+        // decides which SHA gets shown. A copy no branch reaches is history kept alive by a
+        // recovery tag, and the branch-reachable one is the commit the user can still `git show`.
+        mergeBranches(commit, existing.branches);
+        byPatch.set(key, commit);
       } else {
-        for (const branch of commit.branches) {
-          if (!existing.branches.includes(branch)) existing.branches.push(branch);
-        }
+        mergeBranches(existing, commit.branches);
       }
     }
 
-    const commits = [...bySha.values()]
+    const commits = [...byPatch.values()]
       .map(({ atMs: _atMs, ...commit }) => commit)
       .sort((left, right) =>
         left.at === right.at ? left.sha.localeCompare(right.sha) : left.at < right.at ? -1 : 1,
@@ -436,6 +478,50 @@ function matchesIdentity(commit, identities) {
     identities.has(normalizeIdentity(commit.author)) ||
     identities.has(normalizeIdentity(commit.authorEmail))
   );
+}
+
+// Two commits are the same piece of work when a rebase or cherry-pick copied one into the other,
+// and `--all` reaches both. Deduping by SHA cannot see that: a copy keeps the author, the AUTHOR
+// date and the subject, and changes exactly the SHA and the committer date. On this fork that is
+// the normal case rather than an edge — every sync replays ~91 patches onto upstream while the
+// pre-sync recovery tag keeps the originals reachable, so a sync day counted almost all of its
+// commits and their churn twice.
+//
+// The knowing cost: two genuinely distinct commits by one author, in the same second, with the
+// same subject collapse into one. That shape is a scripted loop, not a person, and undercounting
+// it is far cheaper than the several-fold overcount it prevents.
+//
+// NUL joins the three fields because git cannot store one in a name, an address or a subject, so
+// no value can spell another tuple's key. A space could: "Version 2" + 100 + "x" joins to the same
+// string as "Version" + 2 + "100 x".
+function patchIdentity(commit) {
+  const who = normalizeIdentity(commit.authorEmail) || normalizeIdentity(commit.author);
+  return `${who}\0${commit.atMs}\0${commit.subject}`;
+}
+
+function mergeBranches(commit, branches) {
+  for (const branch of branches) {
+    if (!commit.branches.includes(branch)) commit.branches.push(branch);
+  }
+}
+
+// The GitHub logins hiding in an `identities` list, in the three forms it can carry them: the
+// explicit `@login` that `githubLoginIdentity` writes, a bare login, and a noreply address — whose
+// local part IS the login, which is why a registry seeded only from `git config user.email`
+// already knows it. A one-word git author name that is not the user's login is the hazard here;
+// it costs the PR count, never the commit count, and `@login` is the way out of it.
+function loginsFrom(identities) {
+  const logins = new Set();
+  for (const identity of Array.isArray(identities) ? identities : []) {
+    const value = String(identity ?? "")
+      .trim()
+      .toLowerCase();
+    if (value === "") continue;
+    const noreply = /^(?:\d+\+)?([^@\s]+)@users\.noreply\.github\.com$/u.exec(value);
+    const candidate = noreply != null ? noreply[1] : value.startsWith("@") ? value.slice(1) : value;
+    if (LOGIN.test(candidate)) logins.add(candidate);
+  }
+  return logins;
 }
 
 function parseNameWithOwner(url) {

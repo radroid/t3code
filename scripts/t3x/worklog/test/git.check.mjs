@@ -14,6 +14,7 @@ import {
   collectGit,
   commitsInWindow,
   createRunner,
+  githubLoginIdentity,
   mergedPrs,
   remoteNameWithOwner,
 } from "../lib/git.mjs";
@@ -203,6 +204,39 @@ function buildHistory(dir) {
     GIT_COMMITTER_DATE: "2026-08-10T18:00:00Z",
   });
   return dir;
+}
+
+// A sync-shaped history: one patch that exists twice because it was replayed onto a base upstream
+// had moved, with the pre-sync recovery tag keeping the original reachable. `git log --all` walks
+// both copies, and on the real fork ~91 patches land in this shape at every sync.
+function buildReplayedHistory(dir, { originalCommitterDate, copyCommitterDate, keepBranch }) {
+  initRepo(dir);
+  commitFixture(dir, {
+    message: "base",
+    authorDate: "2026-08-10T08:00:00Z",
+    files: { "base.txt": "b\n" },
+  });
+  git(dir, ["checkout", "-q", "-b", "pre-sync"]);
+  commitFixture(dir, {
+    message: "fix(t3x): the patch that gets replayed",
+    authorDate: "2026-08-10T10:00:00Z",
+    committerDate: originalCommitterDate,
+    files: { "patch.txt": "p\np\n" },
+  });
+  const original = git(dir, ["rev-parse", "HEAD"]).trim();
+  git(dir, ["tag", "t3x/pre-sync-20260810"]);
+  git(dir, ["checkout", "-q", "main"]);
+  commitFixture(dir, {
+    message: "upstream moves the base",
+    authorDate: "2026-08-10T09:00:00Z",
+    files: { "upstream.txt": "u\n" },
+  });
+  // A cherry-pick is a rebase copy in miniature: same author, same author date, same subject, new
+  // SHA and a new committer date.
+  git(dir, ["cherry-pick", original], { GIT_COMMITTER_DATE: copyCommitterDate });
+  const copy = git(dir, ["rev-parse", "HEAD"]).trim();
+  if (!keepBranch) git(dir, ["branch", "-q", "-D", "pre-sync"]);
+  return { original, copy };
 }
 
 function windowCommits(dir, identities = []) {
@@ -512,6 +546,65 @@ test("commitsInWindow degrades to an empty list instead of throwing", (t) => {
   );
 });
 
+test("commitsInWindow counts a replayed patch once, not once per copy", (t) => {
+  if (!GIT_AVAILABLE) return t.skip("git is not available");
+  const repo = NodePath.join(tempDir(t), "repo");
+  buildReplayedHistory(repo, {
+    originalCommitterDate: "2026-08-10T10:00:00Z",
+    copyCommitterDate: "2026-08-10T12:00:00Z",
+    keepBranch: true,
+  });
+  // Same author and same subject an hour apart: two real commits, not a replay. Deduping on the
+  // subject alone would eat one of these.
+  commitFixture(repo, {
+    message: "chore: bump the pins",
+    authorDate: "2026-08-10T14:00:00Z",
+    files: { "pins-a.txt": "1\n" },
+  });
+  commitFixture(repo, {
+    message: "chore: bump the pins",
+    authorDate: "2026-08-10T15:00:00Z",
+    files: { "pins-b.txt": "2\n" },
+  });
+
+  const commits = windowCommits(repo);
+  assert.deepEqual(subjectsOf(commits), [
+    "base",
+    "upstream moves the base",
+    "fix(t3x): the patch that gets replayed",
+    "chore: bump the pins",
+    "chore: bump the pins",
+  ]);
+  const replayed = commits.filter(
+    (commit) => commit.subject === "fix(t3x): the patch that gets replayed",
+  );
+  assert.equal(replayed.length, 1, "the original and its copy are one patch, not two commits");
+  // Churn must not double either: it is the same two inserted lines seen twice.
+  assert.deepEqual(
+    { files: replayed[0].files, insertions: replayed[0].insertions },
+    { files: 1, insertions: 2 },
+  );
+});
+
+test("commitsInWindow keeps the branch-reachable copy of a replayed patch", (t) => {
+  if (!GIT_AVAILABLE) return t.skip("git is not available");
+  const repo = NodePath.join(tempDir(t), "repo");
+  // The tag-only original is COMMITTED later, so `git log` emits it first; without the preference
+  // the report would name a SHA that no branch reaches.
+  const { copy } = buildReplayedHistory(repo, {
+    originalCommitterDate: "2026-08-20T00:00:00Z",
+    copyCommitterDate: "2026-08-15T00:00:00Z",
+    keepBranch: false,
+  });
+
+  const replayed = windowCommits(repo).filter(
+    (commit) => commit.subject === "fix(t3x): the patch that gets replayed",
+  );
+  assert.equal(replayed.length, 1);
+  assert.equal(replayed[0].sha, copy, "the surviving SHA is the one `git show` still resolves");
+  assert.ok(replayed[0].branches.includes("main"));
+});
+
 test("commitsInWindow with an open window returns the whole history", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
@@ -555,6 +648,114 @@ const PR_PAYLOAD = JSON.stringify([
   },
 ]);
 
+// Any repo with more than one contributor: one PR of the user's, one a colleague merged, one from
+// Dependabot, and one whose author GitHub would not name.
+const MIXED_PR_PAYLOAD = JSON.stringify([
+  {
+    number: 66,
+    title: "fix(t3x): retry the relay notify",
+    mergedAt: "2026-08-10T14:00:00Z",
+    additions: 120,
+    deletions: 8,
+    author: { login: "radroid" },
+  },
+  {
+    number: 67,
+    title: "a colleague's big refactor",
+    mergedAt: "2026-08-10T15:00:00Z",
+    additions: 900,
+    deletions: 400,
+    author: { login: "SomeoneElse" },
+  },
+  {
+    number: 68,
+    title: "chore(deps): bump vite",
+    mergedAt: "2026-08-10T16:00:00Z",
+    additions: 4,
+    deletions: 4,
+    author: { login: "dependabot[bot]" },
+  },
+  { number: 69, title: "author deleted their account", mergedAt: "2026-08-10T17:00:00Z" },
+]);
+
+test("mergedPrs counts only the pull requests the user merged", () => {
+  const window = { start: WINDOW_START, end: WINDOW_END };
+  const identityForms = [
+    ["@radroid"], // what `githubLoginIdentity` seeds
+    ["@RadRoid"], // logins are case-insensitive
+    ["radroid"], // a bare login typed by hand
+    [RAJ_EMAIL], // a noreply address already encodes the login
+    ["radroid@users.noreply.github.com"],
+    ["Raj D", RAJ_EMAIL], // the real registry shape: a name that is not a login, plus an email
+  ];
+  for (const identities of identityForms) {
+    const label = JSON.stringify(identities);
+    const { prs, warnings } = mergedPrs(
+      "radroid/t3code",
+      { ...window, identities },
+      fakeRunner(() => okReply(MIXED_PR_PAYLOAD)),
+    );
+    assert.deepEqual(
+      prs.map((pr) => pr.number),
+      [66],
+      label,
+    );
+    assert.deepEqual(warnings, [], label);
+  }
+});
+
+test("mergedPrs keeps unattributable pull requests but says they may not be yours", () => {
+  const window = { start: WINDOW_START, end: WINDOW_END };
+  // None of these carries a login: no identities at all, and identities that are only a name or a
+  // real email address.
+  for (const identities of [undefined, [], ["Raj D"], ["raj9dholakia@gmail.com"], ["", null]]) {
+    const label = JSON.stringify(identities ?? null);
+    const { prs, warnings } = mergedPrs(
+      "radroid/t3code",
+      { ...window, identities },
+      fakeRunner(() => okReply(MIXED_PR_PAYLOAD)),
+    );
+    assert.deepEqual(
+      prs.map((pr) => pr.number),
+      [66, 67, 68, 69],
+      label,
+    );
+    assert.equal(warnings.length, 1, label);
+    assert.match(warnings[0], /could not be attributed/u, label);
+    assert.match(warnings[0], /radroid\/t3code/u, label);
+  }
+});
+
+test("mergedPrs adds no attribution caveat when the window held no pull requests", () => {
+  const { prs, warnings } = mergedPrs(
+    "radroid/t3code",
+    { start: WINDOW_START, end: WINDOW_END },
+    fakeRunner(() => okReply("[]")),
+  );
+  // Nothing to caveat: an empty list cannot include anyone else's work.
+  assert.deepEqual(prs, []);
+  assert.deepEqual(warnings, []);
+});
+
+test("githubLoginIdentity reads the signed-in login in the form identities expects", () => {
+  const run = fakeRunner(() => okReply("radroid\n"));
+  assert.equal(githubLoginIdentity(run), "@radroid");
+  assert.deepEqual(run.calls, [{ cmd: "gh", args: ["api", "user", "-q", ".login"], options: {} }]);
+});
+
+test("githubLoginIdentity returns null rather than a junk identity", () => {
+  const cases = [
+    fakeRunner((cmd) => missingBinary(cmd)),
+    fakeRunner(() => ({ ok: false, code: 4, stdout: "", stderr: "gh: not authenticated" })),
+    fakeRunner(() => okReply("")),
+    fakeRunner(() => okReply("\n")),
+    // An error page or a `gh` that answered with something that is not a login.
+    fakeRunner(() => okReply("<html>502 Bad Gateway</html>")),
+    fakeRunner(() => okReply("not a login\n")),
+  ];
+  for (const run of cases) assert.equal(githubLoginIdentity(run), null);
+});
+
 test("mergedPrs filters precisely on mergedAt and scopes gh to the fork", () => {
   const run = fakeRunner(() => okReply(PR_PAYLOAD));
   const { prs, warnings } = mergedPrs(
@@ -563,7 +764,10 @@ test("mergedPrs filters precisely on mergedAt and scopes gh to the fork", () => 
     run,
   );
 
-  assert.deepEqual(warnings, []);
+  // No identity carries a login here, so the list is unattributed and says so rather than
+  // quietly passing off whatever `gh` returned as this user's work.
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /could not be attributed/u);
   assert.equal(prs.length, 1, "the day-before PR and the half-open upper edge are both excluded");
   assert.deepEqual(prs[0], {
     number: 66,
@@ -674,7 +878,9 @@ test("mergedPrs tolerates malformed rows inside a valid array", () => {
     { start: WINDOW_START, end: WINDOW_END },
     fakeRunner(() => okReply(payload)),
   );
-  assert.deepEqual(warnings, []);
+  // Unattributed again: no identity here carries a login.
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /could not be attributed/u);
   assert.equal(prs.length, 1);
   // A row with an author string rather than the {login} object still yields a usable record.
   assert.deepEqual(prs[0], {
@@ -710,10 +916,12 @@ test("collectGit visits each repo once no matter how many worktrees are listed",
   const notARepo = NodePath.join(root, "plain");
   NodeFS.mkdirSync(notARepo, { recursive: true });
 
-  // Real git, faked gh: the suite must never reach the network.
+  // Real git, faked gh: the suite must never reach the network. The payload is the mixed one so
+  // that the identity list has to reach `gh pr list` too — commits and PRs are one number each in
+  // the report, and they have to be counted to the same standard.
   const realRun = createRunner({ env: GIT_ENV });
   const run = fakeRunner((cmd, args, options) =>
-    cmd === "gh" ? okReply(PR_PAYLOAD) : realRun(cmd, args, options),
+    cmd === "gh" ? okReply(MIXED_PR_PAYLOAD) : realRun(cmd, args, options),
   );
 
   const result = collectGit(
@@ -728,7 +936,12 @@ test("collectGit visits each repo once no matter how many worktrees are listed",
   assert.equal(entry.key, NodePath.join(repo, ".git"));
   assert.equal(entry.nameWithOwner, "radroid/t3code");
   assert.equal(entry.commits.length, 7);
-  assert.equal(entry.mergedPrs.length, 1);
+  // Four merged PRs in the window, one of them this user's: a colleague's, Dependabot's, and an
+  // unattributed one are not this user's work.
+  assert.deepEqual(
+    entry.mergedPrs.map((pr) => pr.number),
+    [66],
+  );
   assert.deepEqual(entry.warnings, []);
 
   // Three unusable inputs, three warnings, and none of them abort the collection.
