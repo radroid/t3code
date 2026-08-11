@@ -35,10 +35,10 @@ const ELLIPSIS = "…";
 // Column widths for `formatFindings`, kept together so a hint always lines up under its excerpt.
 const POSITION_WIDTH = 8;
 const SEVERITY_WIDTH = 5;
-const RULE_WIDTH = 16;
-const EXCERPT_INDENT = " ".repeat(2 + POSITION_WIDTH + SEVERITY_WIDTH + 2 + RULE_WIDTH + 2);
 
 // A project term shorter than this is a word, not a name ("cli", "web"), and would fire on prose.
+// Terms are matched as substrings (see `buildTermPatterns`), so a three-letter key would land in
+// the middle of ordinary words too — this floor is what keeps that from drowning the gate.
 const MIN_PROJECT_TERM = 4;
 
 // A block of quoted text or code longer than this is a transcript dump, not a description.
@@ -70,6 +70,12 @@ export const RULES = Object.freeze(
       severity: "error",
       title: "Names a project that is not public",
       hint: 'Describe the work, not the client ("a client project"). If it really is public, set visibility: public and confirmed: true in config/projects.yaml.',
+    },
+    {
+      id: "unclassified-project",
+      severity: "error",
+      title: "Names a project the registry has never classified",
+      hint: "Nobody has reviewed this project, so it cannot be named — classify it in config/projects.yaml (visibility plus confirmed: true), or describe the work without it.",
     },
     {
       id: "email",
@@ -112,6 +118,15 @@ export const RULES = Object.freeze(
 
 const RULE_BY_ID = new Map(RULES.map((rule) => [rule.id, rule]));
 const PRECEDENCE = new Map(RULES.map((rule, index) => [rule.id, index]));
+
+// Derived, not a literal: the first rule id longer than the old fixed 16 pushed every hint under
+// it out of alignment, and nothing failed to say so.
+const RULE_WIDTH = Math.max(...RULES.map((rule) => rule.id.length));
+const EXCERPT_INDENT = " ".repeat(2 + POSITION_WIDTH + SEVERITY_WIDTH + 2 + RULE_WIDTH + 2);
+
+// The rule a caller-supplied term falls back to. `extraTerms` exists to police projects the
+// registry has never heard of, so an entry that forgets its rule id fails closed into that one.
+const DEFAULT_EXTRA_RULE = "unclassified-project";
 
 // `raw-quote` is structural: its span is a block, not a leak. That keeps it out of the containment
 // pass in both directions (a secret inside a fence must still be reported, and a fence around a
@@ -178,6 +193,17 @@ const BRANCH_PATTERN = new RegExp(
 // Digits are left alone so `release/v1.2.3` still reads as a branch.
 const FILE_EXTENSION_TAIL = /\.[A-Za-z]{1,4}$/u;
 
+// The assignment keys that introduce a credential. Enumerated in full rather than allowed a
+// trailing wildcard: `authorization` has to be spelled out because `auth\w*` would also fire on
+// "Authors:" and "Authored:", and a gate that flags a byline is a gate a human turns off.
+const SECRET_KEYS =
+  "password|passwd|secret|api[_-]?key|apikey|token|authorization|auth|credentials?|passphrase|private[_-]?key";
+
+// An HTTP auth scheme sits between the key and the value; skipping it is what keeps the mask on
+// the credential instead of on the word "Basic". These are only recognised after a key, because
+// "Basic understanding" is ordinary prose.
+const AUTH_SCHEMES = "Bearer|Basic|Token|Digest";
+
 // `group` is the capture index holding the part worth hiding, so `password=` stays readable in
 // the excerpt while its value does not.
 const SECRET_PATTERNS = [
@@ -186,11 +212,24 @@ const SECRET_PATTERNS = [
   { re: /(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}/gu },
   { re: /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![A-Za-z0-9])/gu },
   { re: /(?<![A-Za-z0-9])xox[baprs]-[A-Za-z0-9-]{10,}/gu },
+  { re: /(?<![A-Za-z0-9])glpat-[0-9A-Za-z_-]{20,}/gu },
+  // The published lengths are exact (`AIza` + 35, `npm_` + 36, `dop_v1_` + 64) but the quantifiers
+  // are open-ended on purpose: a trailing bound would let a longer lookalike match nothing at all,
+  // and it is the whole run that has to disappear from the file.
+  { re: /(?<![A-Za-z0-9])AIza[0-9A-Za-z_-]{35,}/gu },
+  { re: /(?<![A-Za-z0-9])npm_[A-Za-z0-9]{36,}/gu },
+  { re: /(?<![A-Za-z0-9])dop_v1_[a-f0-9]{64,}/gu },
+  // A JWT: base64url header (always starting `eyJ`), payload, signature. Matching past the first
+  // dot is what removes the payload — the half that carries the claims.
+  { re: /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*)?/gu },
   { re: /\bBearer[ \t]+([A-Za-z0-9._~+/=-]{8,})/gu, group: 1 },
   { re: /-{0,5}BEGIN[A-Z ]*PRIVATE KEY-{0,5}/gu },
   { re: /(?<![A-Za-z0-9])[0-9a-fA-F]{32,}(?![A-Za-z0-9])/gu },
   {
-    re: /[A-Za-z0-9_-]{0,24}(?:password|passwd|secret|api[_-]?key|apikey)["']?[ \t]*[:=][ \t]*["']?([^\s"'`,;]{3,})/giu,
+    re: new RegExp(
+      `[A-Za-z0-9_-]{0,24}(?:${SECRET_KEYS})["']?[ \t]*[:=][ \t]*["']?(?:(?:${AUTH_SCHEMES})[ \t]+)?([^\\s"'\`,;]{3,})`,
+      "giu",
+    ),
     group: 1,
   },
 ];
@@ -198,7 +237,13 @@ const SECRET_PATTERNS = [
 const BLOCKQUOTE_LINE = /^ {0,3}>/u;
 const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)/u;
 
-/** Every finding in `text`, sorted by line then column; never throws. */
+/**
+ * Every finding in `text`, sorted by line then column; never throws.
+ *
+ * `lintText(text, { registry, redaction, homeDir, allow, extraTerms })`, where `extraTerms` is
+ * `[{ term, rule }]` — terms the caller wants blocked that the registry cannot know about,
+ * each reported under its own rule id at `error` severity.
+ */
 export function lintText(text, options = {}) {
   try {
     if (typeof text !== "string" || text === "") return [];
@@ -229,7 +274,10 @@ export function lintText(text, options = {}) {
   }
 }
 
-/** The findings for a file on disk, each carrying `filePath`; an unreadable file is an error. */
+/**
+ * The findings for a file on disk, each carrying `filePath`; an unreadable file is an error.
+ * Takes the same options as `lintText`, `extraTerms` included.
+ */
 export function lintFile(filePath, opts = {}) {
   let text;
   try {
@@ -326,6 +374,7 @@ function buildContext(options) {
     homePatterns: buildHomePatterns(home),
     termPatterns,
     projectPatterns,
+    extraPatterns: buildExtraPatterns(options?.extraTerms),
     // Whether a branch is "attributable" is decided against the same terms, so a project that is
     // safe to name never arms this rule.
     hasPrivateProjects: projectPatterns.length > 0,
@@ -384,8 +433,11 @@ function nonPublicProjectTerms(registry) {
   return terms.filter((term) => typeof term === "string" && term.trim().length >= MIN_PROJECT_TERM);
 }
 
-// A word-like term matches whole words only; anything carrying punctuation ("acme-corp.io") is
-// matched as a substring, because its own boundaries are already distinctive.
+// Every term is matched as a substring, whether or not it looks like a word. `northwind` fires
+// inside `northwindretail-prod`, which is exactly how a client name reaches a public post; word
+// boundaries used to let that through. The cost is a false positive the human edits away, and
+// `reference/privacy.md` documents the behaviour so the list is curated against what happens.
+// Internal whitespace matches any run of it, so a term split across a line wrap still matches.
 function buildTermPatterns(terms) {
   const patterns = [];
   const seen = new Set();
@@ -395,17 +447,31 @@ function buildTermPatterns(terms) {
     if (term === "" || seen.has(fingerprint)) continue;
     seen.add(fingerprint);
 
-    const body = term
+    const source = term
       .split(/\s+/u)
       .map((word) => escapeRegExp(word))
       .join("\\s+");
-    const wordLike = /^[A-Za-z0-9][A-Za-z0-9 _'-]*$/u.test(term);
-    const source = wordLike ? `(?<![A-Za-z0-9])${body}(?![A-Za-z0-9])` : body;
     try {
       patterns.push({ term, re: new RegExp(source, "giu") });
     } catch {
       // An unrepresentable term is dropped rather than taking the whole gate down with it.
     }
+  }
+  return patterns;
+}
+
+// Terms the caller supplies per lint, each carrying the rule id it is reported under. The registry
+// can only police projects it knows about, so this is the only way an unclassified project — the
+// one class that must never be named — reaches the gate at all.
+function buildExtraPatterns(entries) {
+  if (!Array.isArray(entries)) return [];
+  const patterns = [];
+  for (const entry of entries) {
+    if (!isPlainObject(entry)) continue;
+    const term = asText(entry.term).trim();
+    if (term === "") continue;
+    const rule = asText(entry.rule).trim() || DEFAULT_EXTRA_RULE;
+    for (const { re } of buildTermPatterns([term])) patterns.push({ rule, re });
   }
   return patterns;
 }
@@ -436,6 +502,18 @@ function collectCandidates(text, context) {
       const end = start + match[0].length;
       privateHits.push({ start, end });
       candidates.push(candidate("private-project", start, end));
+    });
+  }
+
+  for (const { rule, re } of context.extraPatterns) {
+    eachMatch(re, text, (match) => {
+      candidates.push({
+        // Always blocking, and always explained: the caller may name a rule this module has never
+        // heard of, but "unreviewed project" is the only reason it has to hand one over.
+        ...candidate(rule, match.index, match.index + match[0].length),
+        severity: "error",
+        hint: RULE_BY_ID.get(rule)?.hint ?? RULE_BY_ID.get(DEFAULT_EXTRA_RULE).hint,
+      });
     });
   }
 
@@ -655,7 +733,7 @@ function toFinding(text, lineStarts, item, maskSpans) {
       typeof item.excerpt === "string"
         ? clipAround(flatten(item.excerpt), 0, 0, EXCERPT_MAX)
         : buildExcerpt(text, lineStart, lineEnd, item, maskSpans),
-    hint: rule?.hint ?? "",
+    hint: asText(item.hint) || rule?.hint || "",
   };
 }
 

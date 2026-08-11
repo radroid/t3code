@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test, { after, before } from "node:test";
 
 import {
@@ -23,12 +24,30 @@ import {
   parseExtractPayload,
   queue,
 } from "../lib/extract.mjs";
+import { dayWindow } from "../lib/format.mjs";
 import { worklogPaths } from "../lib/paths.mjs";
 
 const HOME = "/Users/tester";
 
+// Passed wherever a test asserts on the exact warning list: without a redaction list `queue` says
+// so, and that warning would otherwise drown the one under test.
+const REDACTION = {
+  alwaysRedact: ["Northwind Books"],
+  replacements: { "Northwind Books": "a client" },
+};
+
+// The collected day, in local time — the same arithmetic `collect()` uses, so these fixtures hold
+// in every timezone the suite might run in.
+const DAY = "2026-08-10";
+const WINDOW = dayWindow(DAY);
+const HOUR_MS = 3_600_000;
+/** An ISO stamp `hours` into the collected day (negative reaches back before it). */
+const at = (hours) => new Date(WINDOW.start.getTime() + hours * HOUR_MS).toISOString();
+const afterWindow = (hours) => new Date(WINDOW.end.getTime() + hours * HOUR_MS).toISOString();
+
 let sandbox = "";
 let roots = 0;
+let bases = 0;
 const savedHome = process.env.HOME;
 
 before(() => {
@@ -51,6 +70,89 @@ function newRoot() {
   const root = NodePath.join(sandbox, `repo-${roots}`);
   NodeFS.mkdirSync(root, { recursive: true });
   return root;
+}
+
+// Verbatim from the shipping schema — the two tables the default loader reads. Building the real
+// thing keeps the column set, the NOT NULLs and the ordering honest; the user's own database is
+// never opened, and `bundle.config.t3BaseDirs` is what points the loader here.
+const T3_SCHEMA = [
+  `CREATE TABLE projection_thread_messages (
+      message_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      turn_id TEXT,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL,
+      is_streaming INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    , attachments_json TEXT)`,
+  `CREATE TABLE projection_thread_activities (
+      activity_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      turn_id TEXT,
+      tone TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    , sequence INTEGER)`,
+];
+
+/** A base dir holding a real state.sqlite with the given messages and tool activities. */
+function newT3BaseDir({ threadId = "alpha", messages = [], activities = [] } = {}) {
+  bases += 1;
+  const baseDir = NodePath.join(sandbox, `t3-${bases}`);
+  NodeFS.mkdirSync(baseDir, { recursive: true });
+  const db = new DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
+  for (const statement of T3_SCHEMA) db.exec(statement);
+
+  const insertMessage = db.prepare(
+    `INSERT INTO projection_thread_messages
+       (message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at)
+     VALUES (?, ?, NULL, ?, ?, 0, ?, ?)`,
+  );
+  messages.forEach((message, index) => {
+    insertMessage.run(
+      `m-${bases}-${index}`,
+      threadId,
+      message.role ?? "user",
+      message.text,
+      message.createdAt,
+      message.createdAt,
+    );
+  });
+
+  const insertActivity = db.prepare(
+    `INSERT INTO projection_thread_activities
+       (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at, sequence)
+     VALUES (?, ?, NULL, 'neutral', 'tool.completed', 'Command run', ?, ?, ?)`,
+  );
+  activities.forEach((activity, index) => {
+    insertActivity.run(
+      `a-${bases}-${index}`,
+      threadId,
+      JSON.stringify({ detail: activity.detail, data: { toolName: "Bash" } }),
+      activity.createdAt,
+      index,
+    );
+  });
+
+  db.close();
+  return baseDir;
+}
+
+/** The bundle shape `collect()` emits, narrowed to what the default loader reads. */
+function bundleFixture({ sessions, t3BaseDirs = [], repos = [] } = {}) {
+  return {
+    range: { from: DAY, to: DAY, days: [DAY], timezone: "local" },
+    config: { t3BaseDirs, worklogRoot: null },
+    sessions,
+    git: { repos },
+  };
+}
+
+function sliceTextOf(result, index = 0) {
+  return NodeFS.readFileSync(result.queued[index].slicePath, "utf8");
 }
 
 function sessionFixture(overrides = {}) {
@@ -529,7 +631,7 @@ test("no message is ever read twice: queue -> commit -> queue queues nothing", (
     },
   };
 
-  const first = queue({ bundle, paths: root, deps });
+  const first = queue({ bundle, paths: root, deps, redaction: REDACTION });
   assert.deepEqual(first.warnings, []);
   assert.equal(first.queued.length, 2);
   assert.deepEqual(first.skipped, []);
@@ -557,7 +659,7 @@ test("no message is ever read twice: queue -> commit -> queue queues nothing", (
     });
   }
 
-  const second = queue({ bundle, paths: root, deps });
+  const second = queue({ bundle, paths: root, deps, redaction: REDACTION });
   assert.deepEqual(second.queued, []);
   assert.equal(second.skipped.length, 2);
   for (const entry of second.skipped) assert.match(entry.reason, /already extracted through/u);
@@ -566,7 +668,7 @@ test("no message is ever read twice: queue -> commit -> queue queues nothing", (
 
   // New events after the cursor put the session back in the queue, reading only what is new.
   alpha.endedAt = "2026-08-10T18:00:00.000Z";
-  const third = queue({ bundle, paths: root, deps });
+  const third = queue({ bundle, paths: root, deps, redaction: REDACTION });
   assert.deepEqual(
     third.queued.map((entry) => entry.sessionKey),
     ["t3-alpha"],
@@ -682,6 +784,198 @@ test("queue degrades a missing bundle, a keyless session, and a failing loader i
   assert.match(async.warnings[0], /must be synchronous/u);
 });
 
+test("queue warns when it has no redaction list, and never takes one off the bundle", () => {
+  const root = newRoot();
+  // `collect()` emits no `redaction` field. The fallback that used to read `bundle.redaction` here
+  // meant the configured terms were applied to exactly zero real slices — and said nothing.
+  const bundle = {
+    ...bundleFixture({ sessions: [sessionFixture({ title: "Northwind Books migration" })] }),
+    redaction: REDACTION,
+  };
+  const deps = { loadInput: () => inputFixture() };
+
+  const unwired = queue({ bundle, paths: root, deps });
+  assert.equal(unwired.queued.length, 1);
+  assert.ok(
+    unwired.warnings.some((warning) => /No always-redact terms were supplied/u.test(warning)),
+    `expected a redaction warning, got ${JSON.stringify(unwired.warnings)}`,
+  );
+  assert.ok(sliceTextOf(unwired).includes("Northwind Books"));
+
+  const wired = queue({ bundle, paths: newRoot(), deps, redaction: REDACTION });
+  assert.deepEqual(wired.warnings, []);
+  const slice = sliceTextOf(wired);
+  assert.ok(!slice.includes("Northwind Books"));
+  assert.ok(slice.includes("a client"));
+});
+
+// --- the default loader ---------------------------------------------------------------------------
+
+test("the default loader bounds a first extraction to the collected window", () => {
+  const root = newRoot();
+  const t3BaseDirs = [
+    newT3BaseDir({
+      threadId: "alpha",
+      messages: [
+        { text: "Old day work: rewire the auth flow.", createdAt: at(-70) },
+        { text: "Today: bound the extraction read.", createdAt: at(12) },
+        { text: "Tomorrow: start the next thing.", createdAt: afterWindow(1) },
+      ],
+    }),
+  ];
+  const session = sessionFixture({ startedAt: at(12), endedAt: at(15) });
+
+  const result = queue({
+    bundle: bundleFixture({ sessions: [session], t3BaseDirs }),
+    paths: root,
+    redaction: REDACTION,
+  });
+
+  assert.deepEqual(result.warnings, []);
+  const slice = sliceTextOf(result);
+  assert.ok(slice.includes("Today: bound the extraction read."));
+  // With only the cursor as a bound — null on a first run — the read starts at the beginning of
+  // the thread, so a thread opened days ago gets summarised as today's work and cached that way.
+  assert.ok(!slice.includes("Old day work"), "a message from before the window reached the slice");
+  assert.ok(!slice.includes("Tomorrow:"), "a message from after the window reached the slice");
+});
+
+test("the default loader will not let a stale cursor reach back past the window", () => {
+  const root = newRoot();
+  const t3BaseDirs = [
+    newT3BaseDir({
+      threadId: "alpha",
+      messages: [
+        { text: "Last week: draft the relay.", createdAt: at(-70) },
+        { text: "Today: bound the extraction read.", createdAt: at(12) },
+      ],
+      activities: [
+        { detail: "Bash: an old-day command", createdAt: at(-70) },
+        { detail: "Bash: an in-window command", createdAt: at(13) },
+      ],
+    }),
+  ];
+  const session = sessionFixture({ startedAt: at(12), endedAt: at(15) });
+
+  // A cursor from a week ago: the session has run for days, and only part of it has been read.
+  commitExtract({
+    paths: root,
+    sessionKey: session.key,
+    extract: payloadFixture(),
+    session: sessionFixture({ endedAt: at(-160) }),
+  });
+
+  const result = queue({
+    bundle: bundleFixture({ sessions: [session], t3BaseDirs }),
+    paths: root,
+    redaction: REDACTION,
+  });
+
+  assert.deepEqual(
+    result.queued.map((entry) => entry.sessionKey),
+    ["t3-alpha"],
+  );
+  const slice = sliceTextOf(result);
+  assert.ok(slice.includes("Today: bound the extraction read."));
+  assert.ok(slice.includes("- Bash: an in-window command"));
+  assert.ok(!slice.includes("Last week:"), "the cursor out-ranked the window for messages");
+  assert.ok(!slice.includes("an old-day command"), "the cursor out-ranked the window for activity");
+});
+
+test("the default loader gives a session only the commits inside its own window", () => {
+  const root = newRoot();
+  const session = {
+    key: "cc-1",
+    kind: "claude-code",
+    projectKey: "t3code",
+    title: "Relay retry hardening",
+    firstPrompt: "Harden the relay notify.",
+    lastPrompt: "Ship it.",
+    startedAt: at(12),
+    endedAt: at(15),
+    turnCount: 4,
+    files: [],
+  };
+  const repos = [
+    {
+      key: "t3code",
+      projectKey: "t3code",
+      commits: [
+        { sha: "aaa", at: at(9), subject: "chore: an earlier session's commit" },
+        { sha: "bbb", at: at(13), subject: "feat: the session's own commit" },
+        { sha: "ccc", at: at(15.08), subject: "docs: committed right after the last event" },
+        { sha: "ddd", at: at(16), subject: "fix: a later session's commit" },
+      ],
+    },
+  ];
+
+  const result = queue({
+    bundle: bundleFixture({ sessions: [session], repos }),
+    paths: root,
+    redaction: REDACTION,
+  });
+
+  const slice = sliceTextOf(result);
+  assert.ok(slice.includes("feat: the session's own commit"));
+  // A commit is usually the last thing that happens after the final recorded event, so a short
+  // grace keeps it; everything else belongs to some other session's story.
+  assert.ok(slice.includes("docs: committed right after the last event"));
+  assert.ok(!slice.includes("an earlier session's commit"));
+  assert.ok(!slice.includes("a later session's commit"));
+
+  // With no window to judge against there is nothing to narrow by, so the evidence is kept.
+  const undated = queue({
+    bundle: bundleFixture({
+      sessions: [{ ...session, key: "cc-2", startedAt: null, endedAt: null, lastEventAt: at(15) }],
+      repos,
+    }),
+    paths: newRoot(),
+    redaction: REDACTION,
+  });
+  assert.ok(sliceTextOf(undated).includes("chore: an earlier session's commit"));
+});
+
+test("the default loader says so when a Claude Code session carries no prompt text", () => {
+  const root = newRoot();
+  const quiet = {
+    key: "cc-quiet",
+    kind: "claude-code",
+    projectKey: "t3code",
+    title: "A terminal day",
+    startedAt: at(9),
+    endedAt: at(11),
+    turnCount: 3,
+    files: [],
+    signals: ["Bash: pnpm test"],
+  };
+
+  const result = queue({
+    bundle: bundleFixture({ sessions: [quiet] }),
+    paths: root,
+    redaction: REDACTION,
+  });
+  assert.deepEqual(
+    result.queued.map((entry) => entry.sessionKey),
+    ["cc-quiet"],
+  );
+  assert.ok(
+    result.warnings.some(
+      (warning) => warning.includes("cc-quiet") && /No prompt text is recorded/u.test(warning),
+    ),
+    `expected a named warning, got ${JSON.stringify(result.warnings)}`,
+  );
+
+  const loud = queue({
+    bundle: bundleFixture({
+      sessions: [{ ...quiet, key: "cc-loud", firstPrompt: "Set up the release relay." }],
+    }),
+    paths: newRoot(),
+    redaction: REDACTION,
+  });
+  assert.deepEqual(loud.warnings, []);
+  assert.ok(sliceTextOf(loud).includes("1. Set up the release relay."));
+});
+
 test("commitExtract writes the documented shape and advances the cursor", () => {
   const root = newRoot();
   const session = sessionFixture({ lastTurnId: "turn-6" });
@@ -714,6 +1008,27 @@ test("commitExtract writes the documented shape and advances the cursor", () => 
     history: [],
   });
   assert.deepEqual(JSON.parse(NodeFS.readFileSync(file, "utf8")), document);
+});
+
+test("commitExtract scrubs the title it writes, because publish git-adds this file", () => {
+  const root = newRoot();
+  const { file, document } = commitExtract({
+    paths: root,
+    sessionKey: "t3-alpha",
+    extract: payloadFixture(),
+    session: sessionFixture({
+      title: `Northwind Books import at ${HOME}/Developer/clients/import.ts`,
+    }),
+    homeDir: HOME,
+    redaction: REDACTION,
+  });
+
+  // A thread title is model-generated from the work itself, so it carries whatever the work was
+  // about — a client's name, the path being edited.
+  assert.equal(document.title, "a client import at import.ts");
+  const onDisk = JSON.parse(NodeFS.readFileSync(file, "utf8"));
+  assert.equal(onDisk.title, "a client import at import.ts");
+  assert.ok(!onDisk.title.includes(HOME));
 });
 
 test("commitExtract never rewinds a cursor", () => {
