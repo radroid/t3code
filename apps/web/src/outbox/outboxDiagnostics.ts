@@ -47,9 +47,15 @@ export function logComposerDispatch(input: ComposerDispatchDiagnostics): void {
   });
 }
 
-/** A queue mutation that failed after the user asked for it. */
+/**
+ * A queue mutation that failed after the user asked for it.
+ *
+ * `update` covers the no-op case as well as a thrown one: the manager returns
+ * `false` when the message has already left the queue, and that outcome is just
+ * as invisible to the user as a rejection would be.
+ */
 export function logOutboxMutationFailure(
-  operation: "reorder",
+  operation: "reorder" | "update",
   fields: Readonly<Record<string, unknown>>,
   error: unknown,
 ): void {
