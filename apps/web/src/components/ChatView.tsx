@@ -199,7 +199,7 @@ import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { resolveComposerSendLabel } from "~/outbox/composerSendLabel.logic";
 import { enqueueThreadOutboxMessage, useThreadOutboxQueue } from "~/outbox/threadOutbox";
-import { canSteerActiveThread } from "~/outbox/composerSteering.logic";
+import { canSteerActiveThread, steerProviderBinding } from "~/outbox/composerSteering.logic";
 import { logComposerDispatch } from "~/outbox/outboxDiagnostics";
 import { ThreadOutboxQueueList } from "./chat/ThreadOutboxQueueList";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
@@ -2436,11 +2436,16 @@ function ChatViewContent(props: ChatViewProps) {
   const composerActiveThreadBusy = phase === "running" || isSendBusy || isRevertingCheckpoint;
   // A running turn is not on its own a reason to queue: steer-capable drivers
   // fold a mid-turn send into the work in progress.
+  //
+  // Keyed on the thread's routing binding, not `selectedProvider` — the picker
+  // falls back to the first enabled provider, so it can classify a Codex thread
+  // as steerable (radroid/t3code#40 A4). See `steerProviderBinding`.
+  const composerSteerProvider = steerProviderBinding(activeThread);
   const composerCanSteerActiveThread = canSteerActiveThread({
     phase,
     isSendBusy,
     isRevertingCheckpoint,
-    provider: selectedProvider,
+    provider: composerSteerProvider,
   });
   const composerSendLabel = resolveComposerSendLabel({
     connectionState: activeEnvironmentConnectionPhase,
@@ -5356,6 +5361,34 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  // One breadcrumb per submit that actually dispatches: whether it queued, sent,
+  // or steered into a running turn, plus every input to that decision. A refused
+  // steer is invisible on the client, so this is the only client-side evidence —
+  // which is why it is fired at each path's real dispatch point rather than at
+  // the top of `onSend`, where it also logged submits the guards had already
+  // rejected (Enter on an empty composer logged `steer`; radroid/t3code#40 A3).
+  const logComposerDispatchNow = useCallback(() => {
+    logComposerDispatch({
+      queued: composerQueueMode,
+      steerable: composerCanSteerActiveThread,
+      phase,
+      queueCount: outboxQueue.length,
+      connection: activeEnvironmentConnectionPhase,
+      provider: selectedProvider,
+      steerProvider: composerSteerProvider,
+      threadId: activeThread?.id ?? null,
+    });
+  }, [
+    activeEnvironmentConnectionPhase,
+    activeThread?.id,
+    composerCanSteerActiveThread,
+    composerQueueMode,
+    composerSteerProvider,
+    outboxQueue.length,
+    phase,
+    selectedProvider,
+  ]);
+
   // Enqueue the current composer content into the thread outbox. Text-only:
   // terminal/element/preview/review contexts are folded into the prompt like a
   // normal send, but image attachments cannot survive a reload through
@@ -5428,6 +5461,7 @@ function ChatViewContent(props: ChatViewProps) {
       text: messageTextForSend,
     });
 
+    logComposerDispatchNow();
     try {
       await enqueueThreadOutboxMessage({
         environmentId: activeThread.environmentId,
@@ -5472,6 +5506,7 @@ function ChatViewContent(props: ChatViewProps) {
     composerDraftTarget,
     composerRef,
     interactionMode,
+    logComposerDispatchNow,
     promptRef,
     runtimeMode,
     setThreadError,
@@ -5496,18 +5531,6 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     };
-    // One breadcrumb per submit: whether it queued, sent, or steered into a
-    // running turn, plus every input to that decision. A refused steer is
-    // invisible on the client, so this is the only client-side evidence.
-    logComposerDispatch({
-      queued: composerQueueMode,
-      steerable: composerCanSteerActiveThread,
-      phase,
-      queueCount: outboxQueue.length,
-      connection: activeEnvironmentConnectionPhase,
-      provider: selectedProvider,
-      threadId: activeThread?.id ?? null,
-    });
     // Queue mode routes the submit through the thread outbox instead of the
     // immediate-send path (which is gated on an idle, connected thread).
     //
@@ -5814,6 +5837,7 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
+    logComposerDispatchNow();
     sendInFlightRef.current = true;
     if (supportsAttachmentUploads && composerImagesSnapshot.length > 0) {
       for (const image of composerImagesSnapshot) {
