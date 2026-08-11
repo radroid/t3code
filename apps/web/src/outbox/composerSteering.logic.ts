@@ -1,5 +1,3 @@
-import type { ProviderDriverKind } from "@t3tools/contracts";
-
 /**
  * Which provider drivers can take a message *during* a running turn.
  *
@@ -47,8 +45,38 @@ const STEERABLE_PROVIDER_DRIVER_KINDS: ReadonlySet<string> = new Set([
   "opencode",
 ]);
 
-export function providerSupportsSteering(driver: ProviderDriverKind | null | undefined): boolean {
+// Takes an open string rather than a branded `ProviderDriverKind` on purpose:
+// the value that decides this is the session's `providerName` (see
+// `steerProviderBinding`), which the contracts type as a plain non-empty
+// string. Narrowing it to the brand first would have to decide what an
+// unrecognised value means, and the allowlist already answers that — it misses,
+// so it queues.
+export function providerSupportsSteering(driver: string | null | undefined): boolean {
   return driver !== null && driver !== undefined && STEERABLE_PROVIDER_DRIVER_KINDS.has(driver);
+}
+
+/**
+ * The driver the SERVER will route this submit to.
+ *
+ * A steer decision has to key on the thread's persisted binding, not on the
+ * composer's picker. `selectedProvider` resolves through `deriveLockedProvider`
+ * and then `resolveSelectableProvider`, whose fallback is *the first enabled
+ * provider* — so a thread whose provider instance was disabled or removed, or
+ * whose session carries a driver kind this build does not recognise, can read
+ * as `claudeAgent` in the composer while the server still routes it to Codex.
+ * That is exactly the case the allowlist exists to prevent, and keying off the
+ * picker made the "fail closed" promise unenforceable (radroid/t3code#40 A4).
+ *
+ * Returned raw: an absent or unrecognised binding simply misses the allowlist
+ * and the submit queues, which is the safe direction.
+ */
+export function steerProviderBinding(
+  thread:
+    | { readonly session?: { readonly providerName?: string | null } | null }
+    | null
+    | undefined,
+): string | null {
+  return thread?.session?.providerName ?? null;
 }
 
 /**
@@ -67,7 +95,8 @@ export function canSteerActiveThread(input: {
   readonly phase: string;
   readonly isSendBusy: boolean;
   readonly isRevertingCheckpoint: boolean;
-  readonly provider: ProviderDriverKind | null | undefined;
+  /** The thread's routing binding — see `steerProviderBinding`, NOT the picker. */
+  readonly provider: string | null | undefined;
 }): boolean {
   return (
     input.phase === "running" &&
