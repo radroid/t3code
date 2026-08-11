@@ -309,7 +309,10 @@ describe("AutoResumeReactor (integration)", () => {
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
   );
 
-  it.effect("does NOT resume when the user takes over before the window reopens", () =>
+  // Regression for radroid/t3code#39 — the reported shape: the user types "keep going"
+  // while the resume is pending, that message is itself rejected by a limit so it starts
+  // nothing, and the arm used to be destroyed as `user-took-over`. It must survive.
+  it.effect("still resumes when the user posted a message while the resume was pending", () =>
     Effect.gen(function* () {
       const { dispatched, modelRef, deps, store } = yield* harness(readModel({}), [
         rejectedEvent(100),
@@ -318,7 +321,7 @@ describe("AutoResumeReactor (integration)", () => {
       yield* Effect.gen(function* () {
         yield* settleUntil(scheduledOne(store), "detection to schedule from the pre-loaded event");
 
-        // User sends a new message before the resume is due -> guard must cancel.
+        // A new user message lands, and goes nowhere: the thread is still idle at wake time.
         yield* Ref.set(
           modelRef,
           readModel({
@@ -329,10 +332,56 @@ describe("AutoResumeReactor (integration)", () => {
           }),
         );
 
-        yield* advancePastResume;
+        yield* advanceUntil(dispatchedIncludes(dispatched, "thread.turn.start"), "the resume turn");
 
         const commands = yield* Ref.get(dispatched);
-        assert.notInclude(types(commands), "thread.turn.start");
+        assert.strictEqual(
+          commands.filter((c) => c.type === "thread.turn.start").length,
+          1,
+          "the resume must fire despite the newer user message",
+        );
+        const summaries = commands
+          .filter((c) => c.type === "thread.activity.append")
+          .map((c) => (c as unknown as { activity: { summary: string } }).activity.summary);
+        assert.isFalse(
+          summaries.some((s) => s.includes("cancelled")),
+          "no cancellation may be posted",
+        );
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  // The other half of #39: a second, longer limit arriving while a resume is armed used
+  // to be dropped as `already-pending`, so the arm fired into a window still shut.
+  it.effect("moves a pending resume out when a longer limit supersedes it", () =>
+    Effect.gen(function* () {
+      const { dispatched, deps, store } = yield* harness(readModel({}), [
+        rejectedEvent(100), // due at 100_000 + 60_000 margin
+        rejectedEvent(1000), // due at 1_000_000 + 60_000 margin
+      ]);
+
+      yield* Effect.gen(function* () {
+        yield* settleUntil(
+          store.listPending.pipe(Effect.map((p) => p[0]?.resumeAtMs === 1_060_000)),
+          "the second rejection to supersede the first arm",
+        );
+
+        assert.strictEqual(
+          (yield* store.listPending).length,
+          1,
+          "superseding replaces the arm, it does not add a second one",
+        );
+
+        const kinds = (yield* Ref.get(dispatched))
+          .filter((c) => c.type === "thread.activity.append")
+          .map((c) => (c as unknown as { activity: { kind: string } }).activity.kind);
+        assert.deepStrictEqual(kinds, ["t3x.auto-resume.scheduled", "t3x.auto-resume.rescheduled"]);
+
+        // The original 160_000 due time passes without firing: that window is still shut.
+        yield* advancePastResume; // 8 x 30s = 240_000ms
+        assert.notInclude(types(yield* Ref.get(dispatched)), "thread.turn.start");
+
+        yield* advanceUntil(dispatchedIncludes(dispatched, "thread.turn.start"), "the resume turn");
       }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
   );
