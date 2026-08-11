@@ -1,5 +1,22 @@
 # Install T3 Code
 
+> [!IMPORTANT]
+> **You are reading the fork's copy of upstream's install guide. The desktop instructions below
+> install upstream's T3 Code, not this fork's build (Coil).**
+>
+> Fork builds: **[coil.curlycloud.dev/download](https://coil.curlycloud.dev/download)** — macOS
+> arm64 and Windows x64 only, no Intel, no Linux, not code-signed. The first-launch steps are on
+> that page and in every [GitHub release](https://github.com/radroid/t3code/releases) body; both
+> render `scripts/t3x/install-instructions.json`, so they cannot drift apart.
+>
+> On macOS the first launch says the app **is damaged and should be moved to the Trash**, not
+> that it is from an unidentified developer, and right-click → Open does not get past it. That
+> wording is what an ad-hoc-signed Electron bundle looks like from the outside; the download page
+> has the one command that clears it.
+>
+> Everything below is upstream's and is otherwise accurate — the `npx t3@latest` path in
+> particular runs this checkout's server just fine.
+
 T3 Code is a web and desktop GUI for running coding agents on your machine.
 
 ## Requirements
