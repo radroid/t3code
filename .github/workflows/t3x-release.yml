@@ -241,6 +241,86 @@ jobs:
         # ci.yml, release.yml and t3x-weekly-verify.yml, which all scope it the same way.
         run: vp run --filter @t3tools/desktop ensure:electron
 
+      # Issue #70: WITHOUT this step the mac artifact is ad-hoc signed, its designated requirement
+      # is the binary's cdhash, and macOS re-requests every permission (Screen Recording,
+      # Accessibility, Microphone, Files & Folders, Local Network) after every single update.
+      #
+      # The identity is a self-signed certificate created by scripts/t3x/setup-mac-signing.sh; the
+      # private key reaches CI as a p12 in T3X_MAC_CSC_P12_BASE64. It buys stability, not trust:
+      # the app is still not notarized, and does not need to be, because the requirement only has to
+      # stop MOVING for the grants to stick.
+      #
+      # No edit to build-desktop-artifact.ts (an upstream-owned file) is needed for any of this.
+      # That file forces CSC_IDENTITY_AUTO_DISCOVERY=false for unsigned builds, but electron-builder
+      # checks the flag only when NO identity was named — app-builder-lib's findIdentity() reads
+      # `qualifier || process.env.CSC_NAME` first and, when that is non-empty, goes straight to
+      # `security find-identity`. So exporting CSC_NAME on the build step is enough, and the fork's
+      # zero-seam property survives. Do not "simplify" this by passing --signed instead: that takes
+      # the macOS passkey path, which demands T3CODE_CLERK_PUBLISHABLE_KEY and a provisioning
+      # profile, and turns on notarization expectations a self-signed certificate cannot satisfy.
+      - name: Import the macOS signing identity
+        id: signing
+        if: ${{ matrix.platform == 'mac' }}
+        shell: bash
+        env:
+          CSC_P12_BASE64: ${{ secrets.T3X_MAC_CSC_P12_BASE64 }}
+          CSC_P12_PASSWORD: ${{ secrets.T3X_MAC_CSC_PASSWORD }}
+          IDENTITY_NAME: T3X Code Signing
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CSC_P12_BASE64:-}" || -z "${CSC_P12_PASSWORD:-}" ]]; then
+            echo "::warning::No macOS signing secrets set, so this build is ad-hoc signed and will re-request every macOS permission once installed. See docs/t3x/mac-signing-runbook.md."
+            {
+              echo "signed=false"
+              echo "identity="
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          keychain="$RUNNER_TEMP/t3x-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24)"
+          p12="$RUNNER_TEMP/t3x-signing.p12"
+          printf '%s' "$CSC_P12_BASE64" | base64 --decode > "$p12"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          # No -t: the default 300-second idle lock would expire during a 30-minute build and the
+          # signing step would fail with "no identity found" long after this step went green.
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$p12" -k "$keychain" -P "$CSC_P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          # -T above is not sufficient on its own since macOS 10.12: without the partition list,
+          # codesign gets a GUI authorisation prompt, which on a runner means a hung job.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$keychain_password" "$keychain" >/dev/null
+
+          # electron-builder calls `security find-identity -v` with NO keychain argument, so the
+          # keychain has to be in the search list. Re-passing the existing entries is required:
+          # `-s` REPLACES the list. Unquoted on purpose — runner keychain paths contain no spaces.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          # A self-signed certificate is not "valid for code signing" until it is trusted, and `-v`
+          # means valid. Skip this and find-identity lists nothing, electron-builder logs
+          # "skipped macOS application code signing" as a WARNING, and the release goes green with
+          # exactly the bundle this whole step exists to prevent.
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain docs/t3x/mac-signing/certificate.pem
+
+          rm -f "$p12"
+
+          if ! security find-identity -v -p codesigning | grep -Fq "$IDENTITY_NAME"; then
+            echo "::error::'$IDENTITY_NAME' is not a valid code-signing identity after import." >&2
+            security find-identity -v >&2 || true
+            exit 1
+          fi
+          echo "Signing identity available: $IDENTITY_NAME"
+          {
+            echo "signed=true"
+            echo "identity=$IDENTITY_NAME"
+          } >> "$GITHUB_OUTPUT"
+
       # Installed unconditionally by upstream for Windows, separate from the signing block — the
       # staged `vp install --prod` still runs native lifecycle scripts (node-pty, sharp,
       # msgpackr-extract) and recent MSVC + node-gyp wants the Spectre-mitigated libs.
@@ -335,6 +415,12 @@ jobs:
           # upstream edits. The verify step below asserts it.
           GITHUB_REPOSITORY: ""
           T3CODE_DESKTOP_UPDATE_REPOSITORY: ""
+          # Issue #70, and the only line that makes the mac build signed. Empty on Windows and
+          # whenever no signing secret is configured, which is the same as absent: the build script
+          # scrubs empty variables, and electron-builder's findIdentity() treats an empty CSC_NAME as
+          # "not specified" and falls back to the ad-hoc path. The verify step below is what turns
+          # that silent fallback into a visible one.
+          CSC_NAME: ${{ steps.signing.outputs.identity }}
         run: |
           set -euo pipefail
           node scripts/build-desktop-artifact.ts \
@@ -358,6 +444,50 @@ jobs:
             exit 1
           fi
           echo "No app-update.yml packaged."
+
+      # The machine-checkable form of "this update will not re-ask for permissions" (issue #70),
+      # made against the .app inside the shipped .dmg rather than a staging copy.
+      #
+      # It exists because electron-builder does not fail when it cannot find an identity — it warns
+      # and produces an ad-hoc bundle. Without this step the regression is invisible until the user
+      # is clicking through five system dialogs again, days later, with a green release behind them.
+      #
+      # A CHANGED-but-valid identity is failed too, not just a missing one: a different certificate
+      # is still one full round of prompts, and the recorded requirement is the only thing that can
+      # tell the difference.
+      - name: Verify the macOS artifact keeps its permission grants
+        if: ${{ matrix.platform == 'mac' }}
+        shell: bash
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+          IDENTITY: ${{ steps.signing.outputs.identity }}
+        run: |
+          set -euo pipefail
+          dmg="$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$dmg" ]]; then
+            echo "::error::No .dmg in release/ to verify." >&2
+            exit 1
+          fi
+
+          args=(
+            --artifact "$dmg"
+            --expect-requirement-file docs/t3x/mac-signing/designated-requirement.txt
+          )
+          if [[ "$SIGNED" == "true" ]]; then
+            args+=(--expect-authority "$IDENTITY")
+          else
+            # Downgrade to a warning ONLY when this job knowingly had no identity to sign with.
+            args+=(--allow-unsigned)
+          fi
+
+          node scripts/t3x/verify-mac-signature.ts "${args[@]}"
+
+      - name: Delete the signing keychain
+        if: ${{ always() && matrix.platform == 'mac' && steps.signing.outputs.signed == 'true' }}
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/t3x-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/t3x-signing.p12"
 
       - name: Collect and rename
         id: collect
