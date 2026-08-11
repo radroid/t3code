@@ -43,11 +43,8 @@ import {
   loadRedaction,
   loadRegistry,
   matchProjectByRoot,
-  projectKeyFor,
-  saveRedaction,
   saveRegistry,
   settingsOf,
-  upsertProject,
 } from "../lib/registry.mjs";
 import { closeDatabases, openT3Databases, readProjects } from "../lib/t3db.mjs";
 import { parseYaml } from "../lib/yamlLite.mjs";
@@ -235,7 +232,7 @@ class RefusedError extends Error {
  * whole surface in-process with `{ stdout, stderr, exit }` and never touch the real filesystem.
  */
 export async function main(argv = [], io = {}, deps = {}) {
-  const ctx = createContext(io, { ...(io?.deps ?? {}), ...deps });
+  const ctx = createContext(io, { ...io?.deps, ...deps });
   try {
     const outcome = await dispatch(Array.isArray(argv) ? argv.map(String) : [], ctx);
     emit(ctx, outcome);
@@ -321,7 +318,7 @@ function requireFlags(command, parsed) {
 //   A value that starts with a dash must use --flag=value, so a missing value cannot silently
 //   swallow the next flag.
 function parseArgs(argv, command) {
-  const specs = { ...GLOBAL_FLAGS, ...(command.flags ?? {}) };
+  const specs = { ...GLOBAL_FLAGS, ...command.flags };
   const flags = {};
   const positionals = [];
   let index = 0;
@@ -1380,7 +1377,7 @@ function commandUsage(command) {
   const lines = [`worklog ${command.name} — ${command.summary}`, ""];
   if (command.details) lines.push(command.details, "");
   lines.push("Usage:", `  ${usageLine(command)}`, "", "Flags:");
-  for (const [name, spec] of Object.entries({ ...(command.flags ?? {}), ...GLOBAL_FLAGS })) {
+  for (const [name, spec] of Object.entries({ ...command.flags, ...GLOBAL_FLAGS })) {
     const token = spec.type === "boolean" ? `--${name}` : `--${name} ${spec.value ?? "VALUE"}`;
     lines.push(`  ${token.padEnd(20)}${spec.describe}`);
   }
@@ -1466,7 +1463,7 @@ function jsonEnvelope(ctx, outcome) {
   return {
     ok: outcome.code === EXIT.ok,
     command: ctx.commandName,
-    ...(outcome.json ?? {}),
+    ...outcome.json,
     warnings: toStringArray(outcome.warnings),
     exitCode: outcome.code,
   };
@@ -1518,7 +1515,10 @@ function emitFailure(ctx, error, argv) {
 
 function redactableExtra(extra) {
   if (extra === null || typeof extra !== "object") return {};
-  const { report, ...rest } = extra;
+  // `report` is dropped on purpose: it is the human-readable rendering of `findings`, printed on
+  // the text path above. The JSON envelope carries the structured `findings` instead, so echoing
+  // the rendering too would only duplicate it.
+  const { report: _report, ...rest } = extra;
   return rest;
 }
 

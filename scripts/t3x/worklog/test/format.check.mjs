@@ -4,9 +4,9 @@
 // which timezone the developer's machine is in — and so a timezone change cannot leak between
 // tests. Everything else must hold in any zone and runs in-process.
 
-import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import test from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeTest from "node:test";
 
 import {
   dayWindow,
@@ -34,11 +34,11 @@ function inTimeZone(timeZone, body, extraEnv = {}) {
     "process.stdout.write(JSON.stringify(result));",
   ].join("\n");
 
-  const run = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
+  const run = NodeChildProcess.spawnSync(process.execPath, ["--input-type=module", "-e", source], {
     encoding: "utf8",
     env: { ...process.env, TZ: timeZone, ...extraEnv },
   });
-  assert.equal(run.status, 0, `child process failed under TZ=${timeZone}:\n${run.stderr}`);
+  NodeAssert.equal(run.status, 0, `child process failed under TZ=${timeZone}:\n${run.stderr}`);
   return JSON.parse(run.stdout);
 }
 
@@ -65,18 +65,18 @@ const DST_CASES = [
   { timeZone: "Asia/Kolkata", day: "2026-03-08", next: "2026-03-09", hours: 24 },
 ];
 
-test("parseLocalDate returns local midnight for a real calendar date", () => {
+NodeTest.test("parseLocalDate returns local midnight for a real calendar date", () => {
   for (const day of ["2026-08-10", "2026-01-01", "2026-12-31", "2024-02-29", "1999-06-30"]) {
-    assert.equal(formatLocalDate(parseLocalDate(day)), day);
+    NodeAssert.equal(formatLocalDate(parseLocalDate(day)), day);
   }
   const date = parseLocalDate(" 2026-05-05 ");
-  assert.equal(formatLocalDate(date), "2026-05-05");
-  assert.equal(date.getMinutes(), 0);
-  assert.equal(date.getSeconds(), 0);
-  assert.equal(date.getMilliseconds(), 0);
+  NodeAssert.equal(formatLocalDate(date), "2026-05-05");
+  NodeAssert.equal(date.getMinutes(), 0);
+  NodeAssert.equal(date.getSeconds(), 0);
+  NodeAssert.equal(date.getMilliseconds(), 0);
 });
 
-test("parseLocalDate rejects impossible calendar dates", () => {
+NodeTest.test("parseLocalDate rejects impossible calendar dates", () => {
   for (const day of [
     "2026-02-31",
     "2026-02-29",
@@ -85,11 +85,11 @@ test("parseLocalDate rejects impossible calendar dates", () => {
     "2026-00-10",
     "2026-01-00",
   ]) {
-    assert.throws(() => parseLocalDate(day), TypeError, `${day} should be rejected`);
+    NodeAssert.throws(() => parseLocalDate(day), TypeError, `${day} should be rejected`);
   }
 });
 
-test("parseLocalDate rejects malformed input", () => {
+NodeTest.test("parseLocalDate rejects malformed input", () => {
   for (const value of [
     "",
     "   ",
@@ -99,38 +99,38 @@ test("parseLocalDate rejects malformed input", () => {
     "today",
     "2026-08-10T00:00:00Z",
   ]) {
-    assert.throws(
+    NodeAssert.throws(
       () => parseLocalDate(value),
       TypeError,
       `${JSON.stringify(value)} should be rejected`,
     );
   }
   for (const value of [null, undefined, 20260810, new Date(), ["2026-08-10"]]) {
-    assert.throws(() => parseLocalDate(value), TypeError);
+    NodeAssert.throws(() => parseLocalDate(value), TypeError);
   }
 });
 
-test("formatLocalDate pads and accepts Date, epoch ms, or ISO string", () => {
+NodeTest.test("formatLocalDate pads and accepts Date, epoch ms, or ISO string", () => {
   const date = new Date(2026, 0, 5, 13, 45);
-  assert.equal(formatLocalDate(date), "2026-01-05");
-  assert.equal(formatLocalDate(date.getTime()), "2026-01-05");
-  assert.equal(formatLocalDate(date.toISOString()), "2026-01-05");
-  assert.throws(() => formatLocalDate("nonsense"), TypeError);
-  assert.throws(() => formatLocalDate(new Date(Number.NaN)), TypeError);
+  NodeAssert.equal(formatLocalDate(date), "2026-01-05");
+  NodeAssert.equal(formatLocalDate(date.getTime()), "2026-01-05");
+  NodeAssert.equal(formatLocalDate(date.toISOString()), "2026-01-05");
+  NodeAssert.throws(() => formatLocalDate("nonsense"), TypeError);
+  NodeAssert.throws(() => formatLocalDate(new Date(Number.NaN)), TypeError);
 });
 
-test("localDayKey is the forgiving variant: null instead of a throw", () => {
+NodeTest.test("localDayKey is the forgiving variant: null instead of a throw", () => {
   const date = new Date(2026, 7, 10, 23, 59, 59);
-  assert.equal(localDayKey(date), "2026-08-10");
-  assert.equal(localDayKey(date.getTime()), "2026-08-10");
-  assert.equal(localDayKey(date.toISOString()), "2026-08-10");
+  NodeAssert.equal(localDayKey(date), "2026-08-10");
+  NodeAssert.equal(localDayKey(date.getTime()), "2026-08-10");
+  NodeAssert.equal(localDayKey(date.toISOString()), "2026-08-10");
 
   for (const value of [null, undefined, "", "   ", "nonsense", Number.NaN, {}, 1e21]) {
-    assert.equal(localDayKey(value), null, `${String(value)} should have no day key`);
+    NodeAssert.equal(localDayKey(value), null, `${String(value)} should have no day key`);
   }
 });
 
-test("dayWindow ends at the next calendar date's midnight", () => {
+NodeTest.test("dayWindow ends at the next calendar date's midnight", () => {
   for (const [day, next] of [
     ["2026-08-10", "2026-08-11"],
     ["2026-01-31", "2026-02-01"],
@@ -139,14 +139,14 @@ test("dayWindow ends at the next calendar date's midnight", () => {
     ["2024-02-29", "2024-03-01"],
   ]) {
     const { start, end } = dayWindow(day);
-    assert.equal(formatLocalDate(start), day);
-    assert.equal(formatLocalDate(end), next, `${day} should end on ${next}`);
-    assert.equal(end.getTime(), dayWindow(next).start.getTime());
-    assert.ok(end.getTime() > start.getTime());
+    NodeAssert.equal(formatLocalDate(start), day);
+    NodeAssert.equal(formatLocalDate(end), next, `${day} should end on ${next}`);
+    NodeAssert.equal(end.getTime(), dayWindow(next).start.getTime());
+    NodeAssert.ok(end.getTime() > start.getTime());
   }
 });
 
-test("dayWindow is a calendar day, not 86_400_000 ms, across every DST shape", () => {
+NodeTest.test("dayWindow is a calendar day, not 86_400_000 ms, across every DST shape", () => {
   for (const { timeZone, day, next, hours } of DST_CASES) {
     const observed = inTimeZone(
       timeZone,
@@ -170,35 +170,37 @@ test("dayWindow is a calendar day, not 86_400_000 ms, across every DST shape", (
     );
 
     const label = `${timeZone} ${day}`;
-    assert.ok(zoneMatches(observed.zone, timeZone), `${label}: TZ did not take effect`);
-    assert.equal(observed.startKey, day, `${label}: window starts on the wrong day`);
-    assert.equal(observed.endKey, next, `${label}: window ends on the wrong day`);
-    assert.equal(observed.hours, hours, `${label}: window is the wrong length`);
-    assert.equal(observed.matchesNextDayStart, true, `${label}: windows do not tile`);
-    assert.equal(observed.endHour, 0, `${label}: window must end at midnight`);
-    assert.equal(observed.endMinute, 0, `${label}: window must end at midnight`);
+    NodeAssert.ok(zoneMatches(observed.zone, timeZone), `${label}: TZ did not take effect`);
+    NodeAssert.equal(observed.startKey, day, `${label}: window starts on the wrong day`);
+    NodeAssert.equal(observed.endKey, next, `${label}: window ends on the wrong day`);
+    NodeAssert.equal(observed.hours, hours, `${label}: window is the wrong length`);
+    NodeAssert.equal(observed.matchesNextDayStart, true, `${label}: windows do not tile`);
+    NodeAssert.equal(observed.endHour, 0, `${label}: window must end at midnight`);
+    NodeAssert.equal(observed.endMinute, 0, `${label}: window must end at midnight`);
 
     // And the whole point: what `start + 86_400_000` would have produced instead.
     const naiveIsMidnight = observed.naiveHour === 0 && observed.naiveMinute === 0;
     if (hours === 24) {
-      assert.equal(observed.naiveEndKey, next, `${label}`);
-      assert.ok(naiveIsMidnight, `${label}`);
+      NodeAssert.equal(observed.naiveEndKey, next, `${label}`);
+      NodeAssert.ok(naiveIsMidnight, `${label}`);
     } else if (hours > 24) {
       // A long day: 24h lands back inside the same date, so the tail of the day is dropped.
-      assert.equal(observed.naiveEndKey, day, `${label}: naive end stays inside the day`);
-      assert.ok(!naiveIsMidnight, `${label}`);
+      NodeAssert.equal(observed.naiveEndKey, day, `${label}: naive end stays inside the day`);
+      NodeAssert.ok(!naiveIsMidnight, `${label}`);
     } else {
       // A short day: 24h overshoots past midnight into the next day, double-counting it.
-      assert.equal(observed.naiveEndKey, next, `${label}: naive end spills into the next day`);
-      assert.ok(!naiveIsMidnight, `${label}: naive end should miss midnight`);
+      NodeAssert.equal(observed.naiveEndKey, next, `${label}: naive end spills into the next day`);
+      NodeAssert.ok(!naiveIsMidnight, `${label}: naive end should miss midnight`);
     }
   }
 });
 
-test("a spring-forward day whose local midnight does not exist still keys correctly", () => {
-  const observed = inTimeZone(
-    "America/Santiago",
-    `
+NodeTest.test(
+  "a spring-forward day whose local midnight does not exist still keys correctly",
+  () => {
+    const observed = inTimeZone(
+      "America/Santiago",
+      `
     const window = format.dayWindow("2026-09-06");
     return {
       startHour: window.start.getHours(),
@@ -207,41 +209,45 @@ test("a spring-forward day whose local midnight does not exist still keys correc
       endKey: format.formatLocalDate(window.end),
     };
   `,
-  );
-  assert.equal(observed.startHour, 1, "Santiago skips 00:00 on this date");
-  assert.equal(observed.startKey, "2026-09-06");
-  assert.equal(observed.endKey, "2026-09-07");
-  assert.equal(observed.naive, "2026-09-07", "naive arithmetic lands at 01:00, not midnight");
-});
+    );
+    NodeAssert.equal(observed.startHour, 1, "Santiago skips 00:00 on this date");
+    NodeAssert.equal(observed.startKey, "2026-09-06");
+    NodeAssert.equal(observed.endKey, "2026-09-07");
+    NodeAssert.equal(observed.naive, "2026-09-07", "naive arithmetic lands at 01:00, not midnight");
+  },
+);
 
-test("a calendar date that never existed locally is rejected, and skipped by eachDay", () => {
-  // Samoa jumped the date line at the end of 2011: 2011-12-30 simply never happened there.
-  // Kiritimati did the same on 1994-12-31. `new Date` silently hands back the following day,
-  // so only the day-of-month round-trip catches it.
-  const samoa = inTimeZone(
-    "Pacific/Apia",
-    `
+NodeTest.test(
+  "a calendar date that never existed locally is rejected, and skipped by eachDay",
+  () => {
+    // Samoa jumped the date line at the end of 2011: 2011-12-30 simply never happened there.
+    // Kiritimati did the same on 1994-12-31. `new Date` silently hands back the following day,
+    // so only the day-of-month round-trip catches it.
+    const samoa = inTimeZone(
+      "Pacific/Apia",
+      `
     let rejected = false;
     try { format.parseLocalDate("2011-12-30"); } catch (error) { rejected = error instanceof TypeError; }
     return { rejected, days: format.eachDay("2011-12-29", "2012-01-01") };
   `,
-  );
-  assert.equal(samoa.rejected, true, "2011-12-30 did not exist in Samoa");
-  assert.deepEqual(samoa.days, ["2011-12-29", "2011-12-31", "2012-01-01"]);
+    );
+    NodeAssert.equal(samoa.rejected, true, "2011-12-30 did not exist in Samoa");
+    NodeAssert.deepEqual(samoa.days, ["2011-12-29", "2011-12-31", "2012-01-01"]);
 
-  const kiritimati = inTimeZone(
-    "Pacific/Kiritimati",
-    `
+    const kiritimati = inTimeZone(
+      "Pacific/Kiritimati",
+      `
     let rejected = false;
     try { format.parseLocalDate("1994-12-31"); } catch (error) { rejected = error instanceof TypeError; }
     return { rejected, days: format.eachDay("1994-12-30", "1995-01-01") };
   `,
-  );
-  assert.equal(kiritimati.rejected, true, "1994-12-31 did not exist on Kiritimati");
-  assert.deepEqual(kiritimati.days, ["1994-12-30", "1995-01-01"]);
-});
+    );
+    NodeAssert.equal(kiritimati.rejected, true, "1994-12-31 did not exist on Kiritimati");
+    NodeAssert.deepEqual(kiritimati.days, ["1994-12-30", "1995-01-01"]);
+  },
+);
 
-test("localDayKey buckets UTC timestamps by the local day boundary", () => {
+NodeTest.test("localDayKey buckets UTC timestamps by the local day boundary", () => {
   const observed = inTimeZone(
     "America/Toronto",
     `
@@ -253,40 +259,40 @@ test("localDayKey buckets UTC timestamps by the local day boundary", () => {
     ];
   `,
   );
-  assert.deepEqual(observed, ["2026-03-07", "2026-03-08", "2026-08-10", "2026-08-11"]);
+  NodeAssert.deepEqual(observed, ["2026-03-07", "2026-03-08", "2026-08-10", "2026-08-11"]);
 });
 
-test("eachDay is inclusive and crosses month, year, and leap boundaries", () => {
-  assert.deepEqual(eachDay("2026-08-10", "2026-08-10"), ["2026-08-10"]);
-  assert.deepEqual(eachDay("2026-08-30", "2026-09-02"), [
+NodeTest.test("eachDay is inclusive and crosses month, year, and leap boundaries", () => {
+  NodeAssert.deepEqual(eachDay("2026-08-10", "2026-08-10"), ["2026-08-10"]);
+  NodeAssert.deepEqual(eachDay("2026-08-30", "2026-09-02"), [
     "2026-08-30",
     "2026-08-31",
     "2026-09-01",
     "2026-09-02",
   ]);
-  assert.deepEqual(eachDay("2026-12-30", "2027-01-02"), [
+  NodeAssert.deepEqual(eachDay("2026-12-30", "2027-01-02"), [
     "2026-12-30",
     "2026-12-31",
     "2027-01-01",
     "2027-01-02",
   ]);
-  assert.deepEqual(eachDay("2024-02-27", "2024-03-01"), [
+  NodeAssert.deepEqual(eachDay("2024-02-27", "2024-03-01"), [
     "2024-02-27",
     "2024-02-28",
     "2024-02-29",
     "2024-03-01",
   ]);
-  assert.equal(eachDay("2026-01-01", "2026-12-31").length, 365);
-  assert.equal(eachDay("2024-01-01", "2024-12-31").length, 366);
+  NodeAssert.equal(eachDay("2026-01-01", "2026-12-31").length, 365);
+  NodeAssert.equal(eachDay("2024-01-01", "2024-12-31").length, 366);
 });
 
-test("eachDay throws when the range runs backwards", () => {
-  assert.throws(() => eachDay("2026-08-11", "2026-08-10"), RangeError);
-  assert.throws(() => rangeWindow("2026-08-11", "2026-08-10"), RangeError);
-  assert.throws(() => eachDay("2026-08-10", "not-a-date"), TypeError);
+NodeTest.test("eachDay throws when the range runs backwards", () => {
+  NodeAssert.throws(() => eachDay("2026-08-11", "2026-08-10"), RangeError);
+  NodeAssert.throws(() => rangeWindow("2026-08-11", "2026-08-10"), RangeError);
+  NodeAssert.throws(() => eachDay("2026-08-10", "not-a-date"), TypeError);
 });
 
-test("eachDay never skips or repeats a day, in any DST zone", () => {
+NodeTest.test("eachDay never skips or repeats a day, in any DST zone", () => {
   for (const timeZone of ["America/Toronto", "America/Santiago", "Australia/Lord_Howe", "UTC"]) {
     const observed = inTimeZone(
       timeZone,
@@ -295,7 +301,7 @@ test("eachDay never skips or repeats a day, in any DST zone", () => {
       return { count: days.length, unique: new Set(days).size, first: days[0], last: days.at(-1) };
     `,
     );
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       observed,
       { count: 365, unique: 365, first: "2026-01-01", last: "2026-12-31" },
       `${timeZone} produced a broken year`,
@@ -303,22 +309,22 @@ test("eachDay never skips or repeats a day, in any DST zone", () => {
   }
 });
 
-test("rangeWindow spans midnight to midnight and lists its days", () => {
+NodeTest.test("rangeWindow spans midnight to midnight and lists its days", () => {
   const range = rangeWindow("2026-08-08", "2026-08-10");
-  assert.deepEqual(range.days, ["2026-08-08", "2026-08-09", "2026-08-10"]);
-  assert.equal(range.start.getTime(), dayWindow("2026-08-08").start.getTime());
-  assert.equal(range.end.getTime(), dayWindow("2026-08-10").end.getTime());
-  assert.equal(formatLocalDate(range.end), "2026-08-11");
+  NodeAssert.deepEqual(range.days, ["2026-08-08", "2026-08-09", "2026-08-10"]);
+  NodeAssert.equal(range.start.getTime(), dayWindow("2026-08-08").start.getTime());
+  NodeAssert.equal(range.end.getTime(), dayWindow("2026-08-10").end.getTime());
+  NodeAssert.equal(formatLocalDate(range.end), "2026-08-11");
 
   const single = rangeWindow("2026-08-10", "2026-08-10");
-  assert.deepEqual(single.days, ["2026-08-10"]);
-  assert.deepEqual(
+  NodeAssert.deepEqual(single.days, ["2026-08-10"]);
+  NodeAssert.deepEqual(
     { start: single.start.getTime(), end: single.end.getTime() },
     { start: dayWindow("2026-08-10").start.getTime(), end: dayWindow("2026-08-10").end.getTime() },
   );
 });
 
-test("formatDuration rounds down and never wraps hours into days", () => {
+NodeTest.test("formatDuration rounds down and never wraps hours into days", () => {
   const cases = [
     [0, "0m"],
     [-5000, "0m"],
@@ -343,31 +349,31 @@ test("formatDuration rounds down and never wraps hours into days", () => {
     ["not a number", "0m"],
   ];
   for (const [ms, expected] of cases) {
-    assert.equal(formatDuration(ms), expected, `formatDuration(${String(ms)})`);
+    NodeAssert.equal(formatDuration(ms), expected, `formatDuration(${String(ms)})`);
   }
 });
 
-test("formatHours reports one decimal place", () => {
-  assert.equal(formatHours(15_120_000), "4.2h");
-  assert.equal(formatHours(3_600_000), "1.0h");
-  assert.equal(formatHours(111_900_000), "31.1h");
-  assert.equal(formatHours(60_000), "0.0h");
-  assert.equal(formatHours(0), "0.0h");
-  assert.equal(formatHours(-1), "0.0h");
-  assert.equal(formatHours(Number.NaN), "0.0h");
-  assert.equal(formatHours(undefined), "0.0h");
+NodeTest.test("formatHours reports one decimal place", () => {
+  NodeAssert.equal(formatHours(15_120_000), "4.2h");
+  NodeAssert.equal(formatHours(3_600_000), "1.0h");
+  NodeAssert.equal(formatHours(111_900_000), "31.1h");
+  NodeAssert.equal(formatHours(60_000), "0.0h");
+  NodeAssert.equal(formatHours(0), "0.0h");
+  NodeAssert.equal(formatHours(-1), "0.0h");
+  NodeAssert.equal(formatHours(Number.NaN), "0.0h");
+  NodeAssert.equal(formatHours(undefined), "0.0h");
 });
 
-test("formatNumber groups thousands regardless of machine locale", () => {
-  assert.equal(formatNumber(0), "0");
-  assert.equal(formatNumber(999), "999");
-  assert.equal(formatNumber(1234), "1,234");
-  assert.equal(formatNumber(1_234_567), "1,234,567");
-  assert.equal(formatNumber(-1234), "-1,234");
-  assert.equal(formatNumber("2500"), "2,500");
-  assert.equal(formatNumber(Number.NaN), "0");
-  assert.equal(formatNumber(Number.POSITIVE_INFINITY), "0");
-  assert.equal(formatNumber(undefined), "0");
+NodeTest.test("formatNumber groups thousands regardless of machine locale", () => {
+  NodeAssert.equal(formatNumber(0), "0");
+  NodeAssert.equal(formatNumber(999), "999");
+  NodeAssert.equal(formatNumber(1234), "1,234");
+  NodeAssert.equal(formatNumber(1_234_567), "1,234,567");
+  NodeAssert.equal(formatNumber(-1234), "-1,234");
+  NodeAssert.equal(formatNumber("2500"), "2,500");
+  NodeAssert.equal(formatNumber(Number.NaN), "0");
+  NodeAssert.equal(formatNumber(Number.POSITIVE_INFINITY), "0");
+  NodeAssert.equal(formatNumber(undefined), "0");
 
   // Under a German locale the platform default would be "1.234.567,5"; the pinned formatter
   // must not follow it, or a report's numbers would change shape with the shell environment.
@@ -376,61 +382,64 @@ test("formatNumber groups thousands regardless of machine locale", () => {
     "return { pinned: format.formatNumber(1234567.5), platform: (1234567.5).toLocaleString() };",
     { LC_ALL: "de_DE.UTF-8", LANG: "de_DE.UTF-8" },
   );
-  assert.equal(german.platform, "1.234.567,5", "the child did not actually pick up the locale");
-  assert.equal(german.pinned, "1,234,567.5");
+  NodeAssert.equal(german.platform, "1.234.567,5", "the child did not actually pick up the locale");
+  NodeAssert.equal(german.pinned, "1,234,567.5");
 });
 
-test("pluralize returns the word only", () => {
-  assert.equal(pluralize(1, "commit"), "commit");
-  assert.equal(pluralize(0, "commit"), "commits");
-  assert.equal(pluralize(2, "commit"), "commits");
-  assert.equal(pluralize(-1, "commit"), "commit");
-  assert.equal(pluralize(1, "entry", "entries"), "entry");
-  assert.equal(pluralize(3, "entry", "entries"), "entries");
-  assert.equal(pluralize(Number.NaN, "session"), "sessions");
+NodeTest.test("pluralize returns the word only", () => {
+  NodeAssert.equal(pluralize(1, "commit"), "commit");
+  NodeAssert.equal(pluralize(0, "commit"), "commits");
+  NodeAssert.equal(pluralize(2, "commit"), "commits");
+  NodeAssert.equal(pluralize(-1, "commit"), "commit");
+  NodeAssert.equal(pluralize(1, "entry", "entries"), "entry");
+  NodeAssert.equal(pluralize(3, "entry", "entries"), "entries");
+  NodeAssert.equal(pluralize(Number.NaN, "session"), "sessions");
 });
 
-test("timezoneName reports the IANA zone", () => {
+NodeTest.test("timezoneName reports the IANA zone", () => {
   const name = timezoneName();
-  assert.equal(typeof name, "string");
-  assert.ok(name.length > 0);
-  assert.equal(inTimeZone("America/Toronto", "return format.timezoneName();"), "America/Toronto");
-  assert.equal(inTimeZone("UTC", "return format.timezoneName();"), "UTC");
+  NodeAssert.equal(typeof name, "string");
+  NodeAssert.ok(name.length > 0);
+  NodeAssert.equal(
+    inTimeZone("America/Toronto", "return format.timezoneName();"),
+    "America/Toronto",
+  );
+  NodeAssert.equal(inTimeZone("UTC", "return format.timezoneName();"), "UTC");
   // Documented quirk: the reported zone is ICU's canonical name, which for a few zones is the
   // older link. The bundle header inherits that, and that is fine — it is still unambiguous.
-  assert.ok(
+  NodeAssert.ok(
     zoneMatches(inTimeZone("Asia/Kolkata", "return format.timezoneName();"), "Asia/Kolkata"),
   );
 });
 
-test("toIso normalises every accepted timestamp shape and is null-safe", () => {
+NodeTest.test("toIso normalises every accepted timestamp shape and is null-safe", () => {
   // The exact shape T3code stores in projection_threads.created_at.
-  assert.equal(toIso("2026-03-20T18:35:07.854Z"), "2026-03-20T18:35:07.854Z");
-  assert.equal(toIso(new Date(0)), "1970-01-01T00:00:00.000Z");
-  assert.equal(toIso(1_770_000_000_000), new Date(1_770_000_000_000).toISOString());
-  assert.equal(toIso("2026-08-10T12:00:00-04:00"), "2026-08-10T16:00:00.000Z");
+  NodeAssert.equal(toIso("2026-03-20T18:35:07.854Z"), "2026-03-20T18:35:07.854Z");
+  NodeAssert.equal(toIso(new Date(0)), "1970-01-01T00:00:00.000Z");
+  NodeAssert.equal(toIso(1_770_000_000_000), new Date(1_770_000_000_000).toISOString());
+  NodeAssert.equal(toIso("2026-08-10T12:00:00-04:00"), "2026-08-10T16:00:00.000Z");
 
   for (const value of [null, undefined, "", "   ", "nonsense", Number.NaN, 1e21, {}, []]) {
-    assert.equal(toIso(value), null, `${String(value)} should not produce an ISO string`);
+    NodeAssert.equal(toIso(value), null, `${String(value)} should not produce an ISO string`);
   }
 });
 
-test("parseIso returns epoch milliseconds or null", () => {
-  assert.equal(parseIso("2026-03-20T18:35:07.854Z"), Date.parse("2026-03-20T18:35:07.854Z"));
-  assert.equal(parseIso(new Date(1234)), 1234);
-  assert.equal(parseIso(5678), 5678);
+NodeTest.test("parseIso returns epoch milliseconds or null", () => {
+  NodeAssert.equal(parseIso("2026-03-20T18:35:07.854Z"), Date.parse("2026-03-20T18:35:07.854Z"));
+  NodeAssert.equal(parseIso(new Date(1234)), 1234);
+  NodeAssert.equal(parseIso(5678), 5678);
   // A bare 13-digit stamp is epoch ms, which Date.parse alone would reject.
-  assert.equal(parseIso("1770000000000"), 1_770_000_000_000);
+  NodeAssert.equal(parseIso("1770000000000"), 1_770_000_000_000);
   // A short digit run stays a year, per Date.parse's ISO rules.
-  assert.equal(parseIso("1999"), Date.UTC(1999, 0, 1));
+  NodeAssert.equal(parseIso("1999"), Date.UTC(1999, 0, 1));
 
   for (const value of [null, undefined, "", "nonsense", Number.NaN, {}]) {
-    assert.equal(parseIso(value), null, `${String(value)} should not parse`);
+    NodeAssert.equal(parseIso(value), null, `${String(value)} should not parse`);
   }
 });
 
-test("toIso and parseIso round-trip", () => {
+NodeTest.test("toIso and parseIso round-trip", () => {
   const iso = "2026-08-10T14:22:03.001Z";
-  assert.equal(toIso(parseIso(iso)), iso);
-  assert.equal(parseIso(toIso(parseIso(iso))), Date.parse(iso));
+  NodeAssert.equal(toIso(parseIso(iso)), iso);
+  NodeAssert.equal(parseIso(toIso(parseIso(iso))), Date.parse(iso));
 });
