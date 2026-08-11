@@ -50,6 +50,16 @@ jobs:
       - name: Build
         run: vp run --filter @t3tools/coil-home build
 
+      # `setup-vp` puts `vp` on PATH but not `pnpm` — it keeps pnpm inside its own managed
+      # directory — so the `pnpm dlx` below exits 127 without this. Same step as the three
+      # mobile-* workflows; keep them identical.
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
+
       # wrangler is fetched on demand rather than depended on — it drags ~500 lines into
       # pnpm-lock.yaml, which SEAMS.md records as the fork's second-worst rebase-conflict surface.
       #
