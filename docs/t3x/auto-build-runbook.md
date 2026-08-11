@@ -21,7 +21,7 @@ scripts/t3x/auto-build-desktop.sh --install --dry-run
 # build + actually install (replaces the app in /Applications)
 scripts/t3x/auto-build-desktop.sh --install
 
-# poll HEAD every 60s and rebuild+install on every new commit
+# poll HEAD every 12h (the default) and rebuild+install when it has moved
 scripts/t3x/auto-build-desktop.sh --watch --install
 ```
 
@@ -119,16 +119,24 @@ checkout — script changes take effect after that checkout is updated.
 
 ## Flags
 
-| Flag              | Meaning                                                             |
-| ----------------- | ------------------------------------------------------------------- |
-| `--install`       | After a successful build, install the `.app` into `/Applications`.  |
-| `--relaunch`      | With `--install`, `open` the app afterwards.                        |
-| `--watch`         | Poll `HEAD` forever; build (and install, if asked) on each new SHA. |
-| `--interval N`    | Poll interval in seconds for `--watch` (default `60`).              |
-| `--ref R`         | Build remote ref `R` (e.g. `origin/main`) in a dedicated worktree.  |
-| `--dry-run`       | Log every step; never build, never touch `/Applications`.           |
-| `--force`         | Build even if `HEAD` is unchanged.                                  |
-| `--print-launchd` | Emit a ready-to-use LaunchAgent plist on stdout.                    |
+| Flag              | Meaning                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `--install`       | After a successful build, install the `.app` into `/Applications`.                    |
+| `--relaunch`      | With `--install`, `open` the app afterwards.                                          |
+| `--watch`         | Poll `HEAD` forever; build (and install, if asked) on each new SHA.                   |
+| `--interval N`    | Poll interval in seconds for `--watch` (default `43200`, i.e. 12h).                   |
+| `--ref R`         | Build remote ref `R` (e.g. `origin/main`) in a dedicated worktree.                    |
+| `--dry-run`       | Log every step; never build, never touch `/Applications`.                             |
+| `--force`         | Build even if `HEAD` is unchanged; also emits a plist that failed verification.       |
+| `--print-launchd` | Emit a ready-to-use LaunchAgent plist on stdout.                                      |
+| `--diff-launchd`  | Diff that plist against the installed one. `0` same, `1` differs, `2` none installed. |
+
+> **The interval is 12 hours on purpose, and the examples below use it.** Installing a
+> tighter loop by copying an example is not a small mistake: `--install` force-quits the
+> running app, replaces the bundle and reopens it, so a two-minute interval is a
+> two-minute quit/replace/relaunch cycle on an app that is hosting live Claude sessions
+> and serving `:3773`. Use a short interval only in a terminal (Option 3), while watching
+> it, and never with `--install`.
 
 ## Where things land
 
@@ -197,10 +205,16 @@ TCC-protected repo path.
 > all, since a terminal already has the grant.
 
 ```bash
-scripts/t3x/auto-build-desktop.sh --print-launchd --install --interval 120 \
+scripts/t3x/auto-build-desktop.sh --print-launchd \
+  --ref origin/main --install --relaunch --interval 43200 \
   > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 ```
+
+These are the flags the agent on this machine actually runs with, and they are the ones to
+copy. `--ref origin/main` builds a fetched remote ref in a dedicated worktree rather than
+whatever branch the checkout happens to be on, so an agent working in the repo cannot change
+what gets installed.
 
 **Verify it actually runs** — a loaded agent is not a working one:
 
@@ -222,13 +236,48 @@ rm ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 `--print-launchd` substitutes the real repo path, script path, interval and log
 path, and mirrors `--install` into the emitted `ProgramArguments`.
 
+#### The agent's `PATH` is derived, and verified before anything is emitted
+
+A LaunchAgent does not inherit your shell's `PATH`. launchd starts jobs from a minimal
+environment with no login shell, so nothing `fnm`, `asdf`, `volta`, `nvm` or `rustup` writes
+into a shell profile is ever read — every directory the build needs has to be named in the
+plist. `--print-launchd` therefore resolves `node`, `pnpm`, `cargo` and `git` itself,
+following each symlink to a **stable** directory (a version manager's shim usually lives in a
+per-shell directory that is deleted when that shell exits, and baking one into a plist
+produces a `PATH` entry that quietly stops existing).
+
+It then re-runs each tool from an _empty_ environment — the environment launchd will actually
+use — and **refuses to emit anything** if one is unreachable, or if `node` resolves to a
+different major version than `package.json`'s `engines.node` allows. Both refusals exit `2`
+and print what is wrong. `--force` emits anyway.
+
+The version check earns its keep more than the missing-tool check does. A missing `cargo`
+fails loudly enough to find (`spawn cargo ENOENT`, every tick, backing off). A _wrong_ node
+does not fail at all: the system almost always has some other node, so the build succeeds and
+installs a binary built against a toolchain nobody chose.
+
+Use `--diff-launchd` to see whether the installed agent still matches what the script would
+emit today. It compares settings and ignores comments, so hand-written notes in the live
+plist do not show up as differences:
+
+```bash
+scripts/t3x/auto-build-desktop.sh --diff-launchd \
+  --ref origin/main --install --relaunch --interval 43200
+```
+
+Pass it the same flags the agent runs with — `launchctl print "gui/$UID/dev.t3x.autobuild"`
+shows what those were — or the only difference it reports will be the flags themselves.
+
 > **A plist fix does not reach an already-installed agent.** launchd keeps the copy it was
 > bootstrapped with, so pulling a change to what `--print-launchd` emits — a new environment
 > variable, a wider `PATH` — leaves the running agent on the old one. Regenerate and reload:
 >
 > ```bash
+> scripts/t3x/auto-build-desktop.sh --diff-launchd \
+>   --ref origin/main --install --relaunch --interval 43200   # see the gap first
 > launchctl bootout "gui/$UID/dev.t3x.autobuild"
-> scripts/t3x/auto-build-desktop.sh --print-launchd --install --interval 120 \
+> scripts/t3x/auto-build-desktop.sh --print-launchd \
+>   --ref origin/main --install --relaunch --interval 43200 \
 >   > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 > launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
 > ```
@@ -268,8 +317,11 @@ rebase to trip over.
 ### Option 3 — run the watcher in a terminal
 
 ```bash
-scripts/t3x/auto-build-desktop.sh --watch --install --interval 120
+scripts/t3x/auto-build-desktop.sh --watch --install --interval 43200
 ```
+
+A shorter `--interval` is reasonable here only _without_ `--install`: with it, every tick
+that finds a new SHA quits and replaces the running app.
 
 In `--watch` mode the script re-execs itself under `caffeinate -s` so the Mac won't sleep
 mid-build; the re-exec forwards every flag, so `--watch --install --dry-run` stays a dry
