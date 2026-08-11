@@ -124,8 +124,14 @@ Program; this does not.
 **Anyone else's Mac.** The private key lives on one machine and in this repo's secrets. A different
 person building this fork gets their own identity, hence their own prompts, once.
 
-**The bundle id shared with upstream's build.** Both apps report
-`CFBundleIdentifier = com.t3tools.t3code`:
+**Windows installs made before this.** `appId` is also the NSIS product identity, so the first
+Windows build after the bundle id changed installs alongside the old one instead of upgrading it.
+Uninstall the old entry by hand once. macOS is unaffected: the updater targets the `.app` by name,
+and the name did not change.
+
+## The second cause: a bundle id shared with upstream
+
+Stable signing was necessary but not sufficient, because both apps used to report the same bundle id:
 
 ```
 $ mdls -name kMDItemCFBundleIdentifier "/Applications/T3 Code (Alpha).app" \
@@ -134,13 +140,29 @@ com.t3tools.t3code
 com.t3tools.t3code
 ```
 
-macOS keys a TCC row on `(service, client)` where `client` is that bundle id, so the two apps share
-one row per permission and whichever launched most recently owns it. If you run both `T3 Code (Alpha)`
-and upstream's `T3 Code (Nightly)`, expect a prompt when you switch — this fix cannot help with that,
-because the two apps are the same app to macOS. Options, in increasing cost: stop keeping Nightly
-installed, or give the fork its own bundle id (which means editing `DESKTOP_APP_ID` in
-`scripts/build-desktop-artifact.ts` — an upstream-owned file, so a new `SEAMS.md` row, plus one more
-round of prompts, plus a second copy of everything keyed to that id).
+macOS stores **one TCC row per `(service, client)`**, where `client` is that bundle id. Two apps with
+one id share one row per permission, so whichever launched most recently owned the grant and the other
+was re-prompted — no matter how perfectly either was signed. Anyone running the fork's build next to
+upstream's nightly was getting dialogs from this even with a stable certificate.
+
+So the fork now has its own: **`dev.curlycloud.coil`**, after `coil` (coil.curlycloud.dev). Set
+through `T3X_DESKTOP_APP_ID`, which is the one upstream-owned line this whole change spends —
+`DESKTOP_APP_ID` in `scripts/build-desktop-artifact.ts` reads it and falls back to upstream's value,
+so upstream's own assertions on that constant still pass and an unset environment builds exactly what
+upstream builds. See `SEAMS.md`.
+
+Two deliberate non-changes:
+
+- **`productName` stays `T3 Code (Alpha)`.** The updater refuses an install when the `.app` name inside
+  the dmg differs from the installed one (`resolveMacInstallTarget`), so renaming the app would break
+  the update path this is meant to make quiet. The rename stops at the bundle id (#71).
+- **User data does not move.** `~/Library/Application Support/t3code` comes from a hardcoded
+  `userDataDirName`, not from the bundle id — threads, settings and sessions are untouched.
+
+Since it lands in the same release as the signing change, the two identity changes cost **one**
+round of prompts between them, not two. `scripts/t3x/mac-signature.test.ts` asserts every build path
+sets the variable and that the recorded requirement names this id, because a forgotten variable or a
+sync that reverts the seam would silently put the fork back to sharing upstream's row.
 
 ## Why no upstream edit was needed
 

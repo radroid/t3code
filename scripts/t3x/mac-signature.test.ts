@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
+  DESKTOP_APP_ID_ENV_VAR,
   DESKTOP_BUNDLE_IDENTIFIER,
   evaluateMacSignature,
   isCdhashKeyedRequirement,
@@ -43,7 +44,7 @@ const ADHOC_REQUIREMENTS = `Executable=/Applications/T3 Code (Alpha).app/Content
 `;
 
 const SIGNED_DISPLAY = `Executable=/private/tmp/sigtest/A.app/Contents/MacOS/probe
-Identifier=com.t3tools.t3code
+Identifier=dev.curlycloud.coil
 Format=app bundle with Mach-O thin (arm64)
 CodeDirectory v=20500 size=286 flags=0x10000(runtime) hashes=2+3 location=embedded
 Hash type=sha256 size=32
@@ -62,7 +63,7 @@ Internal requirements count=1 size=192
  * Stable across rebuilds because the certificate does not change — which is the entire fix.
  */
 const SELF_SIGNED_REQUIREMENT =
-  'identifier "com.t3tools.t3code" and certificate leaf = H"6dc6e7effe78c5b8406fde43b9afaaf5a85c8eba"';
+  'identifier "dev.curlycloud.coil" and certificate leaf = H"6dc6e7effe78c5b8406fde43b9afaaf5a85c8eba"';
 
 describe("parseCodesignDisplay", () => {
   it("reads an ad-hoc bundle as having no certificate, no seal and an unbound Info.plist", () => {
@@ -80,7 +81,7 @@ describe("parseCodesignDisplay", () => {
   it("reads a certificate-signed bundle, whose Sealed Resources line has no '=' after the label", () => {
     const display = parseCodesignDisplay(SIGNED_DISPLAY);
 
-    assert.strictEqual(display.identifier, "com.t3tools.t3code");
+    assert.strictEqual(display.identifier, "dev.curlycloud.coil");
     // `Signature size=4793` is not a `Signature=` field, and must not be read as one.
     assert.strictEqual(display.signature, undefined);
     assert.deepStrictEqual([...display.flags], ["runtime"]);
@@ -212,7 +213,7 @@ describe("evaluateMacSignature", () => {
   it("rejects a signature that claims the wrong bundle id", () => {
     const verdict = evaluateMacSignature({
       display: parseCodesignDisplay(
-        SIGNED_DISPLAY.replace("com.t3tools.t3code", "com.example.other"),
+        SIGNED_DISPLAY.replace(DESKTOP_BUNDLE_IDENTIFIER, "com.example.other"),
       ),
       requirement: SELF_SIGNED_REQUIREMENT,
     });
@@ -242,24 +243,78 @@ describe("normalizeRequirement", () => {
   });
 });
 
-it.layer(NodeServices.layer)("mirrored upstream constants", (it) => {
-  /**
-   * The verifier checks the signature claims OUR bundle id, and that id is defined in
-   * scripts/build-desktop-artifact.ts — an upstream-owned file that does not export it. This test
-   * is the drift detector for that copy: if upstream renames the app id, this fails loudly instead
-   * of the verifier quietly asserting a bundle id nothing produces any more.
-   */
-  it.effect("DESKTOP_BUNDLE_IDENTIFIER still matches DESKTOP_APP_ID upstream", () =>
+/**
+ * The bundle id has to agree in four places, and nothing at runtime would notice if it stopped.
+ *
+ * `scripts/build-desktop-artifact.ts` is upstream-owned and carries only the escape hatch — an
+ * upstream sync that reverts that one line leaves every fork build silently claiming
+ * `com.t3tools.t3code` again, which puts it back to sharing one TCC row with upstream's nightly.
+ * Equally, a build path that forgets to SET the variable ships the same regression. Both are cheap
+ * to assert here and expensive to notice in the wild: the symptom is permission dialogs, days later,
+ * on a machine that is not CI.
+ */
+it.layer(NodeServices.layer)("the fork's bundle id agrees everywhere", (it) => {
+  const readRepoFile = (...segments: readonly string[]) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const source = yield* fs.readFileString(
-        path.join(import.meta.dirname, "..", "build-desktop-artifact.ts"),
+      return yield* fs.readFileString(path.join(import.meta.dirname, "..", "..", ...segments));
+    });
+
+  it.effect("build-desktop-artifact.ts still honours the T3X_DESKTOP_APP_ID override", () =>
+    Effect.gen(function* () {
+      const source = yield* readRepoFile("scripts", "build-desktop-artifact.ts");
+
+      assert.match(
+        source,
+        /const DESKTOP_APP_ID = process\.env\.T3X_DESKTOP_APP_ID\?\.trim\(\) \|\| "com\.t3tools\.t3code"/,
+        "the fork's app-id seam is gone from build-desktop-artifact.ts — a sync probably reverted it",
+      );
+    }),
+  );
+
+  it.effect("the release workflow builds with it", () =>
+    Effect.gen(function* () {
+      const workflow = yield* readRepoFile(".github", "workflows", "t3x-release.yml");
+      const match = new RegExp(`${DESKTOP_APP_ID_ENV_VAR}: (\\S+)`).exec(workflow);
+
+      assert.ok(match, `${DESKTOP_APP_ID_ENV_VAR} is not set anywhere in t3x-release.yml`);
+      assert.strictEqual(match[1], DESKTOP_BUNDLE_IDENTIFIER);
+    }),
+  );
+
+  it.effect("the local autobuild builds with it", () =>
+    Effect.gen(function* () {
+      const script = yield* readRepoFile("scripts", "t3x", "auto-build-desktop.sh");
+
+      assert.match(script, new RegExp(`DESKTOP_APP_ID="${DESKTOP_BUNDLE_IDENTIFIER}"`));
+      assert.match(script, new RegExp(`${DESKTOP_APP_ID_ENV_VAR}="\\$DESKTOP_APP_ID"`));
+    }),
+  );
+
+  it.effect(
+    "the certificate setup signs its stub with it, so the recorded requirement matches",
+    () =>
+      Effect.gen(function* () {
+        const script = yield* readRepoFile("scripts", "t3x", "setup-mac-signing.sh");
+
+        assert.match(script, new RegExp(`BUNDLE_ID="${DESKTOP_BUNDLE_IDENTIFIER}"`));
+      }),
+  );
+
+  it.effect("the recorded designated requirement is the one this identifier produces", () =>
+    Effect.gen(function* () {
+      const recorded = yield* readRepoFile(
+        "docs",
+        "t3x",
+        "mac-signing",
+        "designated-requirement.txt",
       );
 
-      const match = /const DESKTOP_APP_ID = "([^"]+)"/.exec(source);
-      assert.ok(match, "DESKTOP_APP_ID is no longer declared as a string literal in that file");
-      assert.strictEqual(match[1], DESKTOP_BUNDLE_IDENTIFIER);
+      // Not a format check for its own sake. This file is what the release compares against, so a
+      // requirement naming a different bundle id would fail every build with a confusing diff.
+      assert.include(normalizeRequirement(recorded), `identifier "${DESKTOP_BUNDLE_IDENTIFIER}"`);
+      assert.strictEqual(isCdhashKeyedRequirement(recorded), false);
     }),
   );
 });
