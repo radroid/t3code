@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, PencilIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,9 +13,11 @@ import {
 } from "~/outbox/threadOutbox";
 import type { QueuedThreadMessage } from "~/outbox/threadOutbox.logic";
 import { logOutboxMutationFailure } from "~/outbox/outboxDiagnostics";
+import { dispatchingQueuedMessageIdAtom } from "~/outbox/useThreadOutboxDrain";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
  * The visible pending-queue for the active thread. It renders *inside* the
@@ -101,11 +104,29 @@ function QueuedMessageRow({
     };
   }, []);
 
+  // The drain's editing hold is consulted only when it PICKS a head, so a hold
+  // taken after `beginDispatchingQueuedMessage` does not stop the send that is
+  // already under way (radroid/t3code#40 A5). Refusing to open the editor for
+  // the row being dispatched closes that window from the other side; the
+  // matching `false` return in `saveEditing` covers a dispatch that starts
+  // while an editor is already open.
+  const isDispatching = useAtomValue(dispatchingQueuedMessageIdAtom) === message.messageId;
+
   const beginEditing = useCallback(() => {
+    if (isDispatching) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "This message is being sent",
+          description: "It left the queue before the editor opened, so it can no longer be edited.",
+        }),
+      );
+      return;
+    }
     holdEditingThreadOutboxMessage(message.messageId);
     setDraft(message.text);
     setIsEditing(true);
-  }, [message.messageId, message.text]);
+  }, [isDispatching, message.messageId, message.text]);
 
   const cancelEditing = useCallback(() => {
     setIsEditing(false);
@@ -121,7 +142,28 @@ function QueuedMessageRow({
     }
     setBusy(true);
     try {
-      await updateThreadOutboxMessage({ ...message, text: nextText });
+      // `update` is a deliberate no-op once the message has left the queue, and
+      // it says so in its return value. Ignoring that closed the editor as if
+      // the edit had saved, so a message that started dispatching mid-edit went
+      // out with its ORIGINAL text and the user's revision vanished with no
+      // trace at all (radroid/t3code#40 A5). The row unmounts either way — it is
+      // rendered from the queue — so the news has to be carried out of here.
+      const saved = await updateThreadOutboxMessage({ ...message, text: nextText });
+      if (!saved) {
+        logOutboxMutationFailure(
+          "update",
+          { messageId: message.messageId, threadId: message.threadId },
+          new Error("queued message left the queue before the edit was saved"),
+        );
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Edit not applied",
+            description:
+              "The message was already sent or removed, so it went out with its original text. Send the revision as a new message.",
+          }),
+        );
+      }
     } finally {
       setBusy(false);
       setIsEditing(false);
