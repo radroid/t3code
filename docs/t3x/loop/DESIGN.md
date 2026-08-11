@@ -222,6 +222,14 @@ is PubSub-backed, so a second subscriber does not steal auto-resume's events. Be
 that is rejected by a limit produces no `updatedAt` movement, so it takes a strike and the thread stops
 after two.
 
+> **Update 2026-08-11 (#39).** The `user-took-over` branch quoted above is **gone** — a newer user
+> message no longer cancels a pending resume, because the same "keep going" message that tripped it is
+> typically the user stepping away, and it was destroying ~24% of armed resumes. So a loop nudge landing
+> mid-wait no longer destroys rate-limit recovery. **Guard #9 still stands**, for the other reason:
+> nudging a thread that is sitting inside a usage-limit window is pointless work. What changes is that
+> #9 is now a politeness rule rather than the only thing standing between a nudge and a stranded thread.
+> The rest of §6 — the second fiber, `rateLimitedUntilMs`, the strike interlock — is unaffected.
+
 ---
 
 ## 7. Budget visibility & settings
