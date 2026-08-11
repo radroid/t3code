@@ -1,0 +1,73 @@
+# Deploys the fork's homepage (apps/coil-home) to the `coil-home` Cloudflare Worker.
+#
+# Requires the repo secret CLOUDFLARE_API_TOKEN (Account → Workers Scripts → Edit) and the repo
+# variable CLOUDFLARE_ACCOUNT_ID; both are set. If either is ever removed this job fails at the
+# deploy step, and `pnpm run deploy` from apps/coil-home is the manual fallback.
+#
+# The daily sync force-pushes `main`, and on an undiffable force push GitHub runs `paths`-filtered
+# workflows anyway. That is harmless: `wrangler deploy` is idempotent.
+name: "coil: deploy homepage"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/coil-home/**"
+      - ".github/workflows/coil-deploy-home.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coil-home-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy coil-home
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/coil-home...
+
+      - name: Build
+        run: vp run --filter @t3tools/coil-home build
+
+      # wrangler is fetched on demand rather than depended on — it drags ~500 lines into
+      # pnpm-lock.yaml, which SEAMS.md records as the fork's second-worst rebase-conflict surface.
+      #
+      # The version is pinned EXACTLY, not to `@4`. This step is the only place in the repo that
+      # runs an on-demand package while holding CLOUDFLARE_API_TOKEN, and a floating major would
+      # let any future 4.x release — or a compromised transitive dep of one — execute with that
+      # token, with no lockfile or integrity check standing in the way. Pinning keeps the
+      # zero-lockfile-rows property that motivated `pnpm dlx` in the first place and makes each
+      # wrangler upgrade an explicit, reviewable commit. Keep in step with
+      # apps/coil-home/package.json's `deploy` script.
+      - name: Deploy to Cloudflare
+        working-directory: apps/coil-home
+        run: pnpm dlx wrangler@4.120.1 deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify live site
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://coil.curlycloud.dev/)
+          test "$code" = "200" || { echo "site returned $code"; exit 1; }

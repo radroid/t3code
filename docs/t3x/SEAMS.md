@@ -52,6 +52,16 @@ files upstream has never seen and cannot conflict.
 > files (`contracts/src/t3x/updateDelivery.ts`, `ipc/methods/t3xUpdate.ts`), so the interfaces can
 > grow without touching upstream again.
 
+> **The fork homepage adds no NEW rows.** `apps/coil-home/` is a fork-owned copy of
+> `apps/marketing/` deployed to Cloudflare (`coil-home` Worker, served at `coil.curlycloud.dev`),
+> plus `.github/workflows/coil-deploy-home.yml` — all files upstream has never seen.
+> `apps/marketing/` itself remains untouched, which is the whole point: rebranding 1310 lines of
+> `index.astro` in place would have put a fork edit on upstream's highest-churn marketing file.
+> **Parallel-path hazard:** upstream keeps evolving `apps/marketing/`; the copy will not conflict
+> but will silently drift. At each sync, skim
+> `git log <merge-base>..upstream/main -- apps/marketing` and port anything worth having (pricing
+> changes, new pages, security-relevant fixes) by hand.
+
 The churn and risk columns are measured against that same merge-base, over the 60 days preceding it.
 The window slides forward at every sync, so these figures move even when the fork does not.
 

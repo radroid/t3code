@@ -1,0 +1,16 @@
+{
+  // Unlike infra/t3x-update-relay, wrangler is not a dependency here, so there is no
+  // node_modules/wrangler/config-schema.json to point at — use the published schema.
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "coil-home",
+  "compatibility_date": "2026-08-10",
+  // Assets-only Worker: no `main` script — Cloudflare serves ./dist directly.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+  },
+  // The zone lives on the same Cloudflare account, so wrangler provisions the DNS record and
+  // certificate itself. This is the canonical host: astro.config.mjs builds canonical and OG
+  // URLs from it, so the two must not drift.
+  "routes": [{ "pattern": "coil.curlycloud.dev", "custom_domain": true }],
+}
