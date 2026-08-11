@@ -793,6 +793,108 @@ describe("tokensByTask", () => {
     const activities = readActivities(handles, ["t-1"], WINDOW);
     assert.equal(tokensByTask(activities), 640 + 4000 + 7);
   });
+
+  it("counts a workflow once, not once per child task", () => {
+    // Real shape, from `~/.t3/userdata/state.sqlite`: a `local_workflow` task `wrv3655vp` whose
+    // children are `wrv3655vp:wf:<n>`. The parent's cumulative total was 1,713,516 — exactly the
+    // sum of its twelve children, because the parent's counter already includes them.
+    const children = [
+      115909, 155345, 96261, 114711, 86227, 130003, 164676, 243406, 178415, 158626, 186551, 83386,
+    ];
+    const parentTotal = children.reduce((sum, tokens) => sum + tokens, 0);
+    const activities = [
+      { taskId: "wrv3655vp", tokens: 12 },
+      { taskId: "wrv3655vp", tokens: parentTotal },
+      ...children.map((tokens, index) => ({ taskId: `wrv3655vp:wf:${index + 1}`, tokens })),
+    ];
+
+    // Summing parent and children alike would report exactly double.
+    assert.equal(tokensByTask(activities), parentTotal);
+  });
+
+  it("still counts a child whose parent is outside the window", () => {
+    // A day that catches the tail of a workflow started yesterday has the children but not the
+    // parent row; dropping them unconditionally would lose the day's real token spend.
+    assert.equal(
+      tokensByTask([
+        { taskId: "wrv3655vp:wf:1", tokens: 100 },
+        { taskId: "wrv3655vp:wf:2", tokens: 250 },
+      ]),
+      350,
+    );
+  });
+
+  it("collapses a three-level nest onto the outermost task", () => {
+    assert.equal(
+      tokensByTask([
+        { taskId: "abc", tokens: 900 },
+        { taskId: "abc:wf:1", tokens: 500 },
+        { taskId: "abc:wf:1:wf:2", tokens: 200 },
+      ]),
+      900,
+    );
+    // A middle level missing from the window must not orphan the deepest one back into the total.
+    assert.equal(
+      tokensByTask([
+        { taskId: "abc", tokens: 900 },
+        { taskId: "abc:wf:1:wf:2", tokens: 200 },
+      ]),
+      900,
+    );
+    // With the outermost absent, the deepest still rolls up to the nearest ancestor present.
+    assert.equal(
+      tokensByTask([
+        { taskId: "abc:wf:1", tokens: 500 },
+        { taskId: "abc:wf:1:wf:2", tokens: 200 },
+      ]),
+      500,
+    );
+  });
+
+  it("treats a shared prefix that is not a nesting boundary as two separate tasks", () => {
+    // Independent tasks that merely share a prefix.
+    assert.equal(
+      tokensByTask([
+        { taskId: "abc123", tokens: 30 },
+        { taskId: "abc1234", tokens: 4 },
+      ]),
+      34,
+    );
+    // And the case that actually occurs: sibling workflow steps, where `:wf:1` is a textual prefix
+    // of `:wf:10`. Only the alphanumeric character after the prefix distinguishes them.
+    assert.equal(
+      tokensByTask([
+        { taskId: "wrv3655vp:wf:1", tokens: 7 },
+        { taskId: "wrv3655vp:wf:10", tokens: 11 },
+        { taskId: "wrv3655vp:wf:11", tokens: 13 },
+      ]),
+      31,
+    );
+  });
+
+  it("rolls nested task rows up end to end from a database", () => {
+    const base = makeBaseDir("tokens-nested");
+    const rows = [
+      ["wq0ltrafo", 900],
+      ["wq0ltrafo:wf:1", 400],
+      ["wq0ltrafo:wf:2", 500],
+      // A separate task whose id shares a prefix with the workflow parent.
+      ["wq0ltrafo9", 25],
+    ];
+    rows.forEach(([taskId, total], index) => {
+      insertActivity(base.db, {
+        threadId: "t-1",
+        kind: "task.progress",
+        createdAt: `2026-08-10T13:0${index}:00.000Z`,
+        payloadJson: JSON.stringify({ taskId, title: taskId, usage: { total_tokens: total } }),
+      });
+    });
+    base.db.close();
+
+    const { handles } = open([base.baseDir]);
+    const activities = readActivities(handles, ["t-1"], WINDOW);
+    assert.equal(tokensByTask(activities), 900 + 25);
+  });
 });
 
 describe("readThreadMessages", () => {

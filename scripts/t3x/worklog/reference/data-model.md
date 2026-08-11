@@ -32,7 +32,8 @@ lines up with it. Do not expect the summary to hand you a headline for these.
 the user only — the registry's `identities` list decides that.
 
 **Cannot tell you:** anything about a repo the registry does not know a root for. Worktrees of
-one repo collapse into a single entry, so three t3code worktrees are one repo, not three.
+one repo collapse into a single entry, so three t3code worktrees are one repo, not three. It
+also cannot tell one rebase copy from another — see "Commits are patches, not SHAs" below.
 
 ### `gh`
 
@@ -40,7 +41,8 @@ one repo collapse into a single entry, so three t3code worktrees are one repo, n
 
 **Cannot tell you:** anything if `gh` is missing, unauthenticated, or offline — in which case
 merged PRs are simply **absent, not zero**. If the summary carries a `gh` warning, do not
-write "no PRs merged"; write nothing about PRs.
+write "no PRs merged"; write nothing about PRs. It also cannot tell you _whose_ PR it is
+unless the registry knows your GitHub login; see below.
 
 ## The four traps
 
@@ -84,24 +86,43 @@ it survived into the summary because nobody had seen that prompt before.
 | Projects touched             | registry match on session cwd / repo root       | Good; excludes `include: false`                      |
 | Sessions                     | T3code threads + unlinked Claude Code sessions  | Good after dedup                                     |
 | Turns                        | T3code `projection_turns`                       | T3code only — Claude Code turns are not counted here |
-| Commits, lines added/removed | `git log` in known repo roots                   | Good; only your identities, only known roots         |
-| PRs merged                   | `gh`                                            | Good when `gh` works, **absent** otherwise           |
+| Commits, lines added/removed | `git log` in known repo roots                   | Good; your identities only, known roots only         |
+| PRs merged                   | `gh`                                            | **Absent** without `gh`; yours only with a login     |
 | Active time                  | merged event timeline, split on a 30-minute gap | Good; a floor, not a stopwatch                       |
-| Agent runtime                | Σ per-turn and per-prompt spans                 | Good, but see below                                  |
-| Files touched                | turn checkpoints + git                          | **Structurally incomplete**                          |
+| Agent runtime                | Σ per-turn and per-prompt spans                 | Wall-clock, not effort — see below                   |
+| Files touched                | turn checkpoints + git                          | **Wrong in both directions**                         |
 | Tokens                       | activity payloads, max-per-task summed          | Directional only                                     |
 
-## What is structurally incomplete
+## Where the numbers are soft
 
-- **Files touched.** Roughly 62% of turns record no file list at all. The figure is a floor,
-  and a large one. Never write "touched 9 files" as if it were a census; prefer naming the
-  two files that mattered, or say nothing.
+- **Files touched — wrong in both directions, so never report the count.** Roughly 62% of
+  turns record no file list at all, so plenty of real edits are simply missing. And the lists
+  that do exist are a diff between two workspace snapshots, so anything else that moved the
+  tree between turns lands in them: a branch switch, a `git pull`, a rebase landing in another
+  worktree. Files the session never touched are counted; files it did touch are dropped. The
+  figure is neither a floor nor a ceiling. Name the two files that actually mattered, or say
+  nothing.
+- **Merged PRs may not be yours.** `gh pr list` returns everything merged in the repo. The
+  collector filters to your GitHub login, but it can only find that login in the registry's
+  `identities` — as an explicit `@login`, a bare login, or the local part of a
+  `…@users.noreply.github.com` address. With none of those, nothing is filtered and the
+  summary says so in a warning. On a repo with other contributors, an unwarned PR count is
+  yours; a warned one is the repo's. Read the warning before you write a number.
+- **Commits are patches, not SHAs.** A rebase or a cherry-pick copies a commit, keeping its
+  author, author date and subject and changing only the SHA — and on this fork both copies stay
+  reachable, so counting SHAs double-counts every sync. The collector therefore dedupes on
+  author + author date + subject. Consequence: the count is "pieces of work", and two genuinely
+  distinct commits by one author in the same second with the same subject collapse into one.
 - **Tokens.** Only T3code tasks report usage, and only some of them. It is a rough sense of
   scale, never a headline. If you find yourself leading a paragraph with a token count, cut
   it.
-- **Agent runtime > active time, often by a lot.** Sessions run in parallel, so runtime can
-  exceed 24 hours in a day. That is correct, not a bug. Report both numbers side by side and
-  gloss them (see `report-format.md`) so nobody reads "31h" as a workday.
+- **Agent runtime is wall-clock, not work done.** It sums per-turn spans, and parallel sessions
+  add together, so it can exceed 24 hours in a day — that part is correct, not a bug. But a
+  span runs from a turn's start to its finish regardless of what happened in between, so idle
+  stretches are inside it wherever the record does not prove otherwise: a turn that stopped to
+  ask for approval and waited overnight is billing that night. Treat it as an upper bound on
+  agent activity, never as effort and never as your own time. Report it beside active time and
+  gloss it (see `report-format.md`) so nobody reads "31h" as a workday.
 - **Active time is a floor.** Thinking at a whiteboard, reading, and meetings leave no events.
   A day with two hours of active time may still have been a full day of work.
 - **Claude Code sessions have no title.** Their headline has to come from the extract, or from

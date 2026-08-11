@@ -154,6 +154,43 @@ test("an empty registry round-trips, and the saved file explains itself", (t) =>
   assert.deepEqual(loadRegistry(paths).registry, empty);
 });
 
+test("a save that would erase every classification is refused", (t) => {
+  const paths = tempPaths(t);
+  writeProjects(paths, SAMPLE_YAML);
+  const before = NodeFS.readFileSync(paths.projectsYaml, "utf8");
+
+  // The shape that costs a human their work: a reader degraded an unreadable file to an empty
+  // registry, and something wrote that back. One unreadable byte must not erase the answers.
+  assert.throws(
+    () => saveRegistry(paths, { version: 1, identities: [], projects: {} }),
+    /Refusing to overwrite/u,
+  );
+  assert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), before, "the file is untouched");
+
+  // Identities alone are worth protecting: they decide whose commits count.
+  const identitiesOnly = tempPaths(t);
+  writeProjects(identitiesOnly, "version: 1\nidentities:\n  - Raj D\nprojects: {}\n");
+  assert.throws(() => saveRegistry(identitiesOnly, {}), /Refusing to overwrite/u);
+
+  // The narrowness matters as much as the rule. Emptying what was already empty is a no-op, and
+  // an unparseable file holds no decision anybody can read back.
+  const wasEmpty = tempPaths(t);
+  writeProjects(wasEmpty, "version: 1\nidentities: []\nprojects: {}\n");
+  assert.doesNotThrow(() => saveRegistry(wasEmpty, {}));
+
+  const junk = tempPaths(t);
+  writeProjects(junk, "projects: [not, a, map\n");
+  assert.doesNotThrow(() => saveRegistry(junk, {}));
+
+  // And a registry that still names something is written as normal.
+  const kept = tempPaths(t);
+  writeProjects(kept, SAMPLE_YAML);
+  assert.doesNotThrow(() =>
+    saveRegistry(kept, { projects: { a: { displayName: "A", roots: ["/tmp/a"] } } }),
+  );
+  assert.equal(loadRegistry(kept).registry.projects.a.displayName, "A");
+});
+
 test("save creates the config directory when the repo is bare", (t) => {
   const paths = tempPaths(t);
   assert.equal(NodeFS.existsSync(paths.config), false);

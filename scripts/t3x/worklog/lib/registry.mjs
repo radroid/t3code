@@ -66,7 +66,8 @@ const REGISTRY_HEADER = [
 ].join("\n");
 
 const REGISTRY_COMMENTS = {
-  identities: "Git author names and emails whose commits count as mine.",
+  identities:
+    "Git author names and emails whose commits count as mine, plus @my-github-login for pull requests.",
   defaults: "Time-clustering knobs. activeGapMinutes splits the day into activity blocks.",
   projects: "One entry per project. Add roots so sessions and repos can be matched to it.",
 };
@@ -126,8 +127,44 @@ export function saveRegistry(paths, registry) {
   // Anything a human added by hand at the top level survives a rewrite.
   Object.assign(doc, extraKeys(source, ["version", "identities", "defaults", "projects"]));
 
+  refuseToEraseEverything(file, doc);
   writeYamlFile(file, REGISTRY_HEADER, doc, REGISTRY_COMMENTS);
   return file;
+}
+
+// `loadRegistry` degrades a file it cannot read into an EMPTY registry and reports it as a
+// warning, which is right for readers — a report can still be drafted. It is dangerous for
+// writers: load-then-save would turn one unreadable byte into the permanent loss of every "yes,
+// you may name this project" the human has given. Callers guard against that individually; this
+// is the backstop that does not depend on them remembering to.
+//
+// The rule is deliberately narrow. Writing a scaffold to a path with no file is how `init`
+// bootstraps, and emptying a registry that was already empty changes nothing. Only the one
+// destructive shape is refused: a file that currently names projects or identities, being
+// replaced by one that names neither.
+function refuseToEraseEverything(file, doc) {
+  const incomingIsEmpty =
+    (Array.isArray(doc.identities) ? doc.identities.length : 0) === 0 &&
+    Object.keys(isPlainObject(doc.projects) ? doc.projects : {}).length === 0;
+  if (!incomingIsEmpty) return;
+
+  let current;
+  try {
+    current = parseYaml(NodeFS.readFileSync(file, "utf8"));
+  } catch {
+    // No file, or one nobody can parse. Neither is a decision worth protecting.
+    return;
+  }
+  if (!isPlainObject(current)) return;
+
+  const hadIdentities = Array.isArray(current.identities) && current.identities.length > 0;
+  const hadProjects = isPlainObject(current.projects) && Object.keys(current.projects).length > 0;
+  if (!hadIdentities && !hadProjects) return;
+
+  throw new Error(
+    `Refusing to overwrite ${file} with an empty registry — it currently holds your project classifications. ` +
+      "Move it aside first if that is really what you want.",
+  );
 }
 
 /** Reads `config/redaction.yaml`; a missing or malformed file yields empty lists + warnings. */

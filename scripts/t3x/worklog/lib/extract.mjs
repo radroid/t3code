@@ -17,7 +17,7 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import { parseIso, toIso } from "./format.mjs";
+import { parseIso, rangeWindow, toIso } from "./format.mjs";
 import { safeKey, worklogPaths } from "./paths.mjs";
 import { basenameOnly, redactSlice } from "./redact.mjs";
 import { closeDatabases, openT3Databases, readActivities, readThreadMessages } from "./t3db.mjs";
@@ -38,6 +38,11 @@ const MAX_ACTIVITY_LINES = 40;
 const MAX_FILES = 30;
 // Not in the contract, but an unbounded section would defeat the cap by starving the ones above it.
 const MAX_COMMITS = 30;
+
+// A commit is very often the first thing that happens after a session's last recorded event — the
+// work ends, then it is committed — so the session's own window gets a short tail. Short on
+// purpose: widen it and the next session's commits come back as this one's evidence.
+const COMMIT_GRACE_MS = 10 * 60_000;
 
 const DEFAULT_QUEUE_LIMIT = 8;
 
@@ -199,9 +204,12 @@ export function queue({ bundle, paths, limit = DEFAULT_QUEUE_LIMIT, deps = {}, .
   const injected = isPlainObject(deps) ? deps : {};
   const resolved = resolvePaths(paths ?? bundle?.config?.worklogRoot);
   const cap = positiveInt(limit) ?? DEFAULT_QUEUE_LIMIT;
+  // The redaction list only ever arrives from the caller. There is deliberately no fallback to a
+  // field on the bundle: `collect()` emits none, and the one that used to be read here (`bundle
+  // .redaction`) meant the always-redact terms were silently applied to exactly zero real slices.
   const sliceOptions = {
     homeDir: rest.homeDir ?? injected.homeDir,
-    redaction: rest.redaction ?? injected.redaction ?? bundle?.redaction,
+    redaction: rest.redaction ?? injected.redaction,
     maxChars: rest.maxChars ?? injected.maxChars,
   };
 
@@ -272,6 +280,15 @@ export function queue({ bundle, paths, limit = DEFAULT_QUEUE_LIMIT, deps = {}, .
   // the rest of the process.
   if (typeof defaultLoad?.close === "function") defaultLoad.close();
 
+  // Said out loud on purpose: a caller that forgets to pass the list gets slices with only the
+  // built-in path/secret scrubbing, and the last time that happened nothing announced it.
+  if (alwaysRedactTerms(sliceOptions.redaction).length === 0) {
+    warnings.push(
+      "No always-redact terms were supplied, so slices carry only the built-in path and secret " +
+        "scrubbing. Pass `redaction` from config/redaction.yaml to apply the configured terms.",
+    );
+  }
+
   return { queued, skipped, warnings };
 }
 
@@ -279,7 +296,15 @@ export function queue({ bundle, paths, limit = DEFAULT_QUEUE_LIMIT, deps = {}, .
  * Validates a subagent's extract, merges it over any previous one, advances the cursor, and writes
  * the file. Throws an Error listing every violation rather than persisting a half-trusted extract.
  */
-export function commitExtract({ paths, sessionKey, extract, session, now } = {}) {
+export function commitExtract({
+  paths,
+  sessionKey,
+  extract,
+  session,
+  now,
+  redaction,
+  homeDir,
+} = {}) {
   const key = asText(sessionKey).trim() || asText(session?.key ?? session?.sessionKey).trim();
   if (key === "") throw new Error("commitExtract needs a sessionKey.");
 
@@ -287,12 +312,17 @@ export function commitExtract({ paths, sessionKey, extract, session, now } = {})
   const resolved = resolvePaths(paths);
   const previous = loadExtract(resolved, key);
 
+  // `publish` git-adds this file, so the title is published text and gets the same scrub a slice
+  // gets. A thread title is model-generated from the work itself: it can carry a client's name or
+  // the path someone was editing.
+  const title = redactSlice(asText(session?.title).trim(), { homeDir, redaction }).trim();
+
   const document = {
     schemaVersion: EXTRACT_SCHEMA_VERSION,
     sessionKey: key,
     kind: asText(session?.kind).trim() || previous?.kind || null,
     projectKey: asText(session?.projectKey).trim() || previous?.projectKey || null,
-    title: asText(session?.title).trim() || previous?.title || null,
+    title: title || previous?.title || null,
     updatedAt: toIso(now) ?? new Date().toISOString(),
     cursor: advanceCursor(previous?.cursor ?? null, session),
     extract: payload,
@@ -576,6 +606,12 @@ function createDefaultLoadInput(bundle, warnings) {
   let handles = null;
   let opened = false;
 
+  // The collected window, and the reason a first extraction is not garbage: with only a cursor as
+  // a bound (null on a first run) the read starts at the beginning of the thread's history, so a
+  // thread opened days ago fills today's slice with the wrong day's work — which is then
+  // summarised and cached under today's date, where nothing ever revisits it.
+  const bounds = bundleWindow(bundle);
+
   const ensureHandles = () => {
     if (opened) return handles;
     opened = true;
@@ -602,12 +638,19 @@ function createDefaultLoadInput(bundle, warnings) {
     return handles;
   };
 
+  // A project's whole day of commits is not one session's evidence. Handed the lot, the subagent
+  // writes another session's shipping into this session's extract, and the extract is cached — so
+  // the misattribution outlives the run that made it.
   const commitsFor = (session) => {
     const repos = arrayOf(bundle?.git?.repos);
+    const startMs = parseIso(session?.startedAt ?? null);
+    const endMs = parseIso(session?.endedAt ?? null);
     const commits = [];
     for (const repo of repos) {
       if (session.projectKey !== null && repo?.projectKey !== session.projectKey) continue;
-      commits.push(...arrayOf(repo?.commits));
+      for (const commit of arrayOf(repo?.commits)) {
+        if (inSessionWindow(commit, startMs, endMs)) commits.push(commit);
+      }
     }
     return commits;
   };
@@ -622,6 +665,15 @@ function createDefaultLoadInput(bundle, warnings) {
         { role: "user", text: asText(session?.firstPrompt), createdAt: session?.startedAt ?? null },
         { role: "user", text: asText(session?.lastPrompt), createdAt: session?.endedAt ?? null },
       ].filter((message) => message.text.trim() !== "");
+      if (messages.length === 0) {
+        // The bundle is the only source of prose for a standalone Claude Code session, so with
+        // neither prompt there is nothing for a subagent to read but counts. Better to say so than
+        // to pay for a summary of a contentless slice.
+        warnings.push(
+          `No prompt text is recorded for ${key === "" ? "an unkeyed session" : key}, so its ` +
+            "slice carries counts and signals only.",
+        );
+      }
       const activities = arrayOf(session?.signals).map((signal) => ({ detail: asText(signal) }));
       return { messages, activities, commits };
     }
@@ -630,18 +682,30 @@ function createDefaultLoadInput(bundle, warnings) {
     const live = ensureHandles();
     if (live.length === 0) return { commits };
 
+    const afterMs = parseIso(afterIso ?? null);
+    // Whichever bound is later wins: the cursor on a resumed read, the window on a first one.
+    // `afterIso` is exclusive (`created_at > ?`) while the window start is inclusive, so the
+    // window goes in one millisecond early or a message stamped exactly at midnight vanishes.
+    const messagesAfter = latestMs(afterMs, bounds.startMs === null ? null : bounds.startMs - 1);
+
     let messages = [];
     let activities = [];
     try {
-      messages = arrayOf(readThreadMessages(live, threadId, { afterIso, limit: MAX_PROMPTS * 4 }));
+      const rows = readThreadMessages(live, threadId, {
+        afterIso: toIso(messagesAfter),
+        limit: MAX_PROMPTS * 4,
+      });
+      // The upper bound is applied here because `readThreadMessages` takes no end: without one, a
+      // thread still running tomorrow would put tomorrow's prompts in today's slice.
+      messages = arrayOf(rows).filter((message) => isBefore(message?.createdAt, bounds.endMs));
     } catch (error) {
       warnings.push(`Could not read messages for ${key}: ${errorMessage(error)}`);
     }
     try {
       activities = arrayOf(
         readActivities(live, [threadId], {
-          start: afterIso ?? session?.startedAt ?? null,
-          end: session?.endedAt ?? null,
+          start: toIso(latestMs(afterMs, bounds.startMs, parseIso(session?.startedAt ?? null))),
+          end: toIso(earliestMs(parseIso(session?.endedAt ?? null), bounds.endMs)),
           kinds: [
             "tool.completed",
             "task.progress",
@@ -662,6 +726,79 @@ function createDefaultLoadInput(bundle, warnings) {
     handles = null;
   };
   return load;
+}
+
+const NO_WINDOW = { startMs: null, endMs: null };
+
+/**
+ * The local window the bundle was collected for, as epoch ms. `collect()` emits local day keys
+ * (`range.from`/`range.to`), so the bounds are rebuilt through the same calendar helper the
+ * collector used — a day key must never be parsed as an instant, since `2026-08-10` parses as UTC
+ * midnight and every day boundary in this feature is local. Explicit `startIso`/`endIso` fields
+ * win when a caller already has resolved bounds.
+ */
+function bundleWindow(bundle) {
+  const range = isPlainObject(bundle?.range) ? bundle.range : {};
+  const startIso = parseIso(range.startIso ?? null);
+  const endIso = parseIso(range.endIso ?? null);
+  if (startIso !== null && endIso !== null && endIso > startIso) {
+    return { startMs: startIso, endMs: endIso };
+  }
+
+  const days = arrayOf(range.days)
+    .map((day) => asText(day).trim())
+    .filter((day) => day !== "");
+  const from = asText(range.from).trim() || days[0] || "";
+  const to = asText(range.to).trim() || days[days.length - 1] || from;
+  if (from === "") return NO_WINDOW;
+  try {
+    const resolved = rangeWindow(from, to);
+    return { startMs: resolved.start.getTime(), endMs: resolved.end.getTime() };
+  } catch {
+    // A malformed range is the collector's problem to report. Here it only means "no bound", which
+    // is exactly the behaviour that existed before the window was consulted at all.
+    return NO_WINDOW;
+  }
+}
+
+function inSessionWindow(commit, startMs, endMs) {
+  // Nothing to judge against: a session with no window keeps the project's commits rather than
+  // losing evidence on a guess.
+  if (startMs === null && endMs === null) return true;
+  const at = parseIso(commit?.at ?? commit?.committedAt ?? commit?.date ?? null);
+  if (at === null) return true;
+  if (startMs !== null && at < startMs) return false;
+  return endMs === null || at <= endMs + COMMIT_GRACE_MS;
+}
+
+function isBefore(iso, endMs) {
+  if (endMs === null) return true;
+  const ms = parseIso(iso ?? null);
+  // An unstamped row is not evidence of the wrong day, so it stays.
+  return ms === null || ms < endMs;
+}
+
+function latestMs(...values) {
+  return values.reduce((best, value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return best;
+    return best === null || value > best ? value : best;
+  }, null);
+}
+
+function earliestMs(...values) {
+  return values.reduce((best, value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return best;
+    return best === null || value < best ? value : best;
+  }, null);
+}
+
+// Both spellings, matching `redactSlice`: camelCase is what `registry.loadRedaction` returns, and
+// snake_case is what a hand-built options object off the raw YAML carries.
+function alwaysRedactTerms(redaction) {
+  if (!isPlainObject(redaction)) return [];
+  return arrayOf(redaction.alwaysRedact ?? redaction.always_redact)
+    .map((term) => asText(term).trim())
+    .filter((term) => term !== "");
 }
 
 function loadInput(deps, candidate, warnings) {

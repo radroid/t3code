@@ -499,10 +499,39 @@ export function readActivities(handles, threadIds, options) {
   return withWarnings(activities, warnings);
 }
 
+// Task ids nest. A task that runs a workflow spawns children named `<parentTaskId>:wf:<n>`, and the
+// parent's cumulative counter already includes every child's tokens — measured on the real
+// database, parent `wrv3655vp` totalled 1,713,516, exactly the sum of its twelve `:wf:` children.
+// Counting both doubles a whole workflow, which is what inflated the first real reports.
+//
+// Nothing in the payload states the relationship, so it has to come out of the id: a child is the
+// parent id followed by a non-alphanumeric separator. That separator test is the entire trick —
+// `wrv3655vp:wf:1` is a textual prefix of its *sibling* `wrv3655vp:wf:10`, and only the character
+// straight after the prefix tells a child apart from an unrelated id that starts the same way.
+// `:wf:` is not hard-coded: any separator a future build picks works unchanged.
+const ALPHANUMERIC = /[0-9a-z]/iu;
+
+/**
+ * Longest id in `taskIds` that `taskId` nests inside, or `null` when `taskId` is outermost. Only
+ * separator positions are probed, so the cost is the id's length rather than the task count.
+ */
+function longestAncestorTaskId(taskId, taskIds) {
+  let ancestor = null;
+  // From 1: an empty prefix is never a task id, so position 0 can only be a false hit.
+  for (let index = 1; index < taskId.length; index += 1) {
+    if (ALPHANUMERIC.test(taskId[index])) continue;
+    const candidate = taskId.slice(0, index);
+    // Later hits are longer, i.e. nearer parents, so the last one wins.
+    if (taskIds.has(candidate)) ancestor = candidate;
+  }
+  return ancestor;
+}
+
 /**
  * Totals task tokens correctly: `usage.total_tokens` is cumulative per `taskId`, so the answer is
  * the max per task summed, never the sum of the rows. Rows without a `taskId` are ignored because
- * there is no way to tell a fresh count from a restated one.
+ * there is no way to tell a fresh count from a restated one. Nested tasks are counted once, at the
+ * outermost ancestor present.
  */
 export function tokensByTask(activities) {
   const maxByTask = new Map();
@@ -517,7 +546,13 @@ export function tokensByTask(activities) {
   }
 
   let total = 0;
-  for (const tokens of maxByTask.values()) total += tokens;
+  for (const [taskId, tokens] of maxByTask) {
+    // Skipping every task with an ancestor present collapses a nest of any depth onto its outermost
+    // task. A child whose parent fell outside the window has no ancestor here, so it still counts —
+    // otherwise a report that catches only the tail of a workflow would lose those tokens entirely.
+    if (longestAncestorTaskId(taskId, maxByTask) !== null) continue;
+    total += tokens;
+  }
   return total;
 }
 

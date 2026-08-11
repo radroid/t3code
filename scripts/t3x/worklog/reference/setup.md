@@ -31,8 +31,13 @@ node "$WORKLOG" projects --json
 ```
 
 Show the discovered `identities` list — the git author names and emails whose commits count
-as the user's. Ask one question: _"Are these all you? Anything missing?"_ A missing identity
-silently drops commits from every report, so it is worth the one question.
+as the user's, plus the `@login` `init` reads from `gh`. Ask one question: _"Are these all you?
+Anything missing?"_ A missing identity silently drops commits from every report, so it is worth
+the one question.
+
+If `init` warned that `gh` could not name the signed-in user, say so here and ask for the login:
+without it, merged pull requests cannot be told apart from a colleague's or Dependabot's, and
+`collect` will warn rather than quietly credit them.
 
 ### 3. The batched classification question
 
@@ -93,10 +98,11 @@ silently rewrites how every future report reads.
 
 ```yaml
 version: 1
-# Git author names and emails whose commits count as mine.
+# Git author names and emails whose commits count as mine, plus @my-github-login for pull requests.
 identities:
   - example-user@users.noreply.github.com
   - Example User
+  - "@example-user"
 # Time-clustering knobs. activeGapMinutes splits the day into activity blocks.
 defaults:
   active_gap_minutes: 30

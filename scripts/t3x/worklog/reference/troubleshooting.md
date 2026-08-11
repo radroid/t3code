@@ -44,6 +44,40 @@ Zero sessions and zero commits.
   three tool activities, fewer than two prompts) is a real outcome too: "a few minutes poking
   at X, nothing landed".
 
+## The registry will not parse
+
+`lint` and `publish` both stop with exit 1 and one line: _"The redaction gate cannot run:
+…/config/projects.yaml could not be read (line N: …)"_. Nothing was checked, so nothing is
+cleared. This is not a false positive and there is no flag that gets past it — the file
+decides which projects may be named, and a gate that cannot read it would fail open.
+
+The message names the line. The parser is a small YAML subset, and it rejects, by design:
+
+- **tabs** for indentation — two spaces per level, always;
+- **flow collections** — `{a: 1}` and `[a, b]`. Use a `key:` map or a `- item` block sequence.
+  (Bare `{}` and `[]` for an empty value are the one exception, and are fine.)
+- **multiline scalars** — `|` and `>`. Put the value on one line, quoted if it needs to be.
+- **anchors and aliases** (`&x`, `*x`), and **maps inside a sequence** (`- key: value`).
+
+Fix the file, or move it aside to run with the project-name rules switched off — which is
+weaker, and the run will say so. `worklog init` refuses to touch an unparseable registry too,
+for the same reason: it will not overwrite a file it could not understand.
+
+## A slice comes out contentless
+
+`extract-queue` wrote the slice, but it holds counts, file names and tool labels and no prose.
+The warnings say which: _"No prompt text is recorded for `cc-…`, so its slice carries counts
+and signals only"_, or _"The bundle records no T3code database, so slices carry no prompts or
+activity"_ (a bundle collected against a database that has since moved).
+
+- Do not dispatch a subagent for it. There is nothing to read, and you pay for the summary
+  anyway.
+- Do not paper over it with an empty extract. `extract-commit` rejects blank `problem`,
+  `approach` or `outcome` with exit 2, and it is right to — an all-empty extract would park
+  the cursor past messages nobody ever summarised, and no future run would revisit them.
+- Write that session from its title, signals, commits and PRs, the same as a failed extract.
+  Leaving the cursor where it is costs nothing; a day with new prose will queue it again.
+
 ## A lint finding you think is a false positive
 
 Assume it is not. The rules are tuned so that a match inside a higher-priority rule is
@@ -63,14 +97,18 @@ The right order:
    "this is fine":
 
    ```bash
-   node "$WORKLOG" lint --file <file> --allow long-path
+   node "$WORKLOG" lint --file <file> --allow tilde-path
    ```
 
-   It is per-rule and file-wide, so allowing `long-path` to save one sentence disables the
-   check for every other path in the report. Never allow `secret-shape`, `redact-term`,
-   `private-project`, `email`, `home-path` or `tilde-path` — those are the reasons the gate
-   exists. `long-path` and `raw-quote` are the only two ever worth allowing, and only after
-   you have read every finding they suppress. Tell the user you used it and why.
+   It is per-rule and file-wide, so allowing a rule to save one sentence disables it for every
+   other line in the report. And note which rules it can actually change the outcome for: only
+   `error` findings block, and every one of them — `secret-shape`, `redact-term`,
+   `private-project`, `unclassified-project`, `email`, `home-path`, `tilde-path` — is a reason
+   the gate exists. `private-branch`, `raw-quote` and `long-path` are `warn`, so the report
+   already ships with them outstanding; allowing one silences a message, it does not unblock
+   anything. So `--allow` is not the mild option it looks like. Use it only on a specific
+   error rule, only after reading every finding it suppresses, only with the user's say-so,
+   and say in the handoff that you used it and why.
 
 `lint-unavailable` is not a false positive under any circumstance: it means the gate did not
 run, so nothing was checked and nothing is cleared.
@@ -94,8 +132,10 @@ A subagent returned something that is not the five-key object, or `extract-commi
 
 Numbers that do not match the user's memory of the day.
 
-- **Agent runtime far exceeds the wall clock.** Correct. Sessions run in parallel; the number
-  is machine time, not elapsed time. Gloss it in the stat line and move on.
+- **Agent runtime far exceeds the wall clock.** Correct. It sums per-turn spans and parallel
+  sessions add together, and a turn's span includes whatever it spent waiting rather than
+  working. Gloss it as wall-clock in the stat line — never as "machine time I directed" — and
+  move on.
 - **Active time looks short.** It is a floor. Reading, meetings and thinking leave no events,
   and gaps over 30 minutes are dropped by design. `--gap N` widens the gap for one run if the
   user's rhythm genuinely differs; changing `active_gap_minutes` in the registry makes it
@@ -103,12 +143,19 @@ Numbers that do not match the user's memory of the day.
 - **Session count looks doubled.** The dedup join (worktree, then first-prompt hash) missed a
   pair. Describe the work once and leave the count out of the stat line rather than publishing
   an inflated number.
-- **Files touched looks far too low.** Expected: most turns record no file list. Do not report
-  it.
+- **Files touched looks wrong — either way.** Most turns record no file list, and the lists
+  that exist are a snapshot diff, so a branch switch or a pull between turns is counted as
+  work. Do not report the number in either direction.
+- **A PR you did not open is in the list.** The collector can only filter merged PRs to you if
+  the registry's `identities` carries your GitHub login (`@name`, a bare login, or a
+  `…@users.noreply.github.com` address). Without one it keeps every merged PR and warns. Add
+  the login to `identities` and re-collect; until then, do not put a PR count in the stat line.
 - **A project is missing entirely.** It is unclassified or `include: false`. Check
   `worklog projects`, not the bundle.
 - **Commits missing.** Either the repo root is not in any project's `roots`, or the commit
   author is not in `identities`. Both are registry fixes.
+- **A sync day's commit count looks low.** Expected. A rebase copy keeps its author, author
+  date and subject, so the collector counts the patch once instead of counting both SHAs.
 
 Never open the JSON bundle to investigate. If the summary cannot answer the question, re-run
 collect with different flags or ask the user.
