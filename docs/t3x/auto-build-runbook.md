@@ -79,10 +79,30 @@ Those are different processes; auto-install updates the installed one only.
 `-nightly.*` version, the same command starts replacing `T3 Code (Nightly).app`
 instead. Re-run the check above after a big upstream sync.
 
-**Gatekeeper.** Local builds are unsigned (`T3CODE_DESKTOP_SIGNED` defaults to
-`false`), so macOS quarantines them. The installer runs
-`xattr -dr com.apple.quarantine` on the installed app so it launches without a
-Gatekeeper block. Nothing here is code-signed or notarized.
+**Gatekeeper.** Builds are not notarized (`T3CODE_DESKTOP_SIGNED` defaults to
+`false`, and this script never turns it on), so macOS quarantines them. The
+installer runs `xattr -dr com.apple.quarantine` on the installed app so it
+launches without a Gatekeeper block.
+
+**Code signing — and permission prompts (issue #70).** Builds _are_ code-signed
+when this machine has the fork's signing identity, which the script picks up on
+its own by exporting `CSC_NAME`. That is what stops macOS re-asking for Screen
+Recording, Accessibility, Microphone, Files & Folders and Local Network on every
+install: permission grants are keyed to the app's designated requirement, and an
+unsigned build's requirement is its own `cdhash`, which changes every build. Set
+the identity up once with `scripts/t3x/setup-mac-signing.sh`; the script logs
+`signing: NONE` and keeps building without it. Full runbook:
+`docs/t3x/mac-signing-runbook.md`.
+
+> **The FIRST signed build re-prompts for everything, once.** The identity moves
+> from a cdhash to a certificate, so the old grants no longer match and macOS asks
+> again. That install looks exactly like the bug it fixes — judge the fix on the
+> _second_ signed install, which should be silent.
+
+Every build is verified before it is installed
+(`scripts/t3x/verify-mac-signature.ts`), and an install is refused if the
+signature is missing when it should be present, or if the identity changed. A
+build that would cost you a round of dialogs is not worth installing quietly.
 
 ## How the trigger works
 
@@ -286,8 +306,9 @@ out.
   target in `/Applications`, and copies the new one in. Fine overnight; annoying
   mid-session. There is no "skip if app is foregrounded" check yet. The new build is
   staged alongside and swapped in, so a failed copy leaves your existing app intact.
-- **Unsigned.** Quarantine-stripping is required on every install. If macOS
-  tightens Gatekeeper this may stop working.
+- **Signed but not notarized.** Quarantine-stripping is still required on every
+  install. If macOS tightens Gatekeeper this may stop working. Signing fixes the
+  permission-prompt problem (#70), not the Gatekeeper one.
 - **Disk — bigger than the prune suggests.** `T3X_AUTOBUILD_KEEP_DMGS` (default 3) prunes
   `*.dmg` **only**. electron-builder also writes a `.zip` of comparable size (~233 MB
   next to a ~236 MB dmg), plus `.blockmap`s and `builder-debug.yml`, and **none of those
