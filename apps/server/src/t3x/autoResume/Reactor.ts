@@ -142,7 +142,7 @@ const makeSupervisor = Effect.gen(function* () {
 
       const plan = planSchedule({
         verdict,
-        hasPending: record.pending !== null,
+        pendingResumeAtMs: record.pending?.resumeAtMs ?? null,
         nowMs,
         firedRecently,
         firedInCapWindow,
@@ -156,6 +156,11 @@ const makeSupervisor = Effect.gen(function* () {
       const thread = snapshot.threads.find((t) => t.id === threadId);
       if (!thread || threadIsGone(thread) || !isClaudeThread(thread)) return;
 
+      // Replacing an existing arm (a later window superseded it — see decide.ts). The
+      // fresh `captureBaseline` below is what re-baselines the resume onto whatever the
+      // thread looks like now, so a supersede is also the re-arm path for #39.
+      const superseded = record.pending !== null;
+
       yield* store.schedule({
         threadId,
         resumeAtMs: plan.resumeAtMs,
@@ -165,11 +170,14 @@ const makeSupervisor = Effect.gen(function* () {
       });
 
       const waitMinutes = Math.max(0, Math.round((plan.resumeAtMs - nowMs) / 60_000));
+      const limitType = verdict.rateLimitType ?? "window";
       yield* appendActivity(
         threadId,
         "info",
-        "t3x.auto-resume.scheduled",
-        `Usage limit reached (${verdict.rateLimitType ?? "window"}). Auto-resume scheduled in ~${waitMinutes} min.`,
+        superseded ? "t3x.auto-resume.rescheduled" : "t3x.auto-resume.scheduled",
+        superseded
+          ? `Usage limit window pushed back (${limitType}). Auto-resume rescheduled to ~${waitMinutes} min from now.`
+          : `Usage limit reached (${limitType}). Auto-resume scheduled in ~${waitMinutes} min.`,
       );
     });
 
