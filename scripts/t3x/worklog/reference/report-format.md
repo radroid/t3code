@@ -82,13 +82,20 @@ One italic line, `·` separated, in this order, with both time numbers side by s
 glossed in one clause:
 
 ```markdown
-_2 projects · 3 PRs merged · 21 commits · 12 sessions · 5h 40m active (hands-on-keyboard, gaps over 30m dropped) · 31h 12m agent runtime (machine time I directed, parallel sessions included)._
+_2 projects · 3 PRs merged · 21 commits · 12 sessions · 5h 40m active (hands-on-keyboard, gaps over 30m dropped) · 31h 12m agent runtime (turn wall-clock, parallel sessions added together)._
 ```
 
 - Omit any stat that is zero or absent. Zero PRs merged is not worth a slot; a missing `gh`
   means the PR slot does not appear at all.
-- Never put files touched, lines changed, or tokens in this line — the first two are
-  structurally incomplete and the third means nothing to a reader.
+- Never put files touched, lines changed, or tokens in this line — the first two are soft in
+  both directions (see `data-model.md`) and the third means nothing to a reader.
+- **Gloss agent runtime as wall-clock, not as effort.** It is the sum of per-turn spans and
+  parallel sessions add together, which is why it outruns the day. A span runs from a turn's
+  start to its finish regardless of what happened in between, so time the turn spent waiting
+  is inside it wherever the record does not prove otherwise — including a turn parked at an
+  approval prompt with nobody at the desk. "Machine time I directed" claims more than the
+  number can carry: it counts waiting as working. Say what it measures and let it stay
+  garnish.
 - Round times to the minute below an hour, to five minutes above it.
 
 ## Worked example
@@ -132,7 +139,7 @@ the same container. Gave each job its own prefix. No interesting insight, just a
 
 ---
 
-_2 projects · 2 PRs merged · 14 commits · 7 sessions · 5h 10m active (hands-on-keyboard, gaps over 30m dropped) · 22h 40m agent runtime (machine time I directed, parallel sessions included)._
+_2 projects · 2 PRs merged · 14 commits · 7 sessions · 5h 10m active (hands-on-keyboard, gaps over 30m dropped) · 22h 40m agent runtime (turn wall-clock, parallel sessions added together)._
 ```
 
 Note what the example does: it names the failure precisely, admits the wasted hour without

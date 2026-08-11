@@ -123,6 +123,13 @@ const SECRETS = [
   ["AKIA", "IOSFODNN7EXAMPLE"].join(""),
   ["xoxb", "-123456789012-abcdefghijklmno"].join(""),
   "0123456789abcdef0123456789abcdef0123",
+  // The bodies are a repeated fragment rather than anything entropic, for the same reason as
+  // above: these are the exact shapes a scanner rejects a push over.
+  ["eyJ", "hbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3b3JrbG9nIn0.c2lnbmF0dXJlLXZhbHVl"].join(""), // JWT
+  ["AIza", "Sy".concat("b3dEfGhIjK".repeat(4)).slice(0, 35)].join(""), // Google API key
+  ["glpat", "-", "b3dEfGhIjK".repeat(3).slice(0, 24)].join(""), // GitLab PAT
+  ["npm", "_", "b3dEfGhIjK".repeat(4).slice(0, 36)].join(""), // npm automation token
+  ["dop", "_v1_", "a1b2c3d4".repeat(8)].join(""), // DigitalOcean PAT
 ];
 
 test("a clean report produces no findings at all", () => {
@@ -139,6 +146,7 @@ test("the catalogue is well formed and covers every documented rule", () => {
     "secret-shape",
     "redact-term",
     "private-project",
+    "unclassified-project",
     "private-branch",
     "raw-quote",
     "long-path",
@@ -212,21 +220,69 @@ test("secret-shape: bearer tokens, PEM headers and key=value pairs fire", () => 
   assert.ok(pair[0].excerpt.includes("DB_PASSWORD="));
 });
 
+test("secret-shape: token, auth and credential assignments fire", () => {
+  // `token` is the commonest spelling of all and was the gap that let a real one through.
+  const cases = [
+    ["Set ACCESS_TOKEN=s3cr3t-value-here in the env file.", "ACCESS_TOKEN=", "s3cr3t-value-here"],
+    ["Exported auth=zzTopSecretValue before the run.", "auth=", "zzTopSecretValue"],
+    ['Wrote credential: "hunter2correcthorse" to the config.', "credential", "hunter2correcthorse"],
+    [
+      "Set passphrase=correct-horse-battery in the keychain.",
+      "passphrase=",
+      "correct-horse-battery",
+    ],
+    ["Read private_key=MIIBOwIBAAJBAKq from the profile.", "private_key=", "MIIBOwIBAAJBAKq"],
+    ["Sent Authorization: Basic dXNlcjpwYXNzd29yZA to the API.", "Basic", "dXNlcjpwYXNzd29yZA"],
+  ];
+  for (const [line, label, secret] of cases) {
+    const findings = lint(line);
+    assert.deepEqual(ruleIds(findings), ["secret-shape"], `missed: ${line}`);
+    assert.ok(!findings[0].excerpt.includes(secret), `excerpt leaked ${secret}`);
+    // The label survives masking, which is what makes the finding actionable.
+    assert.ok(
+      findings[0].excerpt.includes(label),
+      `excerpt lost the label: ${findings[0].excerpt}`,
+    );
+  }
+});
+
 test("secret-shape: ordinary prose about keys is not a finding", () => {
   assert.deepEqual(lint("Rotated the API key and shortened the session timeout."), []);
   assert.deepEqual(lint("Cherry-picked 4b126c02f onto the release branch."), []);
   assert.deepEqual(lint("Read the risk-register before the sk demo."), []);
+  // The credential keys are the noisiest words in engineering prose; each of these is a topic,
+  // not an assignment, and a gate that fires on them is a gate the reader stops reading.
+  assert.deepEqual(lint("Reworked the auth flow after the review."), []);
+  assert.deepEqual(lint("Replaced the retry loop with a token bucket."), []);
+  assert.deepEqual(lint("Wrote up private key rotation for the runbook."), []);
+  assert.deepEqual(lint("Discussed credentials handling with the team."), []);
+  assert.deepEqual(lint("Authored the passphrase section of the doc."), []);
 });
 
-test("redact-term: an always-redact term is an error, case-insensitively and whole-word", () => {
+test("redact-term: an always-redact term is an error, case-insensitively", () => {
   const findings = lint("Finished the acme widgets migration.");
   assert.deepEqual(ruleIds(findings), ["redact-term"]);
   assert.ok(!findings[0].excerpt.toLowerCase().includes("acme widgets"));
-  // Word-like terms do not fire inside a longer word.
+  // A multi-word term still needs its words in order, separated by whitespace: "acmes widgetsxyz"
+  // never contains "acme<space>widgets".
   assert.deepEqual(lint("Finished the acmes widgetsxyz migration."), []);
   // A term carrying punctuation is matched as a substring, on purpose.
   assert.deepEqual(ruleIds(lint("Pointed it at zeta-corp.internalx for now.")), ["redact-term"]);
   assert.deepEqual(lint("Shipped the widgets refactor."), []);
+});
+
+test("redact-term: a term the user wrote down fires inside a longer token", () => {
+  // The list is curated by hand — "never let this through" beats "only as a whole word", because
+  // the noise cost is one edit and the failure cost is a client name on a public timeline.
+  const redaction = { alwaysRedact: ["northwind"], replacements: { northwind: "a retail client" } };
+  const registry = { version: 1, projects: { t3code: registryFixture().projects.t3code } };
+  const findings = lint("Deployed northwindretail-prod this morning.", { redaction, registry });
+  assert.deepEqual(ruleIds(findings), ["redact-term"]);
+  assert.ok(!findings[0].excerpt.toLowerCase().includes("northwindretail"));
+  assert.equal(
+    redactSlice("Deployed northwindretail-prod", { homeDir: HOME, redaction }),
+    "Deployed a retail clientretail-prod",
+  );
 });
 
 test("private-project: a non-public key, display name or root basename is an error", () => {
@@ -236,7 +292,7 @@ test("private-project: a non-public key, display name or root basename is an err
   assert.deepEqual(lint("Shipped the t3code updater, see T3 Code (fork)."), []);
 });
 
-test("private-project: short terms and matches inside longer words are skipped", () => {
+test("private-project: a short term is skipped, but a longer token containing one is not", () => {
   const registry = registryFixture();
   registry.projects.cli = {
     displayName: "CLI",
@@ -245,8 +301,12 @@ test("private-project: short terms and matches inside longer words are skipped",
     visibility: "private",
     confirmed: true,
   };
+  // Below MIN_PROJECT_TERM: a three-letter key is a word, and would fire on every line of prose.
   assert.deepEqual(lint("Refactored the cli entry point.", { registry }), []);
-  assert.deepEqual(lint("Northwinds are seasonal around here."), []);
+  // Was previously clean, and that was the bug: `northwindretail-prod` is exactly how a client
+  // name reaches a public post. A wrong hit here is one edit; a miss is unrecoverable.
+  assert.deepEqual(ruleIds(lint("Deployed northwindretail-prod tonight.")), ["private-project"]);
+  assert.deepEqual(ruleIds(lint("Northwinds are seasonal around here.")), ["private-project"]);
 });
 
 test("private-project: an unconfirmed or excluded project is still not nameable", () => {
@@ -259,6 +319,61 @@ test("private-project: an unconfirmed or excluded project is still not nameable"
   assert.deepEqual(ruleIds(lint("Shipped the t3code updater.", { registry: excluded })), [
     "private-project",
   ]);
+});
+
+// `extraTerms` exists because the registry can only police projects it knows about, and an
+// unclassified project — the one class that must never be named — is by definition not in it.
+test("extraTerms: an unclassified project is an error under its own rule", () => {
+  const extraTerms = [{ term: "hollowfox", rule: "unclassified-project" }];
+  const findings = lint("Shipped the Hollowfox importer today.", { extraTerms });
+  assert.deepEqual(ruleIds(findings), ["unclassified-project"]);
+  assert.equal(findings[0].severity, "error");
+  assert.equal(hasErrors(findings), true);
+  assert.ok(!findings[0].excerpt.toLowerCase().includes("hollowfox"), "the excerpt named it");
+  assert.match(findings[0].hint, /classif/iu, "the hint must say what to do about it");
+
+  // Matched like a redact-term: case-insensitive, and inside a longer token too.
+  assert.deepEqual(ruleIds(lint("Deployed hollowfox-prod tonight.", { extraTerms })), [
+    "unclassified-project",
+  ]);
+  assert.deepEqual(lint("Shipped the importer today.", { extraTerms }), []);
+  assert.deepEqual(lint("Shipped Hollowfox.", { extraTerms, allow: ["unclassified-project"] }), []);
+});
+
+test("extraTerms: each entry keeps its rule id, and a malformed entry cannot silence a term", () => {
+  const findings = lint("Ran the Hollowfox and Ridgeline migrations.", {
+    extraTerms: [
+      { term: "hollowfox", rule: "unclassified-project" },
+      { term: "ridgeline", rule: "team-only" },
+    ],
+  });
+  assert.deepEqual(ruleIds(findings), ["unclassified-project", "team-only"]);
+  assert.equal(findings[1].severity, "error");
+  assert.ok(findings[1].hint.length > 0, "an unregistered rule id still explains itself");
+  for (const finding of findings) {
+    assert.ok(!/hollowfox|ridgeline/iu.test(finding.excerpt), `leaked: ${finding.excerpt}`);
+  }
+
+  // A missing rule id falls back to the registered rule rather than dropping the term.
+  assert.deepEqual(ruleIds(lint("Ran Hollowfox.", { extraTerms: [{ term: "hollowfox" }] })), [
+    "unclassified-project",
+  ]);
+  assert.deepEqual(lint("Ran Hollowfox.", { extraTerms: "hollowfox" }), []);
+  assert.deepEqual(lint("Ran Hollowfox.", { extraTerms: [null, 7, { term: "  " }] }), []);
+});
+
+test("extraTerms reaches lintFile and prints safely", () => {
+  const file = NodePath.join(sandbox, "extra.md");
+  NodeFS.writeFileSync(file, "Shipped the Hollowfox importer.\n", "utf8");
+  const findings = lintFile(file, {
+    homeDir: HOME,
+    extraTerms: [{ term: "hollowfox", rule: "unclassified-project" }],
+  });
+  assert.deepEqual(ruleIds(findings), ["unclassified-project"]);
+  assert.equal(findings[0].filePath, file);
+  const report = formatFindings(findings);
+  assert.ok(report.includes("unclassified-project"));
+  assert.ok(!report.toLowerCase().includes("hollowfox"), "the report itself must be safe to print");
 });
 
 test("private-branch: a branch attributable to a non-public project warns", () => {

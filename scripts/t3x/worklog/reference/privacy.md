@@ -56,10 +56,28 @@ replacements:
   Northwind Retail: a retail client
 ```
 
-`worklog lint` matches these **case-insensitively, anywhere in the file**, including inside
-words and inside links. It is a blocking error. The `replacements` map is not applied
+`worklog lint` matches these as **plain substrings, case-insensitively, anywhere in the file**.
+Precisely:
+
+- **Inside longer words and tokens.** `northwind` fires in `northwindretail-prod` and in
+  `Northwinds`. That is deliberate: a client name reaches a public post inside a deployment
+  slug far more often than as a tidy standalone word, and a false positive costs one edit
+  while a miss cannot be undone.
+- **Inside links, code spans and fenced blocks.** There is no exemption for URLs here, even
+  for public code hosts — a term on this list is the leak wherever it sits.
+- **Across whitespace.** Spaces inside a term match any run of whitespace, so
+  `Northwind Retail` still matches when a line wrap splits it.
+
+It is a blocking error. The same matcher scrubs transcript slices on their way to disk, so a
+term on this list never reaches a subagent either. The `replacements` map is not applied
 automatically to your draft — it tells you what to write instead. If you find yourself
 needing a term that is on the list, the answer is the replacement, never the term.
+
+The cost of substring matching: do not put a short or common word on this list. `app`, `api`
+or a two-letter client initialism will fire on every other line, and a gate the user learns to
+skim past is a gate that is off. Use the longest distinctive form of the name. (Project names
+taken from `config/projects.yaml` are matched the same way, but only when they are at least
+four characters — short registry keys like `cli` are skipped for exactly this reason.)
 
 If you discover during a report that a name should be on the list and is not, tell the user
 and offer to add it. Do not add it yourself mid-report and carry on as if that settled it.
@@ -102,8 +120,8 @@ justification. Lint catches shapes; only you can catch meaning.
    a product name, a vendor, a distinctive feature, a team size, a domain, or a timeline?
 6. Is there any absolute path, any `~/` path, or any path deeper than two segments?
 7. Is there an email address, a handle that resolves to one, or a personal URL?
-8. Is there anything shaped like a credential — a token, a key, a long hex string, a
-   `Bearer` header, a `password=` line?
+8. Is there anything shaped like a credential — a token, a key, a long hex string, a JWT
+   (`eyJ…`), an `Authorization:` header, a `token=` or `password=` line?
 9. Is there any quoted chat, prompt text, tool output, or a code block longer than three lines?
 10. Is every branch name I mention attached to a project that is public and confirmed?
 11. Does every claim trace to the summary or a committed extract — nothing invented, nothing

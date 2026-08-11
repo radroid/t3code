@@ -17,8 +17,9 @@ not be named.
 - **Never open the database or the raw `.jsonl` logs yourself.** No `sqlite3`, no `grep` over
   `~/.t3` or `~/.claude`, no reading a session transcript "just to check". The CLI is the only
   reader. One stray `grep` on a 700 MB database costs more than the whole report.
-- **Read the summary, not the bundle.** `--print summary` is a few hundred lines. The JSON
-  bundle is not for you.
+- **Read the summary, not the bundle.** What `collect` prints by default is a few hundred
+  lines. The JSON bundle it writes is not for you — you pass its path around, you never open
+  it.
 - **Never quote raw chat.** No transcript lines, no prompt text, no tool output. Describe.
 - **An unconfirmed project is private.** Anything the registry cannot vouch for is not named
   and not described. Silence is the safe default; ask, don't guess.
@@ -36,10 +37,14 @@ absolute path of the file you are reading, use it directly. Otherwise:
 ```bash
 for d in ~/.claude/skills/worklog ~/Developer/t3code/scripts/t3x/worklog; do
   [ -f "$d/bin/worklog.mjs" ] && WORKLOG="$d/bin/worklog.mjs" && break
-done; echo "$WORKLOG"
+done; echo "${WORKLOG:-NOT FOUND}"
 ```
 
-Every command below is `node "$WORKLOG" <subcommand>`. It works from any cwd.
+If that prints `NOT FOUND`, stop and ask the user where the skill is checked out — do not
+start the pipeline with an unresolved path.
+
+Every command below is `node "$WORKLOG" <subcommand>`. It works from any cwd. Every one takes
+`--json`; exit 2 is a usage error, exit 1 means the command did its check and refused.
 
 ## Invocations
 
@@ -68,35 +73,49 @@ Read it. Then:
 
 - Worklog repo missing → run `node "$WORKLOG" init`, then the first-run interview in
   `reference/setup.md`. Do not collect until the registry has at least one confirmed project.
-- Unclassified projects listed → mention the count and offer `worklog classify`. Proceed
-  regardless; they will be treated as private.
+- The `registry` check reports `projects` and `confirmed`. Fewer confirmed than projects →
+  mention the gap and offer `worklog classify`. Proceed regardless; anything unconfirmed is
+  treated as private. Projects the registry has never heard of do not appear here at all —
+  they surface in step 2's summary.
 - `gh` missing or unauthenticated → say once that merged PRs will be absent, and continue.
 - Databases missing → see `reference/troubleshooting.md`.
+
+`doctor --json` is also where the worklog repo's path comes from: the `worklog-root` check
+carries it as `root`. You will need it in step 4.
 
 Skip this step on later runs in the same session.
 
 ### 2. Collect
 
 ```bash
-node "$WORKLOG" collect --from 2026-08-10 --to 2026-08-10 --print summary
+node "$WORKLOG" collect --from 2026-08-10 --to 2026-08-10
 ```
 
-Read the summary. Note the bundle path it prints — the next step needs it. Read the
-`warnings` block; a warning usually explains a number that will look wrong later.
+Read the summary it prints. The **last line** is `bundle: <path>`, and steps 3, 6 and 7 all
+need that path — so leave `--print` at its default (`both`). `--print summary` prints the same
+digest but no bundle path, and `--print json` dumps the whole bundle to stdout, which is the
+one thing you must not read.
+
+Read the `warnings` block; a warning usually explains a number that will look wrong later. If
+the summary carries an **Unclassified projects** or **Unconfirmed projects** section, the
+report needs the heads-up line — see `reference/report-format.md`.
 
 If any figure in the summary surprises you, read `reference/data-model.md` before you write
 a sentence about it. Several stats mean something narrower than their name suggests.
 
 ### 3. Extract, only if the summary says to
 
-The summary marks sessions with `needsExtraction`. If there are none, go to step 4 — the
-titles, signals, commits and PRs in the summary are enough.
+The summary lists them under **Sessions needing extraction**. If that section is absent, go to
+step 4 — the titles, signals, commits and PRs in the summary are enough.
 
 Otherwise:
 
 ```bash
 node "$WORKLOG" extract-queue --bundle <bundle-path-from-step-2> --limit 12
 ```
+
+Without `--limit` it stops at 8. Sessions are queued most-material first, so a cap costs you
+the least interesting ones.
 
 This writes one redacted slice per session to `.worklog-tmp/slices/<key>.md`. Dispatch **one
 subagent per slice**, all in a single parallel batch, using the cheapest model available
@@ -124,26 +143,31 @@ Rules:
 - artifacts: at most 6 entries, each <= 80 chars. Basenames only — never a directory path.
 - No file paths, no home directories, no URLs except a bare PR number, no emails, no tokens.
 - Do not quote the transcript. Do not invent anything the slice does not support.
-- If the slice shows nothing material, return empty strings, an empty artifacts array, and
-  "status": "exploration".
+- All three of problem, approach and outcome must be non-empty — an empty one is rejected. If
+  the slice is thin, say plainly what little it shows ("only tool activity, no prose") and set
+  "status": "exploration". Never pad, never guess.
 ```
 
-Persist each returned object before using it:
+Persist each returned object before using it. `--bundle` is required — the same bundle path
+from step 2, because the bundle carries the session record the cursor is advanced against:
 
 ```bash
-node "$WORKLOG" extract-commit --session <session-key> --file /tmp/extract-<key>.json
+node "$WORKLOG" extract-commit --session <session-key> --bundle <bundle-path-from-step-2> \
+  --file /tmp/extract-<key>.json
 ```
 
-If a subagent returns malformed JSON or `extract-commit` rejects it, do **not** hand-edit the
-cursor — see `reference/troubleshooting.md`.
+If a subagent returns malformed JSON or `extract-commit` rejects it (exit 2 — it names every
+violation), do **not** hand-edit the cursor and do **not** trim the JSON to fit. See
+`reference/troubleshooting.md`.
 
 ### 4. Write the day file
 
 Sources allowed: the collect summary and the committed extracts. Nothing else.
 
 Read `reference/report-format.md` for the template, the voice, and a worked example. Read
-`reference/privacy.md` before naming anything. Write to `<worklogRoot>/days/YYYY-MM-DD.md`
-(the root is in the summary's `config` block).
+`reference/privacy.md` before naming anything. Write to `<worklogRoot>/days/YYYY-MM-DD.md` —
+the root is the `worklog-root` check's `root` from step 1, and it is also the directory three
+levels above the `bundle:` path from step 2. The summary itself does not print it.
 
 ### 5. Self-check
 
@@ -154,13 +178,16 @@ with the checklist.
 ### 6. Lint — hard gate
 
 ```bash
-node "$WORKLOG" lint --file <worklogRoot>/days/2026-08-10.md
+node "$WORKLOG" lint --file <worklogRoot>/days/2026-08-10.md --bundle <bundle-path-from-step-2>
 ```
 
+Pass `--bundle`. Without it the gate cannot check the names of projects the registry has never
+heard of, and it warns that it did not.
+
 Non-zero exit means the report does not ship. Fix the prose and re-run until it is clean.
-Every finding carries a hint that says what to write instead. `--allow` exists, is
-per-rule-id, and is almost always the wrong answer — `reference/troubleshooting.md` says when
-it is not.
+Every finding carries a hint that says what to write instead. Only `error` findings block;
+`warn` findings still deserve a rewrite. `--allow` exists, is per-rule-id, and is almost always
+the wrong answer — `reference/troubleshooting.md` says when it is not.
 
 ### 7. Publish
 
@@ -168,8 +195,10 @@ it is not.
 node "$WORKLOG" publish --date 2026-08-10
 ```
 
-Lints again, then commits locally. It does not push and does not post. Tell the user the file
-path and the one-line summary, and that it is a draft for them to edit.
+Lints again — finding the day's bundle by itself, so no `--bundle` here — then commits the day
+file plus `config/` and `extracts/` locally. It does not push and does not post. Exit 1 means
+it refused: a blocking finding, no file, or nothing changed since the last publish. Tell the
+user the file path and the one-line summary, and that it is a draft for them to edit.
 
 ## Ranges
 
@@ -178,10 +207,15 @@ you just wrote — a through-line paragraph plus one line per day. Shape is in
 `reference/report-format.md`. Then publish it the same way:
 
 ```bash
+node "$WORKLOG" collect --from 2026-08-04 --to 2026-08-08 --no-git
 node "$WORKLOG" publish --range 2026-08-04..2026-08-08
 ```
 
-Same lint gate, same local-only commit.
+Same lint gate, same local-only commit. The extra `collect` is not for the prose — it is
+because `publish --range` looks for a bundle named for the whole range, and the per-day passes
+never write one. Skip it and the range file publishes with its unclassified-project check
+switched off, and says so in a warning. `--no-git` keeps it cheap; the gate only needs the
+project names.
 
 For a range longer than a week, confirm with the user first — it is one collect and one
 extraction pass per day.
@@ -203,7 +237,8 @@ sessions at all gets "No recorded work." and no stat line.
 
 Read these when the step above says to, not before:
 
-- `reference/data-model.md` — what each source can and cannot tell you, and the three traps.
+- `reference/data-model.md` — what each source can and cannot tell you, the four traps, and
+  which numbers are softer than they look.
 - `reference/report-format.md` — template, voice guide, worked example, range shape.
 - `reference/privacy.md` — visibility rules and the pre-lint self-check.
 - `reference/setup.md` — the `init` and `classify` interviews.
