@@ -1,7 +1,11 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { canSteerActiveThread, providerSupportsSteering } from "./composerSteering.logic";
+import {
+  canSteerActiveThread,
+  providerSupportsSteering,
+  steerProviderBinding,
+} from "./composerSteering.logic";
 
 describe("providerSupportsSteering", () => {
   it("allows the drivers whose adapters fold a mid-turn send into the running turn", () => {
@@ -56,5 +60,57 @@ describe("canSteerActiveThread", () => {
     expect(canSteerActiveThread({ ...steerable, provider: ProviderDriverKind.make("codex") })).toBe(
       false,
     );
+  });
+});
+
+// radroid/t3code#40 A4. The steer decision used to key on the composer's
+// `selectedProvider`, which resolves through `deriveLockedProvider` and then
+// `resolveSelectableProvider` — whose fallback is the first ENABLED provider.
+describe("steerProviderBinding", () => {
+  it("reads the thread's persisted routing binding", () => {
+    expect(steerProviderBinding({ session: { providerName: "codex" } })).toBe("codex");
+  });
+
+  it("fails closed when the thread has no session binding yet", () => {
+    expect(steerProviderBinding({ session: null })).toBeNull();
+    expect(steerProviderBinding({})).toBeNull();
+    expect(steerProviderBinding(null)).toBeNull();
+    expect(steerProviderBinding(undefined)).toBeNull();
+  });
+
+  // The whole point of A4: a Codex thread must not be classified steer-capable
+  // because the picker fell back to a Claude instance.
+  it("keeps a Codex thread unsteerable regardless of what the picker shows", () => {
+    const thread = { session: { providerName: "codex" } };
+    expect(
+      canSteerActiveThread({
+        phase: "running",
+        isSendBusy: false,
+        isRevertingCheckpoint: false,
+        provider: steerProviderBinding(thread),
+      }),
+    ).toBe(false);
+    // ...and the old behaviour, for contrast: the picker's value alone said yes.
+    expect(
+      canSteerActiveThread({
+        phase: "running",
+        isSendBusy: false,
+        isRevertingCheckpoint: false,
+        provider: ProviderDriverKind.make("claudeAgent"),
+      }),
+    ).toBe(true);
+  });
+
+  // An instance that was removed leaves a session naming a driver this build may
+  // not recognise. That must queue, not steer.
+  it("queues a thread whose binding is not on the allowlist", () => {
+    expect(
+      canSteerActiveThread({
+        phase: "running",
+        isSendBusy: false,
+        isRevertingCheckpoint: false,
+        provider: steerProviderBinding({ session: { providerName: "some-removed-driver" } }),
+      }),
+    ).toBe(false);
   });
 });
