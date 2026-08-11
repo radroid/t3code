@@ -7,13 +7,13 @@
 //
 // Run with: node --test scripts/t3x/worklog/test/init.test.mjs
 
-import test from "node:test";
-import assert from "node:assert/strict";
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 
 import { DEFAULT_SCRATCH_ROOTS, discoverProjects, init, scaffold } from "../lib/init.mjs";
 import { createRunner } from "../lib/git.mjs";
@@ -69,7 +69,7 @@ function isUnderRealPath(child, parent) {
 
 const openedHandles = [];
 
-test.after(() => {
+NodeTest.after(() => {
   closeDatabases(openedHandles);
   for (const [key, value] of Object.entries(REAL_ENV)) {
     if (value === undefined) delete process.env[key];
@@ -232,7 +232,7 @@ const SCHEMA = [
 /** Builds a state.sqlite from `projects` and `threads`, then opens it exactly as production does. */
 function t3Handles({ projects = [], threads = [] } = {}) {
   const baseDir = tempDir("t3base");
-  const db = new DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
+  const db = new NodeSqlite.DatabaseSync(NodePath.join(baseDir, "state.sqlite"));
   for (const statement of SCHEMA) db.exec(statement);
 
   const insertProject = db.prepare(
@@ -271,7 +271,7 @@ function t3Handles({ projects = [], threads = [] } = {}) {
   db.close();
 
   const opened = openT3Databases([baseDir]);
-  assert.equal(opened.handles.length, 1, "the fixture database should open read-only");
+  NodeAssert.equal(opened.handles.length, 1, "the fixture database should open read-only");
   openedHandles.push(...opened.handles);
   return opened.handles;
 }
@@ -315,39 +315,42 @@ function byKey(discovered) {
 
 // --- scaffold -----------------------------------------------------------------------------------
 
-test("scaffold builds the whole tree, writes the config files, and states the privacy rules", () => {
-  const root = NodePath.join(tempDir("scaffold"), "worklog");
-  const result = scaffold({ root, run: repoRunner({}) });
-  const paths = worklogPaths(root);
+NodeTest.test(
+  "scaffold builds the whole tree, writes the config files, and states the privacy rules",
+  () => {
+    const root = NodePath.join(tempDir("scaffold"), "worklog");
+    const result = scaffold({ root, run: repoRunner({}) });
+    const paths = worklogPaths(root);
 
-  assert.equal(result.root, root);
-  for (const dir of [paths.config, paths.days, paths.ranges, paths.extracts, paths.tmp]) {
-    assert.ok(NodeFS.statSync(dir).isDirectory(), `${dir} should be a directory`);
-  }
-  for (const file of [paths.projectsYaml, paths.redactionYaml]) {
-    assert.ok(result.created.includes(file), `${file} should be reported as created`);
-  }
-  assert.equal(result.existed.length, 0, "a fresh scaffold has nothing pre-existing");
+    NodeAssert.equal(result.root, root);
+    for (const dir of [paths.config, paths.days, paths.ranges, paths.extracts, paths.tmp]) {
+      NodeAssert.ok(NodeFS.statSync(dir).isDirectory(), `${dir} should be a directory`);
+    }
+    for (const file of [paths.projectsYaml, paths.redactionYaml]) {
+      NodeAssert.ok(result.created.includes(file), `${file} should be reported as created`);
+    }
+    NodeAssert.equal(result.existed.length, 0, "a fresh scaffold has nothing pre-existing");
 
-  const gitignore = NodeFS.readFileSync(NodePath.join(root, ".gitignore"), "utf8");
-  assert.match(gitignore, /^\.worklog-tmp\/$/mu);
+    const gitignore = NodeFS.readFileSync(NodePath.join(root, ".gitignore"), "utf8");
+    NodeAssert.match(gitignore, /^\.worklog-tmp\/$/mu);
 
-  const readme = NodeFS.readFileSync(NodePath.join(root, "README.md"), "utf8");
-  assert.match(readme, /private by default/iu);
-  assert.match(readme, /no remote/iu);
-  assert.match(readme, /`days\/`[\s\S]*only directory intended for eventual publication/u);
-  assert.match(readme, /`extracts\/`/u);
-  assert.match(readme, /config\/redaction\.yaml/u);
-  assert.match(readme, /[Nn]ever/u);
+    const readme = NodeFS.readFileSync(NodePath.join(root, "README.md"), "utf8");
+    NodeAssert.match(readme, /private by default/iu);
+    NodeAssert.match(readme, /no remote/iu);
+    NodeAssert.match(readme, /`days\/`[\s\S]*only directory intended for eventual publication/u);
+    NodeAssert.match(readme, /`extracts\/`/u);
+    NodeAssert.match(readme, /config\/redaction\.yaml/u);
+    NodeAssert.match(readme, /[Nn]ever/u);
 
-  // The written registry must round-trip through the real loader, not just look like YAML.
-  const { registry, warnings } = loadRegistry(paths);
-  assert.deepEqual(warnings, []);
-  assert.deepEqual(registry.projects, {});
-  assert.equal(registry.version, 1);
-});
+    // The written registry must round-trip through the real loader, not just look like YAML.
+    const { registry, warnings } = loadRegistry(paths);
+    NodeAssert.deepEqual(warnings, []);
+    NodeAssert.deepEqual(registry.projects, {});
+    NodeAssert.equal(registry.version, 1);
+  },
+);
 
-test("scaffold is idempotent and never clobbers a config file a human has edited", () => {
+NodeTest.test("scaffold is idempotent and never clobbers a config file a human has edited", () => {
   const root = NodePath.join(tempDir("scaffold-idem"), "worklog");
   const paths = worklogPaths(root);
   scaffold({ root, run: repoRunner({}) });
@@ -357,16 +360,16 @@ test("scaffold is idempotent and never clobbers a config file a human has edited
   NodeFS.writeFileSync(NodePath.join(paths.days, "2026-08-10.md"), "# a report\n", "utf8");
 
   const second = scaffold({ root, run: repoRunner({}) });
-  assert.deepEqual(second.created, [], "a second scaffold creates nothing");
-  assert.ok(second.existed.includes(paths.projectsYaml));
-  assert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), edited);
-  assert.equal(
+  NodeAssert.deepEqual(second.created, [], "a second scaffold creates nothing");
+  NodeAssert.ok(second.existed.includes(paths.projectsYaml));
+  NodeAssert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), edited);
+  NodeAssert.equal(
     NodeFS.readFileSync(NodePath.join(paths.days, "2026-08-10.md"), "utf8"),
     "# a report\n",
   );
 });
 
-test("scaffold --force rewrites the README but still refuses to touch config", () => {
+NodeTest.test("scaffold --force rewrites the README but still refuses to touch config", () => {
   const root = NodePath.join(tempDir("scaffold-force"), "worklog");
   const paths = worklogPaths(root);
   scaffold({ root, run: repoRunner({}) });
@@ -377,30 +380,37 @@ test("scaffold --force rewrites the README but still refuses to touch config", (
   NodeFS.writeFileSync(paths.projectsYaml, edited, "utf8");
 
   const result = scaffold({ root, force: true, run: repoRunner({}) });
-  assert.ok(result.rewritten.includes(readme));
-  assert.match(NodeFS.readFileSync(readme, "utf8"), /private by default/iu);
-  assert.equal(NodeFS.readFileSync(paths.projectsYaml, "utf8"), edited, "config survives --force");
-});
-
-test("scaffold reports a file sitting where a directory belongs instead of throwing", () => {
-  const root = NodePath.join(tempDir("scaffold-clash"), "worklog");
-  NodeFS.mkdirSync(root, { recursive: true });
-  NodeFS.writeFileSync(NodePath.join(root, "days"), "not a directory\n", "utf8");
-
-  const result = scaffold({ root, run: repoRunner({}) });
-  assert.ok(
-    result.warnings.some(
-      (warning) => /Expected a directory/u.test(warning) && /days/u.test(warning),
-    ),
-    `expected a directory-clash warning, got ${JSON.stringify(result.warnings)}`,
-  );
-  assert.ok(
-    NodeFS.statSync(NodePath.join(root, "config")).isDirectory(),
-    "the rest still gets built",
+  NodeAssert.ok(result.rewritten.includes(readme));
+  NodeAssert.match(NodeFS.readFileSync(readme, "utf8"), /private by default/iu);
+  NodeAssert.equal(
+    NodeFS.readFileSync(paths.projectsYaml, "utf8"),
+    edited,
+    "config survives --force",
   );
 });
 
-test("scaffold runs git init exactly once, and not at all inside an existing repo", () => {
+NodeTest.test(
+  "scaffold reports a file sitting where a directory belongs instead of throwing",
+  () => {
+    const root = NodePath.join(tempDir("scaffold-clash"), "worklog");
+    NodeFS.mkdirSync(root, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(root, "days"), "not a directory\n", "utf8");
+
+    const result = scaffold({ root, run: repoRunner({}) });
+    NodeAssert.ok(
+      result.warnings.some(
+        (warning) => /Expected a directory/u.test(warning) && /days/u.test(warning),
+      ),
+      `expected a directory-clash warning, got ${JSON.stringify(result.warnings)}`,
+    );
+    NodeAssert.ok(
+      NodeFS.statSync(NodePath.join(root, "config")).isDirectory(),
+      "the rest still gets built",
+    );
+  },
+);
+
+NodeTest.test("scaffold runs git init exactly once, and not at all inside an existing repo", () => {
   const root = NodePath.join(tempDir("scaffold-git"), "worklog");
 
   // Nothing is a repo yet: init, add, commit.
@@ -408,9 +418,9 @@ test("scaffold runs git init exactly once, and not at all inside an existing rep
     ["init", "add", "commit"].includes(args[0]) ? ok() : null,
   );
   const first = scaffold({ root, run: fresh });
-  assert.equal(first.gitInitialized, true);
-  assert.equal(first.committed, true);
-  assert.deepEqual(
+  NodeAssert.equal(first.gitInitialized, true);
+  NodeAssert.equal(first.committed, true);
+  NodeAssert.deepEqual(
     fresh.calls.map((call) => call.args.join(" ")),
     [
       "rev-parse --show-toplevel",
@@ -425,100 +435,103 @@ test("scaffold runs git init exactly once, and not at all inside an existing rep
     [root]: { toplevel: root, commonDir: NodePath.join(root, ".git") },
   });
   const second = scaffold({ root, run: existing });
-  assert.equal(second.gitInitialized, false);
-  assert.deepEqual(
+  NodeAssert.equal(second.gitInitialized, false);
+  NodeAssert.deepEqual(
     existing.calls.map((call) => call.args[0]),
     ["rev-parse"],
   );
 });
 
-test("scaffold falls back to a plain git init when the installed git predates `-b`", () => {
-  const root = NodePath.join(tempDir("scaffold-old-git"), "worklog");
-  const old = recordingRunner((cmd, args) => {
-    if (args[0] === "init") return args.includes("-b") ? null : ok();
-    return ["add", "commit"].includes(args[0]) ? ok() : null;
-  });
+NodeTest.test(
+  "scaffold falls back to a plain git init when the installed git predates `-b`",
+  () => {
+    const root = NodePath.join(tempDir("scaffold-old-git"), "worklog");
+    const old = recordingRunner((cmd, args) => {
+      if (args[0] === "init") return args.includes("-b") ? null : ok();
+      return ["add", "commit"].includes(args[0]) ? ok() : null;
+    });
 
-  const result = scaffold({ root, run: old });
-  assert.equal(result.gitInitialized, true);
-  assert.deepEqual(
-    old.calls.map((call) => call.args.slice(0, 2).join(" ")),
-    ["rev-parse --show-toplevel", "init -b", "init", "add -A", "commit -m"],
-  );
-});
+    const result = scaffold({ root, run: old });
+    NodeAssert.equal(result.gitInitialized, true);
+    NodeAssert.deepEqual(
+      old.calls.map((call) => call.args.slice(0, 2).join(" ")),
+      ["rev-parse --show-toplevel", "init -b", "init", "add -A", "commit -m"],
+    );
+  },
+);
 
-test("scaffold warns and carries on when git is not installed at all", () => {
+NodeTest.test("scaffold warns and carries on when git is not installed at all", () => {
   const root = NodePath.join(tempDir("scaffold-no-git"), "worklog");
   const result = scaffold({ root, run: recordingRunner(() => null) });
 
-  assert.equal(result.gitInitialized, false);
-  assert.ok(
+  NodeAssert.equal(result.gitInitialized, false);
+  NodeAssert.ok(
     result.warnings.some((warning) => /Could not create a git repo/u.test(warning)),
     `expected a git warning, got ${JSON.stringify(result.warnings)}`,
   );
-  assert.ok(
+  NodeAssert.ok(
     NodeFS.statSync(worklogPaths(root).projectsYaml).isFile(),
     "the scaffolding still landed",
   );
 });
 
-test(
+NodeTest.test(
   "scaffold really initialises a git repo and commits the scaffolding",
   { skip: !GIT_AVAILABLE },
   () => {
     const root = NodePath.join(tempDir("scaffold-real-git"), "worklog");
     const result = scaffold({ root, run: realGitRunner() });
 
-    assert.equal(result.gitInitialized, true);
-    assert.equal(result.committed, true);
-    assert.deepEqual(result.warnings, []);
+    NodeAssert.equal(result.gitInitialized, true);
+    NodeAssert.equal(result.committed, true);
+    NodeAssert.deepEqual(result.warnings, []);
 
     const tracked = git(root, ["ls-files"]).split("\n").filter(Boolean).sort();
-    assert.deepEqual(tracked, [
+    NodeAssert.deepEqual(tracked, [
       ".gitignore",
       "README.md",
       "config/projects.yaml",
       "config/redaction.yaml",
     ]);
-    assert.equal(git(root, ["remote"]).trim(), "", "the worklog repo must have no remote");
+    NodeAssert.equal(git(root, ["remote"]).trim(), "", "the worklog repo must have no remote");
 
     // Re-running finds the repo and leaves the history alone.
     const before = git(root, ["rev-parse", "HEAD"]).trim();
     const again = scaffold({ root, run: realGitRunner() });
-    assert.equal(again.gitInitialized, false);
-    assert.equal(git(root, ["rev-parse", "HEAD"]).trim(), before);
+    NodeAssert.equal(again.gitInitialized, false);
+    NodeAssert.equal(git(root, ["rev-parse", "HEAD"]).trim(), before);
   },
 );
 
-test(
+NodeTest.test(
   "scaffold warns instead of failing when git has no identity to commit with",
   { skip: !GIT_AVAILABLE },
   () => {
     const root = NodePath.join(tempDir("scaffold-no-identity"), "worklog");
     const result = scaffold({ root, run: realGitRunner(GIT_ENV_NO_IDENTITY) });
 
-    assert.equal(result.gitInitialized, true);
-    assert.equal(result.committed, false);
-    assert.ok(
+    NodeAssert.equal(result.gitInitialized, true);
+    NodeAssert.equal(result.committed, false);
+    NodeAssert.ok(
       result.warnings.some((warning) => /initial commit/u.test(warning)),
       `expected a commit warning, got ${JSON.stringify(result.warnings)}`,
     );
-    assert.ok(
+    NodeAssert.ok(
       NodeFS.statSync(NodePath.join(root, "README.md")).isFile(),
       "the scaffolding still landed",
     );
   },
 );
 
-test("scaffold writes nothing outside the root it was given", () => {
+NodeTest.test("scaffold writes nothing outside the root it was given", () => {
   const parent = tempDir("scaffold-contained");
   const root = NodePath.join(parent, "worklog");
   const homeBefore = treeOf(SANDBOX_HOME);
 
   scaffold({ root, run: repoRunner({}) });
 
-  assert.deepEqual(NodeFS.readdirSync(parent), ["worklog"]);
-  assert.deepEqual(treeOf(SANDBOX_HOME), homeBefore, "HOME must be untouched");
+  NodeAssert.deepEqual(NodeFS.readdirSync(parent), ["worklog"]);
+  NodeAssert.deepEqual(treeOf(SANDBOX_HOME), homeBefore, "HOME must be untouched");
 });
 
 // --- discoverProjects ---------------------------------------------------------------------------
@@ -528,7 +541,7 @@ test("scaffold writes nothing outside the root it was given", () => {
 // is switched off only here: the default list is exercised on its own terms further down, in
 // "scratch space, the home directory and the filesystem root are never projects".
 
-test(
+NodeTest.test(
   "a Claude Code worktree session folds into the T3code project's main checkout",
   { skip: !GIT_AVAILABLE },
   () => {
@@ -552,24 +565,28 @@ test(
       scratchRoots: [],
     });
 
-    assert.equal(discovered.length, 1, "one repo, one entry");
+    NodeAssert.equal(discovered.length, 1, "one repo, one entry");
     const [project] = discovered;
-    assert.equal(project.key, "t3-code");
-    assert.equal(project.displayName, "T3 Code");
-    assert.deepEqual(
+    NodeAssert.equal(project.key, "t3-code");
+    NodeAssert.equal(project.displayName, "T3 Code");
+    NodeAssert.deepEqual(
       project.roots,
       [main, worktree],
       "the main checkout leads, the worktree follows",
     );
-    assert.equal(project.evidence.t3Threads, 2);
-    assert.equal(project.evidence.ccSessions, 1);
-    assert.equal(project.evidence.nameWithOwner, "radroid/t3code");
-    assert.equal(project.evidence.lastSeen, "2026-08-10T15:00:00.000Z");
-    assert.deepEqual(project.proposed, { include: true, visibility: "generic", confirmed: false });
+    NodeAssert.equal(project.evidence.t3Threads, 2);
+    NodeAssert.equal(project.evidence.ccSessions, 1);
+    NodeAssert.equal(project.evidence.nameWithOwner, "radroid/t3code");
+    NodeAssert.equal(project.evidence.lastSeen, "2026-08-10T15:00:00.000Z");
+    NodeAssert.deepEqual(project.proposed, {
+      include: true,
+      visibility: "generic",
+      confirmed: false,
+    });
   },
 );
 
-test("two T3code rows that canonicalise to the same repo merge into one entry", () => {
+NodeTest.test("two T3code rows that canonicalise to the same repo merge into one entry", () => {
   const main = tempDir("repo-main");
   const linked = tempDir("repo-linked");
   const commonDir = NodePath.join(main, ".git");
@@ -595,13 +612,13 @@ test("two T3code rows that canonicalise to the same repo merge into one entry", 
     scratchRoots: [],
   });
 
-  assert.equal(discovered.length, 1);
-  assert.equal(discovered[0].key, "t3code");
-  assert.deepEqual(discovered[0].roots, [main, linked]);
-  assert.equal(discovered[0].evidence.t3Threads, 3, "both rows' threads count once, together");
+  NodeAssert.equal(discovered.length, 1);
+  NodeAssert.equal(discovered[0].key, "t3code");
+  NodeAssert.deepEqual(discovered[0].roots, [main, linked]);
+  NodeAssert.equal(discovered[0].evidence.t3Threads, 3, "both rows' threads count once, together");
 });
 
-test("two same-titled projects in different repos get distinct keys", () => {
+NodeTest.test("two same-titled projects in different repos get distinct keys", () => {
   const first = tempDir("client-a");
   const second = tempDir("client-b");
 
@@ -624,66 +641,69 @@ test("two same-titled projects in different repos get distinct keys", () => {
     scratchRoots: [],
   });
 
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     discovered.map((project) => project.key),
     ["dashboard", "dashboard-2"],
   );
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     discovered.map((project) => project.displayName),
     ["dashboard", "dashboard"],
   );
-  assert.deepEqual(discovered[0].roots, [first]);
-  assert.deepEqual(discovered[1].roots, [second]);
+  NodeAssert.deepEqual(discovered[0].roots, [first]);
+  NodeAssert.deepEqual(discovered[1].roots, [second]);
 });
 
-test("discovery reuses the registry key that already owns a root, and adopts a rootless entry", () => {
-  const known = tempDir("known-project");
-  const nested = NodePath.join(known, "packages", "api");
-  NodeFS.mkdirSync(nested, { recursive: true });
-  const rootless = tempDir("side-project");
+NodeTest.test(
+  "discovery reuses the registry key that already owns a root, and adopts a rootless entry",
+  () => {
+    const known = tempDir("known-project");
+    const nested = NodePath.join(known, "packages", "api");
+    NodeFS.mkdirSync(nested, { recursive: true });
+    const rootless = tempDir("side-project");
 
-  const discovered = discoverProjects({
-    t3Handles: t3Handles({
-      projects: [
-        { projectId: "p1", title: "Renamed By A Human", workspaceRoot: known },
-        { projectId: "p2", title: "Side Project", workspaceRoot: rootless },
-      ],
-      threads: [
-        { threadId: "t1", projectId: "p1" },
-        { threadId: "t2", projectId: "p2" },
-      ],
-    }),
-    ccSessions: [session(nested)],
-    run: repoRunner({
-      [known]: { toplevel: known, commonDir: NodePath.join(known, ".git") },
-      [rootless]: { toplevel: rootless, commonDir: NodePath.join(rootless, ".git") },
-    }),
-    scratchRoots: [],
-    existingRegistry: {
-      projects: {
-        "client-x": {
-          displayName: "Client X",
-          roots: [known],
-          visibility: "public",
-          confirmed: true,
+    const discovered = discoverProjects({
+      t3Handles: t3Handles({
+        projects: [
+          { projectId: "p1", title: "Renamed By A Human", workspaceRoot: known },
+          { projectId: "p2", title: "Side Project", workspaceRoot: rootless },
+        ],
+        threads: [
+          { threadId: "t1", projectId: "p1" },
+          { threadId: "t2", projectId: "p2" },
+        ],
+      }),
+      ccSessions: [session(nested)],
+      run: repoRunner({
+        [known]: { toplevel: known, commonDir: NodePath.join(known, ".git") },
+        [rootless]: { toplevel: rootless, commonDir: NodePath.join(rootless, ".git") },
+      }),
+      scratchRoots: [],
+      existingRegistry: {
+        projects: {
+          "client-x": {
+            displayName: "Client X",
+            roots: [known],
+            visibility: "public",
+            confirmed: true,
+          },
+          // A human wrote this one by hand and never looked up the path.
+          "side-project": { displayName: "Side Project", roots: [] },
         },
-        // A human wrote this one by hand and never looked up the path.
-        "side-project": { displayName: "Side Project", roots: [] },
       },
-    },
-  });
+    });
 
-  const found = byKey(discovered);
-  assert.deepEqual([...found.keys()], ["client-x", "side-project"]);
-  assert.equal(
-    found.get("client-x").evidence.ccSessions,
-    1,
-    "a subdirectory session lands on the repo",
-  );
-  assert.deepEqual(found.get("side-project").roots, [rootless]);
-});
+    const found = byKey(discovered);
+    NodeAssert.deepEqual([...found.keys()], ["client-x", "side-project"]);
+    NodeAssert.equal(
+      found.get("client-x").evidence.ccSessions,
+      1,
+      "a subdirectory session lands on the repo",
+    );
+    NodeAssert.deepEqual(found.get("side-project").roots, [rootless]);
+  },
+);
 
-test("a project whose only rows are deleted is not proposed", () => {
+NodeTest.test("a project whose only rows are deleted is not proposed", () => {
   const gone = tempDir("deleted-project");
   const live = tempDir("live-project");
 
@@ -709,40 +729,43 @@ test("a project whose only rows are deleted is not proposed", () => {
     scratchRoots: [],
   });
 
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     discovered.map((project) => project.key),
     ["live"],
   );
-  assert.equal(discovered[0].evidence.t3Threads, 1, "deleted threads are not evidence");
+  NodeAssert.equal(discovered[0].evidence.t3Threads, 1, "deleted threads are not evidence");
 });
 
-test("a deleted project still on disk is proposed again when a session is running in it", () => {
-  const revived = tempDir("revived-project");
+NodeTest.test(
+  "a deleted project still on disk is proposed again when a session is running in it",
+  () => {
+    const revived = tempDir("revived-project");
 
-  const discovered = discoverProjects({
-    t3Handles: t3Handles({
-      projects: [
-        {
-          projectId: "p1",
-          title: "Revived",
-          workspaceRoot: revived,
-          deletedAt: "2026-08-01T00:00:00.000Z",
-        },
-      ],
-    }),
-    ccSessions: [session(revived)],
-    run: repoRunner({}),
-    scratchRoots: [],
-  });
+    const discovered = discoverProjects({
+      t3Handles: t3Handles({
+        projects: [
+          {
+            projectId: "p1",
+            title: "Revived",
+            workspaceRoot: revived,
+            deletedAt: "2026-08-01T00:00:00.000Z",
+          },
+        ],
+      }),
+      ccSessions: [session(revived)],
+      run: repoRunner({}),
+      scratchRoots: [],
+    });
 
-  assert.deepEqual(
-    discovered.map((project) => project.key),
-    ["revived"],
-  );
-  assert.equal(discovered[0].evidence.ccSessions, 1);
-});
+    NodeAssert.deepEqual(
+      discovered.map((project) => project.key),
+      ["revived"],
+    );
+    NodeAssert.equal(discovered[0].evidence.ccSessions, 1);
+  },
+);
 
-test("discovery survives a machine with no git, no database, and junk sessions", () => {
+NodeTest.test("discovery survives a machine with no git, no database, and junk sessions", () => {
   const plain = tempDir("no-git-here");
   const brokenRunner = recordingRunner(() => ({
     ok: false,
@@ -760,23 +783,23 @@ test("discovery survives a machine with no git, no database, and junk sessions",
     scratchRoots: [],
   });
 
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     discovered.map((project) => project.key),
     [NodePath.basename(plain)],
   );
-  assert.deepEqual(discovered[0].roots, [plain]);
-  assert.equal(discovered[0].evidence.ccSessions, 2);
-  assert.equal(discovered[0].evidence.nameWithOwner, null);
-  assert.equal(discovered[0].evidence.t3Threads, 0);
+  NodeAssert.deepEqual(discovered[0].roots, [plain]);
+  NodeAssert.equal(discovered[0].evidence.ccSessions, 2);
+  NodeAssert.equal(discovered[0].evidence.nameWithOwner, null);
+  NodeAssert.equal(discovered[0].evidence.t3Threads, 0);
 });
 
-test("discovery tolerates being called with nothing at all", () => {
-  assert.deepEqual(discoverProjects(), []);
-  assert.deepEqual(discoverProjects({}), []);
-  assert.deepEqual(discoverProjects({ t3Handles: "nope", ccSessions: "nope" }), []);
+NodeTest.test("discovery tolerates being called with nothing at all", () => {
+  NodeAssert.deepEqual(discoverProjects(), []);
+  NodeAssert.deepEqual(discoverProjects({}), []);
+  NodeAssert.deepEqual(discoverProjects({ t3Handles: "nope", ccSessions: "nope" }), []);
 });
 
-test("a T3code project with no workspace root still gets an entry of its own", () => {
+NodeTest.test("a T3code project with no workspace root still gets an entry of its own", () => {
   const discovered = discoverProjects({
     t3Handles: t3Handles({
       projects: [
@@ -792,14 +815,14 @@ test("a T3code project with no workspace root still gets an entry of its own", (
     run: repoRunner({}),
   });
 
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     discovered.map((project) => project.key),
     ["rootless", "rootless-2"],
   );
-  assert.deepEqual(discovered[0].roots, []);
+  NodeAssert.deepEqual(discovered[0].roots, []);
 });
 
-test("discovery resolves each directory once no matter how many sessions share it", () => {
+NodeTest.test("discovery resolves each directory once no matter how many sessions share it", () => {
   const dir = tempDir("busy-project");
   const runner = repoRunner({ [dir]: { toplevel: dir, commonDir: NodePath.join(dir, ".git") } });
 
@@ -811,7 +834,7 @@ test("discovery resolves each directory once no matter how many sessions share i
   });
 
   const toplevelCalls = runner.calls.filter((call) => call.args[1] === "--show-toplevel");
-  assert.equal(toplevelCalls.length, 1, "canonicalRepo is memoised per directory");
+  NodeAssert.equal(toplevelCalls.length, 1, "canonicalRepo is memoised per directory");
 });
 
 // --- scratch, home and the filesystem root (DEFAULT scratchRoots) --------------------------------
@@ -820,7 +843,7 @@ test("discovery resolves each directory once no matter how many sessions share i
 // every `matchProjectByRoot` containment test, so it silently claims other projects' sessions — and
 // because an unconfirmed project still counts toward the totals, the misattribution is invisible.
 
-test(
+NodeTest.test(
   "scratch space, the home directory and the filesystem root are never projects",
   {
     skip:
@@ -849,20 +872,20 @@ test(
 
     // Three of the four sessions propose nothing; the fourth is an ordinary project and still does,
     // so the rule is a filter and not a blanket off switch.
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       discovered.map((project) => project.key),
       ["acme-api"],
     );
-    assert.deepEqual(discovered[0].roots, [real]);
-    assert.equal(discovered[0].evidence.ccSessions, 1);
-    assert.equal(discovered[0].evidence.t3Threads, 0);
+    NodeAssert.deepEqual(discovered[0].roots, [real]);
+    NodeAssert.equal(discovered[0].evidence.ccSessions, 1);
+    NodeAssert.equal(discovered[0].evidence.t3Threads, 0);
 
     // A rejected directory is rejected before anything is spawned against it.
-    assert.deepEqual([...new Set(runner.calls.map((call) => call.cwd))], [real]);
+    NodeAssert.deepEqual([...new Set(runner.calls.map((call) => call.cwd))], [real]);
   },
 );
 
-test("the home directory is rejected for being home, not for being scratch", () => {
+NodeTest.test("the home directory is rejected for being home, not for being scratch", () => {
   const fakeHome = tempDir("home-rejected");
   const inside = NodePath.join(fakeHome, "Developer", "acme-api");
   NodeFS.mkdirSync(inside, { recursive: true });
@@ -884,17 +907,17 @@ test("the home directory is rejected for being home, not for being scratch", () 
 
   // `inside` is what proves the rule is the home directory itself rather than containment:
   // ~/Developer/acme-api is where projects actually live.
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     discovered.map((project) => project.key),
     ["acme-api"],
   );
-  assert.deepEqual(discovered[0].roots, [inside]);
-  assert.equal(discovered[0].evidence.ccSessions, 1);
+  NodeAssert.deepEqual(discovered[0].roots, [inside]);
+  NodeAssert.equal(discovered[0].evidence.ccSessions, 1);
 });
 
 // --- nested repositories -------------------------------------------------------------------------
 
-test(
+NodeTest.test(
   "a repo nested inside another repo's tree is its own project, while a linked worktree is not",
   { skip: !GIT_AVAILABLE },
   () => {
@@ -923,23 +946,27 @@ test(
     });
 
     const found = byKey(discovered);
-    assert.deepEqual([...found.keys()], ["mission-control", "inbox-lens"], "two repos, two keys");
+    NodeAssert.deepEqual(
+      [...found.keys()],
+      ["mission-control", "inbox-lens"],
+      "two repos, two keys",
+    );
     const host = found.get("mission-control");
     const guest = found.get("inbox-lens");
 
     // Neither entry may hold the other's root: that is what folded inbox-lens' work into its host.
-    assert.deepEqual(guest.roots, [nested]);
-    assert.ok(!host.roots.includes(nested), `mission-control must not claim ${nested}`);
-    assert.ok(!guest.roots.includes(parent), `inbox-lens must not claim ${parent}`);
-    assert.equal(guest.displayName, "Inbox Lens");
-    assert.equal(guest.evidence.t3Threads, 1);
-    assert.equal(guest.evidence.ccSessions, 1, "a session under the nested repo belongs to it");
-    assert.equal(host.evidence.t3Threads, 1);
-    assert.equal(host.evidence.ccSessions, 1, "and the worktree session belongs to the host");
+    NodeAssert.deepEqual(guest.roots, [nested]);
+    NodeAssert.ok(!host.roots.includes(nested), `mission-control must not claim ${nested}`);
+    NodeAssert.ok(!guest.roots.includes(parent), `inbox-lens must not claim ${parent}`);
+    NodeAssert.equal(guest.displayName, "Inbox Lens");
+    NodeAssert.equal(guest.evidence.t3Threads, 1);
+    NodeAssert.equal(guest.evidence.ccSessions, 1, "a session under the nested repo belongs to it");
+    NodeAssert.equal(host.evidence.t3Threads, 1);
+    NodeAssert.equal(host.evidence.ccSessions, 1, "and the worktree session belongs to the host");
 
     // The complementary case: a linked worktree shares an object store, which proves it is the same
     // project, so it folds in as a second root instead of becoming a third entry.
-    assert.deepEqual(host.roots, [parent, worktree]);
+    NodeAssert.deepEqual(host.roots, [parent, worktree]);
   },
 );
 
@@ -954,7 +981,7 @@ async function runInit(root, extra = {}) {
   return init({ root, deps: { run: realGitRunner(), ccSessions: [], scratchRoots: [], ...extra } });
 }
 
-test("init scaffolds, proposes every discovered project, and confirms none", async () => {
+NodeTest.test("init scaffolds, proposes every discovered project, and confirms none", async () => {
   const root = NodePath.join(tempDir("init"), "worklog");
   const alpha = tempDir("alpha");
   const beta = tempDir("beta");
@@ -970,27 +997,27 @@ test("init scaffolds, proposes every discovered project, and confirms none", asy
     ccSessions: [session(beta)],
   });
 
-  assert.equal(result.root, root);
-  assert.equal(result.registryPath, worklogPaths(root).projectsYaml);
-  assert.deepEqual(result.added.sort(), ["alpha", "beta"]);
-  assert.deepEqual(result.unchanged, []);
-  assert.deepEqual(result.warnings, []);
-  assert.equal(result.discovered.length, 2);
+  NodeAssert.equal(result.root, root);
+  NodeAssert.equal(result.registryPath, worklogPaths(root).projectsYaml);
+  NodeAssert.deepEqual(result.added.sort(), ["alpha", "beta"]);
+  NodeAssert.deepEqual(result.unchanged, []);
+  NodeAssert.deepEqual(result.warnings, []);
+  NodeAssert.equal(result.discovered.length, 2);
 
   const { registry } = loadRegistry(worklogPaths(root));
   for (const key of ["alpha", "beta"]) {
     const entry = registry.projects[key];
-    assert.equal(entry.include, true);
-    assert.equal(entry.visibility, "generic");
-    assert.equal(entry.confirmed, false);
+    NodeAssert.equal(entry.include, true);
+    NodeAssert.equal(entry.visibility, "generic");
+    NodeAssert.equal(entry.confirmed, false);
     // Fails closed all the way to the classifier: unconfirmed means not describable.
-    assert.equal(classify(registry, key).effective, "unconfirmed");
+    NodeAssert.equal(classify(registry, key).effective, "unconfirmed");
   }
-  assert.equal(registry.projects.alpha.displayName, "Alpha");
-  assert.deepEqual(registry.projects.beta.roots, [beta]);
+  NodeAssert.equal(registry.projects.alpha.displayName, "Alpha");
+  NodeAssert.deepEqual(registry.projects.beta.roots, [beta]);
 });
 
-test("re-running init adds nothing and preserves a human's edits", async () => {
+NodeTest.test("re-running init adds nothing and preserves a human's edits", async () => {
   const root = NodePath.join(tempDir("init-idem"), "worklog");
   const alpha = tempDir("alpha");
   const deps = {
@@ -1010,97 +1037,112 @@ test("re-running init adds nothing and preserves a human's edits", async () => {
     .replace("\n    confirmed: false", "\n    confirmed: true")
     .replace("\n    display_name: Alpha", "\n    display_name: Alpha (my fork)");
   NodeFS.writeFileSync(paths.projectsYaml, edited, "utf8");
-  assert.match(
+  NodeAssert.match(
     edited,
     /\n {4}visibility: public\n/u,
     "the fixture edit must actually have applied",
   );
 
   const second = await runInit(root, deps);
-  assert.deepEqual(second.added, []);
-  assert.deepEqual(second.updated, []);
-  assert.deepEqual(second.unchanged, ["alpha"]);
-  assert.deepEqual(second.created, [], "the tree already exists");
+  NodeAssert.deepEqual(second.added, []);
+  NodeAssert.deepEqual(second.updated, []);
+  NodeAssert.deepEqual(second.unchanged, ["alpha"]);
+  NodeAssert.deepEqual(second.created, [], "the tree already exists");
 
-  assert.equal(
+  NodeAssert.equal(
     NodeFS.readFileSync(paths.projectsYaml, "utf8"),
     edited,
     "an unchanged registry is not rewritten, so hand-written comments survive",
   );
   const { registry } = loadRegistry(paths);
-  assert.equal(registry.projects.alpha.visibility, "public");
-  assert.equal(registry.projects.alpha.confirmed, true);
-  assert.equal(registry.projects.alpha.displayName, "Alpha (my fork)");
-  assert.equal(classify(registry, "alpha").effective, "public");
+  NodeAssert.equal(registry.projects.alpha.visibility, "public");
+  NodeAssert.equal(registry.projects.alpha.confirmed, true);
+  NodeAssert.equal(registry.projects.alpha.displayName, "Alpha (my fork)");
+  NodeAssert.equal(classify(registry, "alpha").effective, "public");
 });
 
-test("init adds a newly discovered root to an existing entry without touching its visibility", async () => {
-  const root = NodePath.join(tempDir("init-grow"), "worklog");
-  const alpha = tempDir("alpha");
-  const alphaTwo = tempDir("alpha-second-checkout");
+NodeTest.test(
+  "init adds a newly discovered root to an existing entry without touching its visibility",
+  async () => {
+    const root = NodePath.join(tempDir("init-grow"), "worklog");
+    const alpha = tempDir("alpha");
+    const alphaTwo = tempDir("alpha-second-checkout");
 
-  await runInit(root, {
-    t3Handles: t3Handles({ projects: [{ projectId: "p1", title: "Alpha", workspaceRoot: alpha }] }),
-  });
-  const paths = worklogPaths(root);
-  const promoted = NodeFS.readFileSync(paths.projectsYaml, "utf8").replace(
-    "\n    confirmed: false",
-    "\n    confirmed: true",
-  );
-  NodeFS.writeFileSync(paths.projectsYaml, promoted, "utf8");
-  assert.match(promoted, /\n {4}confirmed: true\n/u, "the fixture edit must actually have applied");
+    await runInit(root, {
+      t3Handles: t3Handles({
+        projects: [{ projectId: "p1", title: "Alpha", workspaceRoot: alpha }],
+      }),
+    });
+    const paths = worklogPaths(root);
+    const promoted = NodeFS.readFileSync(paths.projectsYaml, "utf8").replace(
+      "\n    confirmed: false",
+      "\n    confirmed: true",
+    );
+    NodeFS.writeFileSync(paths.projectsYaml, promoted, "utf8");
+    NodeAssert.match(
+      promoted,
+      /\n {4}confirmed: true\n/u,
+      "the fixture edit must actually have applied",
+    );
 
-  const second = await runInit(root, {
-    t3Handles: t3Handles({
-      projects: [
-        { projectId: "p1", title: "Alpha", workspaceRoot: alpha },
-        { projectId: "p2", title: "Alpha", workspaceRoot: alphaTwo },
-      ],
-    }),
-    // Both checkouts share one object store, so they are one project with two roots.
-    run: (() => {
-      const commonDir = NodePath.join(alpha, ".git");
-      const runner = repoRunner({
-        [alpha]: { toplevel: alpha, commonDir },
-        [alphaTwo]: { toplevel: alphaTwo, commonDir },
-      });
-      return (cmd, args, options) => {
-        // Everything that is not one of the two fixture repos falls through to real git, so the
-        // worklog repo itself is still initialised for real.
-        const result = runner(cmd, args, options);
-        return result.ok ? result : realGitRunner()(cmd, args, options);
-      };
-    })(),
-  });
+    const second = await runInit(root, {
+      t3Handles: t3Handles({
+        projects: [
+          { projectId: "p1", title: "Alpha", workspaceRoot: alpha },
+          { projectId: "p2", title: "Alpha", workspaceRoot: alphaTwo },
+        ],
+      }),
+      // Both checkouts share one object store, so they are one project with two roots.
+      run: (() => {
+        const commonDir = NodePath.join(alpha, ".git");
+        const runner = repoRunner({
+          [alpha]: { toplevel: alpha, commonDir },
+          [alphaTwo]: { toplevel: alphaTwo, commonDir },
+        });
+        return (cmd, args, options) => {
+          // Everything that is not one of the two fixture repos falls through to real git, so the
+          // worklog repo itself is still initialised for real.
+          const result = runner(cmd, args, options);
+          return result.ok ? result : realGitRunner()(cmd, args, options);
+        };
+      })(),
+    });
 
-  assert.deepEqual(second.added, []);
-  assert.deepEqual(second.updated, ["alpha"]);
-  const { registry } = loadRegistry(paths);
-  assert.deepEqual(registry.projects.alpha.roots, [alpha, alphaTwo]);
-  assert.equal(registry.projects.alpha.confirmed, true, "the human's promotion survives");
-});
+    NodeAssert.deepEqual(second.added, []);
+    NodeAssert.deepEqual(second.updated, ["alpha"]);
+    const { registry } = loadRegistry(paths);
+    NodeAssert.deepEqual(registry.projects.alpha.roots, [alpha, alphaTwo]);
+    NodeAssert.equal(registry.projects.alpha.confirmed, true, "the human's promotion survives");
+  },
+);
 
-test("init degrades to warnings when the databases and transcripts are missing", async () => {
-  const root = NodePath.join(tempDir("init-empty"), "worklog");
-  const result = await init({
-    root,
-    deps: {
-      run: realGitRunner(),
-      t3BaseDirs: [NodePath.join(SANDBOX_HOME, "no-such-t3")],
-      claudeProjectsDir: NodePath.join(SANDBOX_HOME, "no-such-claude"),
-    },
-  });
+NodeTest.test(
+  "init degrades to warnings when the databases and transcripts are missing",
+  async () => {
+    const root = NodePath.join(tempDir("init-empty"), "worklog");
+    const result = await init({
+      root,
+      deps: {
+        run: realGitRunner(),
+        t3BaseDirs: [NodePath.join(SANDBOX_HOME, "no-such-t3")],
+        claudeProjectsDir: NodePath.join(SANDBOX_HOME, "no-such-claude"),
+      },
+    });
 
-  assert.deepEqual(result.discovered, []);
-  assert.deepEqual(result.added, []);
-  assert.ok(
-    result.warnings.some((warning) => /Claude Code projects directory not found/u.test(warning)),
-    `expected a missing-transcripts warning, got ${JSON.stringify(result.warnings)}`,
-  );
-  assert.ok(NodeFS.statSync(worklogPaths(root).projectsYaml).isFile(), "the repo is still usable");
-});
+    NodeAssert.deepEqual(result.discovered, []);
+    NodeAssert.deepEqual(result.added, []);
+    NodeAssert.ok(
+      result.warnings.some((warning) => /Claude Code projects directory not found/u.test(warning)),
+      `expected a missing-transcripts warning, got ${JSON.stringify(result.warnings)}`,
+    );
+    NodeAssert.ok(
+      NodeFS.statSync(worklogPaths(root).projectsYaml).isFile(),
+      "the repo is still usable",
+    );
+  },
+);
 
-test("init survives a transcript scanner that rejects", async () => {
+NodeTest.test("init survives a transcript scanner that rejects", async () => {
   const root = NodePath.join(tempDir("init-scan-fail"), "worklog");
   const result = await init({
     root,
@@ -1113,11 +1155,11 @@ test("init survives a transcript scanner that rejects", async () => {
     },
   });
 
-  assert.deepEqual(result.discovered, []);
-  assert.ok(result.warnings.some((warning) => /disk on fire/u.test(warning)));
+  NodeAssert.deepEqual(result.discovered, []);
+  NodeAssert.ok(result.warnings.some((warning) => /disk on fire/u.test(warning)));
 });
 
-test(
+NodeTest.test(
   "init gives a nested repo its own entry instead of adopting its parent's key",
   { skip: !GIT_AVAILABLE },
   async () => {
@@ -1131,7 +1173,7 @@ test(
         threads: [{ threadId: "t1", projectId: "p1" }],
       }),
     });
-    assert.deepEqual(first.added, ["mission-control"]);
+    NodeAssert.deepEqual(first.added, ["mission-control"]);
 
     // The nested repo now shows up, with the registry already holding a root that CONTAINS it.
     const second = await runInit(root, {
@@ -1147,25 +1189,25 @@ test(
       }),
     });
 
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       second.added,
       ["inbox-lens"],
       "the nested repo is a new project, not its parent",
     );
-    assert.deepEqual(second.updated, []);
-    assert.deepEqual(second.unchanged, ["mission-control"]);
+    NodeAssert.deepEqual(second.updated, []);
+    NodeAssert.deepEqual(second.unchanged, ["mission-control"]);
 
     const { registry } = loadRegistry(worklogPaths(root));
-    assert.deepEqual(Object.keys(registry.projects).sort(), ["inbox-lens", "mission-control"]);
+    NodeAssert.deepEqual(Object.keys(registry.projects).sort(), ["inbox-lens", "mission-control"]);
     // The host must not have absorbed the guest's root, or the guest's work is credited to it.
-    assert.deepEqual(registry.projects["mission-control"].roots, [parent]);
-    assert.deepEqual(registry.projects["inbox-lens"].roots, [nested]);
-    assert.equal(registry.projects["inbox-lens"].displayName, "Inbox Lens");
-    assert.equal(registry.projects["inbox-lens"].confirmed, false);
+    NodeAssert.deepEqual(registry.projects["mission-control"].roots, [parent]);
+    NodeAssert.deepEqual(registry.projects["inbox-lens"].roots, [nested]);
+    NodeAssert.equal(registry.projects["inbox-lens"].displayName, "Inbox Lens");
+    NodeAssert.equal(registry.projects["inbox-lens"].confirmed, false);
   },
 );
 
-test("init writes nothing outside the root it was given", async () => {
+NodeTest.test("init writes nothing outside the root it was given", async () => {
   const parent = tempDir("init-contained");
   const root = NodePath.join(parent, "worklog");
   const alpha = tempDir("alpha");
@@ -1177,7 +1219,7 @@ test("init writes nothing outside the root it was given", async () => {
     ccSessions: [session(alpha)],
   });
 
-  assert.deepEqual(treeOf(SANDBOX_HOME), homeBefore, "HOME must be untouched");
-  assert.deepEqual(treeOf(alpha), alphaBefore, "a discovered project is only ever read");
-  assert.deepEqual(NodeFS.readdirSync(parent), ["worklog"]);
+  NodeAssert.deepEqual(treeOf(SANDBOX_HOME), homeBefore, "HOME must be untouched");
+  NodeAssert.deepEqual(treeOf(alpha), alphaBefore, "a discovered project is only ever read");
+  NodeAssert.deepEqual(NodeFS.readdirSync(parent), ["worklog"]);
 });

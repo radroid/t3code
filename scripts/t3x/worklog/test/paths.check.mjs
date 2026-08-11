@@ -1,11 +1,11 @@
 // Tests for lib/paths.mjs. Everything runs against a throwaway HOME under os.tmpdir(); the
 // user's real ~/.t3 and ~/.claude are never touched.
 
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import test, { after, before, beforeEach } from "node:test";
+import * as NodeTest from "node:test";
 
 import {
   claudeProjectsDir,
@@ -29,14 +29,14 @@ let sandbox = "";
 let fakeHome = "";
 const savedEnv = new Map();
 
-before(() => {
+NodeTest.before(() => {
   for (const key of MANAGED_ENV) savedEnv.set(key, process.env[key]);
   sandbox = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "worklog-"));
   fakeHome = NodePath.join(sandbox, "home");
   NodeFS.mkdirSync(fakeHome, { recursive: true });
 });
 
-after(() => {
+NodeTest.after(() => {
   for (const [key, value] of savedEnv) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -44,7 +44,7 @@ after(() => {
   if (sandbox !== "") NodeFS.rmSync(sandbox, { recursive: true, force: true });
 });
 
-beforeEach(() => {
+NodeTest.beforeEach(() => {
   process.env.HOME = fakeHome;
   delete process.env.WORKLOG_T3_BASE_DIRS;
   delete process.env.WORKLOG_CLAUDE_PROJECTS;
@@ -58,96 +58,99 @@ function mkHomeDir(...segments) {
   return dir;
 }
 
-test("homeDir honours HOME and normalises it", () => {
-  assert.equal(homeDir(), fakeHome);
+NodeTest.test("homeDir honours HOME and normalises it", () => {
+  NodeAssert.equal(homeDir(), fakeHome);
 
   process.env.HOME = `${fakeHome}/nested/..`;
-  assert.equal(homeDir(), fakeHome);
+  NodeAssert.equal(homeDir(), fakeHome);
 
   process.env.HOME = `  ${fakeHome}  `;
-  assert.equal(homeDir(), fakeHome);
+  NodeAssert.equal(homeDir(), fakeHome);
 });
 
-test("homeDir falls back to the OS home when HOME is unset or blank", () => {
+NodeTest.test("homeDir falls back to the OS home when HOME is unset or blank", () => {
   delete process.env.HOME;
-  assert.equal(homeDir(), NodeOS.homedir());
-  assert.ok(NodePath.isAbsolute(homeDir()));
+  NodeAssert.equal(homeDir(), NodeOS.homedir());
+  NodeAssert.ok(NodePath.isAbsolute(homeDir()));
 
   process.env.HOME = "   ";
-  assert.equal(homeDir(), NodeOS.homedir());
+  NodeAssert.equal(homeDir(), NodeOS.homedir());
 });
 
-test("t3BaseDirs returns only the state directories that exist, userdata first", () => {
-  assert.deepEqual(t3BaseDirs(), []);
+NodeTest.test("t3BaseDirs returns only the state directories that exist, userdata first", () => {
+  NodeAssert.deepEqual(t3BaseDirs(), []);
 
   const dev = mkHomeDir(".t3", "dev");
-  assert.deepEqual(t3BaseDirs(), [dev]);
+  NodeAssert.deepEqual(t3BaseDirs(), [dev]);
 
   const userdata = mkHomeDir(".t3", "userdata");
-  assert.deepEqual(t3BaseDirs(), [userdata, dev]);
+  NodeAssert.deepEqual(t3BaseDirs(), [userdata, dev]);
 
   NodeFS.rmSync(dev, { recursive: true, force: true });
-  assert.deepEqual(t3BaseDirs(), [userdata]);
+  NodeAssert.deepEqual(t3BaseDirs(), [userdata]);
   NodeFS.rmSync(NodePath.join(fakeHome, ".t3"), { recursive: true, force: true });
 });
 
-test("t3BaseDirs ignores a path that exists but is not a directory", () => {
+NodeTest.test("t3BaseDirs ignores a path that exists but is not a directory", () => {
   mkHomeDir(".t3");
   NodeFS.writeFileSync(NodePath.join(fakeHome, ".t3", "userdata"), "not a directory");
-  assert.deepEqual(t3BaseDirs(), []);
+  NodeAssert.deepEqual(t3BaseDirs(), []);
   NodeFS.rmSync(NodePath.join(fakeHome, ".t3"), { recursive: true, force: true });
 });
 
-test("WORKLOG_T3_BASE_DIRS overrides, splits on ':', expands ~, dedupes, drops missing", () => {
-  const first = mkHomeDir("state-a");
-  const second = mkHomeDir("state-b");
-  const missing = NodePath.join(sandbox, "gone");
+NodeTest.test(
+  "WORKLOG_T3_BASE_DIRS overrides, splits on ':', expands ~, dedupes, drops missing",
+  () => {
+    const first = mkHomeDir("state-a");
+    const second = mkHomeDir("state-b");
+    const missing = NodePath.join(sandbox, "gone");
 
-  process.env.WORKLOG_T3_BASE_DIRS = ["~/state-b", first, missing, second, "~/state-a"].join(":");
-  assert.deepEqual(t3BaseDirs(), [second, first]);
+    process.env.WORKLOG_T3_BASE_DIRS = ["~/state-b", first, missing, second, "~/state-a"].join(":");
+    NodeAssert.deepEqual(t3BaseDirs(), [second, first]);
 
-  // A blank override is not an empty allow-list: it falls back to the default locations.
-  const userdata = mkHomeDir(".t3", "userdata");
-  process.env.WORKLOG_T3_BASE_DIRS = "  ";
-  assert.deepEqual(t3BaseDirs(), [userdata]);
+    // A blank override is not an empty allow-list: it falls back to the default locations.
+    const userdata = mkHomeDir(".t3", "userdata");
+    process.env.WORKLOG_T3_BASE_DIRS = "  ";
+    NodeAssert.deepEqual(t3BaseDirs(), [userdata]);
 
-  NodeFS.rmSync(first, { recursive: true, force: true });
-  NodeFS.rmSync(second, { recursive: true, force: true });
-  NodeFS.rmSync(NodePath.join(fakeHome, ".t3"), { recursive: true, force: true });
-});
+    NodeFS.rmSync(first, { recursive: true, force: true });
+    NodeFS.rmSync(second, { recursive: true, force: true });
+    NodeFS.rmSync(NodePath.join(fakeHome, ".t3"), { recursive: true, force: true });
+  },
+);
 
-test("t3StateDbPath names the sqlite file inside a base dir", () => {
-  assert.equal(t3StateDbPath("/tmp/base"), NodePath.join("/tmp/base", "state.sqlite"));
-  assert.equal(
+NodeTest.test("t3StateDbPath names the sqlite file inside a base dir", () => {
+  NodeAssert.equal(t3StateDbPath("/tmp/base"), NodePath.join("/tmp/base", "state.sqlite"));
+  NodeAssert.equal(
     t3StateDbPath("~/.t3/userdata"),
     NodePath.join(fakeHome, ".t3/userdata/state.sqlite"),
   );
 });
 
-test("t3WorktreesRoot follows HOME", () => {
-  assert.equal(t3WorktreesRoot(), NodePath.join(fakeHome, ".t3", "worktrees"));
+NodeTest.test("t3WorktreesRoot follows HOME", () => {
+  NodeAssert.equal(t3WorktreesRoot(), NodePath.join(fakeHome, ".t3", "worktrees"));
 });
 
-test("claudeProjectsDir defaults under HOME and honours its override", () => {
-  assert.equal(claudeProjectsDir(), NodePath.join(fakeHome, ".claude", "projects"));
+NodeTest.test("claudeProjectsDir defaults under HOME and honours its override", () => {
+  NodeAssert.equal(claudeProjectsDir(), NodePath.join(fakeHome, ".claude", "projects"));
 
   process.env.WORKLOG_CLAUDE_PROJECTS = "~/elsewhere/projects";
-  assert.equal(claudeProjectsDir(), NodePath.join(fakeHome, "elsewhere", "projects"));
+  NodeAssert.equal(claudeProjectsDir(), NodePath.join(fakeHome, "elsewhere", "projects"));
 
   process.env.WORKLOG_CLAUDE_PROJECTS = "";
-  assert.equal(claudeProjectsDir(), NodePath.join(fakeHome, ".claude", "projects"));
+  NodeAssert.equal(claudeProjectsDir(), NodePath.join(fakeHome, ".claude", "projects"));
 });
 
-test("defaultWorklogRoot defaults to ~/Developer/worklog and honours WORKLOG_ROOT", () => {
-  assert.equal(defaultWorklogRoot(), NodePath.join(fakeHome, "Developer", "worklog"));
+NodeTest.test("defaultWorklogRoot defaults to ~/Developer/worklog and honours WORKLOG_ROOT", () => {
+  NodeAssert.equal(defaultWorklogRoot(), NodePath.join(fakeHome, "Developer", "worklog"));
 
   process.env.WORKLOG_ROOT = "~/logs";
-  assert.equal(defaultWorklogRoot(), NodePath.join(fakeHome, "logs"));
+  NodeAssert.equal(defaultWorklogRoot(), NodePath.join(fakeHome, "logs"));
 });
 
-test("worklogPaths lays out the repo exactly as the design specifies", () => {
+NodeTest.test("worklogPaths lays out the repo exactly as the design specifies", () => {
   const root = NodePath.join(sandbox, "worklog-repo");
-  assert.deepEqual(worklogPaths(root), {
+  NodeAssert.deepEqual(worklogPaths(root), {
     root,
     config: `${root}/config`,
     projectsYaml: `${root}/config/projects.yaml`,
@@ -161,113 +164,116 @@ test("worklogPaths lays out the repo exactly as the design specifies", () => {
   });
 
   for (const value of Object.values(worklogPaths(root))) {
-    assert.ok(NodePath.isAbsolute(value), `${value} should be absolute`);
+    NodeAssert.ok(NodePath.isAbsolute(value), `${value} should be absolute`);
   }
 });
 
-test("worklogPaths falls back to the default root and resolves relative or ~ roots", () => {
-  process.env.WORKLOG_ROOT = NodePath.join(sandbox, "configured");
-  assert.equal(worklogPaths().root, NodePath.join(sandbox, "configured"));
-  assert.equal(worklogPaths("").root, NodePath.join(sandbox, "configured"));
+NodeTest.test(
+  "worklogPaths falls back to the default root and resolves relative or ~ roots",
+  () => {
+    process.env.WORKLOG_ROOT = NodePath.join(sandbox, "configured");
+    NodeAssert.equal(worklogPaths().root, NodePath.join(sandbox, "configured"));
+    NodeAssert.equal(worklogPaths("").root, NodePath.join(sandbox, "configured"));
 
-  assert.equal(worklogPaths("~/logs").root, NodePath.join(fakeHome, "logs"));
-  assert.equal(worklogPaths("./relative/root").root, NodePath.resolve("relative/root"));
+    NodeAssert.equal(worklogPaths("~/logs").root, NodePath.join(fakeHome, "logs"));
+    NodeAssert.equal(worklogPaths("./relative/root").root, NodePath.resolve("relative/root"));
+  },
+);
+
+NodeTest.test("expandHome expands a bare ~, resolves, and refuses to guess ~user", () => {
+  NodeAssert.equal(expandHome("~"), fakeHome);
+  NodeAssert.equal(expandHome("~/a/b"), NodePath.join(fakeHome, "a", "b"));
+  NodeAssert.equal(expandHome("/a/b/../c"), "/a/c");
+  NodeAssert.equal(expandHome("  /a/b  "), "/a/b");
+  NodeAssert.equal(expandHome("~someone/x"), NodePath.resolve("~someone/x"));
+  NodeAssert.equal(expandHome(""), "");
+  NodeAssert.equal(expandHome("   "), "");
+  NodeAssert.equal(expandHome(null), "");
+  NodeAssert.equal(expandHome(undefined), "");
+  NodeAssert.equal(expandHome(42), "");
 });
 
-test("expandHome expands a bare ~, resolves, and refuses to guess ~user", () => {
-  assert.equal(expandHome("~"), fakeHome);
-  assert.equal(expandHome("~/a/b"), NodePath.join(fakeHome, "a", "b"));
-  assert.equal(expandHome("/a/b/../c"), "/a/c");
-  assert.equal(expandHome("  /a/b  "), "/a/b");
-  assert.equal(expandHome("~someone/x"), NodePath.resolve("~someone/x"));
-  assert.equal(expandHome(""), "");
-  assert.equal(expandHome("   "), "");
-  assert.equal(expandHome(null), "");
-  assert.equal(expandHome(undefined), "");
-  assert.equal(expandHome(42), "");
-});
-
-test("tildify hides the home prefix without matching a sibling directory", () => {
-  assert.equal(tildify(fakeHome), "~");
-  assert.equal(tildify(`${fakeHome}/`), "~");
-  assert.equal(tildify(NodePath.join(fakeHome, "Developer", "t3code")), "~/Developer/t3code");
-  assert.equal(tildify("~/Developer"), "~/Developer");
+NodeTest.test("tildify hides the home prefix without matching a sibling directory", () => {
+  NodeAssert.equal(tildify(fakeHome), "~");
+  NodeAssert.equal(tildify(`${fakeHome}/`), "~");
+  NodeAssert.equal(tildify(NodePath.join(fakeHome, "Developer", "t3code")), "~/Developer/t3code");
+  NodeAssert.equal(tildify("~/Developer"), "~/Developer");
 
   // The prefix trap: "<home>2" merely starts with the home string.
-  assert.equal(tildify(`${fakeHome}2/notes`), `${fakeHome}2/notes`);
+  NodeAssert.equal(tildify(`${fakeHome}2/notes`), `${fakeHome}2/notes`);
 
-  assert.equal(tildify("/opt/tools"), "/opt/tools");
-  assert.equal(tildify("relative/path"), "relative/path");
-  assert.equal(tildify(""), "");
-  assert.equal(tildify(null), "");
+  NodeAssert.equal(tildify("/opt/tools"), "/opt/tools");
+  NodeAssert.equal(tildify("relative/path"), "relative/path");
+  NodeAssert.equal(tildify(""), "");
+  NodeAssert.equal(tildify(null), "");
 });
 
-test("safeKey folds to a filesystem-safe token", () => {
-  assert.equal(safeKey("Hello, World!"), "hello-world");
-  assert.equal(safeKey("T3 Code (fork)"), "t3-code-fork");
-  assert.equal(safeKey("v1.2.3_final"), "v1.2.3_final");
+NodeTest.test("safeKey folds to a filesystem-safe token", () => {
+  NodeAssert.equal(safeKey("Hello, World!"), "hello-world");
+  NodeAssert.equal(safeKey("T3 Code (fork)"), "t3-code-fork");
+  NodeAssert.equal(safeKey("v1.2.3_final"), "v1.2.3_final");
   // The accent must fold to its base letter, not to a separator: "resume", never "re-sume".
-  assert.equal(safeKey("Résumé"), "resume");
-  assert.equal(safeKey("Café Ideas"), "cafe-ideas");
-  assert.equal(safeKey("Zürich Möbel"), "zurich-mobel");
-  assert.equal(safeKey("--already--collapsed--"), "already-collapsed");
-  assert.equal(safeKey("/Users/x/Developer/t3code"), "users-x-developer-t3code");
-  assert.equal(safeKey(42), "42");
+  NodeAssert.equal(safeKey("Résumé"), "resume");
+  NodeAssert.equal(safeKey("Café Ideas"), "cafe-ideas");
+  NodeAssert.equal(safeKey("Zürich Möbel"), "zurich-mobel");
+  NodeAssert.equal(safeKey("--already--collapsed--"), "already-collapsed");
+  NodeAssert.equal(safeKey("/Users/x/Developer/t3code"), "users-x-developer-t3code");
+  NodeAssert.equal(safeKey(42), "42");
 });
 
-test("safeKey never returns an empty or over-long key", () => {
-  assert.equal(safeKey(""), "unknown");
-  assert.equal(safeKey("   "), "unknown");
-  assert.equal(safeKey("!!! ???"), "unknown");
-  assert.equal(safeKey(null), "unknown");
-  assert.equal(safeKey(undefined), "unknown");
+NodeTest.test("safeKey never returns an empty or over-long key", () => {
+  NodeAssert.equal(safeKey(""), "unknown");
+  NodeAssert.equal(safeKey("   "), "unknown");
+  NodeAssert.equal(safeKey("!!! ???"), "unknown");
+  NodeAssert.equal(safeKey(null), "unknown");
+  NodeAssert.equal(safeKey(undefined), "unknown");
 
-  assert.equal(safeKey("a".repeat(200)), "a".repeat(80));
+  NodeAssert.equal(safeKey("a".repeat(200)), "a".repeat(80));
   // The 80-char cut lands on the separator, which must not survive as a trailing dash.
-  assert.equal(safeKey(`${"a".repeat(79)} !! b`), "a".repeat(79));
+  NodeAssert.equal(safeKey(`${"a".repeat(79)} !! b`), "a".repeat(79));
 });
 
-test("slugify treats dots as separators too", () => {
-  assert.equal(slugify("v1.2.3_final"), "v1-2-3_final");
-  assert.equal(slugify("node.js Playground"), "node-js-playground");
-  assert.equal(slugify("t3code"), "t3code");
-  assert.equal(slugify("..."), "unknown");
-  assert.equal(slugify("T3 Code (fork)"), safeKey("T3 Code (fork)"));
+NodeTest.test("slugify treats dots as separators too", () => {
+  NodeAssert.equal(slugify("v1.2.3_final"), "v1-2-3_final");
+  NodeAssert.equal(slugify("node.js Playground"), "node-js-playground");
+  NodeAssert.equal(slugify("t3code"), "t3code");
+  NodeAssert.equal(slugify("..."), "unknown");
+  NodeAssert.equal(slugify("T3 Code (fork)"), safeKey("T3 Code (fork)"));
 });
 
-test("isUnder does segment containment, not string prefixing", () => {
-  assert.equal(isUnder("/a/b/c", "/a/b"), true);
-  assert.equal(isUnder("/a/b/c/d/e", "/a/b"), true);
-  assert.equal(isUnder("/a/bc", "/a/b"), false);
-  assert.equal(isUnder("/a/b-extra/x", "/a/b"), false);
-  assert.equal(isUnder("/a/b", "/a/b"), true, "a path is under itself");
-  assert.equal(isUnder("/a", "/a/b"), false);
-  assert.equal(isUnder("/x/y", "/a/b"), false);
+NodeTest.test("isUnder does segment containment, not string prefixing", () => {
+  NodeAssert.equal(isUnder("/a/b/c", "/a/b"), true);
+  NodeAssert.equal(isUnder("/a/b/c/d/e", "/a/b"), true);
+  NodeAssert.equal(isUnder("/a/bc", "/a/b"), false);
+  NodeAssert.equal(isUnder("/a/b-extra/x", "/a/b"), false);
+  NodeAssert.equal(isUnder("/a/b", "/a/b"), true, "a path is under itself");
+  NodeAssert.equal(isUnder("/a", "/a/b"), false);
+  NodeAssert.equal(isUnder("/x/y", "/a/b"), false);
 });
 
-test("isUnder normalises both sides before comparing", () => {
-  assert.equal(isUnder("/a/b/", "/a"), true);
-  assert.equal(isUnder("/a/b/./c", "/a//b"), true);
-  assert.equal(isUnder("/a/b/../c", "/a/b"), false);
-  assert.equal(isUnder("~/.t3/worktrees/t3code-1", "~/.t3/worktrees"), true);
-  assert.equal(isUnder(NodePath.join(fakeHome, ".t3/worktrees/x"), t3WorktreesRoot()), true);
+NodeTest.test("isUnder normalises both sides before comparing", () => {
+  NodeAssert.equal(isUnder("/a/b/", "/a"), true);
+  NodeAssert.equal(isUnder("/a/b/./c", "/a//b"), true);
+  NodeAssert.equal(isUnder("/a/b/../c", "/a/b"), false);
+  NodeAssert.equal(isUnder("~/.t3/worktrees/t3code-1", "~/.t3/worktrees"), true);
+  NodeAssert.equal(isUnder(NodePath.join(fakeHome, ".t3/worktrees/x"), t3WorktreesRoot()), true);
 
   // "..foo" is a real directory name, not an escape.
-  assert.equal(isUnder("/a/..foo", "/a"), true);
+  NodeAssert.equal(isUnder("/a/..foo", "/a"), true);
 
-  assert.equal(isUnder("", "/a"), false);
-  assert.equal(isUnder("/a", ""), false);
-  assert.equal(isUnder(null, "/a"), false);
+  NodeAssert.equal(isUnder("", "/a"), false);
+  NodeAssert.equal(isUnder("/a", ""), false);
+  NodeAssert.equal(isUnder(null, "/a"), false);
 });
 
-test("repoRelative falls back to the basename outside the root", () => {
-  assert.equal(repoRelative("/repo", "/repo/src/index.ts"), "src/index.ts");
-  assert.equal(repoRelative("/repo/", "/repo/a/b.txt"), "a/b.txt");
-  assert.equal(repoRelative("/repo", "/other/place/file.ts"), "file.ts");
-  assert.equal(repoRelative("/repo", "/repo"), "repo", "the root itself reads as its own name");
-  assert.equal(repoRelative("/repo", "/repo-sibling/x.ts"), "x.ts");
-  assert.equal(repoRelative("~/code", "~/code/lib/a.mjs"), "lib/a.mjs");
-  assert.equal(repoRelative("", "/repo/src/index.ts"), "index.ts");
-  assert.equal(repoRelative("/repo", ""), "");
-  assert.equal(repoRelative("/repo", null), "");
+NodeTest.test("repoRelative falls back to the basename outside the root", () => {
+  NodeAssert.equal(repoRelative("/repo", "/repo/src/index.ts"), "src/index.ts");
+  NodeAssert.equal(repoRelative("/repo/", "/repo/a/b.txt"), "a/b.txt");
+  NodeAssert.equal(repoRelative("/repo", "/other/place/file.ts"), "file.ts");
+  NodeAssert.equal(repoRelative("/repo", "/repo"), "repo", "the root itself reads as its own name");
+  NodeAssert.equal(repoRelative("/repo", "/repo-sibling/x.ts"), "x.ts");
+  NodeAssert.equal(repoRelative("~/code", "~/code/lib/a.mjs"), "lib/a.mjs");
+  NodeAssert.equal(repoRelative("", "/repo/src/index.ts"), "index.ts");
+  NodeAssert.equal(repoRelative("/repo", ""), "");
+  NodeAssert.equal(repoRelative("/repo", null), "");
 });

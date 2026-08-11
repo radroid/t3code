@@ -8,11 +8,11 @@
 // The registry and the dedup ladder are deliberately NOT faked — a real config/projects.yaml and
 // the real `linkSessions` are what make these assertions mean anything.
 
-import assert from "node:assert/strict";
+import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import test from "node:test";
+import * as NodeTest from "node:test";
 
 import { collect } from "../lib/bundle.mjs";
 import { renderStatLine, renderSummary } from "../lib/summary.mjs";
@@ -376,10 +376,10 @@ async function collectFixture(t, options = {}) {
 
 // --- shape --------------------------------------------------------------------------------------
 
-test("the bundle carries every field §7 promises", async (t) => {
+NodeTest.test("the bundle carries every field §7 promises", async (t) => {
   const { bundle } = await collectFixture(t);
 
-  assert.deepEqual(Object.keys(bundle).sort(), [
+  NodeAssert.deepEqual(Object.keys(bundle).sort(), [
     "byDay",
     "config",
     "generatedAt",
@@ -392,30 +392,30 @@ test("the bundle carries every field §7 promises", async (t) => {
     "unclassified",
     "warnings",
   ]);
-  assert.equal(bundle.schemaVersion, 1);
-  assert.equal(bundle.generatedAt, new Date(NOW).toISOString());
-  assert.deepEqual(bundle.range.days, [DAY_A]);
-  assert.equal(bundle.range.from, DAY_A);
-  assert.equal(bundle.range.to, DAY_A);
-  assert.equal(typeof bundle.range.timezone, "string");
-  assert.equal(bundle.config.activeGapMinutes, 30);
-  assert.deepEqual(bundle.config.t3BaseDirs, ["/fake/t3"]);
-  assert.equal(bundle.config.claudeProjectsDir, "/fake/claude/projects");
+  NodeAssert.equal(bundle.schemaVersion, 1);
+  NodeAssert.equal(bundle.generatedAt, new Date(NOW).toISOString());
+  NodeAssert.deepEqual(bundle.range.days, [DAY_A]);
+  NodeAssert.equal(bundle.range.from, DAY_A);
+  NodeAssert.equal(bundle.range.to, DAY_A);
+  NodeAssert.equal(typeof bundle.range.timezone, "string");
+  NodeAssert.equal(bundle.config.activeGapMinutes, 30);
+  NodeAssert.deepEqual(bundle.config.t3BaseDirs, ["/fake/t3"]);
+  NodeAssert.equal(bundle.config.claudeProjectsDir, "/fake/claude/projects");
 
   const project = bundle.projects.find((entry) => entry.key === "t3code");
-  assert.deepEqual(Object.keys(project).sort(), [
+  NodeAssert.deepEqual(Object.keys(project).sort(), [
     "classification",
     "displayName",
     "key",
     "roots",
     "stats",
   ]);
-  assert.equal(project.displayName, "T3 Code (fork)");
-  assert.equal(project.classification.effective, "public");
-  assert.equal(project.classification.confirmed, true);
+  NodeAssert.equal(project.displayName, "T3 Code (fork)");
+  NodeAssert.equal(project.classification.effective, "public");
+  NodeAssert.equal(project.classification.confirmed, true);
 
   const session = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     Object.keys(session).sort(),
     [
       "activeMs",
@@ -443,19 +443,19 @@ test("the bundle carries every field §7 promises", async (t) => {
       "endedAt",
     ].sort(),
   );
-  assert.equal(session.kind, "t3code");
-  assert.equal(session.projectKey, "t3code");
-  assert.equal(session.title, "Sync fork with upstream");
-  assert.equal(session.turnCount, 2);
-  assert.deepEqual(session.models, ["claude-opus-4-8"]);
-  assert.deepEqual(session.files, [
+  NodeAssert.equal(session.kind, "t3code");
+  NodeAssert.equal(session.projectKey, "t3code");
+  NodeAssert.equal(session.title, "Sync fork with upstream");
+  NodeAssert.equal(session.turnCount, 2);
+  NodeAssert.deepEqual(session.models, ["claude-opus-4-8"]);
+  NodeAssert.deepEqual(session.files, [
     { path: "apps/server/src/t3x/relay.ts", additions: 30, deletions: 4 },
   ]);
   // usage.total_tokens is cumulative per task, so two rows of one task are 2500, not 3500.
-  assert.equal(session.tokens, 2500);
-  assert.equal(session.extract, null);
+  NodeAssert.equal(session.tokens, 2500);
+  NodeAssert.equal(session.extract, null);
 
-  assert.deepEqual(Object.keys(bundle.stats).sort(), [
+  NodeAssert.deepEqual(Object.keys(bundle.stats).sort(), [
     "activeBlocks",
     "activeMs",
     "agentRuntimeMs",
@@ -471,98 +471,107 @@ test("the bundle carries every field §7 promises", async (t) => {
     "tokens",
     "turns",
   ]);
-  assert.equal(bundle.stats.sessions, 2);
-  assert.equal(bundle.stats.commits, 1);
-  assert.equal(bundle.stats.prsMerged, 1);
-  assert.equal(bundle.stats.linesAdded, 40);
-  assert.equal(bundle.stats.linesRemoved, 5);
-  assert.equal(bundle.stats.filesTouched, 1);
-  assert.equal(bundle.stats.projectsTouched, 2);
-  assert.ok(bundle.stats.activeBlocks.length >= 1);
+  NodeAssert.equal(bundle.stats.sessions, 2);
+  NodeAssert.equal(bundle.stats.commits, 1);
+  NodeAssert.equal(bundle.stats.prsMerged, 1);
+  NodeAssert.equal(bundle.stats.linesAdded, 40);
+  NodeAssert.equal(bundle.stats.linesRemoved, 5);
+  NodeAssert.equal(bundle.stats.filesTouched, 1);
+  NodeAssert.equal(bundle.stats.projectsTouched, 2);
+  NodeAssert.ok(bundle.stats.activeBlocks.length >= 1);
   for (const block of bundle.stats.activeBlocks) {
-    assert.deepEqual(Object.keys(block).sort(), ["end", "ms", "start"]);
+    NodeAssert.deepEqual(Object.keys(block).sort(), ["end", "ms", "start"]);
   }
 
   const repo = bundle.git.repos[0];
   const day = bundle.byDay[DAY_A];
-  assert.deepEqual(day.sessionKeys.sort(), ["cc-cc-session-1", "t3-thread-1"]);
-  assert.deepEqual(day.repoKeys, [repo.key]);
-  assert.equal(day.commits, 1);
+  NodeAssert.deepEqual(day.sessionKeys.sort(), ["cc-cc-session-1", "t3-thread-1"]);
+  NodeAssert.deepEqual(day.repoKeys, [repo.key]);
+  NodeAssert.equal(day.commits, 1);
 
-  assert.equal(repo.nameWithOwner, "radroid/t3code");
-  assert.equal(repo.projectKey, "t3code");
-  assert.equal(repo.commits.length, 1);
+  NodeAssert.equal(repo.nameWithOwner, "radroid/t3code");
+  NodeAssert.equal(repo.projectKey, "t3code");
+  NodeAssert.equal(repo.commits.length, 1);
 });
 
-test("a standalone Claude Code session carries the prompts that are its only prose", async (t) => {
-  const root = tempRoot(t);
-  const long = `Investigate the flaky auth test. ${"more detail ".repeat(400)}`;
-  const { bundle } = await collectFixture(t, {
-    root,
-    claudeCode: fakeClaudeCode([
-      ccSession({
-        sessionId: "prose",
-        cwd: `${root}/dev/client-x`,
-        firstPrompt: long,
-        lastPrompt: "Ship it",
-      }),
-    ]),
-  });
+NodeTest.test(
+  "a standalone Claude Code session carries the prompts that are its only prose",
+  async (t) => {
+    const root = tempRoot(t);
+    const long = `Investigate the flaky auth test. ${"more detail ".repeat(400)}`;
+    const { bundle } = await collectFixture(t, {
+      root,
+      claudeCode: fakeClaudeCode([
+        ccSession({
+          sessionId: "prose",
+          cwd: `${root}/dev/client-x`,
+          firstPrompt: long,
+          lastPrompt: "Ship it",
+        }),
+      ]),
+    });
 
-  // lib/extract.mjs's default slice loader builds a Claude Code slice out of exactly these two
-  // fields — there are no `summary` records in this user's history — so dropping them left every
-  // terminal-only day reaching the model with no prose at all.
-  const session = bundle.sessions.find((entry) => entry.key === "cc-prose");
-  assert.ok(session.firstPrompt.startsWith("Investigate the flaky auth test."));
-  assert.equal(session.lastPrompt, "Ship it");
-  // Carried whole, but never unbounded: the bundle is the model's budget.
-  assert.equal(session.firstPrompt.length, 2000);
-  assert.ok(session.firstPrompt.endsWith("…"));
+    // lib/extract.mjs's default slice loader builds a Claude Code slice out of exactly these two
+    // fields — there are no `summary` records in this user's history — so dropping them left every
+    // terminal-only day reaching the model with no prose at all.
+    const session = bundle.sessions.find((entry) => entry.key === "cc-prose");
+    NodeAssert.ok(session.firstPrompt.startsWith("Investigate the flaky auth test."));
+    NodeAssert.equal(session.lastPrompt, "Ship it");
+    // Carried whole, but never unbounded: the bundle is the model's budget.
+    NodeAssert.equal(session.firstPrompt.length, 2000);
+    NodeAssert.ok(session.firstPrompt.endsWith("…"));
 
-  // A T3code thread's prose lives in projection_thread_messages, which lib/extract.mjs reads from
-  // the database itself; the field is present and null rather than absent, so there is one shape.
-  const thread1 = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
-  assert.equal(thread1.firstPrompt, null);
-  assert.equal(thread1.lastPrompt, null);
-});
+    // A T3code thread's prose lives in projection_thread_messages, which lib/extract.mjs reads from
+    // the database itself; the field is present and null rather than absent, so there is one shape.
+    const thread1 = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
+    NodeAssert.equal(thread1.firstPrompt, null);
+    NodeAssert.equal(thread1.lastPrompt, null);
+  },
+);
 
-test("checkpoint file lists travel flagged, because a snapshot diff is not a census", async (t) => {
-  const { bundle } = await collectFixture(t);
+NodeTest.test(
+  "checkpoint file lists travel flagged, because a snapshot diff is not a census",
+  async (t) => {
+    const { bundle } = await collectFixture(t);
 
-  // Upstream derives a turn's files by diffing workspace snapshots (CheckpointReactor.ts), so a
-  // `git pull` or a rebase landing between turns is in there too. It cannot be corrected from the
-  // stored payload — only declared, so the summary and the docs stop reading it as a census.
-  const thread1 = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
-  assert.equal(thread1.filesApproximate, true);
-  assert.ok(thread1.files.length > 0);
-  const cc = bundle.sessions.find((entry) => entry.key === "cc-cc-session-1");
-  assert.equal(cc.filesApproximate, false);
-  assert.ok(bundle.stats.filesTouched > 0);
-  assert.equal(bundle.stats.filesTouchedApproximate, true);
+    // Upstream derives a turn's files by diffing workspace snapshots (CheckpointReactor.ts), so a
+    // `git pull` or a rebase landing between turns is in there too. It cannot be corrected from the
+    // stored payload — only declared, so the summary and the docs stop reading it as a census.
+    const thread1 = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
+    NodeAssert.equal(thread1.filesApproximate, true);
+    NodeAssert.ok(thread1.files.length > 0);
+    const cc = bundle.sessions.find((entry) => entry.key === "cc-cc-session-1");
+    NodeAssert.equal(cc.filesApproximate, false);
+    NodeAssert.ok(bundle.stats.filesTouched > 0);
+    NodeAssert.equal(bundle.stats.filesTouchedApproximate, true);
 
-  // Nothing contributed checkpoint files, so nothing is qualified.
-  const { bundle: quiet } = await collectFixture(t, {
-    t3db: fakeT3Db(),
-    claudeCode: fakeClaudeCode([]),
-    repos: [],
-  });
-  assert.equal(quiet.stats.filesTouched, 0);
-  assert.equal(quiet.stats.filesTouchedApproximate, false);
-});
+    // Nothing contributed checkpoint files, so nothing is qualified.
+    const { bundle: quiet } = await collectFixture(t, {
+      t3db: fakeT3Db(),
+      claudeCode: fakeClaudeCode([]),
+      repos: [],
+    });
+    NodeAssert.equal(quiet.stats.filesTouched, 0);
+    NodeAssert.equal(quiet.stats.filesTouchedApproximate, false);
+  },
+);
 
-test("a private project keeps its work in the totals but travels with its classification", async (t) => {
-  const { bundle } = await collectFixture(t);
-  const clientX = bundle.projects.find((entry) => entry.key === "client-x");
-  assert.equal(clientX.classification.effective, "private");
-  assert.equal(clientX.classification.counted, true);
-  assert.equal(clientX.stats.sessions, 1);
-  // The stats add up only because the private project's session is still counted.
-  assert.equal(bundle.stats.sessions, 2);
-});
+NodeTest.test(
+  "a private project keeps its work in the totals but travels with its classification",
+  async (t) => {
+    const { bundle } = await collectFixture(t);
+    const clientX = bundle.projects.find((entry) => entry.key === "client-x");
+    NodeAssert.equal(clientX.classification.effective, "private");
+    NodeAssert.equal(clientX.classification.counted, true);
+    NodeAssert.equal(clientX.stats.sessions, 1);
+    // The stats add up only because the private project's session is still counted.
+    NodeAssert.equal(bundle.stats.sessions, 2);
+  },
+);
 
 // --- time ---------------------------------------------------------------------------------------
 
-test("parallel sessions do not double-count active time", async (t) => {
+NodeTest.test("parallel sessions do not double-count active time", async (t) => {
   const root = tempRoot(t);
   const overlapping = [
     ccSession({
@@ -587,54 +596,57 @@ test("parallel sessions do not double-count active time", async (t) => {
 
   const hour = 60 * 60 * 1000;
   const [first, second] = ["cc-a", "cc-b"].map((key) => bundle.sessions.find((s) => s.key === key));
-  assert.equal(first.activeMs, hour);
-  assert.equal(second.activeMs, 45 * 60 * 1000);
+  NodeAssert.equal(first.activeMs, hour);
+  NodeAssert.equal(second.activeMs, 45 * 60 * 1000);
   // Summed naively that is 1h45m; the merged timeline is the union, so it is exactly one hour.
-  assert.equal(bundle.stats.activeMs, hour);
-  assert.equal(bundle.stats.activeBlocks.length, 1);
-  assert.equal(bundle.projects.find((entry) => entry.key === "client-x").stats.activeMs, hour);
-  assert.ok(renderSummary(bundle).includes("## Active blocks — 1h across 1 block"));
+  NodeAssert.equal(bundle.stats.activeMs, hour);
+  NodeAssert.equal(bundle.stats.activeBlocks.length, 1);
+  NodeAssert.equal(bundle.projects.find((entry) => entry.key === "client-x").stats.activeMs, hour);
+  NodeAssert.ok(renderSummary(bundle).includes("## Active blocks — 1h across 1 block"));
 });
 
-test("agent runtime counts overlap twice, and a running turn is clipped at `now`", async (t) => {
-  const root = tempRoot(t);
-  const { bundle } = await collectFixture(t, {
-    root,
-    from: DAY_A,
-    to: DAY_A,
-    t3db: fakeT3Db({
-      projects: [
-        {
-          baseDir: "/fake/t3",
-          projectId: "project-1",
-          title: "t3code",
-          workspaceRoot: `${root}/dev/t3code`,
-          deletedAt: null,
-        },
-      ],
-      threads: [thread()],
-      turns: [
-        turn({ turnId: "t1", startedAt: at(DAY_A, 9, 0), completedAt: at(DAY_A, 10, 0) }),
-        turn({ turnId: "t2", startedAt: at(DAY_A, 9, 30), completedAt: at(DAY_A, 10, 30) }),
-        // Still running: closed at min(window end, now), i.e. the end of the day.
-        turn({
-          turnId: "t3",
-          requestedAt: at(DAY_A, 23, 0),
-          startedAt: at(DAY_A, 23, 0),
-          completedAt: null,
-        }),
-      ],
-      activities: [],
-    }),
-    claudeCode: fakeClaudeCode([]),
-    repos: [],
-  });
+NodeTest.test(
+  "agent runtime counts overlap twice, and a running turn is clipped at `now`",
+  async (t) => {
+    const root = tempRoot(t);
+    const { bundle } = await collectFixture(t, {
+      root,
+      from: DAY_A,
+      to: DAY_A,
+      t3db: fakeT3Db({
+        projects: [
+          {
+            baseDir: "/fake/t3",
+            projectId: "project-1",
+            title: "t3code",
+            workspaceRoot: `${root}/dev/t3code`,
+            deletedAt: null,
+          },
+        ],
+        threads: [thread()],
+        turns: [
+          turn({ turnId: "t1", startedAt: at(DAY_A, 9, 0), completedAt: at(DAY_A, 10, 0) }),
+          turn({ turnId: "t2", startedAt: at(DAY_A, 9, 30), completedAt: at(DAY_A, 10, 30) }),
+          // Still running: closed at min(window end, now), i.e. the end of the day.
+          turn({
+            turnId: "t3",
+            requestedAt: at(DAY_A, 23, 0),
+            startedAt: at(DAY_A, 23, 0),
+            completedAt: null,
+          }),
+        ],
+        activities: [],
+      }),
+      claudeCode: fakeClaudeCode([]),
+      repos: [],
+    });
 
-  const minutes = (ms) => Math.round(ms / 60000);
-  assert.equal(minutes(bundle.stats.agentRuntimeMs), 60 + 60 + 60);
-  assert.ok(bundle.stats.activeMs < bundle.stats.agentRuntimeMs);
-  assert.equal(bundle.stats.awaitingInputMs, 0);
-});
+    const minutes = (ms) => Math.round(ms / 60000);
+    NodeAssert.equal(minutes(bundle.stats.agentRuntimeMs), 60 + 60 + 60);
+    NodeAssert.ok(bundle.stats.activeMs < bundle.stats.agentRuntimeMs);
+    NodeAssert.equal(bundle.stats.awaitingInputMs, 0);
+  },
+);
 
 /** One T3code thread whose turns and activities are exactly what the test hands it. */
 function threadOnly(root, { turns, activities }) {
@@ -659,7 +671,7 @@ function threadOnly(root, { turns, activities }) {
   };
 }
 
-test("a turn blocked on the human is not billed as agent runtime", async (t) => {
+NodeTest.test("a turn blocked on the human is not billed as agent runtime", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(
     t,
@@ -695,16 +707,19 @@ test("a turn blocked on the human is not billed as agent runtime", async (t) => 
   const hours = (ms) => ms / 3_600_000;
   const session = bundle.sessions.find((entry) => entry.key === "t3-thread-1");
   // 5h of turn wall clock; 2.5h of it was the human, not the machine.
-  assert.equal(hours(session.agentRuntimeMs), 2.5);
-  assert.equal(hours(session.awaitingInputMs), 2.5);
-  assert.equal(hours(bundle.stats.agentRuntimeMs), 2.5);
+  NodeAssert.equal(hours(session.agentRuntimeMs), 2.5);
+  NodeAssert.equal(hours(session.awaitingInputMs), 2.5);
+  NodeAssert.equal(hours(bundle.stats.agentRuntimeMs), 2.5);
   // The correction is published, not just applied — the reader can add it back.
-  assert.equal(hours(bundle.stats.awaitingInputMs), 2.5);
-  assert.equal(hours(bundle.projects.find((p) => p.key === "t3code").stats.awaitingInputMs), 2.5);
-  assert.equal(hours(bundle.byDay[DAY_A].awaitingInputMs), 2.5);
+  NodeAssert.equal(hours(bundle.stats.awaitingInputMs), 2.5);
+  NodeAssert.equal(
+    hours(bundle.projects.find((p) => p.key === "t3code").stats.awaitingInputMs),
+    2.5,
+  );
+  NodeAssert.equal(hours(bundle.byDay[DAY_A].awaitingInputMs), 2.5);
 });
 
-test("a wait is clipped and split like any other interval", async (t) => {
+NodeTest.test("a wait is clipped and split like any other interval", async (t) => {
   const root = tempRoot(t);
   const spanningTurn = turn({
     turnId: "midnight",
@@ -730,14 +745,14 @@ test("a wait is clipped and split like any other interval", async (t) => {
   });
 
   const minutes = (ms) => Math.round(ms / 60000);
-  assert.equal(minutes(range.stats.awaitingInputMs), 70);
-  assert.equal(minutes(range.stats.agentRuntimeMs), 180 - 70);
+  NodeAssert.equal(minutes(range.stats.awaitingInputMs), 70);
+  NodeAssert.equal(minutes(range.stats.agentRuntimeMs), 180 - 70);
   for (const field of ["agentRuntimeMs", "awaitingInputMs"]) {
     const summed = Object.values(range.byDay).reduce((total, day) => total + day[field], 0);
-    assert.equal(summed, range.stats[field], `byDay.${field} must sum to stats.${field}`);
+    NodeAssert.equal(summed, range.stats[field], `byDay.${field} must sum to stats.${field}`);
   }
-  assert.equal(minutes(range.byDay[DAY_A].awaitingInputMs), 40);
-  assert.equal(minutes(range.byDay[DAY_B].awaitingInputMs), 30);
+  NodeAssert.equal(minutes(range.byDay[DAY_A].awaitingInputMs), 40);
+  NodeAssert.equal(minutes(range.byDay[DAY_B].awaitingInputMs), 30);
 
   // Collected for DAY_B alone, the window query never returns the `requested` row — it is on the
   // far side of midnight. The lone resolve still proves the turn was blocked when the day opened.
@@ -751,71 +766,81 @@ test("a wait is clipped and split like any other interval", async (t) => {
     from: DAY_B,
     to: DAY_B,
   });
-  assert.equal(minutes(dayOnly.stats.awaitingInputMs), 30);
-  assert.equal(minutes(dayOnly.stats.agentRuntimeMs), 120 - 30);
+  NodeAssert.equal(minutes(dayOnly.stats.awaitingInputMs), 30);
+  NodeAssert.equal(minutes(dayOnly.stats.agentRuntimeMs), 120 - 30);
 });
 
-test("a turn still waiting on an unanswered question stops billing at the question", async (t) => {
-  const root = tempRoot(t);
-  const { bundle } = await collectFixture(t, {
-    ...threadOnly(root, {
-      turns: [
-        turn({
-          turnId: "waiting",
-          requestedAt: at(DAY_B, 20, 0),
-          startedAt: at(DAY_B, 20, 0),
-          completedAt: null,
-        }),
-      ],
-      activities: [
-        activity({ turnId: "waiting", kind: "user-input.requested", createdAt: at(DAY_B, 21, 0) }),
-      ],
-    }),
-    from: DAY_B,
-    to: DAY_B,
-  });
+NodeTest.test(
+  "a turn still waiting on an unanswered question stops billing at the question",
+  async (t) => {
+    const root = tempRoot(t);
+    const { bundle } = await collectFixture(t, {
+      ...threadOnly(root, {
+        turns: [
+          turn({
+            turnId: "waiting",
+            requestedAt: at(DAY_B, 20, 0),
+            startedAt: at(DAY_B, 20, 0),
+            completedAt: null,
+          }),
+        ],
+        activities: [
+          activity({
+            turnId: "waiting",
+            kind: "user-input.requested",
+            createdAt: at(DAY_B, 21, 0),
+          }),
+        ],
+      }),
+      from: DAY_B,
+      to: DAY_B,
+    });
 
-  const minutes = (ms) => Math.round(ms / 60000);
-  // NOW is DAY_B 23:30, so a running turn closes there rather than at the window edge — and the
-  // hours since the question went unanswered are the human's, not the machine's.
-  assert.equal(minutes(bundle.stats.agentRuntimeMs), 60);
-  assert.equal(minutes(bundle.stats.awaitingInputMs), 150);
-});
+    const minutes = (ms) => Math.round(ms / 60000);
+    // NOW is DAY_B 23:30, so a running turn closes there rather than at the window edge — and the
+    // hours since the question went unanswered are the human's, not the machine's.
+    NodeAssert.equal(minutes(bundle.stats.agentRuntimeMs), 60);
+    NodeAssert.equal(minutes(bundle.stats.awaitingInputMs), 150);
+  },
+);
 
 // --- dedup --------------------------------------------------------------------------------------
 
-test("a t3code-driven session is excluded from the counts but kept as auditable evidence", async (t) => {
-  const root = tempRoot(t);
-  const driven = ccSession({
-    sessionId: "driven",
-    cwd: `${root}/worktrees/t3code/abc123`,
-    eventTimes: [at(DAY_A, 15, 0), at(DAY_A, 15, 30)],
-  });
-  const standalone = ccSession({
-    sessionId: "standalone",
-    cwd: `${root}/dev/client-x`,
-    promptHashes: [promptHash("unrelated work")],
-    eventTimes: [at(DAY_A, 16, 0), at(DAY_A, 16, 20)],
-  });
+NodeTest.test(
+  "a t3code-driven session is excluded from the counts but kept as auditable evidence",
+  async (t) => {
+    const root = tempRoot(t);
+    const driven = ccSession({
+      sessionId: "driven",
+      cwd: `${root}/worktrees/t3code/abc123`,
+      eventTimes: [at(DAY_A, 15, 0), at(DAY_A, 15, 30)],
+    });
+    const standalone = ccSession({
+      sessionId: "standalone",
+      cwd: `${root}/dev/client-x`,
+      promptHashes: [promptHash("unrelated work")],
+      eventTimes: [at(DAY_A, 16, 0), at(DAY_A, 16, 20)],
+    });
 
-  const { bundle } = await collectFixture(t, {
-    root,
-    t3db: fakeT3Db(),
-    claudeCode: fakeClaudeCode([driven, standalone]),
-    repos: [],
-  });
+    const { bundle } = await collectFixture(t, {
+      root,
+      t3db: fakeT3Db(),
+      claudeCode: fakeClaudeCode([driven, standalone]),
+      repos: [],
+    });
 
-  const excluded = bundle.sessions.find((session) => session.key === "cc-driven");
-  assert.equal(excluded.excluded.reason, "t3code-driven");
-  assert.equal(excluded.excluded.rule, "worktree");
-  assert.equal(excluded.needsExtraction, false);
-  assert.equal(bundle.stats.sessions, 1);
-  assert.equal(bundle.byDay[DAY_A].sessionKeys.includes("cc-driven"), false);
-  // Its half hour is not in the merged timeline either, or the day would be inflated twice over.
-  assert.equal(bundle.stats.activeMs, 20 * 60 * 1000);
-});
+    const excluded = bundle.sessions.find((session) => session.key === "cc-driven");
+    NodeAssert.equal(excluded.excluded.reason, "t3code-driven");
+    NodeAssert.equal(excluded.excluded.rule, "worktree");
+    NodeAssert.equal(excluded.needsExtraction, false);
+    NodeAssert.equal(bundle.stats.sessions, 1);
+    NodeAssert.equal(bundle.byDay[DAY_A].sessionKeys.includes("cc-driven"), false);
+    // Its half hour is not in the merged timeline either, or the day would be inflated twice over.
+    NodeAssert.equal(bundle.stats.activeMs, 20 * 60 * 1000);
+  },
+);
 
-test("the prompt-hash rung links a session that never ran in a worktree", async (t) => {
+NodeTest.test("the prompt-hash rung links a session that never ran in a worktree", async (t) => {
   const root = tempRoot(t);
   const prompt = "Rebase the fork onto upstream v0.0.33";
   const linked = ccSession({
@@ -838,17 +863,17 @@ test("the prompt-hash rung links a session that never ran in a worktree", async 
   });
 
   const session = bundle.sessions.find((entry) => entry.key === "cc-hashed");
-  assert.deepEqual(session.excluded, {
+  NodeAssert.deepEqual(session.excluded, {
     reason: "t3code-driven",
     rule: "prompt-hash",
     linkedTo: "thread-9",
   });
-  assert.equal(bundle.stats.sessions, 0);
+  NodeAssert.equal(bundle.stats.sessions, 0);
 });
 
 // --- classification -----------------------------------------------------------------------------
 
-test("an unregistered project is flagged as unclassified and still counted", async (t) => {
+NodeTest.test("an unregistered project is flagged as unclassified and still counted", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -863,23 +888,23 @@ test("an unregistered project is flagged as unclassified and still counted", asy
     repos: [],
   });
 
-  assert.equal(bundle.unclassified.length, 1);
+  NodeAssert.equal(bundle.unclassified.length, 1);
   const [entry] = bundle.unclassified;
-  assert.equal(entry.key, "scratchpad");
-  assert.deepEqual(entry.roots, [`${root}/dev/scratchpad`]);
-  assert.equal(entry.evidence.sessions, 1);
+  NodeAssert.equal(entry.key, "scratchpad");
+  NodeAssert.deepEqual(entry.roots, [`${root}/dev/scratchpad`]);
+  NodeAssert.equal(entry.evidence.sessions, 1);
 
   const project = bundle.projects.find((item) => item.key === "scratchpad");
-  assert.equal(project.classification.known, false);
-  assert.equal(project.classification.effective, "excluded");
-  assert.equal(project.classification.counted, true);
-  assert.equal(project.stats.sessions, 1);
+  NodeAssert.equal(project.classification.known, false);
+  NodeAssert.equal(project.classification.effective, "excluded");
+  NodeAssert.equal(project.classification.counted, true);
+  NodeAssert.equal(project.stats.sessions, 1);
   // Unreviewed work still shows up in the totals, or the day would silently under-report.
-  assert.equal(bundle.stats.sessions, 1);
-  assert.equal(bundle.stats.activeMs, 30 * 60 * 1000);
+  NodeAssert.equal(bundle.stats.sessions, 1);
+  NodeAssert.equal(bundle.stats.activeMs, 30 * 60 * 1000);
 });
 
-test("a worktree resolves to the same project as its main checkout", async (t) => {
+NodeTest.test("a worktree resolves to the same project as its main checkout", async (t) => {
   const root = tempRoot(t);
   const worktree = `${root}/checkouts/t3code-abc`;
   const { bundle } = await collectFixture(t, {
@@ -903,11 +928,11 @@ test("a worktree resolves to the same project as its main checkout", async (t) =
     repos: [],
   });
 
-  assert.equal(bundle.sessions.find((session) => session.key === "cc-wt").projectKey, "t3code");
-  assert.deepEqual(bundle.unclassified, []);
+  NodeAssert.equal(bundle.sessions.find((session) => session.key === "cc-wt").projectKey, "t3code");
+  NodeAssert.deepEqual(bundle.unclassified, []);
 });
 
-test("a project switched off with include:false stays out of the totals", async (t) => {
+NodeTest.test("a project switched off with include:false stays out of the totals", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -923,16 +948,16 @@ test("a project switched off with include:false stays out of the totals", async 
   });
 
   const session = bundle.sessions.find((entry) => entry.key === "cc-off");
-  assert.equal(session.projectKey, "retired");
-  assert.equal(bundle.stats.sessions, 0);
-  assert.equal(bundle.stats.activeMs, 0);
+  NodeAssert.equal(session.projectKey, "retired");
+  NodeAssert.equal(bundle.stats.sessions, 0);
+  NodeAssert.equal(bundle.stats.activeMs, 0);
   // The session still resolves to a project the reader can look up.
   const project = bundle.projects.find((entry) => entry.key === "retired");
-  assert.equal(project.classification.counted, false);
-  assert.equal(project.stats.sessions, 0);
+  NodeAssert.equal(project.classification.counted, false);
+  NodeAssert.equal(project.stats.sessions, 0);
 });
 
-test("a session whose project cannot be resolved is still counted", async (t) => {
+NodeTest.test("a session whose project cannot be resolved is still counted", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -950,18 +975,18 @@ test("a session whose project cannot be resolved is still counted", async (t) =>
   });
 
   const session = bundle.sessions.find((entry) => entry.key === "cc-nowhere");
-  assert.equal(session.projectKey, null);
-  assert.equal(bundle.stats.sessions, 1);
-  assert.equal(bundle.stats.activeMs, 30 * 60 * 1000);
-  assert.deepEqual(bundle.byDay[DAY_A].sessionKeys, ["cc-nowhere"]);
-  assert.equal(bundle.stats.projectsTouched, 0);
+  NodeAssert.equal(session.projectKey, null);
+  NodeAssert.equal(bundle.stats.sessions, 1);
+  NodeAssert.equal(bundle.stats.activeMs, 30 * 60 * 1000);
+  NodeAssert.deepEqual(bundle.byDay[DAY_A].sessionKeys, ["cc-nowhere"]);
+  NodeAssert.equal(bundle.stats.projectsTouched, 0);
   // The summary must still show it, or the model sees a session count it cannot reconcile.
-  assert.ok(renderSummary(bundle).includes("## Sessions outside the project list (1)"));
+  NodeAssert.ok(renderSummary(bundle).includes("## Sessions outside the project list (1)"));
 });
 
 // --- ranges -------------------------------------------------------------------------------------
 
-test("byDay sums back to the range totals across two days", async (t) => {
+NodeTest.test("byDay sums back to the range totals across two days", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -1060,7 +1085,7 @@ test("byDay sums back to the range totals across two days", async (t) => {
     ],
   });
 
-  assert.deepEqual(Object.keys(bundle.byDay), [DAY_A, DAY_B]);
+  NodeAssert.deepEqual(Object.keys(bundle.byDay), [DAY_A, DAY_B]);
   for (const field of [
     "sessions",
     "turns",
@@ -1075,41 +1100,44 @@ test("byDay sums back to the range totals across two days", async (t) => {
     "awaitingInputMs",
   ]) {
     const summed = Object.values(bundle.byDay).reduce((total, day) => total + day[field], 0);
-    assert.equal(summed, bundle.stats[field], `byDay.${field} must sum to stats.${field}`);
+    NodeAssert.equal(summed, bundle.stats[field], `byDay.${field} must sum to stats.${field}`);
   }
-  assert.deepEqual(bundle.byDay[DAY_A].sessionKeys.sort(), ["cc-one", "t3-thread-1"]);
-  assert.deepEqual(bundle.byDay[DAY_B].sessionKeys.sort(), ["cc-two", "t3-thread-2"]);
-  assert.equal(bundle.byDay[DAY_B].commits, 1);
+  NodeAssert.deepEqual(bundle.byDay[DAY_A].sessionKeys.sort(), ["cc-one", "t3-thread-1"]);
+  NodeAssert.deepEqual(bundle.byDay[DAY_B].sessionKeys.sort(), ["cc-two", "t3-thread-2"]);
+  NodeAssert.equal(bundle.byDay[DAY_B].commits, 1);
 });
 
-test("a range defaults to today and a bad date is a usage error, not a warning", async (t) => {
-  const root = tempRoot(t);
-  writeRegistry(root, defaultRegistry(root));
-  const bundle = await collect({
-    worklogRoot: root,
-    now: NOW,
-    includeGit: false,
-    deps: baseDeps(root),
-  });
-  assert.equal(bundle.range.from, DAY_B);
-  assert.equal(bundle.range.to, DAY_B);
+NodeTest.test(
+  "a range defaults to today and a bad date is a usage error, not a warning",
+  async (t) => {
+    const root = tempRoot(t);
+    writeRegistry(root, defaultRegistry(root));
+    const bundle = await collect({
+      worklogRoot: root,
+      now: NOW,
+      includeGit: false,
+      deps: baseDeps(root),
+    });
+    NodeAssert.equal(bundle.range.from, DAY_B);
+    NodeAssert.equal(bundle.range.to, DAY_B);
 
-  await assert.rejects(
-    () =>
-      collect({
-        from: "2026-02-31",
-        to: "2026-02-31",
-        worklogRoot: root,
-        includeGit: false,
-        deps: baseDeps(root),
-      }),
-    /not a real calendar date/u,
-  );
-});
+    await NodeAssert.rejects(
+      () =>
+        collect({
+          from: "2026-02-31",
+          to: "2026-02-31",
+          worklogRoot: root,
+          includeGit: false,
+          deps: baseDeps(root),
+        }),
+      /not a real calendar date/u,
+    );
+  },
+);
 
 // --- degradation --------------------------------------------------------------------------------
 
-test("includeGit:false skips git entirely", async (t) => {
+NodeTest.test("includeGit:false skips git entirely", async (t) => {
   const root = tempRoot(t);
   const { bundle, gitCalls } = await collectFixture(t, {
     root,
@@ -1117,16 +1145,16 @@ test("includeGit:false skips git entirely", async (t) => {
     claudeCode: fakeClaudeCode([ccSession({ cwd: `${root}/dev/client-x` })]),
   });
 
-  assert.deepEqual(gitCalls, []);
-  assert.deepEqual(bundle.git.repos, []);
-  assert.equal(bundle.config.includeGit, false);
-  assert.equal(bundle.stats.commits, 0);
-  assert.equal(bundle.stats.prsMerged, 0);
+  NodeAssert.deepEqual(gitCalls, []);
+  NodeAssert.deepEqual(bundle.git.repos, []);
+  NodeAssert.equal(bundle.config.includeGit, false);
+  NodeAssert.equal(bundle.stats.commits, 0);
+  NodeAssert.equal(bundle.stats.prsMerged, 0);
   // The sessions are still there — only the git evidence is missing.
-  assert.equal(bundle.stats.sessions, 2);
+  NodeAssert.equal(bundle.stats.sessions, 2);
 });
 
-test("a collector that throws becomes a warning instead of a failed bundle", async (t) => {
+NodeTest.test("a collector that throws becomes a warning instead of a failed bundle", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -1152,13 +1180,13 @@ test("a collector that throws becomes a warning instead of a failed bundle", asy
     repos: [],
   });
 
-  assert.ok(bundle.warnings.some((warning) => warning.includes("database is locked")));
+  NodeAssert.ok(bundle.warnings.some((warning) => warning.includes("database is locked")));
   // The turn-derived half of the thread survives, and so does the whole Claude Code side.
-  assert.equal(bundle.stats.sessions, 2);
-  assert.equal(bundle.sessions.find((session) => session.key === "t3-thread-1").turnCount, 1);
+  NodeAssert.equal(bundle.stats.sessions, 2);
+  NodeAssert.equal(bundle.sessions.find((session) => session.key === "t3-thread-1").turnCount, 1);
 });
 
-test("a runner passed at the top level is used instead of a fresh one", async (t) => {
+NodeTest.test("a runner passed at the top level is used instead of a fresh one", async (t) => {
   const root = tempRoot(t);
   writeRegistry(root, defaultRegistry(root));
   const seen = [];
@@ -1184,11 +1212,11 @@ test("a runner passed at the top level is used instead of a fresh one", async (t
     },
   });
 
-  assert.deepEqual(seen, ["git"]);
-  assert.equal(bundle.stats.commits, 0);
+  NodeAssert.deepEqual(seen, ["git"]);
+  NodeAssert.equal(bundle.stats.commits, 0);
 });
 
-test("a Claude Code scan that rejects still yields a bundle", async (t) => {
+NodeTest.test("a Claude Code scan that rejects still yields a bundle", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -1200,11 +1228,11 @@ test("a Claude Code scan that rejects still yields a bundle", async (t) => {
     repos: [],
   });
 
-  assert.ok(bundle.warnings.some((warning) => warning.includes("EMFILE")));
-  assert.equal(bundle.stats.sessions, 1);
+  NodeAssert.ok(bundle.warnings.some((warning) => warning.includes("EMFILE")));
+  NodeAssert.equal(bundle.stats.sessions, 1);
 });
 
-test("a missing worklog repo degrades to warnings and an empty registry", async (t) => {
+NodeTest.test("a missing worklog repo degrades to warnings and an empty registry", async (t) => {
   const root = NodePath.join(tempRoot(t), "never-created");
   const bundle = await collect({
     from: DAY_A,
@@ -1217,12 +1245,12 @@ test("a missing worklog repo degrades to warnings and an empty registry", async 
     }),
   });
 
-  assert.ok(bundle.warnings.some((warning) => warning.includes("worklog init")));
-  assert.equal(bundle.stats.sessions, 1);
-  assert.equal(bundle.unclassified.length, 1);
+  NodeAssert.ok(bundle.warnings.some((warning) => warning.includes("worklog init")));
+  NodeAssert.equal(bundle.stats.sessions, 1);
+  NodeAssert.equal(bundle.unclassified.length, 1);
 });
 
-test("warnings from the underlying readers are surfaced once", async (t) => {
+NodeTest.test("warnings from the underlying readers are surfaced once", async (t) => {
   const root = tempRoot(t);
   const { bundle } = await collectFixture(t, {
     root,
@@ -1245,14 +1273,18 @@ test("warnings from the underlying readers are surfaced once", async (t) => {
     repos: [],
   });
 
-  assert.ok(bundle.warnings.includes("Could not open /fake/t3/state.sqlite read-only: bad magic"));
-  assert.ok(bundle.warnings.some((warning) => warning.includes("projection_threads is missing")));
-  assert.equal(new Set(bundle.warnings).size, bundle.warnings.length);
+  NodeAssert.ok(
+    bundle.warnings.includes("Could not open /fake/t3/state.sqlite read-only: bad magic"),
+  );
+  NodeAssert.ok(
+    bundle.warnings.some((warning) => warning.includes("projection_threads is missing")),
+  );
+  NodeAssert.equal(new Set(bundle.warnings).size, bundle.warnings.length);
 });
 
 // --- extraction ---------------------------------------------------------------------------------
 
-test("extraction is queued only for material sessions with new material", async (t) => {
+NodeTest.test("extraction is queued only for material sessions with new material", async (t) => {
   const root = tempRoot(t);
   const paths = writeRegistry(root, defaultRegistry(root));
   NodeFS.mkdirSync(paths.extracts, { recursive: true });
@@ -1298,20 +1330,20 @@ test("extraction is queued only for material sessions with new material", async 
   });
 
   const byKey = new Map(bundle.sessions.map((session) => [session.key, session]));
-  assert.equal(byKey.get("cc-cached").needsExtraction, false);
-  assert.equal(byKey.get("cc-cached").extract.extract.outcome, "green");
-  assert.equal(byKey.get("cc-cached").extract.cursor.lastEventAt, at(DAY_A, 23, 0));
+  NodeAssert.equal(byKey.get("cc-cached").needsExtraction, false);
+  NodeAssert.equal(byKey.get("cc-cached").extract.extract.outcome, "green");
+  NodeAssert.equal(byKey.get("cc-cached").extract.cursor.lastEventAt, at(DAY_A, 23, 0));
   // A corrupt extract reads as "never extracted" — one wasted call beats an untrustworthy cursor.
-  assert.equal(byKey.get("cc-stale").needsExtraction, true);
-  assert.equal(byKey.get("cc-stale").extract, null);
-  assert.ok(bundle.warnings.some((warning) => warning.includes("unreadable or empty")));
+  NodeAssert.equal(byKey.get("cc-stale").needsExtraction, true);
+  NodeAssert.equal(byKey.get("cc-stale").extract, null);
+  NodeAssert.ok(bundle.warnings.some((warning) => warning.includes("unreadable or empty")));
   // One prompt and no tools is not material — a quiet session must cost zero model tokens.
-  assert.equal(byKey.get("cc-tiny").needsExtraction, false);
+  NodeAssert.equal(byKey.get("cc-tiny").needsExtraction, false);
   // The cached extract is about this window, so it is published rather than withheld.
-  assert.equal(byKey.get("cc-cached").withheldExtract, null);
+  NodeAssert.equal(byKey.get("cc-cached").withheldExtract, null);
 });
 
-test("an extract about another day never lands in this day's bundle", async (t) => {
+NodeTest.test("an extract about another day never lands in this day's bundle", async (t) => {
   const root = tempRoot(t);
   const paths = writeRegistry(root, defaultRegistry(root));
   NodeFS.mkdirSync(paths.extracts, { recursive: true });
@@ -1360,28 +1392,28 @@ test("an extract about another day never lands in this day's bundle", async (t) 
 
   const byKey = new Map(bundle.sessions.map((session) => [session.key, session]));
   const later = byKey.get("cc-later");
-  assert.equal(later.extract, null);
-  assert.equal(later.withheldExtract.cursorAt, at(DAY_B, 18, 0));
-  assert.match(later.withheldExtract.reason, /after this window/u);
+  NodeAssert.equal(later.extract, null);
+  NodeAssert.equal(later.withheldExtract.cursorAt, at(DAY_B, 18, 0));
+  NodeAssert.match(later.withheldExtract.reason, /after this window/u);
   // The cursor still rules the queue: `extract-queue` re-reads the file from disk and would skip
   // this session, so the bundle must not advertise an extraction nobody would run.
-  assert.equal(later.needsExtraction, false);
+  NodeAssert.equal(later.needsExtraction, false);
 
   const earlier = byKey.get("cc-earlier");
-  assert.equal(earlier.extract, null);
-  assert.match(earlier.withheldExtract.reason, /before this window/u);
-  assert.equal(earlier.needsExtraction, true);
+  NodeAssert.equal(earlier.extract, null);
+  NodeAssert.match(earlier.withheldExtract.reason, /before this window/u);
+  NodeAssert.equal(earlier.needsExtraction, true);
 
   // Withheld, not flagged: a flag only helps a reader that checks it, and every renderer would
   // have to opt in. A null cannot be misread.
   const summary = renderSummary(bundle);
-  assert.ok(!summary.includes("tomorrow's outcome"));
-  assert.ok(!summary.includes("last week's outcome"));
+  NodeAssert.ok(!summary.includes("tomorrow's outcome"));
+  NodeAssert.ok(!summary.includes("last week's outcome"));
 });
 
 // --- summary ------------------------------------------------------------------------------------
 
-test("the summary digests the bundle without running away", async (t) => {
+NodeTest.test("the summary digests the bundle without running away", async (t) => {
   const root = tempRoot(t);
   const paths = worklogPaths(root);
   const { bundle } = await collectFixture(t, {
@@ -1400,26 +1432,26 @@ test("the summary digests the bundle without running away", async (t) => {
 
   const summary = renderSummary(bundle);
   const lines = summary.split("\n");
-  assert.ok(lines.length < 400, `summary was ${lines.length} lines`);
+  NodeAssert.ok(lines.length < 400, `summary was ${lines.length} lines`);
 
-  assert.ok(summary.startsWith(`# Worklog evidence — ${DAY_A} (`));
-  assert.ok(summary.includes("## Unclassified projects (1)"));
-  assert.ok(summary.includes("`scratchpad`"));
+  NodeAssert.ok(summary.startsWith(`# Worklog evidence — ${DAY_A} (`));
+  NodeAssert.ok(summary.includes("## Unclassified projects (1)"));
+  NodeAssert.ok(summary.includes("`scratchpad`"));
   // "excluded" would read as "the human switched this off", which is the opposite of the truth.
-  assert.ok(summary.includes("### scratchpad · scratchpad · unclassified — do not name"));
-  assert.ok(summary.includes("## Active blocks"));
-  assert.ok(summary.includes("### t3code · T3 Code (fork) · public"));
-  assert.ok(summary.includes("### client-x · Client X · private"));
-  assert.ok(summary.includes("Sync fork with upstream"));
-  assert.ok(summary.includes("`714b866` docs(t3x): record the capture"));
-  assert.ok(summary.includes("#66 fix(t3x): retry the relay notify (+120/-14)"));
-  assert.ok(summary.includes("apps/server/src/t3x/relay.ts (+30/-4)"));
-  assert.ok(summary.includes("## Sessions needing extraction"));
+  NodeAssert.ok(summary.includes("### scratchpad · scratchpad · unclassified — do not name"));
+  NodeAssert.ok(summary.includes("## Active blocks"));
+  NodeAssert.ok(summary.includes("### t3code · T3 Code (fork) · public"));
+  NodeAssert.ok(summary.includes("### client-x · Client X · private"));
+  NodeAssert.ok(summary.includes("Sync fork with upstream"));
+  NodeAssert.ok(summary.includes("`714b866` docs(t3x): record the capture"));
+  NodeAssert.ok(summary.includes("#66 fix(t3x): retry the relay notify (+120/-14)"));
+  NodeAssert.ok(summary.includes("apps/server/src/t3x/relay.ts (+30/-4)"));
+  NodeAssert.ok(summary.includes("## Sessions needing extraction"));
   // Paths stay repo-relative: no absolute checkout path leaks into a file list.
-  assert.ok(!summary.includes(`${root}/dev/t3code/apps`));
+  NodeAssert.ok(!summary.includes(`${root}/dev/t3code/apps`));
 });
 
-test("the summary renders cached extracts and the excluded reason", async (t) => {
+NodeTest.test("the summary renders cached extracts and the excluded reason", async (t) => {
   const root = tempRoot(t);
   const paths = writeRegistry(root, defaultRegistry(root));
   NodeFS.mkdirSync(paths.extracts, { recursive: true });
@@ -1456,33 +1488,33 @@ test("the summary renders cached extracts and the excluded reason", async (t) =>
   });
 
   const summary = renderSummary(bundle);
-  assert.ok(summary.includes("## Sessions with cached extracts (1)"));
-  assert.ok(summary.includes("- outcome: PR #66 merged"));
-  assert.ok(summary.includes("- artifacts: PR #66"));
-  assert.ok(summary.includes("[excluded: t3code-driven]"));
-  assert.ok(summary.includes("None — every material session already has a current extract."));
+  NodeAssert.ok(summary.includes("## Sessions with cached extracts (1)"));
+  NodeAssert.ok(summary.includes("- outcome: PR #66 merged"));
+  NodeAssert.ok(summary.includes("- artifacts: PR #66"));
+  NodeAssert.ok(summary.includes("[excluded: t3code-driven]"));
+  NodeAssert.ok(summary.includes("None — every material session already has a current extract."));
 });
 
-test("renderStatLine drops the zeroes and keeps the clocks", async (t) => {
+NodeTest.test("renderStatLine drops the zeroes and keeps the clocks", async (t) => {
   const { bundle } = await collectFixture(t);
   const line = renderStatLine(bundle);
-  assert.match(line, /^2 projects · 2 sessions · /u);
-  assert.ok(line.includes("1 commit"));
-  assert.ok(line.includes("1 PR merged"));
-  assert.ok(line.includes("+40/-5"));
-  assert.ok(line.includes("active"));
-  assert.ok(line.includes("agent"));
+  NodeAssert.match(line, /^2 projects · 2 sessions · /u);
+  NodeAssert.ok(line.includes("1 commit"));
+  NodeAssert.ok(line.includes("1 PR merged"));
+  NodeAssert.ok(line.includes("+40/-5"));
+  NodeAssert.ok(line.includes("active"));
+  NodeAssert.ok(line.includes("agent"));
 
   const empty = renderStatLine({ stats: {} });
-  assert.equal(empty, "0 sessions · 0m active · 0.0h agent");
-  assert.equal(renderStatLine(null), "0 sessions · 0m active · 0.0h agent");
-  assert.equal(renderStatLine(undefined), "0 sessions · 0m active · 0.0h agent");
+  NodeAssert.equal(empty, "0 sessions · 0m active · 0.0h agent");
+  NodeAssert.equal(renderStatLine(null), "0 sessions · 0m active · 0.0h agent");
+  NodeAssert.equal(renderStatLine(undefined), "0 sessions · 0m active · 0.0h agent");
 });
 
-test("the summary survives a half-built bundle", () => {
-  assert.ok(renderSummary({}).startsWith("# Worklog evidence — ? ("));
-  assert.ok(renderSummary(null).includes("## Stats"));
-  assert.ok(
+NodeTest.test("the summary survives a half-built bundle", () => {
+  NodeAssert.ok(renderSummary({}).startsWith("# Worklog evidence — ? ("));
+  NodeAssert.ok(renderSummary(null).includes("## Stats"));
+  NodeAssert.ok(
     renderSummary({
       range: { from: DAY_A, to: DAY_B, days: [DAY_A, DAY_B], timezone: "UTC" },
       sessions: [{ key: "cc-x", title: "line one\nline two", needsExtraction: true }],

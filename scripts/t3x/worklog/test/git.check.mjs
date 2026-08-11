@@ -2,8 +2,8 @@
 // `gh` path is driven through a fake runner, so the suite is offline and never reads the user's
 // repositories. Run with: node --test scripts/t3x/worklog/test/git.test.mjs
 
-import test from "node:test";
-import assert from "node:assert/strict";
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -249,59 +249,59 @@ function windowCommits(dir, identities = []) {
 
 // --- createRunner -------------------------------------------------------------------------------
 
-test("createRunner captures stdout on success", () => {
+NodeTest.test("createRunner captures stdout on success", () => {
   const run = createRunner();
   const result = run(process.execPath, ["-e", "process.stdout.write('hello')"]);
-  assert.equal(result.ok, true);
-  assert.equal(result.code, 0);
-  assert.equal(result.stdout, "hello");
+  NodeAssert.equal(result.ok, true);
+  NodeAssert.equal(result.code, 0);
+  NodeAssert.equal(result.stdout, "hello");
 });
 
-test("createRunner reports a non-zero exit as data, not a throw", () => {
+NodeTest.test("createRunner reports a non-zero exit as data, not a throw", () => {
   const run = createRunner();
   const result = run(process.execPath, ["-e", "process.stderr.write('boom'); process.exit(3)"]);
-  assert.equal(result.ok, false);
-  assert.equal(result.code, 3);
-  assert.match(result.stderr, /boom/u);
+  NodeAssert.equal(result.ok, false);
+  NodeAssert.equal(result.code, 3);
+  NodeAssert.match(result.stderr, /boom/u);
 });
 
-test("createRunner survives a missing binary", () => {
+NodeTest.test("createRunner survives a missing binary", () => {
   const run = createRunner();
   const result = run("t3x-worklog-no-such-binary", ["--version"]);
-  assert.equal(result.ok, false);
-  assert.equal(result.code, null);
-  assert.equal(result.stdout, "");
-  assert.notEqual(result.stderr, "");
+  NodeAssert.equal(result.ok, false);
+  NodeAssert.equal(result.code, null);
+  NodeAssert.equal(result.stdout, "");
+  NodeAssert.notEqual(result.stderr, "");
 });
 
-test("createRunner survives a directory that does not exist", () => {
+NodeTest.test("createRunner survives a directory that does not exist", () => {
   const run = createRunner();
   const result = run(process.execPath, ["-e", "0"], {
     cwd: NodePath.join(NodeOS.tmpdir(), "worklog-absent-dir-xyz"),
   });
-  assert.equal(result.ok, false);
+  NodeAssert.equal(result.ok, false);
 });
 
-test("createRunner enforces its timeout without throwing", () => {
+NodeTest.test("createRunner enforces its timeout without throwing", () => {
   const run = createRunner({ timeoutMs: 200 });
   const result = run(process.execPath, ["-e", "setTimeout(() => {}, 10000)"]);
-  assert.equal(result.ok, false);
+  NodeAssert.equal(result.ok, false);
 });
 
-test("createRunner passes the injected environment to the child", () => {
+NodeTest.test("createRunner passes the injected environment to the child", () => {
   const run = createRunner({ env: { ...process.env, WORKLOG_TEST_TOKEN: "injected" } });
   const result = run(process.execPath, [
     "-e",
     "process.stdout.write(process.env.WORKLOG_TEST_TOKEN ?? 'missing')",
   ]);
-  assert.equal(result.stdout, "injected");
+  NodeAssert.equal(result.stdout, "injected");
   // The variable must not have leaked into this process.
-  assert.equal(process.env.WORKLOG_TEST_TOKEN, undefined);
+  NodeAssert.equal(process.env.WORKLOG_TEST_TOKEN, undefined);
 });
 
 // --- canonicalRepo ------------------------------------------------------------------------------
 
-test("canonicalRepo collapses every worktree of one repo onto a single key", (t) => {
+NodeTest.test("canonicalRepo collapses every worktree of one repo onto a single key", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const root = tempDir(t);
   const repo = initRepo(NodePath.join(root, "repo"));
@@ -319,35 +319,35 @@ test("canonicalRepo collapses every worktree of one repo onto a single key", (t)
   // path, so asking from anywhere but the toplevel would otherwise produce a different key.
   const fromNested = canonicalRepo(nested, run);
 
-  assert.equal(fromRepo.root, repo);
-  assert.equal(fromNested.root, repo);
-  assert.equal(fromWorktree.root, worktree);
-  assert.equal(fromRepo.key, NodePath.join(repo, ".git"));
-  assert.equal(fromNested.key, fromRepo.key);
-  assert.equal(fromWorktree.key, fromRepo.key);
+  NodeAssert.equal(fromRepo.root, repo);
+  NodeAssert.equal(fromNested.root, repo);
+  NodeAssert.equal(fromWorktree.root, worktree);
+  NodeAssert.equal(fromRepo.key, NodePath.join(repo, ".git"));
+  NodeAssert.equal(fromNested.key, fromRepo.key);
+  NodeAssert.equal(fromWorktree.key, fromRepo.key);
 });
 
-test("canonicalRepo returns null outside a repository", (t) => {
+NodeTest.test("canonicalRepo returns null outside a repository", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const root = tempDir(t);
   const run = createRunner({ env: GIT_ENV });
-  assert.equal(canonicalRepo(root, run), null);
-  assert.equal(canonicalRepo(NodePath.join(root, "does-not-exist"), run), null);
+  NodeAssert.equal(canonicalRepo(root, run), null);
+  NodeAssert.equal(canonicalRepo(NodePath.join(root, "does-not-exist"), run), null);
 });
 
-test("canonicalRepo rejects unusable input without shelling out", () => {
+NodeTest.test("canonicalRepo rejects unusable input without shelling out", () => {
   const run = fakeRunner(() => okReply("/never/used"));
-  assert.equal(canonicalRepo("", run), null);
-  assert.equal(canonicalRepo(undefined, run), null);
-  assert.equal(canonicalRepo(42, run), null);
-  assert.equal(run.calls.length, 0);
+  NodeAssert.equal(canonicalRepo("", run), null);
+  NodeAssert.equal(canonicalRepo(undefined, run), null);
+  NodeAssert.equal(canonicalRepo(42, run), null);
+  NodeAssert.equal(run.calls.length, 0);
 });
 
-test("canonicalRepo falls back to <root>/.git when the common-dir lookup fails", () => {
+NodeTest.test("canonicalRepo falls back to <root>/.git when the common-dir lookup fails", () => {
   const run = fakeRunner((cmd, args) =>
     args.includes("--show-toplevel") ? okReply("/tmp/fake-repo\n") : missingBinary(cmd),
   );
-  assert.deepEqual(canonicalRepo("/tmp/fake-repo", run), {
+  NodeAssert.deepEqual(canonicalRepo("/tmp/fake-repo", run), {
     root: "/tmp/fake-repo",
     commonDir: NodePath.join("/tmp/fake-repo", ".git"),
     key: NodePath.join("/tmp/fake-repo", ".git"),
@@ -356,7 +356,7 @@ test("canonicalRepo falls back to <root>/.git when the common-dir lookup fails",
 
 // --- remoteNameWithOwner ------------------------------------------------------------------------
 
-test("remoteNameWithOwner parses every remote URL form git emits", () => {
+NodeTest.test("remoteNameWithOwner parses every remote URL form git emits", () => {
   const cases = [
     ["git@github.com:radroid/t3code.git\n", "radroid/t3code"],
     ["git@github.com:owner/name", "owner/name"],
@@ -381,20 +381,20 @@ test("remoteNameWithOwner parses every remote URL form git emits", () => {
   ];
   for (const [url, expected] of cases) {
     const run = fakeRunner(() => okReply(url));
-    assert.equal(remoteNameWithOwner("/repo", run), expected, `url: ${JSON.stringify(url)}`);
+    NodeAssert.equal(remoteNameWithOwner("/repo", run), expected, `url: ${JSON.stringify(url)}`);
   }
 });
 
-test("remoteNameWithOwner returns null when there is no origin, and never asks gh", () => {
+NodeTest.test("remoteNameWithOwner returns null when there is no origin, and never asks gh", () => {
   const run = fakeRunner(() => ({
     ok: false,
     code: 2,
     stdout: "",
     stderr: "error: No such remote 'origin'",
   }));
-  assert.equal(remoteNameWithOwner("/repo", run), null);
+  NodeAssert.equal(remoteNameWithOwner("/repo", run), null);
   // `gh repo view` would resolve this fork to its upstream parent — it must never be reached.
-  assert.equal(
+  NodeAssert.equal(
     run.calls.some((call) => call.cmd === "gh"),
     false,
   );
@@ -402,12 +402,12 @@ test("remoteNameWithOwner returns null when there is no origin, and never asks g
 
 // --- commitsInWindow ----------------------------------------------------------------------------
 
-test("commitsInWindow returns in-window commits in chronological order", (t) => {
+NodeTest.test("commitsInWindow returns in-window commits in chronological order", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
   const commits = windowCommits(repo);
 
-  assert.deepEqual(subjectsOf(commits), [
+  NodeAssert.deepEqual(subjectsOf(commits), [
     "root: add notes",
     "colleague tweak",
     "add a binary blob",
@@ -418,34 +418,34 @@ test("commitsInWindow returns in-window commits in chronological order", (t) => 
     "rename and extend the notes",
   ]);
   // "before the window" is authored a day early and must not appear.
-  assert.equal(findBySubject(commits, "before the window"), undefined);
+  NodeAssert.equal(findBySubject(commits, "before the window"), undefined);
 
   for (const commit of commits) {
-    assert.match(commit.sha, /^[0-9a-f]{40}$/u);
-    assert.ok(commit.sha.startsWith(commit.shortSha));
-    assert.ok(commit.shortSha.length >= 7);
-    assert.equal(commit.author, commit.subject === "colleague tweak" ? OTHER_NAME : RAJ_NAME);
-    assert.ok(Array.isArray(commit.branches) && commit.branches.length > 0);
-    assert.ok(commit.branches.every((branch) => typeof branch === "string" && branch !== ""));
+    NodeAssert.match(commit.sha, /^[0-9a-f]{40}$/u);
+    NodeAssert.ok(commit.sha.startsWith(commit.shortSha));
+    NodeAssert.ok(commit.shortSha.length >= 7);
+    NodeAssert.equal(commit.author, commit.subject === "colleague tweak" ? OTHER_NAME : RAJ_NAME);
+    NodeAssert.ok(Array.isArray(commit.branches) && commit.branches.length > 0);
+    NodeAssert.ok(commit.branches.every((branch) => typeof branch === "string" && branch !== ""));
   }
 });
 
-test("commitsInWindow keeps a commit whose committer date left the window", (t) => {
+NodeTest.test("commitsInWindow keeps a commit whose committer date left the window", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
   const rebased = findBySubject(windowCommits(repo), "rebased later");
-  assert.ok(rebased, "a rebased commit is filtered by author date, not committer date");
+  NodeAssert.ok(rebased, "a rebased commit is filtered by author date, not committer date");
   // Compared as an instant, not a string: git renders a +0000 offset as "Z" or "+00:00" depending
   // on its version, and only the instant is load-bearing.
-  assert.equal(Date.parse(rebased.at), Date.parse("2026-08-10T13:00:00Z"));
+  NodeAssert.equal(Date.parse(rebased.at), Date.parse("2026-08-10T13:00:00Z"));
 });
 
-test("commitsInWindow counts churn, binary files, and renames", (t) => {
+NodeTest.test("commitsInWindow counts churn, binary files, and renames", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const commits = windowCommits(buildHistory(NodePath.join(tempDir(t), "repo")));
 
   const root = findBySubject(commits, "root: add notes");
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     { files: root.files, insertions: root.insertions, deletions: root.deletions },
     { files: 2, insertions: 4, deletions: 0 },
   );
@@ -453,68 +453,68 @@ test("commitsInWindow counts churn, binary files, and renames", (t) => {
   // A binary file has real churn git cannot express in lines: it still counts as a touched file,
   // and its "-\t-" row contributes zero rather than NaN.
   const binary = findBySubject(commits, "add a binary blob");
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     { files: binary.files, insertions: binary.insertions, deletions: binary.deletions },
     { files: 1, insertions: 0, deletions: 0 },
   );
 
   // `deep/nest/{f.txt => g.txt}` and `{deep => deepen}/nest/g.txt` are both rename rows; if the
   // parser missed the shape the file count would be 0.
-  assert.equal(findBySubject(commits, "rename the nested file").files, 1);
-  assert.equal(findBySubject(commits, "hoist the directory").files, 1);
+  NodeAssert.equal(findBySubject(commits, "rename the nested file").files, 1);
+  NodeAssert.equal(findBySubject(commits, "hoist the directory").files, 1);
 
   // `notes.md => journal.md` with an edit — the arrow shape must not swallow the churn.
   const renamed = findBySubject(commits, "rename and extend the notes");
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     { files: renamed.files, insertions: renamed.insertions, deletions: renamed.deletions },
     { files: 1, insertions: 1, deletions: 0 },
   );
 });
 
-test("commitsInWindow attributes commits to their branch", (t) => {
+NodeTest.test("commitsInWindow attributes commits to their branch", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const commits = windowCommits(buildHistory(NodePath.join(tempDir(t), "repo")));
-  assert.ok(findBySubject(commits, "branch work").branches.includes("feature/window"));
-  assert.ok(findBySubject(commits, "rename and extend the notes").branches.includes("main"));
+  NodeAssert.ok(findBySubject(commits, "branch work").branches.includes("feature/window"));
+  NodeAssert.ok(findBySubject(commits, "rename and extend the notes").branches.includes("main"));
   // HEAD is decoration, not a branch, and tags are not branches.
   for (const commit of commits) {
-    assert.equal(commit.branches.includes("HEAD"), false);
+    NodeAssert.equal(commit.branches.includes("HEAD"), false);
   }
 });
 
-test("commitsInWindow filters by identity across names and both noreply forms", (t) => {
+NodeTest.test("commitsInWindow filters by identity across names and both noreply forms", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
 
   const bare = windowCommits(repo, ["radroid@users.noreply.github.com"]);
   const numbered = windowCommits(repo, [RAJ_EMAIL]);
-  assert.equal(bare.length, 7);
-  assert.deepEqual(subjectsOf(bare), subjectsOf(numbered));
-  assert.equal(
+  NodeAssert.equal(bare.length, 7);
+  NodeAssert.deepEqual(subjectsOf(bare), subjectsOf(numbered));
+  NodeAssert.equal(
     bare.some((commit) => commit.subject === "colleague tweak"),
     false,
   );
 
   // Names match too, and matching is case-insensitive on both sides.
-  assert.deepEqual(subjectsOf(windowCommits(repo, ["SOMEONE ELSE"])), ["colleague tweak"]);
-  assert.deepEqual(subjectsOf(windowCommits(repo, ["Other@Example.COM"])), ["colleague tweak"]);
-  assert.deepEqual(windowCommits(repo, ["nobody@example.com"]), []);
+  NodeAssert.deepEqual(subjectsOf(windowCommits(repo, ["SOMEONE ELSE"])), ["colleague tweak"]);
+  NodeAssert.deepEqual(subjectsOf(windowCommits(repo, ["Other@Example.COM"])), ["colleague tweak"]);
+  NodeAssert.deepEqual(windowCommits(repo, ["nobody@example.com"]), []);
   // An identity list with only junk in it must not silently fall back to "everyone".
-  assert.deepEqual(windowCommits(repo, ["", "   ", null]), []);
+  NodeAssert.deepEqual(windowCommits(repo, ["", "   ", null]), []);
 });
 
-test("commitsInWindow ignores the refs/t3 checkpoint namespace and the stash", (t) => {
+NodeTest.test("commitsInWindow ignores the refs/t3 checkpoint namespace and the stash", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
   // No identity filter, so exclusion of the refs is the only thing that can drop these.
   const commits = windowCommits(repo);
 
-  assert.equal(
+  NodeAssert.equal(
     commits.some((commit) => commit.subject.startsWith("t3 checkpoint")),
     false,
     "T3 writes a checkpoint commit per turn; on the real fork they made a single day 49.7 MB of numstat",
   );
-  assert.equal(
+  NodeAssert.equal(
     commits.some((commit) => /^(WIP on|On) /u.test(commit.subject)),
     false,
     "a stash entry is not work",
@@ -522,7 +522,7 @@ test("commitsInWindow ignores the refs/t3 checkpoint namespace and the stash", (
   // The checkpoint ref must not leak into branch attribution either — %S would otherwise report
   // `refs/t3/checkpoints/<base64 thread id>/turn/5` as this commit's branch.
   for (const commit of commits) {
-    assert.equal(
+    NodeAssert.equal(
       commit.branches.some(
         (branch) => branch.includes("refs/t3/") || branch.includes("checkpoint"),
       ),
@@ -531,12 +531,12 @@ test("commitsInWindow ignores the refs/t3 checkpoint namespace and the stash", (
   }
 });
 
-test("commitsInWindow degrades to an empty list instead of throwing", (t) => {
+NodeTest.test("commitsInWindow degrades to an empty list instead of throwing", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const notARepo = tempDir(t);
-  assert.deepEqual(windowCommits(notARepo), []);
-  assert.deepEqual(commitsInWindow("", {}, createRunner({ env: GIT_ENV })), []);
-  assert.deepEqual(
+  NodeAssert.deepEqual(windowCommits(notARepo), []);
+  NodeAssert.deepEqual(commitsInWindow("", {}, createRunner({ env: GIT_ENV })), []);
+  NodeAssert.deepEqual(
     commitsInWindow(
       "/repo",
       {},
@@ -546,7 +546,7 @@ test("commitsInWindow degrades to an empty list instead of throwing", (t) => {
   );
 });
 
-test("commitsInWindow counts a replayed patch once, not once per copy", (t) => {
+NodeTest.test("commitsInWindow counts a replayed patch once, not once per copy", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = NodePath.join(tempDir(t), "repo");
   buildReplayedHistory(repo, {
@@ -568,7 +568,7 @@ test("commitsInWindow counts a replayed patch once, not once per copy", (t) => {
   });
 
   const commits = windowCommits(repo);
-  assert.deepEqual(subjectsOf(commits), [
+  NodeAssert.deepEqual(subjectsOf(commits), [
     "base",
     "upstream moves the base",
     "fix(t3x): the patch that gets replayed",
@@ -578,15 +578,15 @@ test("commitsInWindow counts a replayed patch once, not once per copy", (t) => {
   const replayed = commits.filter(
     (commit) => commit.subject === "fix(t3x): the patch that gets replayed",
   );
-  assert.equal(replayed.length, 1, "the original and its copy are one patch, not two commits");
+  NodeAssert.equal(replayed.length, 1, "the original and its copy are one patch, not two commits");
   // Churn must not double either: it is the same two inserted lines seen twice.
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     { files: replayed[0].files, insertions: replayed[0].insertions },
     { files: 1, insertions: 2 },
   );
 });
 
-test("commitsInWindow keeps the branch-reachable copy of a replayed patch", (t) => {
+NodeTest.test("commitsInWindow keeps the branch-reachable copy of a replayed patch", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = NodePath.join(tempDir(t), "repo");
   // The tag-only original is COMMITTED later, so `git log` emits it first; without the preference
@@ -600,17 +600,17 @@ test("commitsInWindow keeps the branch-reachable copy of a replayed patch", (t) 
   const replayed = windowCommits(repo).filter(
     (commit) => commit.subject === "fix(t3x): the patch that gets replayed",
   );
-  assert.equal(replayed.length, 1);
-  assert.equal(replayed[0].sha, copy, "the surviving SHA is the one `git show` still resolves");
-  assert.ok(replayed[0].branches.includes("main"));
+  NodeAssert.equal(replayed.length, 1);
+  NodeAssert.equal(replayed[0].sha, copy, "the surviving SHA is the one `git show` still resolves");
+  NodeAssert.ok(replayed[0].branches.includes("main"));
 });
 
-test("commitsInWindow with an open window returns the whole history", (t) => {
+NodeTest.test("commitsInWindow with an open window returns the whole history", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
   const all = commitsInWindow(repo, {}, createRunner({ env: GIT_ENV }));
-  assert.equal(all.length, 9);
-  assert.ok(subjectsOf(all).includes("before the window"));
+  NodeAssert.equal(all.length, 9);
+  NodeAssert.ok(subjectsOf(all).includes("before the window"));
 });
 
 // --- mergedPrs ----------------------------------------------------------------------------------
@@ -678,7 +678,7 @@ const MIXED_PR_PAYLOAD = JSON.stringify([
   { number: 69, title: "author deleted their account", mergedAt: "2026-08-10T17:00:00Z" },
 ]);
 
-test("mergedPrs counts only the pull requests the user merged", () => {
+NodeTest.test("mergedPrs counts only the pull requests the user merged", () => {
   const window = { start: WINDOW_START, end: WINDOW_END };
   const identityForms = [
     ["@radroid"], // what `githubLoginIdentity` seeds
@@ -695,16 +695,16 @@ test("mergedPrs counts only the pull requests the user merged", () => {
       { ...window, identities },
       fakeRunner(() => okReply(MIXED_PR_PAYLOAD)),
     );
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       prs.map((pr) => pr.number),
       [66],
       label,
     );
-    assert.deepEqual(warnings, [], label);
+    NodeAssert.deepEqual(warnings, [], label);
   }
 });
 
-test("mergedPrs keeps unattributable pull requests but says they may not be yours", () => {
+NodeTest.test("mergedPrs keeps unattributable pull requests but says they may not be yours", () => {
   const window = { start: WINDOW_START, end: WINDOW_END };
   // None of these carries a login: no identities at all, and identities that are only a name or a
   // real email address.
@@ -715,35 +715,40 @@ test("mergedPrs keeps unattributable pull requests but says they may not be your
       { ...window, identities },
       fakeRunner(() => okReply(MIXED_PR_PAYLOAD)),
     );
-    assert.deepEqual(
+    NodeAssert.deepEqual(
       prs.map((pr) => pr.number),
       [66, 67, 68, 69],
       label,
     );
-    assert.equal(warnings.length, 1, label);
-    assert.match(warnings[0], /could not be attributed/u, label);
-    assert.match(warnings[0], /radroid\/t3code/u, label);
+    NodeAssert.equal(warnings.length, 1, label);
+    NodeAssert.match(warnings[0], /could not be attributed/u, label);
+    NodeAssert.match(warnings[0], /radroid\/t3code/u, label);
   }
 });
 
-test("mergedPrs adds no attribution caveat when the window held no pull requests", () => {
+NodeTest.test("mergedPrs adds no attribution caveat when the window held no pull requests", () => {
   const { prs, warnings } = mergedPrs(
     "radroid/t3code",
     { start: WINDOW_START, end: WINDOW_END },
     fakeRunner(() => okReply("[]")),
   );
   // Nothing to caveat: an empty list cannot include anyone else's work.
-  assert.deepEqual(prs, []);
-  assert.deepEqual(warnings, []);
+  NodeAssert.deepEqual(prs, []);
+  NodeAssert.deepEqual(warnings, []);
 });
 
-test("githubLoginIdentity reads the signed-in login in the form identities expects", () => {
-  const run = fakeRunner(() => okReply("radroid\n"));
-  assert.equal(githubLoginIdentity(run), "@radroid");
-  assert.deepEqual(run.calls, [{ cmd: "gh", args: ["api", "user", "-q", ".login"], options: {} }]);
-});
+NodeTest.test(
+  "githubLoginIdentity reads the signed-in login in the form identities expects",
+  () => {
+    const run = fakeRunner(() => okReply("radroid\n"));
+    NodeAssert.equal(githubLoginIdentity(run), "@radroid");
+    NodeAssert.deepEqual(run.calls, [
+      { cmd: "gh", args: ["api", "user", "-q", ".login"], options: {} },
+    ]);
+  },
+);
 
-test("githubLoginIdentity returns null rather than a junk identity", () => {
+NodeTest.test("githubLoginIdentity returns null rather than a junk identity", () => {
   const cases = [
     fakeRunner((cmd) => missingBinary(cmd)),
     fakeRunner(() => ({ ok: false, code: 4, stdout: "", stderr: "gh: not authenticated" })),
@@ -753,10 +758,10 @@ test("githubLoginIdentity returns null rather than a junk identity", () => {
     fakeRunner(() => okReply("<html>502 Bad Gateway</html>")),
     fakeRunner(() => okReply("not a login\n")),
   ];
-  for (const run of cases) assert.equal(githubLoginIdentity(run), null);
+  for (const run of cases) NodeAssert.equal(githubLoginIdentity(run), null);
 });
 
-test("mergedPrs filters precisely on mergedAt and scopes gh to the fork", () => {
+NodeTest.test("mergedPrs filters precisely on mergedAt and scopes gh to the fork", () => {
   const run = fakeRunner(() => okReply(PR_PAYLOAD));
   const { prs, warnings } = mergedPrs(
     "radroid/t3code",
@@ -766,10 +771,14 @@ test("mergedPrs filters precisely on mergedAt and scopes gh to the fork", () => 
 
   // No identity carries a login here, so the list is unattributed and says so rather than
   // quietly passing off whatever `gh` returned as this user's work.
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /could not be attributed/u);
-  assert.equal(prs.length, 1, "the day-before PR and the half-open upper edge are both excluded");
-  assert.deepEqual(prs[0], {
+  NodeAssert.equal(warnings.length, 1);
+  NodeAssert.match(warnings[0], /could not be attributed/u);
+  NodeAssert.equal(
+    prs.length,
+    1,
+    "the day-before PR and the half-open upper edge are both excluded",
+  );
+  NodeAssert.deepEqual(prs[0], {
     number: 66,
     title: "fix(t3x): retry the relay notify",
     url: "https://github.com/radroid/t3code/pull/66",
@@ -781,19 +790,19 @@ test("mergedPrs filters precisely on mergedAt and scopes gh to the fork", () => 
   });
 
   const [call] = run.calls;
-  assert.equal(call.cmd, "gh");
+  NodeAssert.equal(call.cmd, "gh");
   // Without --repo, gh resolves this fork to pingdotgg/t3code and reports the upstream's PRs.
-  assert.equal(call.args[call.args.indexOf("--repo") + 1], "radroid/t3code");
-  assert.ok(call.args.includes("--state") && call.args.includes("merged"));
+  NodeAssert.equal(call.args[call.args.indexOf("--repo") + 1], "radroid/t3code");
+  NodeAssert.ok(call.args.includes("--state") && call.args.includes("merged"));
   const search = call.args[call.args.indexOf("--search") + 1];
-  assert.match(search, /merged:>=\d{4}-\d{2}-\d{2} merged:<=\d{4}-\d{2}-\d{2}/u);
-  assert.equal(
+  NodeAssert.match(search, /merged:>=\d{4}-\d{2}-\d{2} merged:<=\d{4}-\d{2}-\d{2}/u);
+  NodeAssert.equal(
     run.calls.some((entry) => entry.args[0] === "repo"),
     false,
   );
 });
 
-test("mergedPrs sorts by merge time", () => {
+NodeTest.test("mergedPrs sorts by merge time", () => {
   const payload = JSON.stringify([
     { number: 3, mergedAt: "2026-08-10T18:00:00Z", author: { login: "a" } },
     { number: 1, mergedAt: "2026-08-10T06:00:00Z", author: { login: "a" } },
@@ -804,13 +813,13 @@ test("mergedPrs sorts by merge time", () => {
     { start: WINDOW_START, end: WINDOW_END },
     fakeRunner(() => okReply(payload)),
   );
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     prs.map((pr) => pr.number),
     [1, 2, 3],
   );
 });
 
-test("mergedPrs degrades to a warning for every gh failure mode", () => {
+NodeTest.test("mergedPrs degrades to a warning for every gh failure mode", () => {
   const window = { start: WINDOW_START, end: WINDOW_END };
   const scenarios = [
     ["missing binary", fakeRunner((cmd) => missingBinary(cmd)), /gh unavailable|ENOENT/u],
@@ -842,24 +851,24 @@ test("mergedPrs degrades to a warning for every gh failure mode", () => {
   ];
   for (const [label, run, pattern] of scenarios) {
     const result = mergedPrs("radroid/t3code", window, run);
-    assert.deepEqual(result.prs, [], label);
-    assert.equal(result.warnings.length, 1, label);
-    assert.match(result.warnings[0], pattern, label);
-    assert.match(result.warnings[0], /radroid\/t3code/u, label);
+    NodeAssert.deepEqual(result.prs, [], label);
+    NodeAssert.equal(result.warnings.length, 1, label);
+    NodeAssert.match(result.warnings[0], pattern, label);
+    NodeAssert.match(result.warnings[0], /radroid\/t3code/u, label);
   }
 });
 
-test("mergedPrs skips the lookup entirely when there is no GitHub remote", () => {
+NodeTest.test("mergedPrs skips the lookup entirely when there is no GitHub remote", () => {
   for (const value of [null, undefined, "", "   "]) {
     const run = fakeRunner(() => okReply("[]"));
     const result = mergedPrs(value, { start: WINDOW_START, end: WINDOW_END }, run);
-    assert.deepEqual(result.prs, []);
-    assert.equal(result.warnings.length, 1);
-    assert.equal(run.calls.length, 0);
+    NodeAssert.deepEqual(result.prs, []);
+    NodeAssert.equal(result.warnings.length, 1);
+    NodeAssert.equal(run.calls.length, 0);
   }
 });
 
-test("mergedPrs tolerates malformed rows inside a valid array", () => {
+NodeTest.test("mergedPrs tolerates malformed rows inside a valid array", () => {
   const payload = JSON.stringify([
     null,
     "not an object",
@@ -879,11 +888,11 @@ test("mergedPrs tolerates malformed rows inside a valid array", () => {
     fakeRunner(() => okReply(payload)),
   );
   // Unattributed again: no identity here carries a login.
-  assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /could not be attributed/u);
-  assert.equal(prs.length, 1);
+  NodeAssert.equal(warnings.length, 1);
+  NodeAssert.match(warnings[0], /could not be attributed/u);
+  NodeAssert.equal(prs.length, 1);
   // A row with an author string rather than the {login} object still yields a usable record.
-  assert.deepEqual(prs[0], {
+  NodeAssert.deepEqual(prs[0], {
     number: 9,
     title: "",
     url: "",
@@ -895,17 +904,17 @@ test("mergedPrs tolerates malformed rows inside a valid array", () => {
   });
 });
 
-test("mergedPrs with an open window omits the search qualifier", () => {
+NodeTest.test("mergedPrs with an open window omits the search qualifier", () => {
   const run = fakeRunner(() => okReply("[]"));
   const { prs, warnings } = mergedPrs("radroid/t3code", {}, run);
-  assert.deepEqual(prs, []);
-  assert.deepEqual(warnings, []);
-  assert.equal(run.calls[0].args.includes("--search"), false);
+  NodeAssert.deepEqual(prs, []);
+  NodeAssert.deepEqual(warnings, []);
+  NodeAssert.equal(run.calls[0].args.includes("--search"), false);
 });
 
 // --- collectGit ---------------------------------------------------------------------------------
 
-test("collectGit visits each repo once no matter how many worktrees are listed", (t) => {
+NodeTest.test("collectGit visits each repo once no matter how many worktrees are listed", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const root = tempDir(t);
   const repo = buildHistory(NodePath.join(root, "repo"));
@@ -930,34 +939,38 @@ test("collectGit visits each repo once no matter how many worktrees are listed",
     { run },
   );
 
-  assert.equal(result.repos.length, 1, "three checkouts of one repo collapse to a single entry");
+  NodeAssert.equal(
+    result.repos.length,
+    1,
+    "three checkouts of one repo collapse to a single entry",
+  );
   const [entry] = result.repos;
-  assert.equal(entry.root, repo);
-  assert.equal(entry.key, NodePath.join(repo, ".git"));
-  assert.equal(entry.nameWithOwner, "radroid/t3code");
-  assert.equal(entry.commits.length, 7);
+  NodeAssert.equal(entry.root, repo);
+  NodeAssert.equal(entry.key, NodePath.join(repo, ".git"));
+  NodeAssert.equal(entry.nameWithOwner, "radroid/t3code");
+  NodeAssert.equal(entry.commits.length, 7);
   // Four merged PRs in the window, one of them this user's: a colleague's, Dependabot's, and an
   // unattributed one are not this user's work.
-  assert.deepEqual(
+  NodeAssert.deepEqual(
     entry.mergedPrs.map((pr) => pr.number),
     [66],
   );
-  assert.deepEqual(entry.warnings, []);
+  NodeAssert.deepEqual(entry.warnings, []);
 
   // Three unusable inputs, three warnings, and none of them abort the collection.
-  assert.equal(result.warnings.length, 3);
-  assert.ok(result.warnings.every((warning) => /Not a git repository/u.test(warning)));
+  NodeAssert.equal(result.warnings.length, 3);
+  NodeAssert.ok(result.warnings.every((warning) => /Not a git repository/u.test(warning)));
 
   // gh is asked once — once per repo, not once per worktree — and never for repo metadata.
   const ghCalls = run.calls.filter((call) => call.cmd === "gh");
-  assert.equal(ghCalls.length, 1);
-  assert.equal(
+  NodeAssert.equal(ghCalls.length, 1);
+  NodeAssert.equal(
     ghCalls.some((call) => call.args[0] === "repo"),
     false,
   );
 });
 
-test("collectGit records a warning instead of failing when the remote is missing", (t) => {
+NodeTest.test("collectGit records a warning instead of failing when the remote is missing", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
   const repo = buildHistory(NodePath.join(tempDir(t), "repo"));
   const realRun = createRunner({ env: GIT_ENV });
@@ -967,25 +980,25 @@ test("collectGit records a warning instead of failing when the remote is missing
 
   const result = collectGit(repo, { start: WINDOW_START, end: WINDOW_END }, { run });
   const [entry] = result.repos;
-  assert.equal(entry.nameWithOwner, null);
-  assert.deepEqual(entry.mergedPrs, []);
-  assert.equal(entry.commits.length, 8, "commits still collected without a remote");
-  assert.equal(
+  NodeAssert.equal(entry.nameWithOwner, null);
+  NodeAssert.deepEqual(entry.mergedPrs, []);
+  NodeAssert.equal(entry.commits.length, 8, "commits still collected without a remote");
+  NodeAssert.equal(
     entry.warnings.length,
     2,
     "one for the absent origin, one for the skipped PR lookup",
   );
-  assert.ok(entry.warnings.some((warning) => /origin remote/u.test(warning)));
+  NodeAssert.ok(entry.warnings.some((warning) => /origin remote/u.test(warning)));
   // With no remote resolved, gh is never invoked at all.
-  assert.equal(
+  NodeAssert.equal(
     run.calls.some((call) => call.cmd === "gh"),
     false,
   );
 });
 
-test("collectGit returns an empty result for empty input", () => {
+NodeTest.test("collectGit returns an empty result for empty input", () => {
   const run = fakeRunner(() => okReply(""));
-  assert.deepEqual(collectGit([], {}, { run }), { repos: [], warnings: [] });
-  assert.deepEqual(collectGit(null, {}, { run }), { repos: [], warnings: [] });
-  assert.equal(run.calls.length, 0);
+  NodeAssert.deepEqual(collectGit([], {}, { run }), { repos: [], warnings: [] });
+  NodeAssert.deepEqual(collectGit(null, {}, { run }), { repos: [], warnings: [] });
+  NodeAssert.equal(run.calls.length, 0);
 });
