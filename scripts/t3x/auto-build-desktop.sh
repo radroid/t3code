@@ -318,6 +318,11 @@ acquire_lock() {
 # exactly — which is why this needs no upstream edit and no new SEAMS.md row.
 SETUP_SIGNING="$SCRIPT_DIR/setup-mac-signing.sh"
 
+# Kept in one place so the build and the verifier cannot disagree about it. The single source of
+# truth is DESKTOP_BUNDLE_IDENTIFIER in scripts/t3x/mac-signature.ts, and a test asserts this
+# literal matches it.
+DESKTOP_APP_ID="dev.curlycloud.coil"
+
 # Prints the identity name, or nothing at all when this machine has none set up. Never fails: an
 # unsigned build is worse than a signed one but better than no build.
 signing_identity() {
@@ -537,7 +542,13 @@ build_once() {
       return 1
     fi
     log "running: pnpm dist:desktop:dmg:arm64"
-    if ! ( cd "$REPO" && CSC_NAME="$signing_id" pnpm dist:desktop:dmg:arm64 ); then
+    # T3X_DESKTOP_APP_ID: the fork's own bundle id (issue #70). macOS keys one permission row per
+    # (service, bundle id), and sharing `com.t3tools.t3code` with upstream's nightly meant whichever
+    # app launched last owned the grants. Must match DESKTOP_BUNDLE_IDENTIFIER in
+    # scripts/t3x/mac-signature.ts — a test asserts it, and verify_signature below fails a build
+    # whose signing identifier is anything else.
+    if ! ( cd "$REPO" && CSC_NAME="$signing_id" T3X_DESKTOP_APP_ID="$DESKTOP_APP_ID" \
+      pnpm dist:desktop:dmg:arm64 ); then
       write_status "build-failed" "$cur" "" "pnpm dist:desktop:dmg:arm64 failed"
       log "BUILD FAILED for $cur"
       return 1

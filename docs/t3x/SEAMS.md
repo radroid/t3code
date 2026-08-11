@@ -2,8 +2,10 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **37 upstream-owned files, +1957 / -912 lines**, against merge-base
-`78f462c4e` (upstream v0.0.33, the 2026-08-10 sync). Everything else the fork adds lives in new
+Measured, not asserted: **38 upstream-owned files, +1968 / -913 lines**, against merge-base
+`78f462c4e` (upstream v0.0.33, the 2026-08-10 sync). The 38th, and the only deletion added since the
+2026-08-10 baseline, is `scripts/build-desktop-artifact.ts` — one line for #70, deliberately shaped as
+an env escape hatch so upstream's default and its tests survive it. Everything else the fork adds lives in new
 files upstream has never seen and cannot conflict.
 
 > **The file-list half has now survived two consecutive rebases unchanged** — same 37 files, same
@@ -12,6 +14,12 @@ files upstream has never seen and cannot conflict.
 > `__root.tsx` +9/-0), so anything that displaced upstream content would move a deletion count. When
 > #5624 removed a line from `channels.ts` and `preload.ts`, the removal survived precisely because
 > the fork never re-adds — it only appends.
+>
+> **2026-08-11: the first exception, and it is a small one.** `scripts/build-desktop-artifact.ts` (#70)
+> replaces one line — a constant's initialiser — so the fork's total is no longer +N/-0 on every shared
+> file, and the invariant above weakens from "no deletions anywhere" to "one known deletion, at a known
+> line". Keep it that way. The additive rule is what makes a clean rebase evidence of anything, so a
+> second displacement should have to argue for itself in this file the way that one did.
 
 > **Read the two dependency rows with their note, not their number.** `pnpm-lock.yaml` sits at
 > +317 / -737 and so at risk **60078**, still the top row by a wide margin. That figure is the
@@ -44,6 +52,7 @@ files upstream has never seen and cannot conflict.
 > silencing upstream's updater is done by building with `GITHUB_REPOSITORY: ""` rather than editing
 > `DesktopUpdates.ts`, and serialising the desktop build for #47 is done with
 > `vp run build:desktop --concurrency-limit 1` rather than editing `build-desktop-artifact.ts`.
+> (That file has since taken one line for #70 — see below. #47 still does not need it.)
 > The integration landed on **existing** rows and grew six of them — `contracts/src/ipc.ts`,
 > `preload.ts`, `ipc/channels.ts`, `ipc/DesktopIpcHandlers.ts`, `main.ts`, `__root.tsx` — by +57
 > lines in total. Each is the aggregator-shaped edit the rule above asks for: one import and one
@@ -62,17 +71,32 @@ files upstream has never seen and cannot conflict.
 > `git log <merge-base>..upstream/main -- apps/marketing` and port anything worth having (pricing
 > changes, new pages, security-relevant fixes) by hand.
 
-> **macOS code signing adds no NEW rows either — and the reason is worth keeping.** Issue #70 (every
-> update re-requesting every macOS permission) was diagnosed as needing a third signing mode inside
-> `scripts/build-desktop-artifact.ts`, because that file forces `CSC_IDENTITY_AUTO_DISCOVERY=false`
-> for unsigned builds. It did not. app-builder-lib consults that flag **only when no identity was
-> named**: `findIdentity()` reads `qualifier || process.env.CSC_NAME` first and, when that is
-> non-empty, goes straight to `security find-identity`. So exporting `CSC_NAME` around the existing
-> unsigned build is the whole mechanism, and it lives in `.github/workflows/t3x-release.yml` and
-> `scripts/t3x/` — a row on that hot upstream file was priced, considered, and then not needed.
-> The general lesson: before spending a row to add a mode, check whether the mode's escape hatch is
-> already an environment variable. `--concurrency-limit` for #47 and `GITHUB_REPOSITORY: ""` for the
-> updater were the same shape of answer.
+> **macOS code signing (#70) costs ONE line on `build-desktop-artifact.ts`, and not the one the issue
+> predicted.** The issue expected a third signing mode in that file, because it forces
+> `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned builds. That turned out to be free: app-builder-lib
+> consults the flag **only when no identity was named** — `findIdentity()` reads
+> `qualifier || process.env.CSC_NAME` first and, when non-empty, goes straight to
+> `security find-identity`. So the signing half is entirely fork-owned (`CSC_NAME` exported by
+> `.github/workflows/t3x-release.yml` and `scripts/t3x/auto-build-desktop.sh`), at zero rows.
+>
+> The row is spent on the **second** cause instead, which no environment variable existed for: macOS
+> stores one TCC permission row per `(service, bundle id)`, and the fork shared
+> `com.t3tools.t3code` with upstream's nightly — so whichever app launched last owned the grants and
+> the other was re-prompted, however well either was signed. `DESKTOP_APP_ID` is now
+> `process.env.T3X_DESKTOP_APP_ID?.trim() || "com.t3tools.t3code"`, and the fork sets that variable to
+> `dev.curlycloud.coil`.
+>
+> **The shape of the edit is the point.** A changed literal would have been +1/-1 and would have
+> broken three upstream assertions in `build-desktop-artifact.test.ts`, adding a second row on a
+> second upstream file. An env escape hatch keeps upstream's default, its tests, and its behaviour on
+> an unset environment — the same answer as `--concurrency-limit` for #47 and `GITHUB_REPOSITORY: ""`
+> for the updater. Before spending a row to change a value, check whether it can become a variable
+> upstream would have accepted.
+>
+> The compensating control for a seam this quiet is in fork-owned tests: `mac-signature.test.ts`
+> asserts the hook still exists in that file and that every build path sets it, and
+> `verify-mac-signature.ts` fails any artifact whose signing identifier is not the expected one. A
+> sync that reverts the line cannot ship silently.
 
 The churn and risk columns are measured against that same merge-base, over the 60 days preceding it.
 The window slides forward at every sync, so these figures move even when the fork does not.
@@ -169,6 +193,7 @@ Sorted by risk, worst first.
 | `apps/desktop/src/preload.ts`                                           | +29/-0    | 14    | **406**   | `showNotification` + `onNotificationActivated` on the exposed bridge, plus the `t3xUpdate` bridge object (get / subscribe / restart / dismiss)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `packages/contracts/src/settings.ts`                                    | +7/-2     | 23    | **207**   | `notifyOnNeedsInput` (**persisted schema**) + Claude `homePath` placeholder/description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift` | +33/-0    | 6     | **198**   | Shift+Return newline vs. bare Return submit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `scripts/build-desktop-artifact.ts`                                     | +11/-1    | 15    | **180**   | Issue #70: `DESKTOP_APP_ID` reads `process.env.T3X_DESKTOP_APP_ID` before falling back to upstream's `com.t3tools.t3code`, so the fork's app owns its own TCC permission rows instead of sharing them with upstream's nightly. Ten of the eleven added lines are the comment explaining that. An env hook rather than a changed literal on purpose: the literal would also have broken three upstream assertions in `build-desktop-artifact.test.ts` and cost a second row. Guarded from the fork side by `scripts/t3x/mac-signature.test.ts` (the hook exists, every build path sets it) and by `scripts/t3x/verify-mac-signature.ts` (the shipped artifact carries the expected identifier)                                                                           |
 | `apps/desktop/src/backend/DesktopBackendConfiguration.ts`               | +29/-0    | 6     | **174**   | Backend heap headroom (`NODE_OPTIONS`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `apps/desktop/src/backend/DesktopBackendConfiguration.test.ts`          | +42/-0    | 4     | **168**   | Heap-headroom assertions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `apps/desktop/src/main.ts`                                              | +9/-0     | 18    | **162**   | `ElectronNotification` layer + the `T3xUpdateDelivery` layer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

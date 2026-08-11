@@ -410,6 +410,12 @@ jobs:
           # "not specified" and falls back to the ad-hoc path. The verify step below is what turns
           # that silent fallback into a visible one.
           CSC_NAME: ${{ steps.signing.outputs.identity }}
+          # The other half of #70. macOS stores one permission row per (service, bundle id), and this
+          # fork's app shared `com.t3tools.t3code` with upstream's nightly — so whichever was launched
+          # last owned the grants and the other got re-prompted, however well either was signed.
+          # Keep this in step with DESKTOP_BUNDLE_IDENTIFIER in scripts/t3x/mac-signature.ts; a test
+          # asserts the two agree, and the verify step below fails an artifact carrying the wrong id.
+          T3X_DESKTOP_APP_ID: dev.curlycloud.coil
         run: |
           set -euo pipefail
           node scripts/build-desktop-artifact.ts \

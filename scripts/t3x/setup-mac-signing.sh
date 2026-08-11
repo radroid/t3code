@@ -55,7 +55,11 @@ P12_PATH="$SIGNING_DIR/t3x-signing.p12"
 P12_PASSWORD_PATH="$SIGNING_DIR/p12-password"
 KEYCHAIN_PASSWORD_PATH="$SIGNING_DIR/keychain-password"
 VALIDITY_DAYS=3650
-BUNDLE_ID="com.t3tools.t3code"
+# The fork's own bundle id (issue #70), mirroring DESKTOP_BUNDLE_IDENTIFIER in
+# scripts/t3x/mac-signature.ts. It appears in the designated requirement, so the stub bundle signed
+# by --print-requirement has to carry the SAME id as the shipped app or the recorded requirement
+# would never match a real build.
+BUNDLE_ID="dev.curlycloud.coil"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || printf '')"

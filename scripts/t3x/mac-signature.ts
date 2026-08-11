@@ -19,12 +19,27 @@
  */
 
 /**
- * LOGIC MIRROR of `DESKTOP_APP_ID` in scripts/build-desktop-artifact.ts, which is upstream-owned
- * and does not export it. `mac-signature.test.ts` reads that file and fails if the two drift, so a
- * rename upstream surfaces as a red test rather than as a verifier that silently checks the wrong
- * bundle id.
+ * The fork's own bundle id, and the second half of the #70 fix.
+ *
+ * macOS stores one TCC row per `(service, client)`, where `client` is the bundle id — so the fork's
+ * build and upstream's `T3 Code (Nightly)`, both `com.t3tools.t3code` and both commonly installed,
+ * shared one row per permission. Whichever launched last owned the grant and the other was
+ * re-prompted, which no amount of correct signing can fix. Renamed after `coil`
+ * (coil.curlycloud.dev), the fork's own home.
+ *
+ * Deliberately NOT a rename of `productName`: the updater refuses an install when the `.app` name
+ * inside the dmg differs from the installed one (`resolveMacInstallTarget`), so renaming the app
+ * would break the very update path this is meant to make quiet. The app stays `T3 Code (Alpha)`.
+ *
+ * Fed to the build through `T3X_DESKTOP_APP_ID`, which `scripts/build-desktop-artifact.ts` reads.
+ * `mac-signature.test.ts` asserts that hook still exists and that every build path sets it to this
+ * value — an upstream sync that reverts the seam, or a workflow that forgets the variable, would
+ * otherwise silently ship the old id and reset every permission again.
  */
-export const DESKTOP_BUNDLE_IDENTIFIER = "com.t3tools.t3code";
+export const DESKTOP_BUNDLE_IDENTIFIER = "dev.curlycloud.coil";
+
+/** The environment variable the fork's build paths use to set {@link DESKTOP_BUNDLE_IDENTIFIER}. */
+export const DESKTOP_APP_ID_ENV_VAR = "T3X_DESKTOP_APP_ID";
 
 /**
  * The fork's self-signed code-signing identity, created by scripts/t3x/setup-mac-signing.sh.
