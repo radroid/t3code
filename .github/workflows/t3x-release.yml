@@ -296,10 +296,21 @@ jobs:
             # Classified on output, not on the exit code. Bash truncates a child's status to 8
             # bits, so 0xC0000142 can never appear in `$?` to be matched, and vp reports its own
             # status rather than the dead grandchild's anyway.
-            if grep -qiE '0xC0000142|0xC0000005|STATUS_DLL_INIT_FAILED|Access violation' "$log"; then
-              echo "::warning::Attempt $attempt hit a Windows process-startup failure. Retrying."
+            #
+            # The classifier moved out of an inline grep and into scripts/t3x/windows-exit-codes.mjs
+            # because the grep was wrong (#47). It matched `0xC0000142|0xC0000005|
+            # STATUS_DLL_INIT_FAILED|Access violation`, and the observed failure contains none of
+            # them — vp prints the SIGNED DECIMAL Node reports, `FAILED (exit code: -1073741502)`.
+            # The retry could never have fired. Matching every spelling is now covered by tests
+            # built on the log from the issue, and the classifier also prints what the status
+            # actually means, so a recurrence is diagnosed from this log rather than from a bare
+            # negative integer.
+            #
+            # Exit 0 from it means retry; 1 means this is a real failure and stopping now is right.
+            if node scripts/t3x/windows-exit-codes.mjs --classify "$log"; then
+              echo "::warning::Attempt $attempt hit a transient Windows process-startup failure (see the classification above). Retrying."
             else
-              echo "::error::build:desktop failed with exit $status (not a known transient)." >&2
+              echo "::error::build:desktop failed with exit $status, and this is not a transient process-startup failure." >&2
               exit "$status"
             fi
           done
