@@ -62,6 +62,18 @@ files upstream has never seen and cannot conflict.
 > `git log <merge-base>..upstream/main -- apps/marketing` and port anything worth having (pricing
 > changes, new pages, security-relevant fixes) by hand.
 
+> **macOS code signing adds no NEW rows either — and the reason is worth keeping.** Issue #70 (every
+> update re-requesting every macOS permission) was diagnosed as needing a third signing mode inside
+> `scripts/build-desktop-artifact.ts`, because that file forces `CSC_IDENTITY_AUTO_DISCOVERY=false`
+> for unsigned builds. It did not. app-builder-lib consults that flag **only when no identity was
+> named**: `findIdentity()` reads `qualifier || process.env.CSC_NAME` first and, when that is
+> non-empty, goes straight to `security find-identity`. So exporting `CSC_NAME` around the existing
+> unsigned build is the whole mechanism, and it lives in `.github/workflows/t3x-release.yml` and
+> `scripts/t3x/` — a row on that hot upstream file was priced, considered, and then not needed.
+> The general lesson: before spending a row to add a mode, check whether the mode's escape hatch is
+> already an environment variable. `--concurrency-limit` for #47 and `GITHUB_REPOSITORY: ""` for the
+> updater were the same shape of answer.
+
 The churn and risk columns are measured against that same merge-base, over the 60 days preceding it.
 The window slides forward at every sync, so these figures move even when the fork does not.
 
