@@ -7,6 +7,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import {
+  GitCommandError,
   SourceControlRepositoryError,
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
@@ -18,9 +19,11 @@ import {
   type SourceControlRepositoryInfo,
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
+import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { describeGitCloneFailure, NON_INTERACTIVE_GIT_ENV } from "./cloneDiagnostics.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
@@ -50,6 +53,22 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
           cause,
         }),
   );
+}
+
+/**
+ * The provider a clone is talking to, for reporting. A URL clone carries no
+ * provider — reporting it as `unknown` reads to users like an internal error
+ * when the host is one we support, so derive it from the remote instead.
+ */
+function resolveCloneProvider(input: SourceControlCloneRepositoryInput): SourceControlProviderKind {
+  if (input.provider) {
+    return input.provider;
+  }
+  const remoteUrl = input.remoteUrl?.trim();
+  if (!remoteUrl) {
+    return "unknown";
+  }
+  return detectSourceControlProviderFromRemoteUrl(remoteUrl)?.kind ?? "unknown";
 }
 
 function toRepositoryInfo(
@@ -127,12 +146,12 @@ export const make = Effect.gen(function* () {
   });
 
   const normalizeDestinationPath = Effect.fn("SourceControlRepositoryService.normalizeDestination")(
-    function* (destinationPath: string) {
+    function* (destinationPath: string, provider: SourceControlProviderKind) {
       const trimmed = destinationPath.trim();
       if (trimmed.length === 0) {
         return yield* new SourceControlRepositoryError({
           operation: "cloneRepository",
-          provider: "unknown",
+          provider,
           detail: "Choose a destination path before cloning.",
         });
       }
@@ -142,9 +161,21 @@ export const make = Effect.gen(function* () {
   );
 
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
-    function* (destinationPath: string) {
-      const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
-      if (yield* fileSystem.exists(normalizedDestination)) {
+    function* (destinationPath: string, provider: SourceControlProviderKind) {
+      const normalizedDestination = yield* normalizeDestinationPath(destinationPath, provider);
+      const destinationExists = yield* fileSystem.exists(normalizedDestination).pipe(
+        Effect.mapError(
+          (cause) =>
+            new SourceControlRepositoryError({
+              operation: "cloneRepository",
+              provider,
+              detail:
+                "Could not read the destination path. Check that it is reachable on the machine running T3 Code.",
+              cause,
+            }),
+        ),
+      );
+      if (destinationExists) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
           .pipe(
@@ -152,7 +183,7 @@ export const make = Effect.gen(function* () {
               (cause) =>
                 new SourceControlRepositoryError({
                   operation: "cloneRepository",
-                  provider: "unknown",
+                  provider,
                   detail: "Destination path already exists and is not a directory.",
                   cause,
                 }),
@@ -161,12 +192,25 @@ export const make = Effect.gen(function* () {
         if (entries.length > 0) {
           return yield* new SourceControlRepositoryError({
             operation: "cloneRepository",
-            provider: "unknown",
+            provider,
             detail: "Destination path already exists and is not empty.",
           });
         }
       } else {
-        yield* fileSystem.makeDirectory(path.dirname(normalizedDestination), { recursive: true });
+        yield* fileSystem
+          .makeDirectory(path.dirname(normalizedDestination), { recursive: true })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new SourceControlRepositoryError({
+                  operation: "cloneRepository",
+                  provider,
+                  detail:
+                    "Could not create the destination folder. Check that the path is writable on the machine running T3 Code.",
+                  cause,
+                }),
+            ),
+          );
       }
 
       return {
@@ -180,10 +224,10 @@ export const make = Effect.gen(function* () {
   const cloneRepository = Effect.fn("SourceControlRepositoryService.cloneRepository")(function* (
     input: SourceControlCloneRepositoryInput,
   ) {
-    const preparedDestination = yield* prepareDestination(input.destinationPath);
+    const provider = resolveCloneProvider(input);
+    const preparedDestination = yield* prepareDestination(input.destinationPath, provider);
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
-    let provider: SourceControlProviderKind = input.provider ?? "unknown";
 
     if (input.provider && input.repository) {
       repository = yield* lookupRepository({
@@ -192,7 +236,6 @@ export const make = Effect.gen(function* () {
         cwd: preparedDestination.parentPath,
       });
       remoteUrl = selectRemoteUrl(repository, input.protocol);
-      provider = input.provider;
     }
 
     if (!remoteUrl) {
@@ -203,13 +246,52 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    yield* git.execute({
-      operation: "SourceControlRepositoryService.cloneRepository",
-      cwd: preparedDestination.parentPath,
-      args: ["clone", remoteUrl, preparedDestination.directoryName],
-      timeoutMs: 120_000,
-      maxOutputBytes: 256 * 1024,
-    });
+    // Non-zero exits are handled here rather than by the driver: the driver
+    // keeps only the length of git's stderr, and that stderr is the only thing
+    // that can tell an auth failure from a bad URL from an unreachable host.
+    const cloneArgs = ["clone", remoteUrl, preparedDestination.directoryName];
+    const cloneResult = yield* git
+      .execute({
+        operation: "SourceControlRepositoryService.cloneRepository",
+        cwd: preparedDestination.parentPath,
+        args: cloneArgs,
+        env: NON_INTERACTIVE_GIT_ENV,
+        allowNonZeroExit: true,
+        timeoutMs: 120_000,
+        maxOutputBytes: 256 * 1024,
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new SourceControlRepositoryError({
+              operation: "cloneRepository",
+              provider,
+              detail: cause.detail,
+              cause,
+            }),
+        ),
+      );
+
+    if (cloneResult.exitCode !== 0) {
+      return yield* new SourceControlRepositoryError({
+        operation: "cloneRepository",
+        provider,
+        detail: describeGitCloneFailure({
+          stderr: cloneResult.stderr,
+          provider: detectSourceControlProviderFromRemoteUrl(remoteUrl),
+        }),
+        cause: new GitCommandError({
+          operation: "SourceControlRepositoryService.cloneRepository",
+          command: "git",
+          cwd: preparedDestination.parentPath,
+          argumentCount: cloneArgs.length,
+          exitCode: cloneResult.exitCode,
+          stdoutLength: cloneResult.stdout.length,
+          stderrLength: cloneResult.stderr.length,
+          detail: "Git command exited with a non-zero status.",
+        }),
+      });
+    }
 
     return {
       cwd: preparedDestination.destinationPath,
@@ -280,7 +362,7 @@ export const make = Effect.gen(function* () {
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
     cloneRepository: (input) =>
       cloneRepository(input).pipe(
-        mapRepositoryError("cloneRepository", input.provider ?? "unknown"),
+        mapRepositoryError("cloneRepository", resolveCloneProvider(input)),
       ),
     publishRepository: (input) =>
       publishRepository(input).pipe(mapRepositoryError("publishRepository", input.provider)),

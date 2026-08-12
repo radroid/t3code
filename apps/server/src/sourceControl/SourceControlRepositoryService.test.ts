@@ -53,6 +53,14 @@ function processOutput(): GitVcsDriver.ExecuteGitResult {
   };
 }
 
+function processFailure(stderr: string): GitVcsDriver.ExecuteGitResult {
+  return {
+    ...processOutput(),
+    exitCode: ChildProcessSpawner.ExitCode(128),
+    stderr,
+  };
+}
+
 function makeLayer(input: {
   readonly provider?: SourceControlProvider.SourceControlProvider["Service"];
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
@@ -212,15 +220,200 @@ it.effect("preserves destination probe failures instead of treating them as miss
       }),
     );
 
-    assert.strictEqual(error.provider, "unknown");
+    assert.strictEqual(error.provider, "github");
     assert.strictEqual(error.operation, "cloneRepository");
     assert.strictEqual(error.cause, fileSystemCause);
+    assert.notStrictEqual(error.detail, "The source control operation could not be completed.");
   }).pipe(
     Effect.provide(
       makeLayer({
         fileSystem: FileSystem.makeNoop({
           exists: () => Effect.fail(fileSystemCause),
           makeDirectory: () => Effect.void,
+        }),
+      }),
+    ),
+  );
+});
+
+const withCloneParent = <A, E>(
+  use: (input: {
+    readonly parent: string;
+    readonly destinationPath: string;
+  }) => Effect.Effect<A, E, FileSystem.FileSystem>,
+) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-source-control-clone-parent-" });
+    return yield* use({ parent, destinationPath: `${parent}/repo` });
+  }).pipe(Effect.provide(NodeServices.layer));
+
+const cloneFailure = (input: {
+  readonly remoteUrl: string;
+  readonly destinationPath: string;
+  readonly execute: GitVcsDriver.GitVcsDriver["Service"]["execute"];
+}) =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    return yield* Effect.flip(
+      service.cloneRepository({
+        remoteUrl: input.remoteUrl,
+        destinationPath: input.destinationPath,
+      }),
+    );
+  }).pipe(Effect.provide(makeLayer({ git: { execute: input.execute } })));
+
+it.effect("names an authentication failure and the credential the detected host needs", () =>
+  withCloneParent(({ destinationPath }) =>
+    Effect.gen(function* () {
+      const error = yield* cloneFailure({
+        remoteUrl: "https://bitbucket.org/workspace/repo.git",
+        destinationPath,
+        execute: () =>
+          Effect.succeed(
+            processFailure(
+              "Cloning into 'repo'...\nfatal: Authentication failed for 'https://bitbucket.org/workspace/repo.git/'",
+            ),
+          ),
+      });
+
+      assert.strictEqual(error.provider, "bitbucket");
+      assert.strictEqual(error.operation, "cloneRepository");
+      assert.include(error.detail, "Bitbucket");
+      assert.include(error.detail, "app password");
+      assert.notInclude(error.message, "The source control operation could not be completed.");
+    }),
+  ),
+);
+
+it.effect("reports a missing repository without blaming the user's credentials", () =>
+  withCloneParent(({ destinationPath }) =>
+    Effect.gen(function* () {
+      const error = yield* cloneFailure({
+        remoteUrl: "https://bitbucket.org/workspace/repo.git",
+        destinationPath,
+        execute: () => Effect.succeed(processFailure("remote: Repository not found.")),
+      });
+
+      assert.strictEqual(error.provider, "bitbucket");
+      assert.include(error.detail, "No repository was found");
+      assert.notInclude(error.detail, "app password");
+    }),
+  ),
+);
+
+it.effect("redacts credentials embedded in git output before surfacing it", () =>
+  withCloneParent(({ destinationPath }) =>
+    Effect.gen(function* () {
+      const error = yield* cloneFailure({
+        remoteUrl: "https://bitbucket.org/workspace/repo.git",
+        destinationPath,
+        execute: () =>
+          Effect.succeed(
+            processFailure(
+              "error: RPC failed for 'https://x-token-auth:ATBBsuper-secret@bitbucket.org/workspace/repo.git/'; curl 92",
+            ),
+          ),
+      });
+
+      assert.notInclude(error.message, "ATBBsuper-secret");
+      assert.notInclude(error.message, "x-token-auth");
+      assert.include(error.detail, "curl 92");
+    }),
+  ),
+);
+
+it.effect("surfaces a clone timeout as a timeout rather than a generic failure", () =>
+  withCloneParent(({ destinationPath }) =>
+    Effect.gen(function* () {
+      const error = yield* cloneFailure({
+        remoteUrl: "https://bitbucket.org/workspace/repo.git",
+        destinationPath,
+        execute: (input) =>
+          Effect.fail(
+            new GitCommandError({
+              operation: input.operation,
+              command: "git",
+              cwd: input.cwd,
+              detail: "Git command timed out.",
+            }),
+          ),
+      });
+
+      assert.strictEqual(error.provider, "bitbucket");
+      assert.include(error.detail, "timed out");
+      assert.notInclude(error.message, "The source control operation could not be completed.");
+    }),
+  ),
+);
+
+it.effect("clones without an interactive credential prompt it has nowhere to draw", () =>
+  withCloneParent(({ destinationPath }) =>
+    Effect.gen(function* () {
+      const environments: Array<NodeJS.ProcessEnv | undefined> = [];
+
+      yield* Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        yield* service.cloneRepository({
+          remoteUrl: "https://bitbucket.org/workspace/repo.git",
+          destinationPath,
+        });
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            git: {
+              execute: (input) =>
+                Effect.sync(() => {
+                  environments.push(input.env);
+                  return processOutput();
+                }),
+            },
+          }),
+        ),
+      );
+
+      assert.deepStrictEqual(environments, [
+        {
+          GCM_INTERACTIVE: "never",
+          GIT_ASKPASS: "",
+          GIT_TERMINAL_PROMPT: "0",
+          SSH_ASKPASS: "",
+          SSH_ASKPASS_REQUIRE: "never",
+        },
+      ]);
+    }),
+  ),
+);
+
+it.effect("names a destination that cannot be created instead of reporting it generically", () => {
+  const fileSystemCause = PlatformError.systemError({
+    _tag: "PermissionDenied",
+    module: "FileSystem",
+    method: "makeDirectory",
+    pathOrDescriptor: "/restricted",
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.cloneRepository({
+        remoteUrl: "https://bitbucket.org/workspace/repo.git",
+        destinationPath: "/restricted/repo",
+      }),
+    );
+
+    assert.strictEqual(error.provider, "bitbucket");
+    assert.include(error.detail, "destination");
+    assert.strictEqual(error.cause, fileSystemCause);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        fileSystem: FileSystem.makeNoop({
+          exists: () => Effect.succeed(false),
+          // Only the clone destination is unwritable; the test config layer
+          // creates a directory of its own during layer construction.
+          makeDirectory: (dirPath) =>
+            dirPath.startsWith("/restricted") ? Effect.fail(fileSystemCause) : Effect.void,
         }),
       }),
     ),
