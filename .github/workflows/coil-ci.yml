@@ -1,19 +1,25 @@
-# t3x fork CI — the fork's real PR/main gate.
+# coil fork CI — the fork's real PR/main gate.
 #
 # Upstream's ci.yml runs on blacksmith-* runners the fork has no access to, so it never runs
 # here and PRs show "no checks". This runs the same fast checks on ubuntu-latest so every fork
 # PR (and every push to main / a sync branch) gets an independent typecheck/lint/test gate.
 #
 # NOTE: pull_request does NOT fire on a CONFLICTING sync PR (GitHub can't build the merge ref),
-# so sync branches are gated by the push trigger on `t3x/sync-**` instead — an independent check
+# so sync branches are gated by the push trigger on `coil/sync-**` instead — an independent check
 # alongside the resolve job's own verify.
-name: t3x fork CI
+name: coil fork CI
 
 on:
   pull_request:
   push:
     branches:
       - main
+      - "coil/sync-**"
+      # The pre-#71 prefix, kept for one sync cycle. A sync branch that was pushed before the
+      # rename landed is still open afterwards, and it is precisely the branch that cannot fall
+      # back to `pull_request` — a conflicting sync PR has no merge ref, which is why this push
+      # trigger exists at all. Dropping this line early ungates exactly the branches that need
+      # gating most. Remove it once a `coil/sync-*` branch has completed a full cycle.
       - "t3x/sync-**"
   workflow_dispatch: {}
 
@@ -21,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: t3x-ci-${{ github.ref }}
+  group: coil-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

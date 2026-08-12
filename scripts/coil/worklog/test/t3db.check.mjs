@@ -320,7 +320,7 @@ NodeTest.describe("readThreads", () => {
   insertThread(alpha.db, {
     threadId: "in-window",
     title: "Sync fork with upstream",
-    branch: "t3x/sync",
+    branch: "coil/sync",
     worktreePath: "/tmp/wt",
     createdAt: "2026-08-10T12:00:00.000Z",
     updatedAt: "2026-08-10T18:00:00.000Z",
@@ -391,7 +391,7 @@ NodeTest.describe("readThreads", () => {
       threadId: "in-window",
       projectId: "proj-1",
       title: "Sync fork with upstream",
-      branch: "t3x/sync",
+      branch: "coil/sync",
       worktreePath: "/tmp/wt",
       createdAt: "2026-08-10T12:00:00.000Z",
       updatedAt: "2026-08-10T18:00:00.000Z",

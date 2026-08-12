@@ -6,7 +6,7 @@
 
 **Architecture:** Copy `apps/marketing` into a new fork-owned package `apps/t3x-home` (never edit `apps/marketing` — the seam ledger's additive invariant is the fork's sync safety, and a 1310-line in-place rebrand would conflict on every upstream marketing change). Rebrand the copy, replace the GitHub-API release lookup (which 404s on the fork — all fork releases are pre-releases) with the already-live update-relay manifest, and serve the built `dist/` as an assets-only Cloudflare Worker named `t3x-home`, mirroring the existing `infra/coil-update-relay` conventions.
 
-**Tech Stack:** Astro 7 (static output), pnpm workspace (`apps/*` glob — the new package auto-joins), Cloudflare Workers static assets via `wrangler.jsonc`, `pnpm dlx wrangler@4` (never installed as a dependency), GitHub Actions (`ubuntu-latest` + `voidzero-dev/setup-vp@v1`, matching `t3x-ci.yml`).
+**Tech Stack:** Astro 7 (static output), pnpm workspace (`apps/*` glob — the new package auto-joins), Cloudflare Workers static assets via `wrangler.jsonc`, `pnpm dlx wrangler@4` (never installed as a dependency), GitHub Actions (`ubuntu-latest` + `voidzero-dev/setup-vp@v1`, matching `coil-ci.yml`).
 
 ## Global Constraints
 
