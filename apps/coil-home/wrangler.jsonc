@@ -1,5 +1,5 @@
 {
-  // Unlike infra/t3x-update-relay, wrangler is not a dependency here, so there is no
+  // Unlike infra/coil-update-relay, wrangler is not a dependency here, so there is no
   // node_modules/wrangler/config-schema.json to point at — use the published schema.
   "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
   "name": "coil-home",

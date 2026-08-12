@@ -22,8 +22,8 @@ import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAp
 import { NotificationCoordinator } from "../components/NotificationCoordinator";
 import { ThreadOutboxDrain } from "../outbox/useThreadOutboxDrain";
 import { PushSubscriptionManager } from "../components/PushSubscriptionManager";
-// t3x: fork-owned update delivery.
-import { T3xUpdateToast } from "../components/t3x/UpdateToast";
+// coil: fork-owned update delivery.
+import { CoilUpdateToast } from "../components/coil/UpdateToast";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
@@ -158,7 +158,7 @@ function RootRouteView() {
         <NotificationCoordinator />
         {primaryEnvironmentAuthenticated ? <ThreadOutboxDrain /> : null}
         <PushSubscriptionManager />
-        <T3xUpdateToast />
+        <CoilUpdateToast />
         {appShell}
         {/* Above the router: a theme draft is judged by walking the app, so the
             editor has to survive navigation away from settings. */}

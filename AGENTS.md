@@ -135,9 +135,9 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Agent skills
 
-- **Issue tracker** — GitHub issues on the fork, `radroid/t3code`. See `docs/t3x/agents/issue-tracker.md`.
-- **Triage labels** — the five canonical roles, unrenamed. See `docs/t3x/agents/triage-labels.md`.
-- **Domain docs** — single-context, under `docs/t3x/`. See `docs/t3x/agents/domain.md`.
+- **Issue tracker** — GitHub issues on the fork, `radroid/t3code`. See `docs/coil/agents/issue-tracker.md`.
+- **Triage labels** — the five canonical roles, unrenamed. See `docs/coil/agents/triage-labels.md`.
+- **Domain docs** — single-context, under `docs/coil/`. See `docs/coil/agents/domain.md`.
 
 ## Where code lives
 

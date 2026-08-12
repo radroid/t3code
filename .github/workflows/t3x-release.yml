@@ -245,7 +245,7 @@ jobs:
       # is the binary's cdhash, and macOS re-requests every permission (Screen Recording,
       # Accessibility, Microphone, Files & Folders, Local Network) after every single update.
       #
-      # The identity is a self-signed certificate created by scripts/t3x/setup-mac-signing.sh; the
+      # The identity is a self-signed certificate created by scripts/coil/setup-mac-signing.sh; the
       # private key reaches CI as a p12 in T3X_MAC_CSC_P12_BASE64. It buys stability, not trust:
       # the app is still not notarized, and does not need to be, because the requirement only has to
       # stop MOVING for the grants to stick.
@@ -270,7 +270,7 @@ jobs:
           set -euo pipefail
 
           if [[ -z "${CSC_P12_BASE64:-}" || -z "${CSC_P12_PASSWORD:-}" ]]; then
-            echo "::warning::No macOS signing secrets set, so this build is ad-hoc signed and will re-request every macOS permission once installed. See docs/t3x/mac-signing-runbook.md."
+            echo "::warning::No macOS signing secrets set, so this build is ad-hoc signed and will re-request every macOS permission once installed. See docs/coil/mac-signing-runbook.md."
             {
               echo "signed=false"
               echo "identity="
@@ -306,7 +306,7 @@ jobs:
           # "skipped macOS application code signing" as a WARNING, and the release goes green with
           # exactly the bundle this whole step exists to prevent.
           sudo security add-trusted-cert -d -r trustRoot -p codeSign \
-            -k /Library/Keychains/System.keychain docs/t3x/mac-signing/certificate.pem
+            -k /Library/Keychains/System.keychain docs/coil/mac-signing/certificate.pem
 
           rm -f "$p12"
 
@@ -377,7 +377,7 @@ jobs:
             # bits, so 0xC0000142 can never appear in `$?` to be matched, and vp reports its own
             # status rather than the dead grandchild's anyway.
             #
-            # The classifier moved out of an inline grep and into scripts/t3x/windows-exit-codes.mjs
+            # The classifier moved out of an inline grep and into scripts/coil/windows-exit-codes.mjs
             # because the grep was wrong (#47). It matched `0xC0000142|0xC0000005|
             # STATUS_DLL_INIT_FAILED|Access violation`, and the observed failure contains none of
             # them — vp prints the SIGNED DECIMAL Node reports, `FAILED (exit code: -1073741502)`.
@@ -387,7 +387,7 @@ jobs:
             # negative integer.
             #
             # Exit 0 from it means retry; 1 means this is a real failure and stopping now is right.
-            if node scripts/t3x/windows-exit-codes.mjs --classify "$log"; then
+            if node scripts/coil/windows-exit-codes.mjs --classify "$log"; then
               echo "::warning::Attempt $attempt hit a transient Windows process-startup failure (see the classification above). Retrying."
             else
               echo "::error::build:desktop failed with exit $status, and this is not a transient process-startup failure." >&2
@@ -424,7 +424,7 @@ jobs:
           # The other half of #70. macOS stores one permission row per (service, bundle id), and this
           # fork's app shared `com.t3tools.t3code` with upstream's nightly — so whichever was launched
           # last owned the grants and the other got re-prompted, however well either was signed.
-          # Keep this in step with DESKTOP_BUNDLE_IDENTIFIER in scripts/t3x/mac-signature.ts; a test
+          # Keep this in step with DESKTOP_BUNDLE_IDENTIFIER in scripts/coil/mac-signature.ts; a test
           # asserts the two agree, and the verify step below fails an artifact carrying the wrong id.
           T3X_DESKTOP_APP_ID: dev.curlycloud.coil
         run: |
@@ -477,7 +477,7 @@ jobs:
 
           args=(
             --artifact "$dmg"
-            --expect-requirement-file docs/t3x/mac-signing/designated-requirement.txt
+            --expect-requirement-file docs/coil/mac-signing/designated-requirement.txt
           )
           if [[ "$SIGNED" == "true" ]]; then
             args+=(--expect-authority "$IDENTITY")
@@ -486,7 +486,7 @@ jobs:
             args+=(--allow-unsigned)
           fi
 
-          node scripts/t3x/verify-mac-signature.ts "${args[@]}"
+          node scripts/coil/verify-mac-signature.ts "${args[@]}"
 
       - name: Delete the signing keychain
         if: ${{ always() && matrix.platform == 'mac' && steps.signing.outputs.signed == 'true' }}
@@ -590,7 +590,7 @@ jobs:
           # Read as an env var, never interpolated into shell source: these are commit subjects,
           # so the content is chosen by whoever wrote the commit.
           CHANGES: ${{ needs.resolve.outputs.changes }}
-        run: node scripts/t3x/build-update-manifest.mjs staged staged/t3x-latest.json
+        run: node scripts/coil/build-update-manifest.mjs staged staged/t3x-latest.json
 
       # The install steps used to live inline in this file, which made the release body the only
       # place they existed — and the download page pointed at "the release notes" without linking
@@ -768,8 +768,8 @@ jobs:
             status="$(curl -sS -m 60 -o /tmp/notify-response.txt -w '%{http_code}' \
               -X POST "${RELAY_URL%/}/notify" \
               -H 'content-type: application/json' \
-              -H "x-t3x-timestamp: $timestamp" \
-              -H "x-t3x-signature: $signature" \
+              -H "x-coil-timestamp: $timestamp" \
+              -H "x-coil-signature: $signature" \
               --data-binary "$body")" || status=000
 
             echo "relay responded $status: $(cat /tmp/notify-response.txt 2>/dev/null)"
