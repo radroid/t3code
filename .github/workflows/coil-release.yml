@@ -528,8 +528,30 @@ jobs:
           # no app-update.yml is packaged, and the updater disables itself with "no update feed is
           # configured". That is what makes the fork's toast the only update surface, at zero
           # upstream edits. The verify step below asserts it.
+          # `GITHUB_REPOSITORY: ""` DOES NOT WORK, and believing it did is what shipped a second
+          # updater in every build to date. Actions refuses to let a workflow set any `GITHUB_`
+          # prefixed variable, so this line is inert: the build script reads the runner's real
+          # `radroid/t3code`, `resolveGitHubPublishConfig` returns a config, and electron-builder
+          # writes `app-update.yml` into the bundle after all. It is kept only because removing it
+          # would read as "this was never tried".
+          #
+          # The proof is the file itself. A shipped build carries owner `radroid`, repo `t3code` —
+          # which is exactly `GITHUB_REPOSITORY`, and could not have been produced by any other
+          # branch of that function.
           GITHUB_REPOSITORY: ""
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: ""
+          # This is the line that actually does it. `T3CODE_DESKTOP_UPDATE_REPOSITORY` is the fork's
+          # own hook and is consulted FIRST, so a non-empty value short-circuits `GITHUB_REPOSITORY`
+          # before it is ever read. `disabled` then fails the `owner/repo` split — no slash, so
+          # `repo` is undefined — and the function returns undefined, which is the "no publish
+          # config" path. No publish config, no `app-update.yml`, and `hasUpdateFeedConfig` is false,
+          # so upstream's electron-updater disables itself and the fork's toast is the only update
+          # surface. Which is what the empty value was always meant to achieve.
+          #
+          # Depending on a parse failure would be fragile on its own. It is not on its own: the
+          # "Verify no update feed was packaged" step below asserts the OUTCOME, and now that it
+          # looks in the right place it fails the release rather than shipping. That check is what
+          # found this, after being unable to fail since it was written.
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: "disabled"
           # Issue #70, and the only line that makes the mac build signed. Empty on Windows and
           # whenever no signing secret is configured, which is the same as absent: the build script
           # scrubs empty variables, and electron-builder's findIdentity() treats an empty CSC_NAME as
