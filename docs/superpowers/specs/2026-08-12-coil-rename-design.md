@@ -63,15 +63,27 @@ Issue #71 names this hazard but attributes it to the _version string_, and concl
 change is safe because the updater never compares versions. Both halves of that are true and
 neither is the risk. The risk is the filename.
 
-**Resolution.** Rename the file and offset the counter:
+**Resolution.** Rename the file and offset the counter, doing the addition in bash:
 
 ```yaml
-BUILD_COUNTER: ${{ github.run_number + 100 }}
+env:
+  BUILD_COUNTER_OFFSET: 100
+  RUN_NUMBER: ${{ github.run_number }}
+run: |
+  BUILD_COUNTER=$((RUN_NUMBER + BUILD_COUNTER_OFFSET))
 ```
+
+Not in the expression. **GitHub's expression syntax has no arithmetic operators** — the operator
+list stops at comparison and logic — so `${{ github.run_number + 100 }}` is not a wrong value, it
+is a parse failure that takes the entire file down. The run appears, contains no jobs, and the only
+diagnostic offered is "this run likely failed because of a workflow file issue". Caught by CI on
+the first push of this branch, which is the only reason it is written down here rather than
+discovered on a release.
 
 100 clears both the current run (32) and the published high-water mark (26) with room that no
 plausible backfill closes. The first coil build is 101. The offset is permanent and load-bearing —
-removing it later re-creates the same failure — so it carries a comment saying so.
+removing it later re-creates the same failure — so it carries a comment saying so, and the step
+asserts the resolved counter is above 26 rather than trusting the arithmetic.
 
 Two smaller consequences of the same rename:
 
