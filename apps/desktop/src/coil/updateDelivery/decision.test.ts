@@ -7,7 +7,7 @@ const MANIFEST: UpdateManifest = {
   shortSha: "ffffffffffff",
   buildNumber: 20,
   sha: "f".repeat(40),
-  version: "0.0.31-t3x.ffffffffffff",
+  version: "0.0.31-coil.ffffffffffff",
   releaseTag: "t3x-build-ffffffffffff",
   builtAt: "2026-08-03T12:00:00.000Z",
   assets: [
@@ -54,7 +54,7 @@ describe("decideUpdateAction", () => {
 
   it("refuses to act when this build carries no release counter", () => {
     // Changed deliberately on 2026-08-07; it previously acted. `buildNumber` comes from the app's
-    // own version, and only `t3x-release.yml` writes `-t3x.<n>` — so `undefined` does not mean
+    // own version, and only `coil-release.yml` writes `-coil.<n>` — so `undefined` does not mean
     // "first run", it means "this app was built locally". Treating that as "no floor" let a
     // locally built app install ANY announced release over itself, including one cut from an
     // OLDER commit than the one it was built from: a silent downgrade that reports success.

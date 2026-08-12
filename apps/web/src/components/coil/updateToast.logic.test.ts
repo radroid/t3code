@@ -17,7 +17,7 @@ const ARMED_AT = 1_700_000_000_000;
 
 function input(overrides: Partial<UpdateToastInput> = {}): UpdateToastInput {
   return {
-    status: { kind: "ready", shortSha: "abc123def456", version: "0.0.31-t3x.abc123def456" },
+    status: { kind: "ready", shortSha: "abc123def456", version: "0.0.31-coil.abc123def456" },
     dismissedShortSha: undefined,
     isElectron: true,
     platform: "MacIntel",
@@ -65,7 +65,7 @@ describe("selectUpdateToastView", () => {
       // user out of every future update.
       const view = selectUpdateToastView({
         ...input(),
-        status: { kind: "ready", shortSha: "ffffffffffff", version: "0.0.31-t3x.ffffffffffff" },
+        status: { kind: "ready", shortSha: "ffffffffffff", version: "0.0.31-coil.ffffffffffff" },
         dismissedShortSha: "abc123def456",
       });
       expect(view.kind).toBe("ready");
@@ -168,7 +168,7 @@ describe("the changelog-forward ready toast", () => {
         status: {
           kind: "ready",
           shortSha: "abc123def456",
-          version: "0.0.31-t3x.44",
+          version: "0.0.31-coil.44",
           ...extra,
         } as UpdateToastInput["status"],
       }),
@@ -206,7 +206,7 @@ describe("the changelog-forward ready toast", () => {
         status: {
           kind: "ready",
           shortSha: "abc123def456",
-          version: "0.0.31-t3x.44",
+          version: "0.0.31-coil.44",
           builtAt: "2026-08-08T11:56:00.000Z",
         },
         now,
@@ -406,19 +406,19 @@ describe("the boot after an install", () => {
   const FAILED = {
     kind: "install-failed",
     expectedShortSha: "b23e83fa0258",
-    expectedVersion: "0.0.31-t3x.7",
+    expectedVersion: "0.0.31-coil.7",
     actualShortSha: "dd90bbace7c3",
-    actualVersion: "0.0.31-t3x.6",
+    actualVersion: "0.0.31-coil.6",
     platform: "win32",
     arch: "x64",
   } as const;
 
   it("confirms a successful update once", () => {
     const view = selectUpdateToastView(
-      input({ status: { kind: "updated", shortSha: "b23e83fa0258", version: "0.0.31-t3x.7" } }),
+      input({ status: { kind: "updated", shortSha: "b23e83fa0258", version: "0.0.31-coil.7" } }),
     );
     expect(view.kind).toBe("updated");
-    expect(view.kind === "updated" && view.title).toContain("0.0.31-t3x.7");
+    expect(view.kind === "updated" && view.title).toContain("0.0.31-coil.7");
   });
 
   it("says the old version still works, so a failure does not read as a broken install", () => {
