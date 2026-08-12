@@ -53,6 +53,8 @@
  *     `restore-cursor`), making that section moot without touching `pnpm.overrides`.
  */
 
+import * as NodeURL from "node:url";
+
 /**
  * Third-party source maps: 18.2 MiB across ~2,290 files, and not one of them is read at runtime.
  *
@@ -229,6 +231,26 @@ export function renderExclusionEnvValue(globs = T3X_DESKTOP_FILE_EXCLUSIONS) {
   return globs.join(",");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * Whether this module was run directly, rather than imported.
+ *
+ * `import.meta.url === `file://${process.argv[1]}`` is the idiom this replaces, and it is broken on
+ * Windows. `process.argv[1]` is a native path there (`D:\a\...`), so the template produces
+ * `file://D:\a\...` while `import.meta.url` is `file:///D:/a/...` — drive letter after three
+ * slashes, forward separators. They never match, so a Windows CLI run silently executed nothing,
+ * exited 0, and printed no output.
+ *
+ * That is how it reached production: on macOS and Linux the idiom works, because an absolute POSIX
+ * path already begins with `/`. Both CI callers of these scripts are `set -euo pipefail`, and
+ * neither could see the difference between "verified" and "did nothing" — one release failed on the
+ * empty stdout, the other passed a check that had not run. `pathToFileURL` is what Node provides for
+ * exactly this, and it is correct on every platform.
+ */
+function isEntryPoint() {
+  const entry = process.argv[1];
+  return entry !== undefined && import.meta.url === NodeURL.pathToFileURL(entry).href;
+}
+
+if (isEntryPoint()) {
   process.stdout.write(renderExclusionEnvValue());
 }
