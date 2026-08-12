@@ -7,6 +7,7 @@ import {
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
+import { APP_WORDMARK_SUFFIX } from "../../branding";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
@@ -95,7 +96,8 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        Code
+        {/* coil: was the literal `Code`. Derived so the sidebar cannot drift from the bundle. */}
+        {APP_WORDMARK_SUFFIX}
       </span>
     </Link>
   );
