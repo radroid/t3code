@@ -190,7 +190,7 @@ print_ci_secrets() {
 Two repository secrets. The .p12 holds the PRIVATE KEY — set them with gh, never paste them into a
 file in the repo:
 
-  gh secret set T3X_MAC_CSC_P12_BASE64 -R radroid/t3code < "$SIGNING_DIR/t3x-signing.p12.base64"
+  gh secret set T3X_MAC_CSC_P12_BASE64 -R radroid/t3code < "$P12_PATH.base64"
   gh secret set T3X_MAC_CSC_PASSWORD   -R radroid/t3code --body "\$(cat '$P12_PASSWORD_PATH')"
 
 EOF
@@ -329,8 +329,17 @@ case "$MODE" in
     rm -f "$CERT_PATH" "$KEY_PATH" "$P12_PATH" "$P12_PATH.base64"
     create_identity
     log "new designated requirement: $(print_requirement)"
-    log "Record it: scripts/coil/setup-mac-signing.sh --print-requirement > docs/coil/mac-signing/designated-requirement.txt"
-    log "And re-set the CI secrets: scripts/coil/setup-mac-signing.sh --print-ci-secrets"
+    log "Record it, and re-commit the certificate the release trusts:"
+    log "  scripts/coil/setup-mac-signing.sh --print-requirement > docs/coil/mac-signing/designated-requirement.txt"
+    log "  cp '$CERT_PATH' docs/coil/mac-signing/certificate.pem"
+    log ""
+    # Run rather than merely recommended. This block used to end at "re-set the CI secrets:
+    # --print-ci-secrets", which is a second command to remember at the exact moment the identity
+    # has already changed underneath CI — and #71's rotation duly re-set the PASSWORD secret and
+    # not the p12, leaving CI importing the OLD certificate while CSC_NAME named the new one.
+    # Emitting the commands here, with the .base64 already written, removes the step that was
+    # skipped. They still have to be run by hand: the p12 is a private key.
+    print_ci_secrets
     ;;
   ensure)
     create_identity

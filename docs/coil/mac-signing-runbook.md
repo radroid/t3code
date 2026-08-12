@@ -221,14 +221,20 @@ use. `disable-library-validation` in particular is what keeps the bundled native
 Only if the key leaks or the certificate expires (2036). It costs one round of prompts:
 
 ```bash
-scripts/coil/setup-mac-signing.sh --rotate
+scripts/coil/setup-mac-signing.sh --rotate   # prints the next three commands, filled in
 scripts/coil/setup-mac-signing.sh --print-requirement > docs/coil/mac-signing/designated-requirement.txt
 cp ~/.t3x/mac-signing/t3x-signing.crt docs/coil/mac-signing/certificate.pem
-scripts/coil/setup-mac-signing.sh --print-ci-secrets     # then re-set both secrets
+gh secret set T3X_MAC_CSC_P12_BASE64 -R radroid/t3code < ~/.t3x/mac-signing/t3x-signing.p12.base64
 ```
 
 Commit the two files in the same change. The verify step compares against the recorded requirement,
 so a rotation that forgets them fails the next release instead of quietly re-prompting the user.
+
+`T3X_MAC_CSC_PASSWORD` survives a rotation — `--rotate` reuses the existing p12 password rather than
+minting a new one — which is exactly what makes the p12 secret easy to skip: CI keeps importing the
+_old_ certificate perfectly happily, and the failure surfaces one layer later as electron-builder not
+finding an identity matching `CSC_NAME`. #71's rotation skipped it. Both halves of the identity move
+together or neither does.
 
 ## Related
 
