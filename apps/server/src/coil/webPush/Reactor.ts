@@ -88,7 +88,7 @@ const makeSupervisor = Effect.gen(function* () {
       const environmentId = yield* serverEnvironment.getEnvironmentId;
 
       const projectTitle = (
-        Option.isSome(projectOpt) ? projectOpt.value.title : "T3 Code"
+        Option.isSome(projectOpt) ? projectOpt.value.title : "T3 Coil"
       ) as OrchestrationProjectShell["title"];
 
       const state = projectThreadAwareness({
