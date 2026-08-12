@@ -22,7 +22,7 @@ import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
-import * as T3xUpdateDelivery from "./t3x/updateDelivery/UpdateDelivery.ts";
+import * as CoilUpdateDelivery from "./coil/updateDelivery/UpdateDelivery.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
 import * as ElectronNotification from "./electron/ElectronNotification.ts";
@@ -192,10 +192,10 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
-  // t3x: fork-owned update delivery. Sits beside DesktopUpdates rather than replacing it —
+  // coil: fork-owned update delivery. Sits beside DesktopUpdates rather than replacing it —
   // upstream's updater is silenced by building with GITHUB_REPOSITORY="" (no app-update.yml is
   // packaged, so it self-disables), which costs no seam here.
-  T3xUpdateDelivery.layer,
+  CoilUpdateDelivery.layer,
   desktopSshLayer,
 ).pipe(
   Layer.provideMerge(DesktopUpdates.layer),

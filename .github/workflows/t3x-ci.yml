@@ -69,7 +69,7 @@ jobs:
       # own — the same load-sensitivity class as the test timeout above, on hardware faster than the
       # fork's 2-core runners. 120000 is chosen on the same "highest configured value" rule:
       # web 15s -> 120s, root 60s -> 120s, server already 120s.
-      # Keep in sync with the `test` case in `scripts/t3x/sync-upstream.sh`.
+      # Keep in sync with the `test` case in `scripts/coil/sync-upstream.sh`.
       - name: Test
         if: ${{ !cancelled() }}
         run: vp run test --testTimeout=120000 --hookTimeout=120000
