@@ -1,4 +1,4 @@
-# t3x daily upstream sync — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A4).
+# coil daily upstream sync — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A4).
 # Rebases the fork's patch series onto pingdotgg/t3code, verifies, and pushes when green.
 # On conflict or red verification it pushes nothing and escalates via a `coil-sync` issue.
 #
@@ -20,7 +20,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: t3x-upstream-sync
+  group: coil-upstream-sync
   cancel-in-progress: false
 
 env:
