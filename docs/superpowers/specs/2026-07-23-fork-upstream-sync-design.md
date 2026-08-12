@@ -73,11 +73,11 @@ origin    https://github.com/radroid/t3code.git      (fetch + push)   ← the fo
 capped, not per-feature.**
 
 ```
-apps/server/src/t3x/          ← you own it; upstream never touches it
-  index.ts                    ← T3xLayerLive = Layer.mergeAll(autoResume, feature2, …, featureN)
+apps/server/src/coil/          ← you own it; upstream never touches it
+  index.ts                    ← CoilLayerLive = Layer.mergeAll(autoResume, feature2, …, featureN)
   autoResume/…                ← Project B lives here
-apps/web/src/t3x/             ← same, for any future UI
-docs/t3x/SEAMS.md             ← authoritative list of every upstream line touched
+apps/web/src/coil/             ← same, for any future UI
+docs/coil/SEAMS.md             ← authoritative list of every upstream line touched
 ```
 
 - Every new feature registers itself **inside `t3x/index.ts`** (a file upstream never
@@ -98,31 +98,31 @@ Left alone they burn Actions minutes and email failures on every push.
   never conflicts and never rebases away.
 - The two new t3x workflows (A4, A5) are the only ones that should run on the fork.
 
-## A4. Daily sync job — `.github/workflows/t3x-upstream-sync.yml`
+## A4. Daily sync job — `.github/workflows/coil-upstream-sync.yml`
 
 New file in an upstream-owned directory → conflicts with nothing. Triggers: daily
 `schedule` + `workflow_dispatch` (with a `dry_run` input).
 
 1. Checkout `origin/main`, full history.
 2. Fetch `upstream`. If `upstream/main` hasn't moved → exit no-op.
-3. Tag `t3x/last-good-<date>` and push the tag — pre-rebase state recoverable. The tag is
+3. Tag `coil/last-good-<date>` and push the tag — pre-rebase state recoverable. The tag is
    advertised in the escalation issue **only if its push to origin actually succeeded** (a
    local-only tag on an ephemeral CI runner is unrecoverable, so it is never surfaced).
 4. `git rebase upstream/main`. On conflict: `--abort`, record conflicted paths and the
    upstream commits that touched them.
 5. **Verify (daily depth):** `pnpm install --frozen-lockfile`, then `typecheck` +
    `lint` + server tests. (Full build is weekly — A5.)
-6. Outcome (driven by `scripts/t3x/sync-upstream.sh` exit codes; the push step fires
+6. Outcome (driven by `scripts/coil/sync-upstream.sh` exit codes; the push step fires
    **only** on exit 0):
    - **0 — green** → `git push --force-with-lease` to `origin/main`. Done, zero tokens.
    - **10 — no-op** → upstream unchanged; nothing to do.
    - **20 — conflict** / **30 — red verify** → push nothing. Open (or update) a single
-     issue labelled `t3x-sync` with a JSON status block: `kind: "daily"`, conflicted files,
+     issue labelled `coil-sync` with a JSON status block: `kind: "daily"`, conflicted files,
      failing command, upstream commit range, current patch manifest.
    - **40 — dropped patch** → push nothing; escalate (see step 7).
 7. **Dropped-patch detector:** if one of the fork's own patch commits vanishes during
    rebase (upstream likely absorbed an equivalent change), the script exits **40** even
-   when verification is green. This blocks the auto-push and opens the `t3x-sync` issue so
+   when verification is green. This blocks the auto-push and opens the `coil-sync` issue so
    a human/agent confirms the loss was intentional before the fork permanently drops the
    change — it never vanishes silently. The count is taken over **non-merge commits**
    (`git rev-list --count --no-merges`): a default rebase flattens merge commits, so
@@ -133,21 +133,21 @@ New file in an upstream-owned directory → conflicts with nothing. Triggers: da
 > Force-push is safe here: `main` is `upstream/main` + a rebased patch series, and the
 > pre-rebase tag from step 3 plus `--force-with-lease` guard against clobbering.
 
-## A5. Weekly deep-verify job — `.github/workflows/t3x-weekly-verify.yml`
+## A5. Weekly deep-verify job — `.github/workflows/coil-weekly-verify.yml`
 
 Weekly `schedule` + `workflow_dispatch`. Runs the **full monorepo build** against the
 current `origin/main`. Does **not** rebase and **never blocks the daily job**. On
-failure, opens/updates the same `t3x-sync` issue with `kind: "weekly-build"`. This
+failure, opens/updates the same `coil-sync` issue with `kind: "weekly-build"`. This
 catches semantic build regressions that a green typecheck/lint/test pass misses,
 without slowing the daily loop.
 
 ## A6. Escalation contract
 
 The Action and the user's scheduled Claude agent talk through exactly one channel: an
-open GitHub issue labelled `t3x-sync`, discriminated by a `kind` field
+open GitHub issue labelled `coil-sync`, discriminated by a `kind` field
 (`daily` | `weekly-build`).
 
-- The daily Claude routine starts with `gh issue list -l t3x-sync --state open`.
+- The daily Claude routine starts with `gh issue list -l coil-sync --state open`.
   - **Empty** → exits in seconds, near-zero tokens. (This is why the model is hybrid.)
   - **Non-empty** → replays the rebase locally, resolves conflicts, AND does what CI
     structurally cannot: reviews the upstream commits that touched t3x **seams**
@@ -155,9 +155,9 @@ open GitHub issue labelled `t3x-sync`, discriminated by a `kind` field
     hides. Then pushes and closes the issue.
 - The Claude routine is set up by the user in the Claude app on a daily schedule; this
   spec provides the exact prompt/checklist it should run (delivered as
-  `docs/t3x/sync-agent-runbook.md`).
+  `docs/coil/sync-agent-runbook.md`).
 
-## A7. Setup script — `scripts/t3x/setup-fork.sh`
+## A7. Setup script — `scripts/coil/setup-fork.sh`
 
 Idempotent, reversible, documents every action. Performs A1 (remotes + rerere) and
 prints the `gh` commands for A3 (or runs them behind a `--disable-workflows` flag).
@@ -167,13 +167,13 @@ Safe to re-run; detects already-applied state.
 
 ## Deliverables
 
-| Artifact               | Path                                      | Upstream conflict risk |
-| ---------------------- | ----------------------------------------- | ---------------------- |
-| Remote/rerere setup    | `scripts/t3x/setup-fork.sh`               | none (new file)        |
-| Daily sync workflow    | `.github/workflows/t3x-upstream-sync.yml` | none (new file)        |
-| Weekly verify workflow | `.github/workflows/t3x-weekly-verify.yml` | none (new file)        |
-| Seam ledger            | `docs/t3x/SEAMS.md`                       | none (new file)        |
-| Sync-agent runbook     | `docs/t3x/sync-agent-runbook.md`          | none (new file)        |
+| Artifact               | Path                                       | Upstream conflict risk |
+| ---------------------- | ------------------------------------------ | ---------------------- |
+| Remote/rerere setup    | `scripts/coil/setup-fork.sh`               | none (new file)        |
+| Daily sync workflow    | `.github/workflows/coil-upstream-sync.yml` | none (new file)        |
+| Weekly verify workflow | `.github/workflows/coil-weekly-verify.yml` | none (new file)        |
+| Seam ledger            | `docs/coil/SEAMS.md`                       | none (new file)        |
+| Sync-agent runbook     | `docs/coil/sync-agent-runbook.md`          | none (new file)        |
 
 **Total edits to upstream-owned files: zero.** (Project B adds the only 2-line seam.)
 
@@ -186,4 +186,4 @@ Safe to re-run; detects already-applied state.
 
 - Remotes/rerere: re-run setup script notes, or `git remote rename` back.
 - Workflows: `gh workflow enable <id>`.
-- A bad sync: `git reset --hard t3x/last-good-<date>` (tag pushed pre-rebase).
+- A bad sync: `git reset --hard coil/last-good-<date>` (tag pushed pre-rebase).

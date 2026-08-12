@@ -49,15 +49,15 @@ One new reactor. **Revised after review:** the three existing reactors
 (`Layers/OrchestrationReactor.ts:21-26`) and booted from `serverRuntimeStartup.ts:344` —
 both **upstream-owned** files. Following that pattern would add 2 more seams and break
 the "+2 lines" claim. So `AutoResumeReactor` instead **self-starts via
-`Effect.forkScoped` at layer-construction time inside `T3xLayerLive`**: merging the
+`Effect.forkScoped` at layer-construction time inside `CoilLayerLive`**: merging the
 layer boots the supervisor with no external `.start()` call. Tradeoff: no explicit
 `drain()` — the supervisor fiber is torn down by scope closure on shutdown, which is
 fine for a background poller. This keeps the entire upstream footprint at the 2-line
 `server.ts` seam.
 
 ```
-apps/server/src/t3x/
-  index.ts                          T3xLayerLive = AutoResumeReactorLive ∘ AutoResumeStoreLive
+apps/server/src/coil/
+  index.ts                          CoilLayerLive = AutoResumeReactorLive ∘ AutoResumeStoreLive
   autoResume/
     Reactor.ts                      self-starting supervisor: detect → schedule → resume
     classifyRateLimit.ts            pure structured decode: (rateLimits) => verdict | undefined
@@ -237,9 +237,9 @@ contracts changes, no settings-schema changes.**
 ## B8. Upstream footprint
 
 ```
-apps/server/src/server.ts    +2 lines   (1 import of T3xLayerLive, 1 Layer.provideMerge)
+apps/server/src/server.ts    +2 lines   (1 import of CoilLayerLive, 1 Layer.provideMerge)
 ────────────────────────────────────────
-everything else              new files under apps/server/src/t3x/ (upstream-invisible)
+everything else              new files under apps/server/src/coil/ (upstream-invisible)
 ```
 
 This is the entire patch against upstream code, and it does **not** grow when feature
@@ -321,7 +321,7 @@ A second, deeper review of the built code surfaced ten confirmed findings; all a
 - **Corrupt/future-version state file could crash boot.** Decode failure and version
   mismatch both fall back to empty state (unit-tested).
 - **`hasOpenBlockingRequest` mirror drift.** Verified byte-for-byte identical to the
-  current `decider.ts`, recorded as a logic-mirror seam in `docs/t3x/SEAMS.md`, and unit-
+  current `decider.ts`, recorded as a logic-mirror seam in `docs/coil/SEAMS.md`, and unit-
   tested across all branches (open / resolved / stale-failure-clears / no-requestId).
 
 Project-A workflow findings from the same pass (fixed in the fork-sync spec + scripts):

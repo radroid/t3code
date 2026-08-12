@@ -28,20 +28,20 @@ If the user hasn't said otherwise, proceed with the recommended column.
 
 ## Conflict-surface guardrails (do NOT violate — this is a fork)
 
-- **New files only, under `scripts/t3x/`.** The build itself is invoked via the existing `pnpm dist:desktop:dmg:arm64` — never edit `scripts/build-desktop-artifact.ts` (21 commits / 60 days — hot upstream file).
+- **New files only, under `scripts/coil/`.** The build itself is invoked via the existing `pnpm dist:desktop:dmg:arm64` — never edit `scripts/build-desktop-artifact.ts` (21 commits / 60 days — hot upstream file).
 - **Do NOT add npm scripts to the root `package.json`** (hot upstream file). Invoke the shell script by path; document it in a t3x runbook, not via a root script.
-- Everything lands in `scripts/t3x/` + `docs/t3x/` so upstream never touches it and the daily rebase stays clean.
+- Everything lands in `scripts/coil/` + `docs/coil/` so upstream never touches it and the daily rebase stays clean.
 
 ## Phased implementation
 
-### Phase 1 — one-shot build (`scripts/t3x/auto-build-desktop.sh`)
+### Phase 1 — one-shot build (`scripts/coil/auto-build-desktop.sh`)
 
 - `set -euo pipefail`; resolve repo root.
-- **Idempotency:** read last-built SHA from `~/.t3/userdata/t3x-autobuild-last-sha` (or a repo-local `.t3x/` marker). If `git rev-parse HEAD` == last SHA, log "no change" and exit 0.
+- **Idempotency:** read last-built SHA from `~/.t3/userdata/coil-autobuild-last-sha` (or a repo-local `.t3x/` marker). If `git rev-parse HEAD` == last SHA, log "no change" and exit 0.
 - If `pnpm-lock.yaml` changed since last build, run `pnpm install --frozen-lockfile`.
 - Run `pnpm dist:desktop:dmg:arm64` (add `pnpm --filter @t3tools/desktop ensure:electron` first if the electron runtime is missing).
 - Locate the produced artifact (parse electron-builder's printed path, or `find` the newest `*.dmg` under the electron-builder output dir — default `dist/`, confirm at implementation time).
-- Write a status JSON (`t3x-autobuild-status.json`: `{ sha, dmgPath, builtAt, result }`) and update the last-built-SHA marker **only on success**.
+- Write a status JSON (`coil-autobuild-status.json`: `{ sha, dmgPath, builtAt, result }`) and update the last-built-SHA marker **only on success**.
 - **Verify:** run it twice — first produces a `.dmg` + status; second is a no-op ("no change").
 
 ### Phase 2 — install mode (`--install`, `--relaunch`)
@@ -57,17 +57,17 @@ If the user hasn't said otherwise, proceed with the recommended column.
 
 - Poll `git rev-parse HEAD` every N seconds (default 60). On a new SHA, run Phase 1 (+ Phase 2 if `--install`).
 - Wrap the overnight invocation in `caffeinate -s` so the Mac doesn't sleep mid-run.
-- Log to `~/.t3/userdata/logs/t3x-autobuild.log`; never crash the loop on a failed build — log and keep polling.
+- Log to `~/.t3/userdata/logs/coil-autobuild.log`; never crash the loop on a failed build — log and keep polling.
 - **Verify:** start `--watch`, make a trivial commit, confirm a rebuild fires within the interval and the status JSON updates.
 
 ### Phase 4 (optional) — hands-off startup
 
-- A `launchd` user agent (`~/Library/LaunchAgents/dev.t3x.autobuild.plist`) that starts `--watch --install` at login, **or** a git `post-merge`/`post-commit` hook (in `.git/hooks`, untracked — document how to install it; do not commit hooks into the tree unless via a documented `core.hooksPath` under `scripts/t3x/hooks/`).
+- A `launchd` user agent (`~/Library/LaunchAgents/dev.coil.autobuild.plist`) that starts `--watch --install` at login, **or** a git `post-merge`/`post-commit` hook (in `.git/hooks`, untracked — document how to install it; do not commit hooks into the tree unless via a documented `core.hooksPath` under `scripts/coil/hooks/`).
 - **Verify:** reboot/login (or fire the hook) and confirm the watcher starts.
 
 ### Phase 5 — docs
 
-- `docs/t3x/auto-build-runbook.md`: how to start/stop the watcher, where logs/status live, the Gatekeeper note, and the "use the installed app, not from-source" note. Add a pointer in `docs/t3x/SEAMS.md` (this feature adds **zero** upstream seams — all new files).
+- `docs/coil/auto-build-runbook.md`: how to start/stop the watcher, where logs/status live, the Gatekeeper note, and the "use the installed app, not from-source" note. Add a pointer in `docs/coil/SEAMS.md` (this feature adds **zero** upstream seams — all new files).
 
 ## Caveats & risks (call out in the runbook)
 

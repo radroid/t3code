@@ -1,0 +1,28 @@
+{
+  // The pre-#71 hostname, deployed as a pass-through to `coil-update-relay`.
+  //
+  // Same package, same source tree, different entrypoint — see src/legacyWorker.ts for why this
+  // hostname can never be retired on a schedule, and why the shim proxies instead of redirecting.
+  //
+  // Deploy with `pnpm run deploy:legacy`, and only after `coil-update-relay` is live AND has been
+  // notified at least once. Deploying it earlier would point every installed build at a relay that
+  // answers `/latest` with `null` — harmless, since that reads as "nothing to act on", but it
+  // means no client sees an update until the next release rather than immediately.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "t3x-update-relay",
+  "main": "src/legacyWorker.ts",
+  "compatibility_date": "2026-06-01",
+  "observability": { "enabled": true },
+
+  // Both blocks are carried over from wrangler.jsonc unchanged, and neither is used at runtime.
+  //
+  // This config deploys OVER the existing `t3x-update-relay`, whose migration history already
+  // contains UpdateChannel. Omitting them here would make the deploy an implicit class deletion,
+  // which Cloudflare refuses without an explicit `deleted_classes` migration. Keeping them makes
+  // the cutover an ordinary code deploy — and, just as importantly, makes rolling back to the real
+  // relay an ordinary code deploy rather than a migration.
+  "durable_objects": {
+    "bindings": [{ "name": "UPDATE_CHANNEL", "class_name": "UpdateChannel" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UpdateChannel"] }],
+}

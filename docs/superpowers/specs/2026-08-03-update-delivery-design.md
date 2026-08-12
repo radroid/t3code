@@ -6,7 +6,7 @@
 ## Problem
 
 A merge to `main` reaches an installed fork desktop app only by accident today. The local
-watcher (`scripts/t3x/auto-build-desktop.sh`) rebuilds on a 12-hour cadence, swaps the bundle
+watcher (`scripts/coil/auto-build-desktop.sh`) rebuilds on a 12-hour cadence, swaps the bundle
 silently, and relaunches through a race that left the app dark for 103 minutes on 2026-08-02
 (#41). There is no moment at which a human is told "a new build exists, restart when you're
 ready".
@@ -55,7 +55,7 @@ Five units, each independently testable.
        │
        ▼
  ┌──────────────────────────────┐
- │ A. t3x-release.yml           │  on: workflow_run [t3x fork CI] == success
+ │ A. t3x-release.yml           │  on: workflow_run [coil fork CI] == success
  │    macos-latest  → dmg arm64 │  checkout ref: workflow_run.head_sha
  │    windows-latest→ nsis x64  │  build env: GITHUB_REPOSITORY=""
  └──────────────┬───────────────┘
@@ -75,20 +75,20 @@ Five units, each independently testable.
                 ▼
  ┌──────────────────────────────┐
  │ C. Worker (fork-owned)       │  GET /latest  → JSON, no-store
- │    infra/t3x-update-relay/   │  GET /events  → SSE, 15-min cap
+ │    infra/coil-update-relay/   │  GET /events  → SSE, 15-min cap
  └──────────────┬───────────────┘
                 │ push  (+ 15-min floor poll, always)
                 ▼
  ┌──────────────────────────────┐
  │ D. Desktop subscriber        │  compares shortSha vs t3codeCommitHash
- │    apps/desktop/src/t3x/     │  rejects buildNumber <= own
+ │    apps/desktop/src/coil/     │  rejects buildNumber <= own
  │      updateDelivery/         │  → stages to a swap-ready bundle
  └──────────────┬───────────────┘
                 │
                 ▼
  ┌──────────────────────────────┐
  │ E. Toast (top-right)         │  "Update ready · Restart"
- │    apps/web/.../t3x/         │  click → mv + DesktopLifecycle.relaunch
+ │    apps/web/.../coil/         │  click → mv + DesktopLifecycle.relaunch
  └──────────────────────────────┘
 ```
 
@@ -96,15 +96,15 @@ Five units, each independently testable.
 
 Upstream's `release.yml` cannot be reused: it runs on `blacksmith-12vcpu-macos-26` and
 `blacksmith-32vcpu-windows-2025`, runners this fork has no access to. This mirrors the existing
-`t3x-ci.yml` ↔ `ci.yml` relationship — same job, runners we can actually use.
+`coil-ci.yml` ↔ `ci.yml` relationship — same job, runners we can actually use.
 
-**Trigger — `workflow_run`, not `push`.** `t3x-ci` is a separate workflow, and `needs:` cannot
+**Trigger — `workflow_run`, not `push`.** `coil-ci` is a separate workflow, and `needs:` cannot
 cross workflows. The only mechanism is:
 
 ```yaml
 on:
   workflow_run:
-    workflows: ["t3x fork CI"]
+    workflows: ["coil fork CI"]
     types: [completed]
     branches: [main]
 ```
@@ -125,7 +125,7 @@ Also required at the workflow level: `permissions: contents: write` (upstream's 
 1. `actions/checkout` with `ref: <head_sha>` and a sparse-checkout excluding `.repos/` — it is
    tracked, 12,961 files, 126 MB, and upstream excludes it from every job.
 2. `voidzero-dev/setup-vp@v1`, then `ensure:electron` (upstream runs this in `preflight`, and the
-   fork's own `t3x-weekly-verify.yml` runs it too).
+   fork's own `coil-weekly-verify.yml` runs it too).
 3. **Rust toolchain** — `dtolnay/rust-toolchain@stable` with the explicit target, plus
    `Swatinem/rust-cache`. This is not optional: `stageResourceMonitor` is called with no platform
    or flag guard (`build-desktop-artifact.ts:1840`), shells `cargo build --locked --release`, and
@@ -223,7 +223,7 @@ this is insurance against a known-intermittent failure rather than a response to
 runner. It is still worth doing: #47 records that a failed build leaves no artifact, and any
 consumer picking "the newest installer" then silently reinstalls a stale one.
 
-> Note: `t3x-ci.yml` currently describes `ubuntu-latest` as "2-core" in three comments. Public-repo
+> Note: `coil-ci.yml` currently describes `ubuntu-latest` as "2-core" in three comments. Public-repo
 > standard runners were doubled to 4 vCPU / 16 GB in Dec 2023, so those comments are stale. Not
 > fixed here — it is unrelated to this change — but the timeout values they justify should be
 > re-derived from a real measurement rather than from the stated core count.
@@ -246,7 +246,7 @@ The final step of the release workflow POSTs to the Worker:
 `shortSha` is 12 characters to match `t3codeCommitHash`, which is what the app can actually read
 about itself. Comparing anything else means comparing against a value the app does not have.
 
-Signed `X-T3X-Signature: sha256=<hmac>` over `X-T3X-Timestamp` + the raw body. A workflow step
+Signed `X-Coil-Signature: sha256=<hmac>` over `X-Coil-Timestamp` + the raw body. A workflow step
 rather than a GitHub repo webhook, deliberately: it is versioned and reviewable in-repo, needs no
 webhook UI configuration, and is naturally gated on the build having actually succeeded — a repo
 webhook fires on push regardless of whether anything was built.
@@ -262,7 +262,7 @@ notifies.
 the failure mode of publishing one anyway is a Windows user whose toast points at an asset that
 does not exist.
 
-### C. Worker — `infra/t3x-update-relay/` _(new, fork-owned)_
+### C. Worker — `infra/coil-update-relay/` _(new, fork-owned)_
 
 A separate Worker, **not** a route in `infra/relay/`. `infra/relay/` is upstream-owned with zero
 fork edits today; adding routes there would open a new front on the seam ledger, whose own
@@ -274,7 +274,7 @@ does not have. There is nothing to piggyback on.
 Every inherited upstream workflow is `disabled_manually` on this fork, `release.yml` included —
 which is why a fork-owned release workflow is required rather than merely convenient.
 
-- `POST /notify` — verify HMAC over `X-T3X-Timestamp` + raw body, reject a timestamp skewed more
+- `POST /notify` — verify HMAC over `X-Coil-Timestamp` + raw body, reject a timestamp skewed more
   than 5 minutes, reject non-monotonic payloads, store as latest, broadcast. The timestamp is an
   explicit header, **not** `builtAt`: uploading ~470 MB routinely pushes notify well past 5
   minutes after the build finished.
@@ -305,7 +305,7 @@ KV-backed and will not deploy on a free account.
 Deployed by its own workflow with one secret (`CLOUDFLARE_API_TOKEN`) and one shared
 (`T3X_UPDATE_HMAC_SECRET`).
 
-### D. Desktop subscriber — `apps/desktop/src/t3x/updateDelivery/` _(new, fork-owned)_
+### D. Desktop subscriber — `apps/desktop/src/coil/updateDelivery/` _(new, fork-owned)_
 
 Lives in the **desktop main process**, because that is the thing being updated: it is always
 local, even when the app is driving a remote environment, so a server-side owner would report
@@ -449,7 +449,7 @@ passkey support. At merge-to-main cadence that is per-update, not occasional. Th
 the unsigned decision, but it is a real recurring cost of it and the toast should say so on first
 update.
 
-### E. Toast — `apps/web/src/components/t3x/UpdateToast.tsx` _(new, fork-owned)_
+### E. Toast — `apps/web/src/components/coil/UpdateToast.tsx` _(new, fork-owned)_
 
 Mounted in `apps/web/src/routes/__root.tsx`, which already carries a seam-ledger row for
 `NotificationCoordinator` / `ThreadOutboxDrain` / `PushSubscriptionManager`. One more mount
@@ -546,7 +546,7 @@ trigger; adding a mac x64 artifact later would make it a real second surface.
 
 ## Seam budget
 
-Target: **zero new rows** in `docs/t3x/SEAMS.md`.
+Target: **zero new rows** in `docs/coil/SEAMS.md`.
 
 Everything new lives in fork-owned files. Existing rows that gain lines:
 
@@ -572,7 +572,7 @@ Two things that would have cost rows and do **not**, because a workflow-level eq
 ## Out of scope for v1
 
 Code signing and notarization; Linux and Windows arm64; mobile; any change to how upstream
-releases are consumed; upstreaming any of this. `scripts/t3x/auto-build-desktop.sh` remains for
+releases are consumed; upstreaming any of this. `scripts/coil/auto-build-desktop.sh` remains for
 local dev builds but is no longer the delivery path — its `--relaunch` mode should be removed
 once this lands, closing #41 at the source.
 
@@ -596,7 +596,7 @@ wrong, and each would have produced a silent failure rather than a loud one:
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Fork builds set `T3CODE_DISABLE_AUTO_UPDATE` to silence the pill | It is a process env var with no delivery mechanism to a packaged app. Withhold `GITHUB_REPOSITORY` instead |
 | `resolveGitHubPublishConfig` makes publishing work for free      | electron-builder runs `--publish never`; worse, that config **enables** upstream's updater                 |
-| Trigger is `push` gated on `t3x-ci`                              | `needs:` cannot cross workflows; `workflow_run` + `head_sha` pinning, or the wrong commit is built         |
+| Trigger is `push` gated on `coil-ci`                              | `needs:` cannot cross workflows; `workflow_run` + `head_sha` pinning, or the wrong commit is built         |
 | Inject `T3X_BUILD_SHA`, identity is the 40-char SHA              | `t3codeCommitHash` already ships at 12 chars; a 40-char comparison never matches                           |
 | The click is an instant restart                                  | Only if staging goes all the way to a swap-ready bundle                                                    |
 | `app.relaunch()` + `app.quit()` fixes #41                        | `DesktopLifecycle.relaunch` exists; and the unbounded shutdown wait reintroduces #41                       |

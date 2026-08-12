@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "WebWorker"],
+    "types": ["@cloudflare/workers-types"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        // Deep-merged with tsconfig.base.json; only the Worker-specific override belongs here.
+        //
+        // `globalFetch` steers application code towards `HttpClient` from `effect/unstable/http`,
+        // which is right almost everywhere. It is not right inside a Cloudflare Worker: `fetch` is
+        // the runtime's own API — it is how a Worker calls another origin, and how a Durable Object
+        // stub is invoked — and there is no Effect runtime in the request path here to carry an
+        // `HttpClient` requirement. apps/web disables it for the same reason.
+        "diagnosticSeverity": {
+          "globalFetch": "off"
+        }
+      }
+    ]
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,81 @@
+# coil fork CI — the fork's real PR/main gate.
+#
+# Upstream's ci.yml runs on blacksmith-* runners the fork has no access to, so it never runs
+# here and PRs show "no checks". This runs the same fast checks on ubuntu-latest so every fork
+# PR (and every push to main / a sync branch) gets an independent typecheck/lint/test gate.
+#
+# NOTE: pull_request does NOT fire on a CONFLICTING sync PR (GitHub can't build the merge ref),
+# so sync branches are gated by the push trigger on `coil/sync-**` instead — an independent check
+# alongside the resolve job's own verify.
+name: coil fork CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "coil/sync-**"
+      # The pre-#71 prefix, kept for one sync cycle. A sync branch that was pushed before the
+      # rename landed is still open afterwards, and it is precisely the branch that cannot fall
+      # back to `pull_request` — a conflicting sync PR has no merge ref, which is why this push
+      # trigger exists at all. Dropping this line early ungates exactly the branches that need
+      # gating most. Remove it once a `coil/sync-*` branch has completed a full cycle.
+      - "t3x/sync-**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coil-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      # Run all three even if an earlier one fails, so a single run reports every failure.
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: vp run lint
+
+      # `--testTimeout` is raised because `apps/web/vite.config.ts` pins testTimeout to 15s, which is
+      # tuned for upstream's blacksmith runners. This fork runs on 2-core ubuntu-latest, where
+      # upstream's `stashImageCompression` worst-case test (~3s on an M-series Mac; 6x the next
+      # slowest in its file) reliably exceeds 15s and fails the whole gate.
+      #
+      # Proven upstream-inherited, not a fork regression: branch `t3x/ci-control-upstream` — pristine
+      # upstream/main plus this workflow file and nothing else — fails identically (run 30386125253).
+      #
+      # 120000 is deliberate: it is the HIGHEST value any package configures
+      # (apps/server/vite.config.ts pins 120s for sqlite+git+orchestration integration tests). The
+      # flag applies to every package, so a lower value would silently CUT apps/server's budget in
+      # half — the same failure class this override exists to prevent. At 120s no package is
+      # lowered: web 15s -> 120s, root 60s -> 120s, server 120s -> 120s.
+      # The job's own `timeout-minutes` remains the backstop against a genuinely hung test.
+      #
+      # `--hookTimeout` is raised for the same reason and is NOT covered by `--testTimeout`: a
+      # `beforeAll`/`beforeEach` gets its own budget. At the 2026-08-02 sync,
+      # `apps/web/src/components/chat/MessagesTimeline.test.tsx` (byte-identical to upstream, not a
+      # fork seam) timed out in a hook under full-suite parallel load while passing in 2.3s on its
+      # own — the same load-sensitivity class as the test timeout above, on hardware faster than the
+      # fork's 2-core runners. 120000 is chosen on the same "highest configured value" rule:
+      # web 15s -> 120s, root 60s -> 120s, server already 120s.
+      # Keep in sync with the `test` case in `scripts/coil/sync-upstream.sh`.
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: vp run test --testTimeout=120000 --hookTimeout=120000

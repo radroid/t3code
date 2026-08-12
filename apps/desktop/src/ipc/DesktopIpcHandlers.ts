@@ -24,12 +24,12 @@ import {
   resolveSshPasswordPrompt,
 } from "./methods/sshEnvironment.ts";
 import { showNotification } from "./methods/notifications.ts";
-// t3x: fork-owned update delivery.
+// coil: fork-owned update delivery.
 import {
-  dismissT3xUpdate,
-  getT3xUpdateState,
+  dismissCoilUpdate,
+  getCoilUpdateState,
   restartIntoUpdate,
-} from "./methods/t3xUpdate.ts";
+} from "./methods/coilUpdate.ts";
 import {
   checkForUpdate,
   downloadUpdate,
@@ -96,9 +96,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(downloadUpdate);
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
-  yield* ipc.handle(getT3xUpdateState);
+  yield* ipc.handle(getCoilUpdateState);
   yield* ipc.handle(restartIntoUpdate);
-  yield* ipc.handle(dismissT3xUpdate);
+  yield* ipc.handle(dismissCoilUpdate);
   for (const previewMethod of PreviewIpc.methods) {
     yield* ipc.handle(previewMethod);
   }

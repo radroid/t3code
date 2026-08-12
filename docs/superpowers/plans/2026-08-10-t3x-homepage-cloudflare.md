@@ -4,14 +4,14 @@
 
 **Goal:** Ship a fork-owned homepage (seeded from upstream's `apps/marketing` Astro site) that presents the T3X fork honestly, serves working download links from the fork's release pipeline, and deploys to Cloudflare Workers static assets — first manually, then automatically on every push to `main`.
 
-**Architecture:** Copy `apps/marketing` into a new fork-owned package `apps/t3x-home` (never edit `apps/marketing` — the seam ledger's additive invariant is the fork's sync safety, and a 1310-line in-place rebrand would conflict on every upstream marketing change). Rebrand the copy, replace the GitHub-API release lookup (which 404s on the fork — all fork releases are pre-releases) with the already-live update-relay manifest, and serve the built `dist/` as an assets-only Cloudflare Worker named `t3x-home`, mirroring the existing `infra/t3x-update-relay` conventions.
+**Architecture:** Copy `apps/marketing` into a new fork-owned package `apps/t3x-home` (never edit `apps/marketing` — the seam ledger's additive invariant is the fork's sync safety, and a 1310-line in-place rebrand would conflict on every upstream marketing change). Rebrand the copy, replace the GitHub-API release lookup (which 404s on the fork — all fork releases are pre-releases) with the already-live update-relay manifest, and serve the built `dist/` as an assets-only Cloudflare Worker named `t3x-home`, mirroring the existing `infra/coil-update-relay` conventions.
 
-**Tech Stack:** Astro 7 (static output), pnpm workspace (`apps/*` glob — the new package auto-joins), Cloudflare Workers static assets via `wrangler.jsonc`, `pnpm dlx wrangler@4` (never installed as a dependency), GitHub Actions (`ubuntu-latest` + `voidzero-dev/setup-vp@v1`, matching `t3x-ci.yml`).
+**Tech Stack:** Astro 7 (static output), pnpm workspace (`apps/*` glob — the new package auto-joins), Cloudflare Workers static assets via `wrangler.jsonc`, `pnpm dlx wrangler@4` (never installed as a dependency), GitHub Actions (`ubuntu-latest` + `voidzero-dev/setup-vp@v1`, matching `coil-ci.yml`).
 
 ## Global Constraints
 
 - **NEVER modify anything under `apps/marketing/`.** It is upstream-owned. All work happens in the new `apps/t3x-home/`.
-- **Never add `wrangler` as a dependency.** Always invoke via `pnpm dlx wrangler@4 <cmd>`. Reason (verbatim from `infra/t3x-update-relay/package.json`): it drags ~500 lines into `pnpm-lock.yaml`, the fork's second-worst rebase-conflict surface.
+- **Never add `wrangler` as a dependency.** Always invoke via `pnpm dlx wrangler@4 <cmd>`. Reason (verbatim from `infra/coil-update-relay/package.json`): it drags ~500 lines into `pnpm-lock.yaml`, the fork's second-worst rebase-conflict surface.
 - **Do not touch the `overrides:` block in `pnpm-workspace.yaml`** when `pnpm install` regenerates the lockfile — it carries the security sweep.
 - **Branch off a freshly fetched `origin/main`** (`git fetch origin` first — the daily sync automation force-rewrites `main`; a stale base means unmergeable work). Branch name: `t3x/homepage`.
 - **Only advertise shipped features.** Verify each claimed feature exists on `origin/main` before writing it into page copy (Task 3 lists the vetted set). Loop Watch, the worklog skill, and the #42–#45 backlog are NOT shipped — never mention them.
@@ -90,7 +90,7 @@ Card copy, verbatim (title — one-liner):
 ### Copy rules
 
 - Hero headline names **T3X**; the sub-line states in its first sentence that this is a community fork of [T3 Code](https://github.com/pingdotgg/t3code) (MIT).
-- The kept `#open` section is upstream's own "If you don't like something, fork it." **Keep that headline verbatim and answer it** — replace the section's body copy with, in this spirit: `So we did. T3X is that fork: same product, same license, plus the things we wanted sooner. Every line we change on top of upstream is public — additions only, re-checked against upstream every day.` Link the word "public" to `https://github.com/radroid/t3code/blob/main/docs/t3x/SEAMS.md`.
+- The kept `#open` section is upstream's own "If you don't like something, fork it." **Keep that headline verbatim and answer it** — replace the section's body copy with, in this spirit: `So we did. T3X is that fork: same product, same license, plus the things we wanted sooner. Every line we change on top of upstream is public — additions only, re-checked against upstream every day.` Link the word "public" to `https://github.com/radroid/t3code/blob/main/docs/coil/SEAMS.md`.
 - Voice: plain verbs, sentence case, specific over clever, no invented stats, no superlatives ("blazing", "supercharged" are banned). Never claim user counts, star counts, or testimonials.
 - Downloads honesty (unchanged from Global Constraints): macOS Apple Silicon + Windows x64 only, unsigned builds, no store apps — stated plainly near every download control.
 
@@ -309,7 +309,7 @@ In the slot where the endorsements section was deleted (between the hero and `#h
 
 - [ ] **Step 6: Answer the "fork it" section**
 
-In the kept `#open` section: keep the `If you don't like something, fork it.` headline verbatim; replace the body copy with the "So we did." paragraph from **Design & content spec → Copy rules**, linking "public" to `https://github.com/radroid/t3code/blob/main/docs/t3x/SEAMS.md`. Keep the section's terminal-mock styling; its `GITHUB_REPOSITORY_URL` link now points at the fork, which is correct.
+In the kept `#open` section: keep the `If you don't like something, fork it.` headline verbatim; replace the body copy with the "So we did." paragraph from **Design & content spec → Copy rules**, linking "public" to `https://github.com/radroid/t3code/blob/main/docs/coil/SEAMS.md`. Keep the section's terminal-mock styling; its `GITHUB_REPOSITORY_URL` link now points at the fork, which is correct.
 
 - [ ] **Step 7: Verify branding landed, then build**
 
@@ -486,7 +486,7 @@ git commit -m "feat(t3x): serve downloads from the fork's update-relay manifest 
 }
 ```
 
-(Note the schema URL: unlike `infra/t3x-update-relay`, wrangler is not in `node_modules` here, so the local `node_modules/wrangler/config-schema.json` path would dangle.)
+(Note the schema URL: unlike `infra/coil-update-relay`, wrangler is not in `node_modules` here, so the local `node_modules/wrangler/config-schema.json` path would dangle.)
 
 - [ ] **Step 2: Add a 404 page so `not_found_handling` has a target**
 
@@ -639,14 +639,14 @@ git commit -m "ci(t3x): auto-deploy the homepage to Cloudflare on push to main"
 
 **Files:**
 
-- Modify: `docs/t3x/SEAMS.md` (append a note — adds no upstream-file rows)
-- Modify: `docs/t3x/sync-agent-runbook.md` (parallel-paths check item)
+- Modify: `docs/coil/SEAMS.md` (append a note — adds no upstream-file rows)
+- Modify: `docs/coil/sync-agent-runbook.md` (parallel-paths check item)
 
 **Interfaces:**
 
 - Consumes: nothing from earlier tasks besides their existence; this is bookkeeping the sync agent reads.
 
-- [ ] **Step 1: Append the parallel-path note to `docs/t3x/SEAMS.md`**
+- [ ] **Step 1: Append the parallel-path note to `docs/coil/SEAMS.md`**
 
 Follow the precedent of the "Update delivery adds no NEW rows" note. Append (adjust surrounding formatting to match the file):
 
@@ -662,7 +662,7 @@ Follow the precedent of the "Update delivery adds no NEW rows" note. Append (adj
 
 - [ ] **Step 2: Add the sync-runbook check item**
 
-In `docs/t3x/sync-agent-runbook.md`, find the checklist that re-checks the SEAMS table each sync and add one item, matching the list's formatting:
+In `docs/coil/sync-agent-runbook.md`, find the checklist that re-checks the SEAMS table each sync and add one item, matching the list's formatting:
 
 ```markdown
 - Parallel path: `apps/t3x-home/` duplicates `apps/marketing/`. Check upstream's marketing
@@ -673,7 +673,7 @@ In `docs/t3x/sync-agent-runbook.md`, find the checklist that re-checks the SEAMS
 - [ ] **Step 3: Commit and open the PR**
 
 ```bash
-git add docs/t3x/SEAMS.md docs/t3x/sync-agent-runbook.md
+git add docs/coil/SEAMS.md docs/coil/sync-agent-runbook.md
 git commit -m "docs(t3x): record the fork homepage on the seam ledger and sync runbook"
 git push -u origin t3x/homepage
 gh pr create -R radroid/t3code --base main --title "feat(t3x): fork homepage on Cloudflare Workers" \
