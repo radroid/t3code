@@ -12,7 +12,12 @@ import type { OrchestrationThread } from "@t3tools/contracts";
 
 /**
  * Baseline captured when a resume is scheduled, re-checked immediately before dispatch
- * to detect that the thread moved on (user took over, a new turn ran, etc.).
+ * to detect that the thread moved on.
+ *
+ * `newestUserMessageId` is recorded but is deliberately NOT a cancel condition — see the
+ * block in `cancelReason` (radroid/t3code#39). It stays in the shape because it is part
+ * of the persisted pending-resume record (`state.ts`), it is re-captured on every
+ * (re)schedule, and it is what makes a stranded arm diagnosable from the state file.
  */
 export interface GuardBaseline {
   readonly newestUserMessageId: string | null;
@@ -114,7 +119,6 @@ export type CancelReason =
   | "not-claude"
   | "progressing"
   | "awaiting-input"
-  | "user-took-over"
   | "thread-advanced";
 
 /**
@@ -129,7 +133,23 @@ export function cancelReason(
   if (!isClaudeThread(thread)) return "not-claude";
   if (threadIsProgressing(thread)) return "progressing";
   if (hasOpenBlockingRequest(thread.activities)) return "awaiting-input";
-  if (newestUserMessageId(thread) !== baseline.newestUserMessageId) return "user-took-over";
+  // A new user message does NOT cancel (radroid/t3code#39). This branch used to read
+  // `newestUserMessageId(thread) !== baseline.newestUserMessageId` and return
+  // "user-took-over", which is the same negative-evidence mistake #6 fixed one line
+  // below: "a message exists that wasn't there when we armed" is not evidence that the
+  // human took the wheel. In practice it is the opposite — the message that trips it is
+  // typed the moment the usage-limit banner appears, which is exactly when someone is
+  // stepping away ("keep going through the night"). That message is then usually rejected
+  // by the same limit, so it starts nothing, and the wake tick destroys the only pending
+  // resume. Measured on this install: 4 of 17 armed resumes (~24%) lost this way.
+  //
+  // Everything the branch was reaching for is still covered:
+  //   * the user is actively driving right now      -> `progressing`
+  //   * the thread is blocked on a prompt           -> `awaiting-input`
+  //   * a different turn is live at fire time       -> `thread-advanced`
+  //   * the user wants no resume at all             -> the per-thread switch, honoured
+  //                                                    in `Reactor.fireOne`.
+  //
   // Advancement needs POSITIVE evidence: a different, non-null turn id. The snapshot's
   // `latestTurn` is joined on `projection_threads.latest_turn_id`, which is populated
   // only while a turn is active — so a usage limit that lands mid-turn captures the

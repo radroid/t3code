@@ -160,7 +160,11 @@ describe("cancelReason", () => {
     expect(cancelReason(base(), baseline())).toBeNull();
   });
 
-  it("detects a new user message", () => {
+  // Regression for radroid/t3code#39. The removed `user-took-over` branch cancelled on
+  // any newer user message. The message that trips it is typically "keep going" typed at
+  // the usage-limit banner — and is itself rejected by the same limit, so it starts
+  // nothing and the thread is left with no pending resume at all.
+  it("does NOT cancel when a new user message arrived while the resume was pending", () => {
     const thread = makeThread({
       messages: [
         { id: "u1", role: "user" },
@@ -168,7 +172,26 @@ describe("cancelReason", () => {
       ],
       latestTurnId: "turn-1",
     });
-    expect(cancelReason(thread, baseline())).toBe("user-took-over");
+    expect(cancelReason(thread, baseline())).toBeNull();
+  });
+
+  // The baseline still records it — it is persisted with the pending resume and is what
+  // makes a stranded arm diagnosable from the state file.
+  it("still captures the newest user message id in the baseline", () => {
+    expect(baseline().newestUserMessageId).toBe("u1");
+  });
+
+  // What the removed branch was actually reaching for: a user who is driving right now.
+  // That is `progressing`, and it still cancels.
+  it("cancels a new user message that is actually being worked on", () => {
+    const thread = makeThread({
+      messages: [
+        { id: "u1", role: "user" },
+        { id: "u2", role: "user" },
+      ],
+      status: "running",
+    });
+    expect(cancelReason(thread, baseline())).toBe("progressing");
   });
 
   it("detects a new turn since scheduling", () => {
