@@ -159,15 +159,32 @@ export function buildInstallFailureReportUrl(input: {
 }
 
 /**
- * macOS authorises privacy permissions against the app's code-signing identity, and
- * electron-builder ad-hoc signs every build — so the identity changes each time and the grants
- * reset. At merge-to-main cadence that is every update, not occasionally.
+ * macOS refuses to let one app modify another's bundle unless both are signed by the same
+ * development team, and installing an update is exactly that modification — the swap in
+ * `installCommands.ts` replaces the bundle in /Applications. These builds *are* signed, but with a
+ * self-signed certificate carrying no team identifier, so there is no team for macOS to match and
+ * the App Management dialog is raised the first time an update lands.
+ *
+ * Asked once. The grant keys to the app's designated requirement, stable since #70/PR #85, so
+ * allowing it survives later updates — confirmed 2026-08-12 across builds 102 to 105.
+ *
+ * **This note used to say the builds were unsigned, and to expect screen-recording and automation
+ * prompts. All three were wrong**, and expensively so: PR #85 fixed the signing without updating
+ * this string, so it kept promising the symptom of a bug that no longer existed — while naming two
+ * services the app never requests. There is no `desktopCapturer`, `getDisplayMedia`, `osascript` or
+ * Apple Event use anywhere in `apps/desktop/src`. The one dialog users actually see was never
+ * either of them, and the wrong wording sent the diagnosis after the signature rather than the
+ * missing team.
+ *
+ * `NSUpdateSecurityPolicy` is not an escape hatch — its `AllowProcesses` map is keyed *by team
+ * identifier*, so it needs precisely the thing this build lacks. Retiring the dialog for good means
+ * a paid Developer ID, which would also retire the quarantine step on the download page.
  *
  * Shown once, on the first update only. Repeating it every time would make it wallpaper, and it
  * is the kind of thing a user needs to understand once and then recognise.
  */
 const FIRST_UPDATE_PERMISSION_NOTE =
-  " Because these builds are unsigned, macOS will ask for screen-recording and automation permissions again after restarting.";
+  " macOS asks once for App Management — a dialog saying the app wants access to data from other apps. Allow it: updating means replacing the app in /Applications, and these builds carry no Apple team identifier for macOS to match it against. It will not ask again.";
 
 /**
  * Windows is not offered a "Restart", because it is not one.
@@ -272,9 +289,8 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
             ? WINDOWS_INSTALL_NOTE
             : "Restart to update T3 Coil.") +
           (expired ? TIMED_OUT_NOTE : "") +
-          // Gated on macOS, not merely on "first update". The note names screen-recording and
-          // automation prompts, which are a macOS concept — every Windows and Linux user was
-          // being told to expect permission dialogs their OS will never show.
+          // Gated on macOS, not merely on "first update". App Management is a macOS concept —
+          // every Windows and Linux user was being told to expect a dialog their OS never shows.
           (isMacPlatform(input.platform) && !input.hasUpdatedBefore
             ? FIRST_UPDATE_PERMISSION_NOTE
             : ""),

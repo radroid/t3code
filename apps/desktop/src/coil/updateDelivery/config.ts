@@ -52,7 +52,9 @@ export function relayEndpoints(baseUrl: string): RelayEndpoints {
  * starting a subscriber that immediately parks. A disabled feature that still holds a socket open
  * is a disabled feature that can still page you at 3am.
  */
-export function resolveRelayUrl(env: Readonly<Record<string, string | undefined>>): string | undefined {
+export function resolveRelayUrl(
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
   if ((env[DISABLE_ENV_VAR] ?? "").trim() !== "") return undefined;
   const override = (env[RELAY_URL_ENV_VAR] ?? "").trim();
   return override === "" ? DEFAULT_RELAY_URL : override;
@@ -63,9 +65,8 @@ export function resolveRelayUrl(env: Readonly<Record<string, string | undefined>
  *
  * A file rather than a field in memory, because the fact it records survives exactly one event:
  * the restart it is about. An in-memory flag set just before `app.exit` is gone by the time the
- * new build asks the question, so the "macOS will ask for permissions again" note — meant to be
- * shown once — would be shown on every single update instead, which is how a warning becomes
- * wallpaper.
+ * new build asks the question, so the first-update App Management note — meant to be shown once —
+ * would be shown on every single update instead, which is how a warning becomes wallpaper.
  *
  * A file rather than `DesktopClientSettings`, because that is an upstream-owned persisted schema
  * and this is one bit that only the fork cares about.
