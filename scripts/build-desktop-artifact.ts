@@ -637,11 +637,32 @@ interface StagePackageJson {
 
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
+// coil fork seam (issue #53). An env escape hatch, not a changed default — the same shape as
+// T3X_DESKTOP_APP_ID above, and for the same reason.
+//
+// Upstream's build-desktop-artifact.test.ts asserts this array deep-equals exactly its one entry, so
+// adding globs in place would mean editing that assertion too. That is not merely a line count: the
+// fork's list is 67 globs and grows, so an inline list makes every future size fix an edit to an
+// upstream TEST — a file that already carries a fork row from #71 and is resolved by hand at every
+// sync. Read through the environment instead, an unset environment packages precisely what upstream
+// packages, upstream's assertion keeps passing untouched, and the list stays fork-owned.
+//
+// That list (~half the packaged asar: third-party source maps, Clerk's browser SDK, and the shiki tree
+// only the bundled web client uses) lives in scripts/coil/desktop-file-exclusions.mjs, which explains
+// every entry and is unit-tested. .github/workflows/coil-release.yml sets the variable from it; since
+// #92 retired the local autobuild that is the only path that builds a shipping artifact. The
+// compensating control is scripts/coil/verify-desktop-bundle.mjs, which fails a release whose packaged
+// app is missing something its own bundles import.
+const coilExtraFileExclusions = (process.env.T3X_DESKTOP_FILE_EXCLUSIONS ?? "")
+  .split(",")
+  .map((glob) => glob.trim())
+  .filter((glob) => glob.length > 0);
 export const DESKTOP_FILE_EXCLUSIONS = [
   // T3 Code always passes the user's installed Claude executable to the SDK,
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+  ...coilExtraFileExclusions,
 ] as const;
 // The WSL backend launches the server with plain `wsl.exe -- node`, which
 // cannot read inside an asar archive — and the server bundle externalizes its
