@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 /**
- * The update manifest, as published by `.github/workflows/t3x-release.yml` and rebroadcast
+ * The update manifest, as published by `.github/workflows/coil-release.yml` and rebroadcast
  * verbatim by the relay.
  *
  * The relay does not understand this shape — it parses `buildNumber` for ordering and treats
