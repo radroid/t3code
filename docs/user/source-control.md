@@ -11,6 +11,8 @@ T3 Code works with the platforms your team already uses:
 - **Bitbucket** – Pull request workflows (via API token authentication)
 - **Azure DevOps** – Pull request support for Microsoft-hosted repositories
 
+Cloning from a URL works with any Git host, Bitbucket included. It runs Git on the machine running T3 Code and uses that machine's Git credentials — the provider tokens above authenticate each provider's API (pull requests, repository lookup, publishing), not Git itself.
+
 ## What You Can Do
 
 ### Start Projects from Anywhere
@@ -121,6 +123,11 @@ export T3CODE_BITBUCKET_API_TOKEN="your-token"
 If both are set, the access token wins. Restart T3 Code and verify the connection in **Source
 Control settings**.
 
+These variables cover Bitbucket's API: pull requests, repository lookup, and publishing. Cloning is
+Git's job, so a private Bitbucket repository also needs an app password or repository access token
+saved in the Git credential helper on the machine running T3 Code. Cloning it once from a terminal
+on that machine is the quickest way to store one.
+
 ### For Azure DevOps
 
 1. Install Azure CLI:
@@ -150,6 +157,7 @@ Control settings**.
 - **GitHub says it could not verify sign-in status** – T3 Code needs GitHub CLI 2.81.0 or newer to check sign-in status. Update `gh` (e.g., `brew upgrade gh`), then rescan
 - **Bitbucket not connecting** – Double-check your environment variables are set in the correct shell profile and the server was restarted
 - **Can't push to a remote** – Verify your Git remote URL matches the provider you've authenticated with (SSH vs HTTPS remotes may need different credentials)
+- **Clone failed** – The message names the cause. An authentication failure means the machine running T3 Code has no stored Git credential for that host; "no repository was found" also covers a private repository that machine cannot see. T3 Code never waits on a Git credential prompt, because the prompt would open on the server rather than in front of you
 
 **Need more help?** Check your provider's CLI documentation:
 
