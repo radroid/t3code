@@ -1,9 +1,9 @@
 # t3x weekly deep verification — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A5).
 # Runs the full monorepo build against the current fork main. Does NOT rebase and never
-# blocks the daily sync. On failure it escalates via the shared `t3x-sync` issue.
+# blocks the daily sync. On failure it escalates via the shared `coil-sync` issue.
 #
 # NOTE: runs on ubuntu-latest — the fork has no access to upstream's blacksmith-* runners.
-name: t3x weekly verify (full build)
+name: coil weekly verify (full build)
 
 on:
   schedule:
@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SYNC_LABEL: t3x-sync
+  SYNC_LABEL: coil-sync
 
 jobs:
   build:
@@ -61,14 +61,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # Pin gh to THIS fork. On a fork, gh's base-repo resolution can target the parent
           # repo (where GITHUB_TOKEN has no write access), silently breaking issue creation.
-          # GH_REPO forces the fork for every gh call below. See t3x-upstream-sync.yml.
+          # GH_REPO forces the fork for every gh call below. See coil-upstream-sync.yml.
           GH_REPO: ${{ github.repository }}
           FAILED_STEPS: ${{ steps.build.outputs.failed_steps }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh label create "$SYNC_LABEL" --color B60205 --description "Upstream sync needs a human/agent" 2>/dev/null || true
 
-          TITLE="[t3x-sync] weekly full build failing"
+          TITLE="[coil-sync] weekly full build failing"
           BODY="$(printf 'Weekly full build failed.\n\n**kind:** `weekly-build`\n**failed steps:**%s\n**run:** %s\n\nThis is advisory — it does not block the daily rebase. A green typecheck/lint/test can still hide a build regression; investigate when convenient.' "$FAILED_STEPS" "$RUN_URL")"
 
           # See the daily workflow for why we decouple label attachment from issue creation:
@@ -77,7 +77,7 @@ jobs:
           # fall back to the title marker; create without --label and attach afterwards.
           EXISTING="$(gh issue list --label "$SYNC_LABEL" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
           if [[ -z "$EXISTING" ]]; then
-            EXISTING="$(gh issue list --search 't3x-sync in:title' --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+            EXISTING="$(gh issue list --search 'coil-sync in:title' --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
           fi
 
           if [[ -n "$EXISTING" ]]; then

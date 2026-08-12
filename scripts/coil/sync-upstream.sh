@@ -3,7 +3,7 @@
 # coil upstream sync — rebase the fork's patch series onto upstream/main and verify.
 #
 # Implements the mechanical core of A4 (daily sync). Locally testable and reused by
-# .github/workflows/t3x-upstream-sync.yml. Writes a machine-readable status file and
+# .github/workflows/coil-upstream-sync.yml. Writes a machine-readable status file and
 # uses exit codes so a caller (workflow or agent) can decide whether to push / escalate.
 #
 #   exit 0  = clean rebase, verification green  -> caller may push
@@ -13,7 +13,7 @@
 #   exit 40 = rebase clean & verification green, but a fork patch was dropped during
 #            rebase (upstream likely absorbed it) -> needs review, nothing pushed
 #
-# Status file (default: ./t3x-sync-status.json) always written before exit.
+# Status file (default: ./coil-sync-status.json) always written before exit.
 #
 # Env:
 #   UPSTREAM_REMOTE   (default: upstream)
@@ -21,7 +21,7 @@
 #   LOCAL_BRANCH      (default: main)
 #   RUN               command prefix for package scripts (default: "vp run")
 #   VERIFY            space-separated script names (default: "typecheck lint test")
-#   STATUS_FILE       (default: ./t3x-sync-status.json)
+#   STATUS_FILE       (default: ./coil-sync-status.json)
 #   SKIP_VERIFY=1     rebase only, skip verification (used by callers that verify separately)
 #
 set -uo pipefail
@@ -31,7 +31,7 @@ UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
 LOCAL_BRANCH="${LOCAL_BRANCH:-main}"
 RUN="${RUN:-vp run}"
 VERIFY="${VERIFY:-typecheck lint test}"
-STATUS_FILE="${STATUS_FILE:-./t3x-sync-status.json}"
+STATUS_FILE="${STATUS_FILE:-./coil-sync-status.json}"
 SKIP_VERIFY="${SKIP_VERIFY:-0}"
 
 # --- json status helper (no jq dependency) ----------------------------------
@@ -135,7 +135,7 @@ fi
 # --hookTimeout is the same fix for the same reason and is NOT implied by --testTimeout: a
 # beforeAll/beforeEach carries its own budget, and an upstream web test timed out in one under
 # full-suite load at the 2026-08-02 sync while passing standalone.
-# Keep in sync with `.github/workflows/t3x-ci.yml`.
+# Keep in sync with `.github/workflows/coil-ci.yml`.
 for script in $VERIFY; do
   EXTRA=""
   if [[ "$script" == "test" ]]; then EXTRA="--testTimeout=120000 --hookTimeout=120000"; fi

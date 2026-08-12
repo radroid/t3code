@@ -224,7 +224,7 @@ function buildReplayedHistory(dir, { originalCommitterDate, copyCommitterDate, k
     files: { "patch.txt": "p\np\n" },
   });
   const original = git(dir, ["rev-parse", "HEAD"]).trim();
-  git(dir, ["tag", "t3x/pre-sync-20260810"]);
+  git(dir, ["tag", "coil/pre-sync-20260810"]);
   git(dir, ["checkout", "-q", "main"]);
   commitFixture(dir, {
     message: "upstream moves the base",

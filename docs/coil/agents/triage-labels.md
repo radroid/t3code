@@ -26,7 +26,7 @@ daily-sync agent has already been bitten once by a label race (PR #12).
 
 The fork carries labels that are **not** triage roles and should be left alone by `/triage`:
 
-- `t3x-sync` — machine-filed by the daily upstream-sync workflow. Not a human triage queue.
+- `coil-sync` — machine-filed by the daily upstream-sync workflow. Not a human triage queue.
 - `wayfinder:map`, `wayfinder:*` — owned by `/wayfinder`. See `docs/coil/agents/issue-tracker.md`.
 - `bug`, `enhancement`, `documentation`, `dependencies`, `javascript`, and the other GitHub
   defaults — descriptive, orthogonal to triage state. An issue can carry both `enhancement` and

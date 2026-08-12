@@ -155,7 +155,7 @@ The window slides forward at every sync, so these figures move even when the for
 > a single line across the 49 upstream commits absorbed that day, in two passes.
 >
 > The second pass exists because of a process failure worth recording: the scheduled
-> `t3x upstream sync (daily)` workflow force-landed **its own** rebase onto `main` while the reviewed
+> `coil upstream sync (daily)` workflow force-landed **its own** rebase onto `main` while the reviewed
 > sync PR was still open. Both rebased the same 91 fork patches, so `main` and the PR branch ended up
 > with identical content under different SHAs and no shared history — which GitHub reports as an
 > unresolvable conflict, and which no amount of conflict-fixing on the PR would have cured. The fix
@@ -323,8 +323,8 @@ immediate-send branch only, and the fork's queue branch returns _before_ it.
 - `apps/server/src/coil/**`, `apps/web/src/coil/**`, `packages/contracts/src/coil/**` — feature code
   and the `CoilLayerLive` aggregator.
 - `scripts/coil/**` — fork setup, upstream sync, desktop auto-build (incl. opt-in git hooks).
-- `.github/workflows/t3x-*.yml` — `t3x-upstream-sync.yml`, `t3x-weekly-verify.yml`,
-  `t3x-sync-resolve.yml`, `t3x-ci.yml` (the fork's PR/main gate; upstream's `ci.yml` needs
+- `.github/workflows/t3x-*.yml` — `coil-upstream-sync.yml`, `coil-weekly-verify.yml`,
+  `coil-sync-resolve.yml`, `coil-ci.yml` (the fork's PR/main gate; upstream's `ci.yml` needs
   blacksmith runners the fork cannot use).
 - `docs/coil/**`, `docs/superpowers/specs/**` — including `docs/coil/agents/**` (issue tracker, triage
   labels, domain-doc rules for the mattpocock engineering skills) and `docs/coil/adr/`. These sit
@@ -352,7 +352,7 @@ done
 ```
 
 `origin/main` is load-bearing, the same way `@<epoch>` is below. Sync branches land by
-`git push --force-with-lease origin t3x/sync-<id>:main`, so local `main` never fast-forwards — it
+`git push --force-with-lease origin coil/sync-<id>:main`, so local `main` never fast-forwards — it
 **diverges**, and silently. On 2026-08-05 it was 62 behind / 64 ahead, and a regeneration run
 through it under-reported the surface by 11 lines while still looking plausible. Sanity-check with
 `git rev-list --left-right --count main...origin/main` before trusting a run; anything non-zero on
