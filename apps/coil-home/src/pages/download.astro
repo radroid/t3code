@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { INSTALL_PLATFORMS, UNSIGNED_NOTE, fillCommand, renderEmphasis } from "../lib/install";
 import { RELEASES_URL } from "../lib/releases";
 ---
 
@@ -44,10 +45,47 @@ import { RELEASES_URL } from "../lib/releases";
     </section>
   </div>
 
-  <p class="unsigned-note">
-    These builds are unsigned. macOS Gatekeeper and Windows SmartScreen will warn on first
-    launch — the release notes carry the commands to get past it.
-  </p>
+  <p class="unsigned-note">{UNSIGNED_NOTE}</p>
+
+  <!--
+    Rendered inline, from the same scripts/t3x/install-instructions.json the release workflow
+    renders into every release body. This used to be one sentence pointing at "the release
+    notes" without linking them, which meant a first-time reader could download a build and meet
+    a Gatekeeper dialog calling it damaged with nothing on this page to explain it (issue #72).
+  -->
+  <section class="install">
+    <h2 class="install-title">First launch needs one step</h2>
+    <p class="install-lede">
+      The in-app updater handles all of this for you afterwards — this is the first install only.
+    </p>
+
+    {INSTALL_PLATFORMS.map((platform) => (
+      <article class="install-platform" data-platform={platform.assetPlatform}>
+        <h3 class="install-platform-name">{platform.name}</h3>
+        <p class="install-support">{platform.support}</p>
+        <ol class="install-steps">
+          {platform.steps.map((step) => (
+            <li class="install-step">
+              <p class="install-step-title">{step.title}</p>
+              <p class="install-step-body" set:html={renderEmphasis(step.body)} />
+              {step.command && (
+                <div class="command">
+                  <code
+                    class="command-text"
+                    data-command-template={fillCommand(step.command, "{file}")}
+                  >{fillCommand(step.command, platform.exampleFile)}</code>
+                  <button class="command-copy" type="button" aria-label={`Copy the ${platform.name} command`}>
+                    Copy
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+        {platform.afterword && <p class="install-afterword">{platform.afterword}</p>}
+      </article>
+    ))}
+  </section>
 
   <section class="changes" id="changes" hidden>
     <h2 class="changes-title">What's new</h2>
@@ -107,6 +145,18 @@ import { RELEASES_URL } from "../lib/releases";
         wire(win, document.getElementById("size-win"), winAsset.url, winAsset.bytes);
       }
 
+      // The commands rendered above name an example file. Now that the manifest has said which
+      // file this reader is actually downloading, use that name — a command that is right for
+      // some other build is the kind of wrong that reads as the reader's mistake.
+      for (const asset of manifest.assets) {
+        for (const el of document.querySelectorAll<HTMLElement>(
+          `[data-platform="${asset.platform}"] [data-command-template]`,
+        )) {
+          const template = el.dataset.commandTemplate;
+          if (template) el.textContent = template.replace("{file}", asset.file);
+        }
+      }
+
       const changes = (manifest.changes ?? []).slice(0, 10);
       const list = document.getElementById("changes-list");
       const section = document.getElementById("changes");
@@ -130,6 +180,37 @@ import { RELEASES_URL } from "../lib/releases";
     }
   }
 
+  // Copy buttons. Wired independently of the manifest fetch: the commands are on the page from
+  // the first paint, so they have to be copyable even when the relay is unreachable.
+  function wireCopyButtons() {
+    for (const button of document.querySelectorAll<HTMLButtonElement>(".command-copy")) {
+      button.addEventListener("click", async () => {
+        const text = button.parentElement?.querySelector(".command-text")?.textContent;
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = "Copied";
+        } catch {
+          // Clipboard access can be refused (insecure context, permissions policy). Select the
+          // text instead so the reader can still copy it by hand rather than being told nothing.
+          const node = button.parentElement?.querySelector(".command-text");
+          if (node) {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const selection = window.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
+          button.textContent = "Select all";
+        }
+        setTimeout(() => {
+          button.textContent = "Copy";
+        }, 2000);
+      });
+    }
+  }
+
+  wireCopyButtons();
   init();
 </script>
 
@@ -286,6 +367,124 @@ import { RELEASES_URL } from "../lib/releases";
 
   .linux-note a:hover {
     color: var(--fg);
+  }
+
+  /* ── First launch ── */
+
+  .install {
+    width: 100%;
+    max-width: 720px;
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    opacity: 0;
+    animation: fade-in 1s ease-out 0.3s forwards;
+  }
+
+  .install-title {
+    font-weight: 500;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+  }
+
+  .install-lede {
+    margin-top: 0.4rem;
+    font-size: 0.825rem;
+    line-height: 1.5;
+    color: var(--fg-dim);
+  }
+
+  .install-platform {
+    margin-top: 1.75rem;
+  }
+
+  .install-platform-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+
+  .install-support {
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    color: var(--fg-dim);
+  }
+
+  .install-steps {
+    margin: 0.9rem 0 0;
+    padding-left: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+
+  .install-step::marker {
+    color: var(--fg-faint);
+  }
+
+  .install-step-title {
+    color: var(--fg);
+  }
+
+  .install-step-body {
+    margin-top: 0.15rem;
+    color: var(--fg-muted);
+  }
+
+  .install-step-body :global(strong) {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .install-afterword {
+    margin-top: 1rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--fg-dim);
+  }
+
+  .command {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+  }
+
+  .command-text {
+    flex: 1;
+    min-width: 0;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    /* The macOS command is long and the Windows filename changes per build; wrapping keeps
+       the whole command visible rather than hiding its tail behind a scrollbar nobody drags. */
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .command-copy {
+    flex: none;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
+  }
+
+  .command-copy:hover {
+    color: var(--fg);
+    border-color: var(--border-strong);
   }
 
   /* ── What's new ── */
