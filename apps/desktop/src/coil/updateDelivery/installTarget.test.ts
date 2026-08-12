@@ -7,14 +7,14 @@ import {
   stagedBundlePath,
 } from "./installTarget.ts";
 
-const APP = "/Applications/T3 Code (Alpha).app";
-const EXEC = `${APP}/Contents/MacOS/T3 Code (Alpha)`;
+const APP = "/Applications/T3 Coil (Alpha).app";
+const EXEC = `${APP}/Contents/MacOS/T3 Coil (Alpha)`;
 
 describe("isTranslocatedPath", () => {
   it("detects a translocated execPath", () => {
     expect(
       isTranslocatedPath(
-        "/private/var/folders/x9/abc/T/AppTranslocation/1E2D-4F/d/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)",
+        "/private/var/folders/x9/abc/T/AppTranslocation/1E2D-4F/d/T3 Coil (Alpha).app/Contents/MacOS/T3 Coil (Alpha)",
       ),
     ).toBe(true);
   });
@@ -34,8 +34,8 @@ describe("findEnclosingAppBundle", () => {
   });
 
   it("works for an app installed outside /Applications", () => {
-    const home = "/Users/me/Applications/T3 Code (Alpha).app";
-    expect(findEnclosingAppBundle(`${home}/Contents/MacOS/T3 Code (Alpha)`)).toBe(home);
+    const home = "/Users/me/Applications/T3 Coil (Alpha).app";
+    expect(findEnclosingAppBundle(`${home}/Contents/MacOS/T3 Coil (Alpha)`)).toBe(home);
   });
 
   it("returns undefined when there is no enclosing bundle", () => {
@@ -47,22 +47,22 @@ describe("resolveMacInstallTarget", () => {
   it("resolves the bundle from the running executable", () => {
     const result = resolveMacInstallTarget({
       execPath: EXEC,
-      incomingAppName: "T3 Code (Alpha).app",
+      incomingAppName: "T3 Coil (Alpha).app",
     });
     expect(result).toEqual({
       kind: "resolved",
       appBundlePath: APP,
-      appName: "T3 Code (Alpha).app",
+      appName: "T3 Coil (Alpha).app",
     });
   });
 
   it("resolves an app installed outside /Applications", () => {
     // Never hardcode /Applications. Installing there while running from somewhere else would
     // create a second app and leave the running one untouched — a success that changes nothing.
-    const home = "/Users/me/Applications/T3 Code (Alpha).app";
+    const home = "/Users/me/Applications/T3 Coil (Alpha).app";
     const result = resolveMacInstallTarget({
-      execPath: `${home}/Contents/MacOS/T3 Code (Alpha)`,
-      incomingAppName: "T3 Code (Alpha).app",
+      execPath: `${home}/Contents/MacOS/T3 Coil (Alpha)`,
+      incomingAppName: "T3 Coil (Alpha).app",
     });
     expect(result.kind === "resolved" && result.appBundlePath).toBe(home);
   });
@@ -72,14 +72,14 @@ describe("resolveMacInstallTarget", () => {
     // the OLD build while post-install verification passed against the wrong process.
     const result = resolveMacInstallTarget({
       execPath:
-        "/private/var/folders/x9/abc/T/AppTranslocation/1E2D-4F/d/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)",
-      incomingAppName: "T3 Code (Alpha).app",
+        "/private/var/folders/x9/abc/T/AppTranslocation/1E2D-4F/d/T3 Coil (Alpha).app/Contents/MacOS/T3 Coil (Alpha)",
+      incomingAppName: "T3 Coil (Alpha).app",
     });
     expect(result.kind === "refused" && result.refusal.kind).toBe("translocated");
   });
 
   it("refuses when the incoming bundle has a different name", () => {
-    // productName here is "T3 Code (Alpha)", not "T3 Code". The shell installer's own comment
+    // productName here is "T3 Coil (Alpha)", not "T3 Code". The shell installer's own comment
     // records the consequence of guessing: it claimed an app that does not exist while a real
     // install replaced a differently-named one.
     const result = resolveMacInstallTarget({ execPath: EXEC, incomingAppName: "T3 Code.app" });
@@ -89,7 +89,7 @@ describe("resolveMacInstallTarget", () => {
   it("refuses when the executable is not inside a bundle", () => {
     const result = resolveMacInstallTarget({
       execPath: "/usr/local/bin/t3code",
-      incomingAppName: "T3 Code (Alpha).app",
+      incomingAppName: "T3 Coil (Alpha).app",
     });
     expect(result.kind === "refused" && result.refusal.kind).toBe("not-a-bundle");
   });

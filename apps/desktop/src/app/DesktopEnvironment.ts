@@ -86,7 +86,15 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
+// coil fork seam (issue #71). One of only two places the fork REPLACES upstream content rather
+// than appending to it — see docs/coil/SEAMS.md. This literal is the source of truth for the
+// app's visible name: it feeds `displayName`, which reaches `app.setName()`, the About panel,
+// every window title, the Linux .desktop entry, and — through `getAppBranding()` — the whole web
+// UI, which reads it rather than hardcoding one.
+//
+// `legacyUserDataDirName` below still says "T3 Code (Alpha)" and MUST keep saying it. It names a
+// directory that already exists on disk; it is not derived from this constant and never was.
+const APP_BASE_NAME = "T3 Coil";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;

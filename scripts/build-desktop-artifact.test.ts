@@ -153,7 +153,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("switches desktop packaging product names to nightly for nightly builds", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (Alpha)");
+    // "T3 Coil (Alpha)" is the fork's productName (#71); "T3 Code (Nightly)" is upstream's own
+    // literal in resolveDesktopProductName, which the fork never reaches — nothing here builds a
+    // -nightly.<d>.<d> version — and so deliberately does not rename.
+    assert.equal(resolveDesktopProductName("0.0.17"), "T3 Coil (Alpha)");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
   });
 
