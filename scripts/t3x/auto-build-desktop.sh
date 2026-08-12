@@ -28,6 +28,10 @@
 #     lives in is never read for builds, so local branches/agents can't change what
 #     gets installed. A fetch failure (offline) is logged and retried next tick.
 #   scripts/t3x/auto-build-desktop.sh --print-launchd     # emit a ready-to-use LaunchAgent plist
+#   scripts/t3x/auto-build-desktop.sh --diff-launchd      # diff that plist against the installed one
+#     Pass --diff-launchd the SAME flags the agent runs with, or the diff is just those
+#     flags. `launchctl print gui/$UID/dev.t3x.autobuild` shows what it was installed with.
+#     Exit 0 = identical, 1 = differs (diff on stdout), 2 = nothing installed.
 #   scripts/t3x/auto-build-desktop.sh --help
 #
 # Exit codes (one-shot mode):
@@ -80,6 +84,17 @@ BUILD_REF=""   # --ref remote/branch: build that ref in a dedicated worktree, no
 
 usage() { grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//;s/^#$//'; }
 
+# Kept for --diff-launchd, which quotes the invocation back in its report. The parse loop
+# below consumes $@, so capture it first. Every read of these uses `[*]:-`, not `[*]`: this
+# script runs under `set -u`, and the /bin/bash the LaunchAgent invokes is 3.2, where
+# expanding an EMPTY array without a default is an "unbound variable" error.
+ORIGINAL_ARGV=("$@")
+ORIGINAL_ARGV_NO_DIFF=()
+for _arg in "$@"; do
+  [[ "$_arg" == "--diff-launchd" ]] || ORIGINAL_ARGV_NO_DIFF+=("$_arg")
+done
+unset _arg
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --install) DO_INSTALL=1 ;;
@@ -92,6 +107,7 @@ while [[ $# -gt 0 ]]; do
     --ref) BUILD_REF="${2:?--ref needs a value (e.g. origin/main)}"; shift ;;
     --ref=*) BUILD_REF="${1#*=}" ;;
     --print-launchd) PRINT_LAUNCHD=1 ;;
+    --diff-launchd) DIFF_LAUNCHD=1 ;;
     --_caffeinated) CAFFEINATED=1 ;;  # internal: set after re-exec under caffeinate
     -h|--help) usage; exit 0 ;;
     *) echo "unknown flag: $1" >&2; usage; exit 2 ;;
@@ -537,6 +553,143 @@ tcc_protected_path() {
   return 1
 }
 
+# --- the agent's PATH --------------------------------------------------------
+# A LaunchAgent does not get this shell's PATH. launchd starts jobs from a minimal
+# environment with no login shell, so nothing a version manager (fnm, asdf, volta, nvm) or
+# rustup writes into a shell profile is ever read. Every directory the build needs has to
+# be named in the plist.
+#
+# This used to be a hardcoded list, and that is a silent-failure machine. The build needs
+# node, pnpm, cargo and git; a hardcoded list that loses one of them does not fail loudly:
+#
+#   - cargo missing → every tick dies with `spawn cargo ENOENT` and backs off (the 07-30
+#     outage; fixed by hand in the live plist, and only back-ported in c33e5a361).
+#   - node missing from the version manager's directory → the system still has *a* node, so
+#     the build SUCCEEDS against the wrong toolchain. On this machine Homebrew's node is a
+#     different major version from the one package.json's `engines.node` allows. Nothing
+#     reports that; you get a green build of a binary nobody asked for.
+#
+# So derive it, then prove it. `verify_agent_path` re-checks the emitted list from an empty
+# environment, which is the only way to be sure the plist will behave the way this shell does.
+
+# Searched last, so a system tool is used only when nothing more specific provides it.
+AGENT_SYSTEM_PATH=(/opt/homebrew/bin /usr/local/bin /usr/bin /bin)
+AGENT_REQUIRED_TOOLS=(node pnpm cargo git)
+
+# Does any directory in the colon-joined $1 hold an executable named $2? This is what a
+# PATH lookup does, so testing it directly beats spawning a shell to ask.
+path_provides() {
+  local list="$1" tool="$2" dir
+  local IFS=:
+  for dir in $list; do
+    [[ -n "$dir" && -x "$dir/$tool" ]] && return 0
+  done
+  return 1
+}
+
+# The directory to put on the agent's PATH for $1, or nothing if the tool is missing here.
+#
+# Resolving the symlink chain is the point. A version manager's shim lives in a per-shell
+# directory — fnm's is ~/.local/state/fnm_multishells/<pid>_<stamp>/bin — which is deleted
+# when that shell exits. Baking a shim path into a plist that outlives the shell produces an
+# agent whose PATH entry has silently ceased to exist.
+stable_tool_dir() {
+  local tool="$1" cmd resolved dir
+  cmd="$(command -v "$tool" 2>/dev/null)" || return 0
+  [[ -n "$cmd" ]] || return 0
+  resolved="$(readlink -f "$cmd" 2>/dev/null || printf '%s' "$cmd")"
+  dir="$(dirname "$resolved")"
+  # corepack ships pnpm/yarn as a .js file under lib/node_modules, so following pnpm's
+  # symlink lands in `.../corepack/dist`, which is not a bin directory at all. When the
+  # resolved directory does not actually hold the executable, there is nothing stable to
+  # name — and that is fine here, because the node installation's own bin directory holds
+  # the shim and derive_agent_path will already have added it.
+  [[ -x "$dir/$tool" ]] || return 0
+  printf '%s' "$dir"
+}
+
+# The major version package.json's `engines.node` allows, or nothing if it cannot be read.
+# Only the major is compared: a full semver-range check would need a semver implementation,
+# and the failure this exists to catch — a system node from a different major — does not
+# need one.
+required_node_major() {
+  local range
+  range="$(sed -n 's/.*"node": *"\([^"]*\)".*/\1/p' "$MAIN_REPO/package.json" 2>/dev/null | head -1)"
+  printf '%s' "$range" | sed -n 's/^[^0-9]*\([0-9][0-9]*\).*/\1/p'
+}
+
+# Build the PATH the agent should carry. A directory is added only when nothing already on
+# the list provides that tool, which is what keeps the corepack case above from adding an
+# ephemeral shim directory: node's installation bin holds `pnpm` too, and it comes first.
+derive_agent_path() {
+  local entries=() tool dir joined want_major have_major
+  want_major="$(required_node_major)"
+
+  for tool in "${AGENT_REQUIRED_TOOLS[@]}"; do
+    joined="$(IFS=:; printf '%s' "${entries[*]:-}:${AGENT_SYSTEM_PATH[*]}")"
+    if path_provides "$joined" "$tool"; then
+      # Already reachable — but for node, reachable is not the same as correct.
+      if [[ "$tool" != node || -z "$want_major" ]]; then continue; fi
+      have_major="$(env -i PATH="$joined" HOME="$HOME" node --version 2>/dev/null |
+        sed -n 's/^v\([0-9][0-9]*\).*/\1/p')"
+      [[ "$have_major" == "$want_major" ]] && continue
+    fi
+    dir="$(stable_tool_dir "$tool")"
+    [[ -n "$dir" && -d "$dir" ]] || continue
+    entries+=("$dir")
+  done
+
+  (IFS=:; printf '%s' "${entries[*]:+${entries[*]}:}${AGENT_SYSTEM_PATH[*]}")
+}
+
+# Prove the derived PATH before it is written into a plist. Runs each tool from an EMPTY
+# environment, because that is the environment launchd will use — a check that inherits this
+# shell's PATH proves nothing. Returns 1 and explains, rather than emitting a plist that
+# loads cleanly and then fails at 3am.
+verify_agent_path() {
+  local candidate="$1" tool missing=() want_major have_major
+  for tool in "${AGENT_REQUIRED_TOOLS[@]}"; do
+    env -i PATH="$candidate" HOME="$HOME" sh -c "command -v $tool" >/dev/null 2>&1 ||
+      missing+=("$tool")
+  done
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    cat >&2 <<EOF
+ERROR: the LaunchAgent PATH this would emit cannot find: ${missing[*]}
+
+  PATH: $candidate
+
+The desktop build shells out to all of ${AGENT_REQUIRED_TOOLS[*]}. A LaunchAgent gets no
+login shell, so anything installed only via a shell profile is invisible to it — and a
+missing tool does not fail loudly, it makes every tick back off in silence.
+
+Install the missing tool somewhere permanent, or add its directory to AGENT_SYSTEM_PATH in
+$(basename "$0"). No plist was emitted; re-run with --force to emit it anyway.
+EOF
+    return 1
+  fi
+
+  want_major="$(required_node_major)"
+  [[ -n "$want_major" ]] || return 0
+  have_major="$(env -i PATH="$candidate" HOME="$HOME" node --version 2>/dev/null |
+    sed -n 's/^v\([0-9][0-9]*\).*/\1/p')"
+  if [[ "$have_major" != "$want_major" ]]; then
+    cat >&2 <<EOF
+ERROR: the LaunchAgent PATH this would emit resolves node to major v${have_major:-?}, but
+package.json's engines.node asks for v${want_major}.
+
+  PATH: $candidate
+  node: $(env -i PATH="$candidate" HOME="$HOME" sh -c 'command -v node' 2>/dev/null || echo '(none)')
+
+This is the failure worth refusing over: the build would not break, it would SUCCEED against
+the wrong toolchain and install the result. Install the pinned major so it is reachable from
+an empty environment. No plist was emitted; re-run with --force to emit it anyway.
+EOF
+    return 1
+  fi
+  return 0
+}
+
 print_launchd() {
   # Refuse to hand back a plist that provably cannot run. Emitting one anyway is the worst
   # outcome: `launchctl bootstrap` succeeds, `launchctl print` reports the job as loaded,
@@ -580,14 +733,18 @@ EOF
     log "WARNING: repo is under $protected (TCC-protected); this agent will fail with exit 126"
   fi
 
+  # Derived from the tools actually resolvable here, then re-checked from an empty
+  # environment. See the block above for why this is not a hardcoded list.
+  local agent_path
+  agent_path="$(derive_agent_path)"
+  if ! verify_agent_path "$agent_path" && [[ $FORCE -eq 0 ]]; then
+    exit 2
+  fi
+
   local label="dev.t3x.autobuild"
-  local x_script x_repo x_log x_cargo_bin
+  local x_script x_repo x_log x_path
   x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
-  # Since upstream v0.0.31 the desktop build shells out to `cargo build` to stage
-  # native/resource-monitor. A launchd job gets no login shell, so the PATH line rustup
-  # writes into the shell profile is never read — without ~/.cargo/bin on the PATH below
-  # every tick dies with `spawn cargo ENOENT` and only backs off, it never alerts.
-  x_cargo_bin="$(xml_escape "$HOME/.cargo/bin")"
+  x_path="$(xml_escape "$agent_path")"
   # MAIN_REPO, not REPO: in ref mode REPO is the build worktree, which may not exist
   # until the first tick — and launchd refuses to spawn a job whose WorkingDirectory
   # is missing.
@@ -627,7 +784,12 @@ $( [[ $DO_RELAUNCH -eq 1 ]] && printf '    <string>--relaunch</string>' || true 
   <key>StandardErrorPath</key><string>${x_log}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${x_cargo_bin}</string>
+    <key>PATH</key><string>${x_path}</string>
+    <!-- corepack provides pnpm here, and package.json pins a packageManager version. With
+         no tty a download prompt has nobody to answer it, so turn it off rather than let a
+         tick hang on a question. NOTE: this heredoc is unquoted, so backticks in these
+         comments would be command substitution, not prose. -->
+    <key>COREPACK_ENABLE_DOWNLOAD_PROMPT</key><string>0</string>
     <key>T3X_AUTOBUILD_STATE_DIR</key><string>${x_state}</string>
     <key>T3X_AUTOBUILD_APPLICATIONS_DIR</key><string>${x_apps}</string>
     <key>T3CODE_DESKTOP_OUTPUT_DIR</key><string>${x_out}</string>
@@ -712,6 +874,43 @@ build_once_locked() {
 if [[ "${PRINT_LAUNCHD:-0}" -eq 1 ]]; then
   print_launchd
   exit 0
+fi
+
+# launchd keeps the copy of the plist it was bootstrapped with, so a fix to what
+# --print-launchd emits does not reach a running agent — and nothing anywhere reports the
+# gap. That is how the live agent came to carry a hand-edited PATH the generator did not
+# know about for eleven days. This is the check that would have caught it.
+if [[ "${DIFF_LAUNCHD:-0}" -eq 1 ]]; then
+  installed="$HOME/Library/LaunchAgents/dev.t3x.autobuild.plist"
+  if [[ ! -f "$installed" ]]; then
+    echo "No agent installed at $installed — nothing to diff." >&2
+    exit 2
+  fi
+  # Comments are the divergence least worth reporting: the emitter writes some, and whoever
+  # hand-edits the live plist writes more. Compare the settings, not the prose. The
+  # single-line substitution runs BEFORE the range delete on purpose — otherwise a
+  # self-contained `<!-- … -->` opens a range that swallows everything up to the next one.
+  plist_settings_only() { sed -e 's/<!--.*-->//' -e '/<!--/,/-->/d' | grep -v '^[[:space:]]*$'; }
+  generated="$(print_launchd)"   # exits 2 by itself if the PATH does not verify
+  if diff -u \
+    --label "installed: $installed" \
+    --label "would emit: $0 ${ORIGINAL_ARGV[*]:-}" \
+    <(plist_settings_only < "$installed") \
+    <(printf '%s\n' "$generated" | plist_settings_only); then
+    echo "The installed agent matches what this script would emit."
+    exit 0
+  fi
+  cat >&2 <<EOF
+
+The installed agent and this script disagree. If the installed side is the one that is
+right, the fix belongs in --print-launchd — a hand-edit to the live plist is lost the next
+time anyone regenerates it. To adopt this script's version:
+
+  launchctl bootout "gui/\$UID/dev.t3x.autobuild"
+  $0 --print-launchd ${ORIGINAL_ARGV_NO_DIFF[*]:-} > "$installed"
+  launchctl bootstrap "gui/\$UID" "$installed"
+EOF
+  exit 1
 fi
 
 if [[ $DO_WATCH -eq 1 ]]; then
