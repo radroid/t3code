@@ -17,7 +17,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 >
 > `winget install T3Tools.T3Code`, `brew install --cask t3-code` and `yay -S t3code-bin` all install upstream's T3 Code — a different app, from a different repository, that updates from a different place. They are correct if upstream is what you want; they are the wrong thing if you got here looking for this fork's build.
 >
-> **Fork builds live at [coil.curlycloud.dev/download](https://coil.curlycloud.dev/download).** That page carries the per-platform first-launch steps inline, and you will need them: these builds are not code-signed, so macOS calls the app _damaged_ on first launch rather than merely unsigned, and right-click → Open does not get past that. The same steps are in the body of every [GitHub release](https://github.com/radroid/t3code/releases) — both are rendered from `scripts/t3x/install-instructions.json`, so they cannot drift.
+> **Fork builds live at [coil.curlycloud.dev/download](https://coil.curlycloud.dev/download).** That page carries the per-platform first-launch steps inline, and you will need them: these builds are not code-signed, so macOS calls the app _damaged_ on first launch rather than merely unsigned, and right-click → Open does not get past that. The same steps are in the body of every [GitHub release](https://github.com/radroid/t3code/releases) — both are rendered from `scripts/coil/install-instructions.json`, so they cannot drift.
 >
 > | Platform | Built                 | Notes             |
 > | -------- | --------------------- | ----------------- |
@@ -25,7 +25,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > | Windows  | x64                   | No arm64 build    |
 > | Linux    | Not built             | Build from source |
 >
-> Everything else in this README is upstream's and applies unchanged — the fork's own docs are under [`docs/t3x/`](docs/t3x/).
+> Everything else in this README is upstream's and applies unchanged — the fork's own docs are under [`docs/coil/`](docs/coil/).
 
 > [!WARNING]
 > T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
