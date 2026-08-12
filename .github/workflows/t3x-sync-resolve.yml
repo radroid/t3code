@@ -64,7 +64,16 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
-          # persist-credentials (default) lets the agent push its branch with GITHUB_TOKEN.
+          # persist-credentials (default) makes the agent's `git push` reuse THIS token.
+          #
+          # Same wall as the daily job: GITHUB_TOKEN may not create or update `.github/workflows/**`
+          # on ANY ref, branches included. Since the resolver exists to land upstream ranges — the
+          # exact ranges that carry upstream CI edits — pushing its `t3x/sync-*` branch as
+          # GITHUB_TOKEN fails at step 5 after the whole rebase+verify budget is already spent.
+          # T3X_SYNC_TOKEN carries the `workflow` scope; the fallback preserves today's behaviour
+          # when the secret is absent. `gh` below stays on GITHUB_TOKEN on purpose — only the git
+          # push needs the wider scope.
+          token: ${{ secrets.T3X_SYNC_TOKEN || github.token }}
 
       - name: Configure git + fetch upstream
         run: |
