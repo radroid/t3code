@@ -68,6 +68,23 @@ created) shows up in the Actions tab as **skipped**, not as an error. Check ther
 a rebase that is not the problem. Read the `**Result:**` / `**kind:**` line first; a `weekly-build`
 failure means fix the build.
 
+### A `push-failed` issue is not a conflict — do not send the agent
+
+`**Result:** push-failed` means the rebase was clean and typecheck/lint/test were all green, and
+then `git push --force-with-lease origin main` was rejected. Replaying the rebase fixes nothing;
+fix the credential and re-run _t3x upstream sync (daily)_.
+
+The dominant cause: **GitHub forbids `GITHUB_TOKEN` from creating or updating any file under
+the `.github/workflows/` directory** — on `main` or on a branch. It is not grantable from the
+workflow's `permissions:` block (there is no `workflows` key), so the only fix is pushing as
+something else. Both sync workflows therefore check out with `secrets.T3X_SYNC_TOKEN` (see
+[One-time setup](#one-time-setup)), falling back to `GITHUB_TOKEN` when it is unset.
+
+This stayed invisible until 2026-08-11, when the absorbed range first included an upstream commit
+that edited a workflow file (`1b120f352`, _fix(ci): extend release publish timeout_). Every sync
+carrying an upstream CI change hits it. Nothing is force-landed when it happens: `origin/main` is
+untouched and in-flight PRs stay mergeable, which is why re-running is safe.
+
 ### When verify goes red on code the fork does not own
 
 A sync can import an upstream test that fails **in this fork's CI but not upstream's**, because
@@ -137,9 +154,10 @@ reviewed tip instead.
 The branch is `t3x/sync-<workflow run id>` — the run id, not the issue number. A **draft** PR means
 the resolver could not get all three verify steps green; read its issue comment before anything else.
 
-**1. Get a CI signal — it will not appear on its own.** `t3x-ci.yml` does have a `push` trigger on
-`t3x/sync-**`, but the resolver pushes with `GITHUB_TOKEN`, and GitHub creates no workflow runs from
-`GITHUB_TOKEN`-authored events. Neither that trigger nor `pull_request` fires. Dispatch it:
+**1. Get a CI signal — it may not appear on its own.** `t3x-ci.yml` has a `push` trigger on
+`t3x/sync-**`, but it only fires if the resolver pushed with a PAT (`T3X_SYNC_TOKEN`). On the
+`GITHUB_TOKEN` fallback GitHub creates no workflow runs from its own events, so neither that
+trigger nor `pull_request` fires. Check first; if there is no run, dispatch it:
 
 ```
 gh workflow run t3x-ci.yml -R radroid/t3code --ref t3x/sync-<id>
@@ -206,6 +224,24 @@ Any branch left un-rebased shows `[origin/main: ahead N, behind M]` and cannot l
 2. When the installer offers to add the **generic `@claude` responder** workflow, choose
    **Skip** — this repo ships its own `t3x-sync-resolve.yml`, and a generic responder would
    double-fire on the same `@claude resolve` comment.
+3. Add the repo secret **`T3X_SYNC_TOKEN`**. Without it both sync workflows push as
+   `GITHUB_TOKEN` and cannot land any upstream range that touches `.github/workflows/**`
+   (see [A `push-failed` issue is not a conflict](#a-push-failed-issue-is-not-a-conflict--do-not-send-the-agent)).
+
+   Prefer a **fine-grained PAT scoped to `radroid/t3code` only**, with repository permissions
+   _Contents: read & write_ and _Workflows: read & write_ — the resolver hands this credential to
+   an LLM-driven job, so a classic `repo` + `workflow` PAT (valid across every repo the account
+   can reach) is a much wider blast radius for the same capability. A GitHub App installation
+   token with Workflows: write works too.
+
+   ```
+   gh secret set T3X_SYNC_TOKEN -R radroid/t3code
+   ```
+
+   Fine-grained PATs expire; when one does, the daily job escalates as `push-failed` rather than
+   failing silently. Note that pushes made with a PAT are authored by **you**, not
+   `github-actions[bot]`, so they do trigger workflows — `t3x-ci.yml` will start firing on
+   resolver branches by itself, and pushes to `main` will run the fork's CI.
 
 Only a user with write access (`OWNER`/`MEMBER`/`COLLABORATOR`) can trigger the resolver, so the
 API budget can't be spent by a passer-by on the public fork.
