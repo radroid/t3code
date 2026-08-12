@@ -38,12 +38,12 @@
 # electron-builder silently falls back to an ad-hoc build.
 #
 # Env:
-#   T3X_MAC_SIGNING_IDENTITY  (default: T3X Code Signing) — the certificate's common name
+#   T3X_MAC_SIGNING_IDENTITY  (default: T3 Coil Code Signing) — the certificate's common name
 #   T3X_MAC_SIGNING_DIR       (default: ~/.t3x/mac-signing)
 #
 set -euo pipefail
 
-IDENTITY_NAME="${T3X_MAC_SIGNING_IDENTITY:-T3X Code Signing}"
+IDENTITY_NAME="${T3X_MAC_SIGNING_IDENTITY:-T3 Coil Code Signing}"
 SIGNING_DIR="${T3X_MAC_SIGNING_DIR:-$HOME/.t3x/mac-signing}"
 # `security create-keychain <name>` puts the file in ~/Library/Keychains and appends `-db`, so the
 # two names below are the same keychain spelled the two ways the tool needs it.
@@ -59,7 +59,7 @@ VALIDITY_DAYS=3650
 # scripts/coil/mac-signature.ts. It appears in the designated requirement, so the stub bundle signed
 # by --print-requirement has to carry the SAME id as the shipped app or the recorded requirement
 # would never match a real build.
-BUNDLE_ID="dev.curlycloud.coil"
+BUNDLE_ID="dev.curlycloud.t3coil"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || printf '')"
