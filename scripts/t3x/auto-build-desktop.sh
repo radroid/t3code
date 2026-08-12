@@ -321,6 +321,69 @@ acquire_lock() {
   return 0
 }
 
+# --- code signing ------------------------------------------------------------
+# Issue #70. An ad-hoc signed build's designated requirement is its own cdhash, so macOS sees a
+# brand-new app after every install and re-requests Screen Recording, Accessibility, Microphone,
+# Files & Folders and Local Network. Signing with the fork's stable identity is what makes a grant
+# survive an update; see docs/t3x/mac-signing-runbook.md.
+#
+# electron-builder needs nothing from us but CSC_NAME. build-desktop-artifact.ts (upstream-owned)
+# forces CSC_IDENTITY_AUTO_DISCOVERY=false for unsigned builds, but app-builder-lib consults that
+# flag only when NO identity was named: findIdentity() reads `qualifier || process.env.CSC_NAME`
+# first. An empty CSC_NAME counts as absent, so a machine with no identity keeps today's behaviour
+# exactly — which is why this needs no upstream edit and no new SEAMS.md row.
+SETUP_SIGNING="$SCRIPT_DIR/setup-mac-signing.sh"
+
+# Kept in one place so the build and the verifier cannot disagree about it. The single source of
+# truth is DESKTOP_BUNDLE_IDENTIFIER in scripts/t3x/mac-signature.ts, and a test asserts this
+# literal matches it.
+DESKTOP_APP_ID="dev.curlycloud.coil"
+
+# Prints the identity name, or nothing at all when this machine has none set up. Never fails: an
+# unsigned build is worse than a signed one but better than no build.
+signing_identity() {
+  [[ -x "$SETUP_SIGNING" ]] || return 0
+  # Keychains lock on reboot, and a locked keychain is invisible to `security find-identity -v` —
+  # which is indistinguishable from "no identity" at exactly the wrong moment (an unattended
+  # overnight build), so unlock first and ask second.
+  "$SETUP_SIGNING" --unlock >/dev/null 2>&1 || return 0
+  "$SETUP_SIGNING" --status >/dev/null 2>&1 || return 0
+  "$SETUP_SIGNING" --print-identity
+}
+
+log_signing_state() {
+  local identity="$1"
+  if [[ -n "$identity" ]]; then
+    log "signing: '$identity' — permissions granted to the installed app will survive this update"
+  else
+    log "signing: NONE. This build will be ad-hoc signed, so macOS will ask for every permission"
+    log "signing: again after it installs — and again after the next build. Fix it once with:"
+    log "signing:   scripts/t3x/setup-mac-signing.sh"
+  fi
+}
+
+# Refuse to install a build that would cost the user a round of permission dialogs.
+#
+# The check runs against the built .dmg, and uses the verifier from the commit that was built (which
+# is the build worktree when --ref is in play), not from this checkout.
+verify_signature() {
+  local dmg="$1" identity="$2"
+  local verifier="$REPO/scripts/t3x/verify-mac-signature.ts"
+  local recorded="$REPO/docs/t3x/mac-signing/designated-requirement.txt"
+  [[ -f "$verifier" ]] || return 0
+
+  local args=(--artifact "$dmg")
+  [[ -f "$recorded" ]] && args+=(--expect-requirement-file "$recorded")
+  if [[ -n "$identity" ]]; then
+    args+=(--expect-authority "$identity")
+  else
+    # Only tolerated because this machine knowingly has no identity. A build signed by a
+    # DIFFERENT identity is never tolerated: it looks fixed and is not.
+    args+=(--allow-unsigned)
+  fi
+  ( cd "$REPO" && node "$verifier" "${args[@]}" )
+}
+
 # --- install -----------------------------------------------------------------
 # Answer "which .app would be installed?" WITHOUT changing anything.
 #
@@ -384,7 +447,7 @@ install_dmg() {
     log "install: '$d_appbase' -> '$d_target'"
     log "DRY-RUN would: quit app '${d_appbase%.app}'"
     log "DRY-RUN would: rm -rf '$d_target' && cp -R <app-from-dmg> '$d_target'"
-    log "DRY-RUN would: xattr -dr com.apple.quarantine '$d_target'  (unsigned local build)"
+    log "DRY-RUN would: xattr -dr com.apple.quarantine '$d_target'  (not notarized)"
     [[ $DO_RELAUNCH -eq 1 ]] && log "DRY-RUN would: open '$d_target'"
     # The footgun this preview exists to catch: if the target is absent, a real --install
     # CREATES a new app and silently leaves the one you actually launch untouched.
@@ -466,6 +529,10 @@ build_once() {
 
   log "building desktop dmg for $cur (last built: ${last:-none})"
 
+  local signing_id
+  signing_id="$(signing_identity)"
+  log_signing_state "$signing_id"
+
   if [[ $DRY_RUN -eq 1 ]]; then
     log "DRY-RUN would: pnpm dist:desktop:dmg:arm64  (cwd $REPO)"
   else
@@ -491,7 +558,13 @@ build_once() {
       return 1
     fi
     log "running: pnpm dist:desktop:dmg:arm64"
-    if ! ( cd "$REPO" && pnpm dist:desktop:dmg:arm64 ); then
+    # T3X_DESKTOP_APP_ID: the fork's own bundle id (issue #70). macOS keys one permission row per
+    # (service, bundle id), and sharing `com.t3tools.t3code` with upstream's nightly meant whichever
+    # app launched last owned the grants. Must match DESKTOP_BUNDLE_IDENTIFIER in
+    # scripts/t3x/mac-signature.ts — a test asserts it, and verify_signature below fails a build
+    # whose signing identifier is anything else.
+    if ! ( cd "$REPO" && CSC_NAME="$signing_id" T3X_DESKTOP_APP_ID="$DESKTOP_APP_ID" \
+      pnpm dist:desktop:dmg:arm64 ); then
       write_status "build-failed" "$cur" "" "pnpm dist:desktop:dmg:arm64 failed"
       log "BUILD FAILED for $cur"
       return 1
@@ -510,6 +583,19 @@ build_once() {
     log "DRY-RUN newest existing dmg: ${dmg:-<none>}"
   else
     log "built dmg: $dmg"
+    # Before the install, not after: a build whose identity moved would cost the user every
+    # permission dialog, and at that point the only honest thing to do is not install it.
+    #
+    # Captured rather than piped into `log`. `verify … | while read` would report the WHILE LOOP's
+    # status, which is always 0 — the same shape of bug the release workflow's retry loop documents.
+    local verify_log verify_status=0
+    verify_log="$(verify_signature "$dmg" "$signing_id" 2>&1)" || verify_status=$?
+    while IFS= read -r line; do [[ -n "$line" ]] && log "$line"; done <<<"$verify_log"
+    if [[ $verify_status -ne 0 ]]; then
+      write_status "build-failed" "$cur" "$dmg" "signature verification failed"
+      log "BUILD FAILED for $cur (signature verification)"
+      return 1
+    fi
   fi
 
   local install_failed=0
