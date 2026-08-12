@@ -53,7 +53,9 @@ export function signingMaterial(timestamp: string, rawBody: string): string {
 export function parseTimestamp(
   header: string | null,
   nowSeconds: number,
-): { readonly ok: true; readonly timestamp: number } | { readonly ok: false; readonly failure: SignatureFailure } {
+):
+  | { readonly ok: true; readonly timestamp: number }
+  | { readonly ok: false; readonly failure: SignatureFailure } {
   if (header === null || header.trim() === "") {
     return { ok: false, failure: { kind: "missing-timestamp" } };
   }
@@ -138,7 +140,9 @@ export async function verifySignature(args: {
     await hmacSha256(args.secret, signingMaterial(String(timestamp.timestamp), args.rawBody)),
   );
 
-  return timingSafeEqual(provided, expected) ? { ok: true } : { ok: false, failure: { kind: "mismatch" } };
+  return timingSafeEqual(provided, expected)
+    ? { ok: true }
+    : { ok: false, failure: { kind: "mismatch" } };
 }
 
 export async function createSignature(args: {

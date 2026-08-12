@@ -61,8 +61,32 @@ export function rewriteToUpstream(requestUrl: string): string {
   return target.toString();
 }
 
+/**
+ * The forwarded request: the upstream's origin, the caller's everything else.
+ *
+ * The `host` header is reset alongside the URL. It does not affect routing here — the service
+ * binding dispatches by binding, not by hostname — but `new Request(newUrl, oldRequest)` copies
+ * headers verbatim, and a request whose URL and `host` disagree is the kind of detail that reads as
+ * a bug to whoever debugs the next thing.
+ */
+export function buildUpstreamRequest(request: Request): Request {
+  const forwarded = new Request(rewriteToUpstream(request.url), request);
+  forwarded.headers.set("host", new URL(UPSTREAM_ORIGIN).host);
+  return forwarded;
+}
+
+/**
+ * The upstream relay, bound as a service rather than reached over the network.
+ *
+ * See `wrangler.legacy.jsonc` for why: a subrequest from a Worker to a `workers.dev` hostname on
+ * the same account is answered by the edge with an HTML 404 and never reaches the target.
+ */
+export interface LegacyEnv {
+  readonly UPSTREAM: Fetcher;
+}
+
 export default {
-  fetch(request: Request): Promise<Response> {
-    return fetch(new Request(rewriteToUpstream(request.url), request));
+  fetch(request: Request, env: LegacyEnv): Promise<Response> {
+    return env.UPSTREAM.fetch(buildUpstreamRequest(request));
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<LegacyEnv>;

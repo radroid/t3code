@@ -25,4 +25,17 @@
     "bindings": [{ "name": "UPDATE_CHANNEL", "class_name": "UpdateChannel" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UpdateChannel"] }],
+
+  // A service binding, NOT a `fetch()` to the upstream's public hostname.
+  //
+  // The first cut of this shim did the obvious thing — rewrite the URL, `fetch` it — and served a
+  // Cloudflare HTML 404 to every request. A Worker's subrequest to a `workers.dev` hostname on the
+  // same account never reaches the target: `wrangler tail` on `coil-update-relay` recorded zero
+  // requests while this Worker recorded `outcome: ok`. Repointing the inherited `host` header did
+  // not help either, so there is no header-level fix to find.
+  //
+  // A service binding is the supported path and a strictly better one: it dispatches worker-to-
+  // worker inside the runtime, with no second TLS hop, no edge routing to get wrong, and no
+  // public-hostname dependency between two Workers that are deployed from the same package.
+  "services": [{ "binding": "UPSTREAM", "service": "coil-update-relay" }],
 }
