@@ -25,18 +25,24 @@
  * build and upstream's `T3 Code (Nightly)`, both `com.t3tools.t3code` and both commonly installed,
  * shared one row per permission. Whichever launched last owned the grant and the other was
  * re-prompted, which no amount of correct signing can fix. Renamed after `coil`
- * (coil.curlycloud.dev), the fork's own home.
+ * (coil.curlycloud.dev), the fork's own home, and aligned with the app's name in #71.
  *
- * Deliberately NOT a rename of `productName`: the updater refuses an install when the `.app` name
- * inside the dmg differs from the installed one (`resolveMacInstallTarget`), so renaming the app
- * would break the very update path this is meant to make quiet. The app stays `T3 Code (Alpha)`.
+ * Changing this costs the user one full round of permission dialogs, so it should not move again.
+ * It moved twice in one week — #70 introduced it, #71 aligned it with `T3 Coil` — and #71 folded
+ * the certificate rename into the same release precisely so both resets are paid at once.
+ *
+ * `productName` now moves WITH it (#71): the updater refuses an install when the `.app` name in
+ * the dmg differs from the installed one (`resolveMacInstallTarget`), so the first renamed build
+ * is installed by hand, once, and the refusal message says so. TCC does not care — grants are
+ * keyed to the designated requirement, which names the bundle id and the certificate, not the
+ * visible name.
  *
  * Fed to the build through `T3X_DESKTOP_APP_ID`, which `scripts/build-desktop-artifact.ts` reads.
  * `mac-signature.test.ts` asserts that hook still exists and that every build path sets it to this
  * value — an upstream sync that reverts the seam, or a workflow that forgets the variable, would
  * otherwise silently ship the old id and reset every permission again.
  */
-export const DESKTOP_BUNDLE_IDENTIFIER = "dev.curlycloud.coil";
+export const DESKTOP_BUNDLE_IDENTIFIER = "dev.curlycloud.t3coil";
 
 /** The environment variable the fork's build paths use to set {@link DESKTOP_BUNDLE_IDENTIFIER}. */
 export const DESKTOP_APP_ID_ENV_VAR = "T3X_DESKTOP_APP_ID";
@@ -47,8 +53,16 @@ export const DESKTOP_APP_ID_ENV_VAR = "T3X_DESKTOP_APP_ID";
  * A plain name, not a hash: `codesign` and electron-builder both look identities up by name
  * (`CSC_NAME`), and the name is what has to match between this Mac's login keychain and the
  * ephemeral keychain the release workflow builds from the p12 secret.
+ *
+ * Changing this name is not a code change alone. The certificate's identity is *inside* the
+ * designated requirement, so a new name means a new certificate, which means every TCC grant is
+ * invalidated and `docs/coil/mac-signing/designated-requirement.txt` no longer matches the one the
+ * release records. The full sequence — `setup-mac-signing.sh --rotate`, re-record the requirement,
+ * re-commit `certificate.pem`, re-set the two `T3X_MAC_CSC_*` secrets — is in the runbook, and it
+ * has to happen on the user's Mac BEFORE this lands, or the release signs with an identity the
+ * keychain does not have.
  */
-export const MAC_SIGNING_IDENTITY_NAME = "T3X Code Signing";
+export const MAC_SIGNING_IDENTITY_NAME = "T3 Coil Code Signing";
 
 export interface CodesignDisplay {
   /** `Identifier=` — the SIGNING identifier. Ad-hoc Electron bundles report `Electron` here. */

@@ -10,8 +10,8 @@ import {
 const MAC = {
   dmgPath: "/Users/me/Library/Application Support/T3/staging/T3Code-abc123def456-arm64.dmg",
   mountPoint: "/var/folders/x9/T/coil-dmg-abc123",
-  sourceAppPath: "/var/folders/x9/T/coil-dmg-abc123/T3 Code (Alpha).app",
-  stagedAppPath: "/Applications/T3 Code (Alpha).app.coil-new",
+  sourceAppPath: "/var/folders/x9/T/coil-dmg-abc123/T3 Coil (Alpha).app",
+  stagedAppPath: "/Applications/T3 Coil (Alpha).app.coil-new",
 };
 
 describe("macStagingCommands", () => {
@@ -62,8 +62,8 @@ describe("macStagingCommands", () => {
 
 describe("macSwapCommands", () => {
   const commands = macSwapCommands({
-    targetAppPath: "/Applications/T3 Code (Alpha).app",
-    stagedAppPath: "/Applications/T3 Code (Alpha).app.coil-new",
+    targetAppPath: "/Applications/T3 Coil (Alpha).app",
+    stagedAppPath: "/Applications/T3 Coil (Alpha).app.coil-new",
   });
 
   it("deletes the target, then renames onto it", () => {
