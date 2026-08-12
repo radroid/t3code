@@ -389,6 +389,19 @@ jobs:
       # process that resets the limit to its default of 4, so the serialisation would be a no-op.
       - name: Build desktop bundle (serialised)
         shell: bash
+        env:
+          # Issue #53. The web renderer's source maps were 37.4 MiB of a 189.66 MiB app.asar — the
+          # single largest line item in the bundle, and 20% of what every user downloads on every
+          # update. Nothing reads them: a `.map` is only parsed with --enable-source-maps, which the
+          # desktop backend passes through rather than sets (DesktopBackendConfiguration.ts), and
+          # renderer maps are DevTools-only.
+          #
+          # This is an EXISTING upstream variable (apps/web/vite.config.ts), which is why the biggest
+          # single win in the issue costs zero seam rows. First-party maps outside the renderer —
+          # bin.mjs.map and main.cjs.map, ~12 MiB — are deliberately still built and still shipped, so
+          # an operator who exports NODE_OPTIONS=--enable-source-maps keeps readable stack traces for
+          # our own code.
+          T3CODE_WEB_SOURCEMAP: "0"
         run: |
           set -uo pipefail
 
@@ -438,6 +451,29 @@ jobs:
           echo "::error::build:desktop failed three times with transient process-startup errors." >&2
           exit 1
 
+      # Issue #53. Kept in its own step so the exact glob list appears in the release log: the list is
+      # the risky part of the packaging change, and reading it back out of a failed build matters more
+      # than saving a step. scripts/coil/desktop-file-exclusions.mjs is the single source — it also
+      # feeds its own unit tests.
+      #
+      # A STEP OUTPUT, NOT $GITHUB_ENV, and that is deliberate. Upstream's own test asserts
+      # DESKTOP_FILE_EXCLUSIONS deep-equals exactly its one entry, so any job-wide export of this
+      # variable makes `vp test` fail in that job with a confusing 68-vs-1 array diff. An output is
+      # consumed by exactly the one step that names it below.
+      - name: Resolve desktop bundle exclusions
+        id: exclusions
+        shell: bash
+        run: |
+          set -euo pipefail
+          exclusions="$(node scripts/coil/desktop-file-exclusions.mjs)"
+          if [[ -z "$exclusions" ]]; then
+            echo "::error::scripts/coil/desktop-file-exclusions.mjs produced an empty list." >&2
+            exit 1
+          fi
+          echo "value=$exclusions" >> "$GITHUB_OUTPUT"
+          echo "Excluding from the asar:"
+          tr ',' '\n' <<< "$exclusions" | sed 's/^/  /'
+
       - name: Build desktop artifact
         shell: bash
         env:
@@ -468,6 +504,9 @@ jobs:
           # Keep this in step with DESKTOP_BUNDLE_IDENTIFIER in scripts/coil/mac-signature.ts; a test
           # asserts the two agree, and the verify step below fails an artifact carrying the wrong id.
           T3X_DESKTOP_APP_ID: dev.curlycloud.t3coil
+          # Issue #53. Takes the packaged asar from 189.66 MiB / 14,765 files to 99.02 MiB / 3,429.
+          # Scoped to this step on purpose — see the note on the step that produces it.
+          T3X_DESKTOP_FILE_EXCLUSIONS: ${{ steps.exclusions.outputs.value }}
         run: |
           set -euo pipefail
           node scripts/build-desktop-artifact.ts \
@@ -491,6 +530,30 @@ jobs:
             exit 1
           fi
           echo "No app-update.yml packaged."
+
+      # Issue #53's compensating control, and the reason the exclusion list above is safe to grow.
+      #
+      # The fork now excludes roughly half the asar. The failure mode of one bad glob is a
+      # MODULE_NOT_FOUND thrown by a shipped app, on a path that may not run until a user signs in,
+      # days after a green release. So this reads the artifact that is about to be published, resolves
+      # every bare import in the packaged first-party bundles against what actually survived, and fails
+      # if any of them is not loadable — whether or not a fork glob can be blamed for it. Severity does
+      # not depend on attribution: a bundle that imports what it does not contain is broken either way,
+      # and an earlier draft that warned on unattributed gaps passed a build that could not start.
+      #
+      # Runs on BOTH platforms: the Windows bundle unpacks node_modules outside the asar (the checker
+      # merges app.asar.unpacked back in) and its graph differs (WSL backend, Linux fff binaries), so a
+      # mac-only check would not cover it.
+      - name: Verify the packaged bundle still resolves
+        shell: bash
+        run: |
+          set -euo pipefail
+          asar="$(find release -name "app.asar" -print -quit)"
+          if [[ -z "$asar" ]]; then
+            echo "::error::No app.asar found under release/. Nothing was verified." >&2
+            exit 1
+          fi
+          node scripts/coil/verify-desktop-bundle.mjs --asar "$asar"
 
       # The machine-checkable form of "this update will not re-ask for permissions" (issue #70),
       # made against the .app inside the shipped .dmg rather than a staging copy.
