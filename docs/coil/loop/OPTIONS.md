@@ -267,7 +267,7 @@ Measured against merge-base `64bf01619` with the SEAMS.md recipe, re-run this se
 | `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` | +1 (`<LoopOverlay threadRef={threadRef} />`)    | 5           | **5** |
 | `apps/web/src/routes/settings.beta.tsx`                  | +2 (import + `<LoopBetaSection />`)             | 1           | **2** |
 | `apps/server/src/server.ts`                              | 0 — the 3-line seam (59/224/422) already exists | 29          | **0** |
-| `apps/server/src/coil/index.ts`                           | +4, fork-owned aggregator                       | 0           | **0** |
+| `apps/server/src/coil/index.ts`                          | +4, fork-owned aggregator                       | 0           | **0** |
 | `packages/contracts/**`                                  | 0                                               | —           | **0** |
 | `apps/server/src/provider/Layers/ClaudeAdapter.ts`       | 0                                               | 12          | **0** |
 | `apps/server/src/persistence/Migrations.ts`              | 0                                               | 6           | **0** |
