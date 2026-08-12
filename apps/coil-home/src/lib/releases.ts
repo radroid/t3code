@@ -1,11 +1,14 @@
 /*
  * Downloads come from the fork's update relay, not GitHub's releases API.
  *
- * Every fork release is published as a GitHub *pre-release*, and
+ * This used to be forced. Every fork release was published as a GitHub *pre-release*, and
  * `api.github.com/repos/radroid/t3code/releases/latest` — which upstream's marketing site uses —
- * skips pre-releases and 404s for this repo. The relay already serves the same manifest the
- * desktop app's updater consumes, so the site and the app agree on what "latest" means by
- * construction rather than by coincidence.
+ * skips pre-releases and 404'd for this repo. Releases now carry a real Latest pointer, so that
+ * API would answer.
+ *
+ * The relay is still the right source, for the reason that outlives the 404: it serves the same
+ * manifest the desktop app's updater consumes, so the site and the app agree on what "latest"
+ * means by construction rather than by coincidence.
  */
 // Moved to the renamed relay by #71. Safe to move here, unlike in the desktop app: this page is
 // fetched fresh on every visit, so it has no old copies of itself in the field. The old hostname
