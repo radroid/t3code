@@ -48,7 +48,7 @@ A self-signed code-signing certificate, created by `scripts/coil/setup-mac-signi
 
 A dedicated keychain rather than the login keychain, because its password is one we generate: that is
 what lets `security set-key-partition-list` run non-interactively, so `codesign` never raises the
-"wants to use a key in your keychain" dialog. An unattended 3am autobuild cannot click a dialog.
+"wants to use a key in your keychain" dialog. A CI runner cannot click a dialog.
 
 Not the $99 Developer Program, and not the `Apple Development` certificate already in this Mac's
 keychain. Either would also work — the requirement is stable in all three cases — but a self-signed
@@ -115,9 +115,8 @@ recorded one.
 
 That last case is the one worth having a file for. A build signed by a _different_ valid certificate
 is perfectly signed and still costs the user every dialog once, so "is it signed?" is not a strong
-enough question — "is it signed by the same thing as last time?" is. Both the release workflow and
-`scripts/coil/auto-build-desktop.sh` run this check, and the autobuild refuses to install a build
-that fails it.
+enough question — "is it signed by the same thing as last time?" is. The release workflow runs this
+check on every macOS build, and refuses to publish one that fails it.
 
 `spctl -a -vvv` will still reject the app: it is not notarized. That is expected and unrelated —
 see below.
@@ -245,8 +244,6 @@ together or neither does.
   re-recorded from it before the release can sign anything. Renaming the visible app is free in TCC
   terms — grants key on the designated requirement, which names the bundle id and the certificate,
   not `productName`.
-- `docs/coil/auto-build-runbook.md` — the local build/install loop, which signs the same way.
-- Issue #41 — the autobuild relaunch race. Unrelated, adjacent.
 - Issue #72 / PR #78 (still open, branch `t3x/install-instructions`) — the first-launch install copy,
   written against the _current_ Gatekeeper verdict for a downloaded build ("damaged"). A valid
   signature may well downgrade that to the ordinary unidentified-developer dialog, in which case the
