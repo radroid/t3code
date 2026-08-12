@@ -9,6 +9,7 @@ import * as NodeURL from "node:url";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
@@ -24,6 +25,7 @@ import {
   T3X_DESKTOP_FILE_EXCLUSION_GROUPS,
   T3X_DESKTOP_FILE_EXCLUSIONS,
 } from "./desktop-file-exclusions.mjs";
+import { resolveGitHubPublishConfig } from "../build-desktop-artifact.ts";
 import {
   findExcludingGlob,
   inspectPackagePresence,
@@ -645,4 +647,56 @@ describe("the scripts still work when invoked as CLIs", () => {
 
     assert.notStrictEqual(result.status, 0, "a no-argument run must not look like a pass");
   });
+});
+
+/*
+ * The fork ships exactly one update surface: its own toast. Upstream's electron-updater turns
+ * itself on the moment `app-update.yml` is in the bundle, and electron-builder writes that file
+ * whenever a publish config is resolved — so "no publish config" IS the mechanism, and it is worth
+ * one test.
+ *
+ * The release workflow tried to get there with `GITHUB_REPOSITORY: ""`, which cannot work: Actions
+ * refuses to let a workflow set a `GITHUB_`-prefixed variable, so the build read the runner's real
+ * value and every build to date shipped a live feed pointing at radroid/t3code. It went unnoticed
+ * because the step meant to catch it searched the wrong directory and could never fail.
+ *
+ * `T3CODE_DESKTOP_UPDATE_REPOSITORY` is the fork's own hook, is read FIRST, and is not reserved.
+ * Asserted here rather than in build-desktop-artifact.test.ts, which is upstream's file — the
+ * function is exported, so the fork can pin fork behaviour without spending a seam row.
+ */
+describe("the fork ships no update feed", () => {
+  const withEnv = (env: Record<string, string>) =>
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
+
+  it.effect("resolves no publish config when the fork's hook is set to a non-repo value", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveGitHubPublishConfig("latest").pipe(
+        // Exactly what coil-release.yml sets, alongside the GITHUB_REPOSITORY the runner provides
+        // and the workflow cannot remove. The hook short-circuits before it is read.
+        withEnv({
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: "disabled",
+          GITHUB_REPOSITORY: "radroid/t3code",
+        }),
+      );
+
+      assert.isUndefined(config, "a publish config here means app-update.yml ships again");
+    }),
+  );
+
+  it.effect("would have resolved one from GITHUB_REPOSITORY alone — the bug this replaced", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveGitHubPublishConfig("latest").pipe(
+        withEnv({ GITHUB_REPOSITORY: "radroid/t3code" }),
+      );
+
+      // Not a wish for the old behaviour: it pins WHY the empty-string attempt was insufficient, so
+      // a future reader cannot conclude the hook above is redundant.
+      assert.deepStrictEqual(config, {
+        provider: "github",
+        owner: "radroid",
+        repo: "t3code",
+        releaseType: "release",
+      });
+    }),
+  );
 });
