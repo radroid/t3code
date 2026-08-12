@@ -53,7 +53,24 @@ describe("relayEndpoints", () => {
 
 describe("parseBuildNumber", () => {
   it("reads the counter this fork's release workflow writes", () => {
+    expect(parseBuildNumber("0.0.33-coil.101")).toBe(101);
+  });
+
+  it("still reads the pre-rename counter", () => {
+    // #71 renamed the suffix. This case is not nostalgia: every published build up to 26 carries
+    // `-t3x.<n>`, and dropping it would make those versions parse as `undefined` — "no ordering
+    // floor" — which is the one answer that lets an OLDER build look installable.
     expect(parseBuildNumber("0.0.31-t3x.44")).toBe(44);
+  });
+
+  it("orders across the rename, because the counter never restarted", () => {
+    // The whole point of the +100 offset in coil-release.yml. Nothing compares the suffixes —
+    // which is just as well, since "coil" sorts before "t3x".
+    const before = parseBuildNumber("0.0.33-t3x.26");
+    const after = parseBuildNumber("0.0.33-coil.101");
+    expect(before).toBeDefined();
+    expect(after).toBeDefined();
+    expect(after!).toBeGreaterThan(before!);
   });
 
   it("has no counter for an upstream build", () => {
@@ -63,12 +80,14 @@ describe("parseBuildNumber", () => {
   });
 
   it("ignores a counter that is not at the end", () => {
+    expect(parseBuildNumber("0.0.33-coil.101+meta")).toBeUndefined();
     expect(parseBuildNumber("0.0.31-t3x.44+meta")).toBeUndefined();
   });
 
   it("rejects zero and negatives", () => {
+    expect(parseBuildNumber("0.0.33-coil.0")).toBeUndefined();
+    expect(parseBuildNumber("0.0.33-coil.-1")).toBeUndefined();
     expect(parseBuildNumber("0.0.31-t3x.0")).toBeUndefined();
-    expect(parseBuildNumber("0.0.31-t3x.-1")).toBeUndefined();
   });
 });
 
@@ -97,11 +116,11 @@ describe("parsePendingInstall", () => {
   it("reads back what recordPendingInstall wrote", () => {
     const encoded = encodePendingInstall({
       shortSha: "dd90bbace7c3",
-      version: "0.0.31-t3x.6",
+      version: "0.0.31-coil.6",
     });
     expect(parsePendingInstall(encoded)).toEqual({
       shortSha: "dd90bbace7c3",
-      version: "0.0.31-t3x.6",
+      version: "0.0.31-coil.6",
     });
   });
 
