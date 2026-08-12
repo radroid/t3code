@@ -64,11 +64,7 @@ export function parseNotification(rawBody: string): NotificationParseResult {
   }
 
   const buildNumber = (parsed as { buildNumber: unknown }).buildNumber;
-  if (
-    typeof buildNumber !== "number" ||
-    !Number.isSafeInteger(buildNumber) ||
-    buildNumber <= 0
-  ) {
+  if (typeof buildNumber !== "number" || !Number.isSafeInteger(buildNumber) || buildNumber <= 0) {
     return { ok: false, failure: { kind: "invalid-build-number", value: buildNumber } };
   }
 

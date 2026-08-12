@@ -10,7 +10,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import { rewriteToUpstream, UPSTREAM_ORIGIN } from "./legacyWorker.ts";
+import { buildUpstreamRequest, rewriteToUpstream, UPSTREAM_ORIGIN } from "./legacyWorker.ts";
 
 describe("rewriteToUpstream", () => {
   it("keeps the path and moves only the origin", () => {
@@ -52,5 +52,42 @@ describe("rewriteToUpstream", () => {
     // A shim that forwards to its own hostname is an infinite loop that Cloudflare bills for.
     expect(UPSTREAM_ORIGIN).not.toContain("t3x-update-relay");
     expect(UPSTREAM_ORIGIN).toContain("coil-update-relay");
+  });
+});
+
+describe("buildUpstreamRequest", () => {
+  const incoming = (url: string, init?: RequestInit) =>
+    new Request(url, { headers: { host: "t3x-update-relay.businesses.workers.dev" }, ...init });
+
+  it("repoints the host header at the upstream", () => {
+    // `new Request(newUrl, oldRequest)` copies headers verbatim, `host` included, so without this
+    // the forwarded request's URL and `host` name different Workers.
+    const forwarded = buildUpstreamRequest(
+      incoming("https://t3x-update-relay.businesses.workers.dev/latest"),
+    );
+
+    expect(forwarded.headers.get("host")).toBe(new URL(UPSTREAM_ORIGIN).host);
+    expect(forwarded.url).toBe(`${UPSTREAM_ORIGIN}/latest`);
+  });
+
+  it("keeps the method and the headers the relay authenticates on", () => {
+    // /notify is signed over `<timestamp>.<body>`; the hop must not disturb either header.
+    const forwarded = buildUpstreamRequest(
+      incoming("https://t3x-update-relay.businesses.workers.dev/notify", {
+        method: "POST",
+        headers: {
+          host: "t3x-update-relay.businesses.workers.dev",
+          "content-type": "application/json",
+          "x-coil-timestamp": "1786500000",
+          "x-coil-signature": "sha256=abc",
+        },
+        body: '{"buildNumber":1}',
+      }),
+    );
+
+    expect(forwarded.method).toBe("POST");
+    expect(forwarded.headers.get("x-coil-timestamp")).toBe("1786500000");
+    expect(forwarded.headers.get("x-coil-signature")).toBe("sha256=abc");
+    expect(forwarded.headers.get("content-type")).toBe("application/json");
   });
 });
