@@ -34,7 +34,7 @@ The fork's conflict-management doctrine lives in /Users/rajdholakia/Developer/t3
   - _evidence:_ docs/coil/SEAMS.md:21-22
 - **Risk formula: "risk = (fork lines changed) x (upstream commits touching that file in the 60 days before the merge-base). It is a rebase-pain estimate, not a correctness signal."**
   - _evidence:_ docs/coil/SEAMS.md:31-33
-- **Fork test cases must go in a t3x/ sibling: "the fork's notifyOnNeedsInput block sat at the same describe anchor upstream keeps appending to, producing the add/add conflict in issue #29... This is the pattern to copy: fork test cases belong in a `t3x/` sibling, never appended to an upstream spec."**
+- **Fork test cases must go in a coil/ sibling: "the fork's notifyOnNeedsInput block sat at the same describe anchor upstream keeps appending to, producing the add/add conflict in issue #29... This is the pattern to copy: fork test cases belong in a `t3x/` sibling, never appended to an upstream spec."**
   - _evidence:_ docs/coil/SEAMS.md:90-94
 - **SEAMS.md warns fork-owned paths outside the t3x namespaces are only weakly safe: "a fork-created file is only conflict-free if upstream never creates a file at the same path. Roughly half of the fork's new files sit outside the four t3x-named namespaces above."**
   - _evidence:_ docs/coil/SEAMS.md:138-140
@@ -98,7 +98,7 @@ The fork's conflict-management doctrine lives in /Users/rajdholakia/Developer/t3
 - `apps/web/src/components/settings/SettingsPanels.tsx` — A user-facing on/off toggle and cadence control. Churn 18, ALREADY a seam at risk 1044 with a 45-line <SettingsRow>.
   - _avoid:_ Ship v1 with NO settings surface — expose control only through /api/coil/loop-supervisor and the fork's own overlay. Another 45-line row costs 45 x 18 = 810 on top of an already-1044 row. If a toggle becomes unavoidable, extend the fork's EXISTING row block (updating that ledger row in the same commit per SEAMS.md:24-27) rather than opening a new anchor.
 - `packages/contracts/src/settings.ts` — A persisted user setting for supervisor enablement. Churn 18, already a seam at risk 162, and it is a PERSISTED SCHEMA so a bad add is a data problem not just a rebase problem.
-  - _avoid:_ Keep supervisor config in the fork's own JSON state file (t3x-loop-supervisor.json) — zero contract seam. If genuinely needed, append to the fork's existing notifyOnNeedsInput block, put the test in packages/contracts/src/coil/settings.t3x.test.ts (never in the upstream settings.test.ts — that is what caused issue #29), and register the row in settingsSearch.ts (churn 1, ~2 lines, risk 2) which is cheap and would also close the known unregistered-row gap SEAMS.md documents.
+  - _avoid:_ Keep supervisor config in the fork's own JSON state file (t3x-loop-supervisor.json) — zero contract seam. If genuinely needed, append to the fork's existing notifyOnNeedsInput block, put the test in packages/contracts/src/coil/settings.coil.test.ts (never in the upstream settings.test.ts — that is what caused issue #29), and register the row in settingsSearch.ts (churn 1, ~2 lines, risk 2) which is cheap and would also close the known unregistered-row gap SEAMS.md documents.
 - `apps/server/src/orchestration/decider.ts` — Idle/settled classification — deciding whether a thread is genuinely idle and safe to wake. Churn 5, and its idle logic is private/unexported.
   - _avoid:_ Do not import or edit. Reuse the fork's existing mirror apps/server/src/coil/autoResume/guards.ts (hasOpenBlockingRequest) rather than writing a second mirror of the same logic, and add a Logic-mirrors row for any new predicate. Two independent mirrors of the same private helper is strictly worse than one shared one.
 
@@ -208,8 +208,8 @@ The web app is React 19 + TanStack Router (file-based routes under `apps/web/src
   - _evidence:_ `MB=64bf01619; MBTS=$(git show -s --format=%ct $MB); git log --oneline --since="@$((MBTS-60*86400))" $MB -- <path> | wc -l` run per file (the regeneration recipe in docs/coil/SEAMS.md:148-168)
 - **The server side already has a zero-new-seam extension point: CoilLayerLive (reactors) and CoilRoutesLive (raw HTTP routes) fan in through apps/server/src/coil/index.ts, so a new /api/coil/loop route costs 0 additional upstream files.**
   - _evidence:_ apps/server/src/coil/index.ts:1-14 doc comment 'Every fork-local server feature fans in here so that apps/server/src/server.ts needs exactly ONE import and ONE Layer.provideMerge(CoilLayerLive)' and :96 `export const CoilRoutesLive = Layer.mergeAll(autoResumeRouteLayer..., webPushRouteLayer...)`
-- **Fork tests must live in a t3x/ sibling, never appended to an upstream spec file — issue #29 was a recurring add/add rebase conflict caused by appending to packages/contracts/src/settings.test.ts.**
-  - _evidence:_ docs/coil/SEAMS.md:90-94 'Moved to packages/contracts/src/coil/settings.t3x.test.ts ... This is the pattern to copy'
+- **Fork tests must live in a coil/ sibling, never appended to an upstream spec file — issue #29 was a recurring add/add rebase conflict caused by appending to packages/contracts/src/settings.test.ts.**
+  - _evidence:_ docs/coil/SEAMS.md:90-94 'Moved to packages/contracts/src/coil/settings.coil.test.ts ... This is the pattern to copy'
 
 ## Seam risks
 
@@ -402,7 +402,7 @@ The fork's auto-resume feature is a self-contained subsystem under apps/server/s
 - **`resolveConfig()` is called SYNCHRONOUSLY inside the layer effect, reading `process.env` once at construction time — env changes after boot have no effect.**
   - _evidence:_ apps/server/src/coil/autoResume/Reactor.ts:60 — `const config = resolveConfig();`
 - **Fork tests belong in a `t3x/` sibling, never appended to an upstream spec — appending to `packages/contracts/src/settings.test.ts` produced the recurring add/add conflict in issue #29.**
-  - _evidence:_ docs/coil/SEAMS.md, 'Files deliberately removed from this surface' — `Moved to packages/contracts/src/coil/settings.t3x.test.ts; the upstream file is byte-identical again. **This is the pattern to copy:** fork test cases belong in a t3x/ sibling`
+  - _evidence:_ docs/coil/SEAMS.md, 'Files deliberately removed from this surface' — `Moved to packages/contracts/src/coil/settings.coil.test.ts; the upstream file is byte-identical again. **This is the pattern to copy:** fork test cases belong in a coil/ sibling`
 
 ## Seam risks
 
@@ -458,7 +458,7 @@ Settings in T3 Code are split in two: `ServerSettings` (server-authoritative, pe
 - `/Users/rajdholakia/Developer/t3code-loop/docs/coil/SEAMS.md` (39-95, 128-146) — The seam ledger. Row for settings.ts (+7/-2, churn 18, risk 162) and SettingsPanels.tsx (+58, churn 18, risk 1044), plus an explicit note (79-86) that the fork's notify row is deliberately NOT registered in SETTINGS_SEARCH_ITEMS, and the rule that new features must register through apps/server/src/coil/index.ts.
 - `/Users/rajdholakia/Developer/t3code-loop/apps/web/src/components/settings/BetaSettingsPanel.tsx` (58-120) — The whole of upstream's 'beta' surface: one Switch for sidebarV2Enabled (pinning sidebarV2ConfiguredByUser: true) plus two dependent auto-settle rows. No generic flag registry.
 - `/Users/rajdholakia/Developer/t3code-loop/apps/web/src/clientPersistenceStorage.ts` (1-29) — Browser client-settings persistence. readBrowserClientSettings try/catches the decode error and returns null, which is why a corrupt localStorage blob resets all client settings instead of crashing.
-- `/Users/rajdholakia/Developer/t3code-loop/packages/contracts/src/coil/settings.t3x.test.ts` (1-34) — Fork-owned coverage for notifyOnNeedsInput, deliberately outside the upstream settings.test.ts to remove that file from the rebase conflict surface (issue #29). The pattern to copy for any new fork setting.
+- `/Users/rajdholakia/Developer/t3code-loop/packages/contracts/src/coil/settings.coil.test.ts` (1-34) — Fork-owned coverage for notifyOnNeedsInput, deliberately outside the upstream settings.test.ts to remove that file from the rebase conflict surface (issue #29). The pattern to copy for any new fork setting.
 
 ## Facts
 
@@ -501,7 +501,7 @@ Settings in T3 Code are split in two: `ServerSettings` (server-authoritative, pe
 - **The fork's row is intentionally invisible to settings search, and nothing enforces registration.**
   - _evidence:_ docs/coil/SEAMS.md:82-86 `The fork's "Notify when an agent needs input" row still passes `title` directly, so it renders and works but **cannot be found by settings search**. ... Nothing enforces registration: no test asserts that every rendered row is in the catalog, so this will stay silent.`
 - **Fork tests for contract additions live in a fork-owned sibling file, explicitly to remove packages/contracts/src/settings.test.ts from the conflict surface (issue #29). The upstream test file is byte-identical to upstream again.**
-  - _evidence:_ packages/contracts/src/coil/settings.t3x.test.ts:2-8 `These cases deliberately live OUTSIDE \`packages/contracts/src/settings.test.ts\`. That file is upstream-owned and churns hard (8 commits in 30 days)...`; docs/coil/SEAMS.md:90-94
+  - _evidence:_ packages/contracts/src/coil/settings.coil.test.ts:2-8 `These cases deliberately live OUTSIDE \`packages/contracts/src/settings.test.ts\`. That file is upstream-owned and churns hard (8 commits in 30 days)...`; docs/coil/SEAMS.md:90-94
 - **There IS strong precedent for a fork-local server namespace: two features (autoResume, webPush) already run entirely out of apps/server/src/coil/** with their own JSON state files under the server state dir, costing exactly 3 added lines in upstream's server.ts.\*\*
   - _evidence:_ apps/server/src/coil/index.ts:30-31 `const AUTO_RESUME_STATE_FILENAME = "t3x-auto-resume.json";` / `const WEB_PUSH_STATE_FILENAME = "t3x-web-push-subscriptions.json";`; git diff of apps/server/src/server.ts adds only `+import { CoilLayerLive, CoilRoutesLive } from "./coil/index.ts";`, `+  Layer.provideMerge(CoilLayerLive),`, `+    CoilRoutesLive,`
 - **The fork already exposes fork-local HTTP under an /api/coil/\* prefix, and the decision to use raw routes rather than RPC was made specifically to avoid editing the contracts and ws seam.**
@@ -540,7 +540,7 @@ Settings in T3 Code are split in two: `ServerSettings` (server-authoritative, pe
 - `apps/web/src/routeTree.gen.ts` — A new apps/web/src/routes/settings.\*.tsx regenerates this committed file, which is generated output and therefore conflict-prone on every upstream route addition.
   - _avoid:_ Avoid adding a route file; mount the supervisor UI inside an existing route the fork already touches, or behind an overlay/dialog opened from a fork-owned component.
 - `packages/contracts/src/settings.test.ts` — Adding coverage for a new setting invites appending to upstream's spec at the same describe anchor upstream keeps extending — the exact add/add conflict of issue #29.
-  - _avoid:_ Put fork test cases in a t3x/ sibling, e.g. packages/contracts/src/coil/<feature>.t3x.test.ts, re-declaring any module-local helpers. That file already exists as the template.
+  - _avoid:_ Put fork test cases in a coil/ sibling, e.g. packages/contracts/src/coil/<feature>.t3x.test.ts, re-declaring any module-local helpers. That file already exists as the template.
 
 ## Open questions
 

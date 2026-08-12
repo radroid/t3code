@@ -8,7 +8,7 @@ was code signing, and the fix cost $0.
 all — see [Why signing needed no upstream edit](#why-signing-needed-no-upstream-edit). The second half
 (a bundle id of the fork's own, below) spends exactly one line in `scripts/build-desktop-artifact.ts`,
 recorded as `SEAMS.md`'s 38th row. Everything else lives in `scripts/coil/`,
-`.github/workflows/t3x-release.yml` and this directory.
+`.github/workflows/coil-release.yml` and this directory.
 
 ## The diagnosis, in two commands
 
