@@ -55,6 +55,7 @@ jobs:
       build_number: ${{ steps.identity.outputs.build_number }}
       tag: ${{ steps.identity.outputs.tag }}
       changes: ${{ steps.identity.outputs.changes }}
+      is_tip: ${{ steps.identity.outputs.is_tip }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -156,6 +157,43 @@ jobs:
           echo "build_number=${BUILD_COUNTER}"        >> "$GITHUB_OUTPUT"
           echo "version=${base}-coil.${BUILD_COUNTER}" >> "$GITHUB_OUTPUT"
           echo "tag=coil-build-${short_sha}"       >> "$GITHUB_OUTPUT"
+
+          # Whether this build may claim GitHub's "Latest" pointer.
+          #
+          # Every release is a full release rather than a prerelease — GitHub refuses to mark a
+          # prerelease as latest, and this fork has exactly one channel, so publishing the build the
+          # download page hands to first-time users as a "prerelease" was the inconsistency. But
+          # "latest" must mean the NEWEST build, and two distinct paths reach this line with an
+          # older commit:
+          #
+          # 1. The republish recipe. When publishing fails, the step below prints
+          #    `gh workflow run coil-release.yml -f sha=<sha>` — and that dispatch accepts any sha.
+          #    Rebuilding an old commit must not demote the build users are currently offered.
+          # 2. Out-of-order publishes. `concurrency` here is cancel-in-progress: false and GitHub
+          #    keeps only one pending run per group, so two merges landing close together are not
+          #    guaranteed to publish in the order they landed.
+          #
+          # Gating on the tip is self-correcting under both: whichever run IS the tip takes the
+          # pointer, and a late-running older build declines it instead of clobbering it. The
+          # publish step passes this straight to `make_latest`, and `make_latest: false` leaves the
+          # existing pointer alone rather than clearing it — so there is never a window in which the
+          # repository has no latest release.
+          #
+          # `git ls-remote`, not `git rev-parse origin/main`: this job checks out a detached
+          # BUILD_SHA, so there is no origin/main remote-tracking ref here to read.
+          main_tip="$(git ls-remote origin refs/heads/main | cut -f1 || true)"
+          if [[ ! "$main_tip" =~ ^[0-9a-f]{40}$ ]]; then
+            # Never fail a release over this. A build that cannot prove it is the tip just does not
+            # claim the pointer, which leaves the previous latest in place.
+            echo "::warning::Could not resolve main's tip (got '$main_tip'); not marking this release latest."
+            is_tip=false
+          elif [[ "$main_tip" == "$sha" ]]; then
+            is_tip=true
+          else
+            echo "main is at $main_tip but this build is $sha; not marking it latest."
+            is_tip=false
+          fi
+          echo "is_tip=$is_tip" >> "$GITHUB_OUTPUT"
 
           # What changed since the last release we actually published.
           #
@@ -737,7 +775,13 @@ jobs:
           tag_name: ${{ needs.resolve.outputs.tag }}
           target_commitish: ${{ needs.resolve.outputs.sha }}
           name: ${{ needs.resolve.outputs.version }}
-          prerelease: true
+          # Deliberately NOT a prerelease. GitHub will not mark a prerelease as latest, so while
+          # these were prereleases the repository had no latest release at all: /releases/latest
+          # 404'd on the API, fell back to the releases list on the web, and left the sidebar
+          # without a Latest badge. See the is_tip comment in `resolve` for why make_latest is
+          # gated on being main's tip rather than always true.
+          prerelease: false
+          make_latest: ${{ needs.resolve.outputs.is_tip }}
           files: |
             staged/T3Coil-*
             staged/coil-latest.json
@@ -787,6 +831,9 @@ jobs:
           RELEASE_NAME: ${{ needs.resolve.outputs.version }}
           TARGET_SHA: ${{ needs.resolve.outputs.sha }}
           NOTES_FILE: ${{ steps.notes.outputs.path }}
+          # Same gate as the action above. A release that lands via this fallback must not be a
+          # second-class one, and that includes owning the Latest pointer when it has earned it.
+          IS_TIP: ${{ needs.resolve.outputs.is_tip }}
         run: |
           set -uo pipefail
           echo "::warning::action-gh-release failed and does not retry; falling back to gh."
@@ -819,7 +866,7 @@ jobs:
             elif gh release create "$RELEASE_TAG" \
               --target "$TARGET_SHA" \
               --title "$RELEASE_NAME" \
-              --prerelease \
+              --latest="$IS_TIP" \
               --notes-file "$NOTES_FILE" \
               staged/T3Coil-* staged/coil-latest.json; then
               exit 0
@@ -896,19 +943,34 @@ jobs:
           echo "::error::Relay rejected the notification after three attempts." >&2
           exit 1
 
-      - name: Prune old prereleases
+      - name: Prune old releases
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # One prerelease per merge is unbounded growth at ~470 MB per macOS build.
+          # One release per merge is unbounded growth at ~470 MB per macOS build.
+          #
+          # BOTH tag prefixes, permanently — the same reasoning, and the same trap, as the
+          # changelog lookup in `resolve`. #71 renamed the release tag from `t3x-build-*` to
+          # `coil-build-*` and this filter was missed, so it went on capping the OLD prefix at 10
+          # while the new one grew without limit. That failure is invisible by construction:
+          # pruning nothing looks exactly like having nothing to prune. Old tags do not expire, so
+          # dropping either prefix later would re-break this the same silent way.
+          #
+          # No longer keyed on isPrerelease. Releases are full releases now (see `make_latest`
+          # above), so that predicate would match nothing at all — it would not weaken retention,
+          # it would disable it.
+          #
+          # The isLatest exclusion is a backstop, not a live fix: the cap keeps the newest 10 and
+          # the latest release is the newest, so it cannot bite today. It is here so that a future
+          # edit to the ordering cannot quietly delete the pointer this workflow just published.
           gh release list --repo "${{ github.repository }}" --limit 200 \
-            --json tagName,createdAt,isPrerelease \
-            --jq '[.[] | select(.isPrerelease and (.tagName | startswith("t3x-build-")))]
-                  | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' \
+            --json tagName,createdAt,isLatest \
+            --jq '[.[] | select((.tagName | startswith("coil-build-")) or (.tagName | startswith("t3x-build-")))]
+                  | sort_by(.createdAt) | reverse | .[10:] | .[] | select(.isLatest | not) | .tagName' \
             | while read -r tag; do
                 [[ -z "$tag" ]] && continue
-                echo "Deleting old prerelease $tag"
+                echo "Deleting old release $tag"
                 gh release delete "$tag" --repo "${{ github.repository }}" --cleanup-tag --yes || true
               done
