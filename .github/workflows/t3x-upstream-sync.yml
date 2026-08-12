@@ -36,7 +36,19 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          # persist-credentials (default) lets the final push use GITHUB_TOKEN.
+          # persist-credentials (default) makes the final push reuse THIS token.
+          #
+          # It must not be GITHUB_TOKEN: GitHub refuses any push from GITHUB_TOKEN that creates
+          # or updates a file under `.github/workflows/**`, and that is not grantable from the
+          # `permissions:` block (there is no `workflows` key there). The moment an absorbed
+          # upstream commit touches a workflow file — first seen 2026-08-11 with upstream
+          # 1b120f352 — the whole sync verifies clean and then dies at the push. So push as
+          # T3X_SYNC_TOKEN: a classic PAT with `repo` + `workflow`, or an app installation
+          # token with Workflows: write.
+          #
+          # The fallback keeps the job working (for ranges that touch no workflow file) when the
+          # secret is absent; the push step below escalates with the exact remedy if it bites.
+          token: ${{ secrets.T3X_SYNC_TOKEN || github.token }}
 
       # NOTE: no rerere cache here on purpose. The CI job only aborts on conflict (it
       # never resolves), so it neither produces nor consumes shared resolutions. rerere
@@ -77,17 +89,42 @@ jobs:
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Push (clean + not dry-run)
+        id: push
         if: steps.sync.outputs.code == '0' && github.event.inputs.dry_run != 'true'
         run: |
-          git push --force-with-lease origin main
-          echo "::notice::pushed rebased main to origin"
+          # Deliberately does NOT die here. A push that fails after a clean, verified rebase used
+          # to end the job red with no `t3x-sync` issue and no sync branch — indistinguishable
+          # from a sync that never ran. Record the failure and let the escalation step below
+          # open the issue.
+          set +e
+          OUT="$(git push --force-with-lease origin main 2>&1)"
+          CODE=$?
+          set -e
+          printf '%s\n' "$OUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          if [[ "$CODE" -eq 0 ]]; then
+            echo "::notice::pushed rebased main to origin"
+          else
+            {
+              echo 'error<<T3X_PUSH_EOF'
+              printf '%s\n' "$OUT" | tail -n 30
+              echo 'T3X_PUSH_EOF'
+            } >> "$GITHUB_OUTPUT"
+            echo "::error::push to origin main failed (exit $CODE); escalating"
+          fi
 
       - name: Report clean no-op
         if: steps.sync.outputs.code == '10'
         run: echo "::notice::upstream unchanged; nothing to sync"
 
-      - name: Escalate on conflict / failure / dropped patch
-        if: steps.sync.outputs.code == '20' || steps.sync.outputs.code == '30' || steps.sync.outputs.code == '40' || steps.sync.outputs.code == '1'
+      - name: Escalate on conflict / failure / dropped patch / failed push
+        # The push clause covers the case the sync script itself calls success: rebase clean,
+        # verify green, and then the push to `main` is rejected. `steps.push.outputs.code` is
+        # empty when that step was skipped (dry run, no-op, earlier escalation).
+        if: >
+          steps.sync.outputs.code == '20' || steps.sync.outputs.code == '30' ||
+          steps.sync.outputs.code == '40' || steps.sync.outputs.code == '1' ||
+          (steps.push.outputs.code != '' && steps.push.outputs.code != '0')
         env:
           GH_TOKEN: ${{ github.token }}
           # Pin every gh call below to THIS fork. The "Configure git" step adds a remote named
@@ -96,6 +133,11 @@ jobs:
           # has no write access — and `gh issue create` fails, leaving escalations red with no
           # t3x-sync issue ever opened. GH_REPO forces the fork for label/list/create/edit alike.
           GH_REPO: ${{ github.repository }}
+          PUSH_CODE: ${{ steps.push.outputs.code }}
+          PUSH_ERROR: ${{ steps.push.outputs.error }}
+          # The boolean only — never the secret itself — so the issue can name which of the two
+          # push-failure stories this is instead of guessing from stderr.
+          SYNC_TOKEN_SET: ${{ secrets.T3X_SYNC_TOKEN != '' }}
         run: |
           # Best-effort, idempotent label create (tolerates "already exists"). The label is
           # also provisioned out-of-band, so issue creation below never depends on this line.
@@ -103,10 +145,28 @@ jobs:
 
           STATUS="$(cat t3x-sync-status.json 2>/dev/null || echo '{"result":"unknown"}')"
           RESULT="$(echo "$STATUS" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("result","unknown"))' 2>/dev/null || echo unknown)"
+          EXTRA=""
+          FIX='▶ **To fix:** comment `@claude resolve` on this issue (or run the *t3x sync resolve (agent)* workflow). An agent replays the rebase, resolves the conflicts, runs typecheck/lint/test, and opens a PR for review — nothing is pushed to `main`. Runbook: `docs/t3x/sync-agent-runbook.md`.'
+
+          if [[ -n "$PUSH_CODE" && "$PUSH_CODE" != "0" ]]; then
+            # Rebase and verify were GREEN — the status JSON says so, which is exactly why both
+            # the result line and the fix line have to be replaced. Sending the resolver at this
+            # is a wasted agent budget on a rebase that already worked.
+            RESULT="push-failed"
+            if [[ "$SYNC_TOKEN_SET" == "true" ]]; then
+              HINT='`T3X_SYNC_TOKEN` **is** configured, so this is not the `.github/workflows/**` scope wall — read the push output below (a stale lease and branch protection both land here too).'
+            else
+              HINT='`T3X_SYNC_TOKEN` is **not configured**, so this job pushed as `GITHUB_TOKEN` — which GitHub forbids from creating or updating any file under `.github/workflows/**`. If the absorbed upstream range touched a workflow file, that is this failure, and no `permissions:` setting can grant it. Add a repo secret `T3X_SYNC_TOKEN` (classic PAT with `repo` + `workflow` scope, or an app installation token with **Workflows: write**) and re-run this workflow.'
+            fi
+            EXTRA="$(printf '\n\n**The rebase verified clean — only the push failed.** `origin/main` is unchanged, nothing was force-landed, and open PRs are untouched. Re-running this workflow replays the whole sync safely.\n\n%s\n\n<details><summary>git push output</summary>\n\n```\n%s\n```\n\n</details>' \
+              "$HINT" "$PUSH_ERROR")"
+            FIX='▶ **To fix:** this is a credential problem, not a conflict — do **not** run the resolver agent. Fix the push credential above, then re-run *t3x upstream sync (daily)*. Runbook: `docs/t3x/sync-agent-runbook.md`.'
+          fi
+
           TITLE="[t3x-sync] daily rebase needs attention ($RESULT)"
 
-          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\n---\n\n▶ **To fix:** comment `@claude resolve` on this issue (or run the *t3x sync resolve (agent)* workflow). An agent replays the rebase, resolves the conflicts, runs typecheck/lint/test, and opens a PR for review — nothing is pushed to `main`. Runbook: `docs/t3x/sync-agent-runbook.md`.' \
-            "$RESULT" "${RECOVERY_TAG:-none}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" "$STATUS")"
+          BODY="$(printf 'Automated daily upstream sync could not complete.\n\n**Result:** `%s`\n**Recovery tag:** `%s`\n**Run:** %s%s\n\n<details><summary>status JSON</summary>\n\n```json\n%s\n```\n\n</details>\n\n---\n\n%s' \
+            "$RESULT" "${RECOVERY_TAG:-none}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" "$EXTRA" "$STATUS" "$FIX")"
 
           # Find an existing open sync thread. Try the label first, then fall back to the title
           # marker so a not-yet-attached label can't hide it and spawn a duplicate.
