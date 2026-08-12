@@ -167,8 +167,8 @@ Safe to re-run; detects already-applied state.
 
 ## Deliverables
 
-| Artifact               | Path                                      | Upstream conflict risk |
-| ---------------------- | ----------------------------------------- | ---------------------- |
+| Artifact               | Path                                       | Upstream conflict risk |
+| ---------------------- | ------------------------------------------ | ---------------------- |
 | Remote/rerere setup    | `scripts/coil/setup-fork.sh`               | none (new file)        |
 | Daily sync workflow    | `.github/workflows/coil-upstream-sync.yml` | none (new file)        |
 | Weekly verify workflow | `.github/workflows/coil-weekly-verify.yml` | none (new file)        |

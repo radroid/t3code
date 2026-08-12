@@ -32,16 +32,18 @@ describe("rewriteToUpstream", () => {
   });
 
   it("preserves the query string", () => {
-    expect(rewriteToUpstream("https://t3x-update-relay.businesses.workers.dev/latest?x=1&y=2")).toBe(
-      `${UPSTREAM_ORIGIN}/latest?x=1&y=2`,
-    );
+    expect(
+      rewriteToUpstream("https://t3x-update-relay.businesses.workers.dev/latest?x=1&y=2"),
+    ).toBe(`${UPSTREAM_ORIGIN}/latest?x=1&y=2`);
   });
 
   it("does not smuggle the old host into the target", () => {
     // A rewrite built by string concatenation rather than by URL would happily produce
     // `https://coil-.../https://t3x-...`. Asserted because the failure mode is a 404 on every
     // request from every installed build.
-    const target = new URL(rewriteToUpstream("https://t3x-update-relay.businesses.workers.dev/latest"));
+    const target = new URL(
+      rewriteToUpstream("https://t3x-update-relay.businesses.workers.dev/latest"),
+    );
     expect(target.host).toBe(new URL(UPSTREAM_ORIGIN).host);
     expect(target.pathname).toBe("/latest");
   });
