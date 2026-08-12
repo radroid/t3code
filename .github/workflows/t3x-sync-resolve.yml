@@ -1,6 +1,6 @@
 # t3x sync-conflict resolver — on-demand agent for an escalated upstream rebase.
 # See docs/superpowers/specs/2026-07-25-sync-conflict-agent-design.md and
-# docs/t3x/sync-agent-runbook.md.
+# docs/coil/sync-agent-runbook.md.
 #
 # Activate it by commenting `@claude resolve` on the t3x-sync issue the daily sync opened,
 # or by running this workflow manually. It replays the rebase in CI, resolves conflicts,
@@ -111,15 +111,15 @@ jobs:
             Already set up in this checkout:
             - `origin` = radroid/t3code (the fork); `upstream` = pingdotgg/t3code, fetched.
             - You are on `main`. Vite+ (`vp`) and dependencies are installed.
-            - Follow docs/t3x/sync-agent-runbook.md. The upstream "seams" the fork depends on
-              are listed in docs/t3x/SEAMS.md.
+            - Follow docs/coil/sync-agent-runbook.md. The upstream "seams" the fork depends on
+              are listed in docs/coil/SEAMS.md.
 
             Steps:
             1. Create a working branch: `git switch -c t3x/sync-${{ github.run_id }}`.
             2. `git rebase upstream/main`. Resolve every conflict by understanding intent —
                favour upstream's structure while preserving the fork's t3x behaviour. Loop
                `git add -A && git rebase --continue` until the rebase completes.
-            3. Review the upstream commits that touched files listed in docs/t3x/SEAMS.md even
+            3. Review the upstream commits that touched files listed in docs/coil/SEAMS.md even
                where they did NOT textually conflict, and adjust the fork's patches if upstream
                changed the semantics of an API the fork hooks into. If a fork patch became
                empty (upstream absorbed it), drop it and note that.
