@@ -94,11 +94,28 @@ jobs:
           # 100 clears both the old high-water marks: 32 (the last run under the previous filename)
           # and 26 (the last published build). The first coil build is 101. Renaming this file
           # again would need a fresh offset above whatever is published by then.
-          BUILD_COUNTER: ${{ github.run_number + 100 }}
+          #
+          # The addition happens in bash below, NOT here. GitHub's expression syntax has no
+          # arithmetic operators at all — its operator list stops at comparison and logic — so
+          # `${{ github.run_number + 100 }}` is not a wrong answer, it is a parse failure that
+          # takes the whole file down: the run is created, no jobs exist, and the only diagnostic
+          # is "this run likely failed because of a workflow file issue".
+          BUILD_COUNTER_OFFSET: 100
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
           if [[ ! "$BUILD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::BUILD_SHA is not a 40-character commit sha." >&2
+            exit 1
+          fi
+
+          # See BUILD_COUNTER_OFFSET above for why this addition exists and why it is here rather
+          # than in the expression. Asserted, not assumed: a counter that silently came out as 0 or
+          # empty would publish a build every installed client treats as older than what it has.
+          BUILD_COUNTER=$((RUN_NUMBER + BUILD_COUNTER_OFFSET))
+          if [[ ! "$BUILD_COUNTER" =~ ^[0-9]+$ ]] || (( BUILD_COUNTER <= 26 )); then
+            echo "::error::BUILD_COUNTER resolved to '$BUILD_COUNTER', which is not above the last" \
+                 "pre-rename published build (26). Clients would skip this release forever." >&2
             exit 1
           fi
 
