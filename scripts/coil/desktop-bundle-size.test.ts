@@ -1,8 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off - Writes a real asar fixture to a temp dir; the point is to
 // exercise the plain-Node file handling that verify-desktop-bundle.mjs uses on a CI runner.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
@@ -593,5 +595,54 @@ describe("verifyPackagedApp over a real asar", () => {
       });
       assert.ok(verifyPackagedApp(asarPath).ok);
     });
+  });
+});
+
+/*
+ * The regression that broke two releases: all three of these scripts are also CLIs, and their
+ * entry-point guard was `import.meta.url === `file://${process.argv[1]}``. That is false on Windows,
+ * where `process.argv[1]` is a native path — so `node <script>` parsed, ran nothing, wrote nothing,
+ * and exited 0.
+ *
+ * The failure mode is what makes it worth a test rather than a comment. Both CI callers run under
+ * `set -euo pipefail` and neither could tell "did the work" from "did nothing": the exclusions call
+ * failed the release on empty stdout, and the bundle verification passed a check that never
+ * executed. Exit code 0 is the wrong signal for both.
+ *
+ * These assert the shape that broke — invoked as a CLI, the script must actually do something — for
+ * whichever platform the suite runs on. They cannot themselves run on Windows (this fork has no
+ * Windows CI runner), so the correctness argument for that platform stays with `pathToFileURL`,
+ * which is what Node provides for exactly this conversion.
+ */
+describe("the scripts still work when invoked as CLIs", () => {
+  const scriptDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+
+  it("desktop-file-exclusions.mjs writes the list to stdout", () => {
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      [NodePath.join(scriptDir, "desktop-file-exclusions.mjs")],
+      { encoding: "utf8" },
+    );
+
+    assert.strictEqual(result.status, 0, result.stderr);
+    // The exact failure: exit 0 with nothing written. An empty list is what the release step
+    // rejects, so asserting "not empty" is asserting the thing that actually broke.
+    assert.isNotEmpty(
+      result.stdout,
+      "the CLI produced no output, so its entry-point guard is wrong",
+    );
+    assert.strictEqual(result.stdout, renderExclusionEnvValue());
+  });
+
+  it("verify-desktop-bundle.mjs refuses to exit 0 when handed nothing to verify", () => {
+    // The other half. A verifier whose main never runs is indistinguishable from one that passed,
+    // and this is the call the release makes, so it must fail loudly rather than quietly succeed.
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      [NodePath.join(scriptDir, "verify-desktop-bundle.mjs")],
+      { encoding: "utf8" },
+    );
+
+    assert.notStrictEqual(result.status, 0, "a no-argument run must not look like a pass");
   });
 });
