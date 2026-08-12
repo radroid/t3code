@@ -44,13 +44,13 @@ const ADHOC_REQUIREMENTS = `Executable=/Applications/T3 Code (Alpha).app/Content
 `;
 
 const SIGNED_DISPLAY = `Executable=/private/tmp/sigtest/A.app/Contents/MacOS/probe
-Identifier=dev.curlycloud.coil
+Identifier=dev.curlycloud.t3coil
 Format=app bundle with Mach-O thin (arm64)
 CodeDirectory v=20500 size=286 flags=0x10000(runtime) hashes=2+3 location=embedded
 Hash type=sha256 size=32
 CDHash=8e474702803ad42fe7e5855f2efd10af1eb75d94
 Signature size=4793
-Authority=T3X Code Signing
+Authority=T3 Coil Code Signing
 Signed Time=Aug 11, 2026 at 18:43:41
 Info.plist entries=4
 TeamIdentifier=not set
@@ -63,7 +63,7 @@ Internal requirements count=1 size=192
  * Stable across rebuilds because the certificate does not change — which is the entire fix.
  */
 const SELF_SIGNED_REQUIREMENT =
-  'identifier "dev.curlycloud.coil" and certificate leaf = H"6dc6e7effe78c5b8406fde43b9afaaf5a85c8eba"';
+  'identifier "dev.curlycloud.t3coil" and certificate leaf = H"6dc6e7effe78c5b8406fde43b9afaaf5a85c8eba"';
 
 describe("parseCodesignDisplay", () => {
   it("reads an ad-hoc bundle as having no certificate, no seal and an unbound Info.plist", () => {
@@ -81,11 +81,11 @@ describe("parseCodesignDisplay", () => {
   it("reads a certificate-signed bundle, whose Sealed Resources line has no '=' after the label", () => {
     const display = parseCodesignDisplay(SIGNED_DISPLAY);
 
-    assert.strictEqual(display.identifier, "dev.curlycloud.coil");
+    assert.strictEqual(display.identifier, "dev.curlycloud.t3coil");
     // `Signature size=4793` is not a `Signature=` field, and must not be read as one.
     assert.strictEqual(display.signature, undefined);
     assert.deepStrictEqual([...display.flags], ["runtime"]);
-    assert.deepStrictEqual([...display.authorities], ["T3X Code Signing"]);
+    assert.deepStrictEqual([...display.authorities], ["T3 Coil Code Signing"]);
     assert.strictEqual(display.sealedResources, "version=2 rules=13 files=1");
     assert.strictEqual(display.infoPlistBound, true);
   });
@@ -176,13 +176,13 @@ describe("evaluateMacSignature", () => {
     const verdict = evaluateMacSignature({
       display: parseCodesignDisplay(SIGNED_DISPLAY),
       requirement: SELF_SIGNED_REQUIREMENT,
-      expectation: { requirement: SELF_SIGNED_REQUIREMENT, authority: "T3X Code Signing" },
+      expectation: { requirement: SELF_SIGNED_REQUIREMENT, authority: "T3 Coil Code Signing" },
     });
 
     assert.deepStrictEqual([...verdict.problems], []);
     assert.strictEqual(verdict.kind, "stable");
     assert.strictEqual(verdict.requirement, SELF_SIGNED_REQUIREMENT);
-    assert.strictEqual(verdict.authority, "T3X Code Signing");
+    assert.strictEqual(verdict.authority, "T3 Coil Code Signing");
   });
 
   it("ignores whitespace differences between the recorded and actual requirement", () => {
