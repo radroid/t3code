@@ -70,6 +70,13 @@ success unless `security find-identity -v -p codesigning` lists the identity. On
 ad-hoc build. If the script is running somewhere with no terminal to answer on, it prints the exact
 command and stops rather than hanging on a `sudo` prompt.
 
+Expect `security find-identity -v -p codesigning` to list `T3X Code Signing` **twice** afterwards, with
+the same SHA-1 both times: `add-trusted-cert -k /Library/Keychains/System.keychain` copies the
+certificate into the System keychain as well as trusting it, so it is visible from two keychains at
+once. Verified harmless — `codesign -s "T3X Code Signing"` with no `--keychain` (which is exactly how
+electron-builder signs) resolves it, signs, and produces the expected requirement. Two entries for two
+_different_ certificates of the same name would be a real problem; two for one certificate is not.
+
 Then the release workflow needs the private key, as two repository secrets:
 
 ```bash
