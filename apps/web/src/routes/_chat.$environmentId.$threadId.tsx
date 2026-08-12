@@ -15,7 +15,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
-import { AutoResumeOverlay } from "../t3x/AutoResumeOverlay";
+import { AutoResumeOverlay } from "../coil/AutoResumeOverlay";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();

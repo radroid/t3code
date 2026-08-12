@@ -58,7 +58,7 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
-import { T3xLayerLive, T3xRoutesLive } from "./t3x/index.ts"; // t3x fork seam — all fork-local features fan in here
+import { CoilLayerLive, CoilRoutesLive } from "./coil/index.ts"; // coil fork seam — all fork-local features fan in here
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -245,7 +245,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
-  Layer.provideMerge(T3xLayerLive), // t3x fork seam — self-starting fork-local features
+  Layer.provideMerge(CoilLayerLive), // coil fork seam — self-starting fork-local features
 );
 
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
@@ -452,7 +452,7 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
-    T3xRoutesLive, // t3x fork seam — all fork-local HTTP routes fan in here
+    CoilRoutesLive, // coil fork seam — all fork-local HTTP routes fan in here
     assetRouteLayer,
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,

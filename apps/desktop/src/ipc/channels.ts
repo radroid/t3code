@@ -80,10 +80,10 @@ export const PREVIEW_RECORDING_SAVE_CHANNEL = "desktop:preview-recording-save";
 export const PREVIEW_RECORDING_FRAME_CHANNEL = "desktop:preview-recording-frame";
 export const PREVIEW_STATE_CHANGE_CHANNEL = "desktop:preview-state-change";
 export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
-// t3x: fork-owned update delivery. Distinct from the `desktop:update-*` channels above, which
+// coil: fork-owned update delivery. Distinct from the `desktop:update-*` channels above, which
 // belong to upstream's electron-updater surface — the two must never share a channel, or a build
 // with both enabled would have each answering the other's messages.
-export const T3X_UPDATE_STATE_CHANNEL = "t3x:update-state";
-export const T3X_UPDATE_GET_STATE_CHANNEL = "t3x:update-get-state";
-export const T3X_UPDATE_RESTART_CHANNEL = "t3x:update-restart";
-export const T3X_UPDATE_DISMISS_CHANNEL = "t3x:update-dismiss";
+export const COIL_UPDATE_STATE_CHANNEL = "coil:update-state";
+export const COIL_UPDATE_GET_STATE_CHANNEL = "coil:update-get-state";
+export const COIL_UPDATE_RESTART_CHANNEL = "coil:update-restart";
+export const COIL_UPDATE_DISMISS_CHANNEL = "coil:update-dismiss";
