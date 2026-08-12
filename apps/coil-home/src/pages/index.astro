@@ -384,9 +384,11 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
       // it tracks, and when it was built. Anything less specific would just be a slogan.
       const strip = document.querySelector("[data-sync-strip]");
       if (strip) {
-        // Still `-t3x`: the release pipeline keeps that suffix until issue #71 migrates it.
-        // This parses what the relay actually publishes, not what the site is called.
-        const upstream = manifest.version.split("-t3x")[0];
+        // Both suffixes. #71 moved the pipeline to `-coil.<n>`, but the relay serves whatever the
+        // last release published, and a `-t3x.<n>` manifest stays current until the first coil
+        // build lands. Splitting on only the new one would leave the old suffix glued to the
+        // upstream version and render "0.0.33-t3x.26" where "0.0.33" belongs.
+        const upstream = manifest.version.split(/-(?:coil|t3x)\./)[0];
         const built = new Date(manifest.builtAt).toLocaleDateString(undefined, {
           month: "short",
           day: "numeric",

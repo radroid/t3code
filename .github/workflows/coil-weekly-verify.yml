@@ -1,4 +1,4 @@
-# t3x weekly deep verification — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A5).
+# coil weekly deep verification — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A5).
 # Runs the full monorepo build against the current fork main. Does NOT rebase and never
 # blocks the daily sync. On failure it escalates via the shared `coil-sync` issue.
 #
@@ -15,7 +15,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: t3x-weekly-verify
+  group: coil-weekly-verify
   cancel-in-progress: true
 
 env:
