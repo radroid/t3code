@@ -375,7 +375,10 @@ describe("AutoResumeReactor (integration)", () => {
         const kinds = (yield* Ref.get(dispatched))
           .filter((c) => c.type === "thread.activity.append")
           .map((c) => (c as unknown as { activity: { kind: string } }).activity.kind);
-        assert.deepStrictEqual(kinds, ["coil.auto-resume.scheduled", "coil.auto-resume.rescheduled"]);
+        assert.deepStrictEqual(kinds, [
+          "coil.auto-resume.scheduled",
+          "coil.auto-resume.rescheduled",
+        ]);
 
         // The original 160_000 due time passes without firing: that window is still shut.
         yield* advancePastResume; // 8 x 30s = 240_000ms
