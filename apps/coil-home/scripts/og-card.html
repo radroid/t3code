@@ -1,0 +1,169 @@
+<!doctype html>
+<!--
+  Source for public/og.png, the social link-preview card.
+
+  Rendered rather than hand-drawn so it cannot drift from the site: every colour and font below is
+  copied from the same tokens Layout.astro defines.
+
+  There is deliberately no `pnpm run og` script. Playwright is not a dependency of this repo and
+  adding a browser to the dependency tree to regenerate a file that changes about twice a year is a
+  bad trade — it would also put ~500 lines into pnpm-lock.yaml, the fork's second-worst
+  rebase-conflict surface. To regenerate:
+
+    1. Open this file in a browser at exactly 1200x630 and wait for the webfonts.
+    2. Screenshot the viewport to public/og.png.
+    3. Quantise it — the raw shot is ~148 KB and WhatsApp gets unreliable past a few hundred KB:
+         ffmpeg -i og.raw.png -vf palettegen=max_colors=192 pal.png
+         ffmpeg -i og.raw.png -i pal.png -lavfi paletteuse=dither=sierra2_4a og.png
+
+  Keep it 1200x630. Layout.astro publishes those exact numbers as og:image:width/height, and a
+  mismatch makes some unfurlers letterbox or drop the card.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #09090b;
+        --fg: #fafafa;
+        --fg-muted: #a1a1aa;
+        --fg-dim: #71717a;
+        --border: rgba(255, 255, 255, 0.08);
+        --accent-h: 150;
+        --accent: oklch(0.68 0.17 var(--accent-h));
+        --font-sans: "DM Sans", -apple-system, system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1200px;
+        height: 630px;
+      }
+
+      body {
+        position: relative;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-sans);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 0 88px;
+      }
+
+      /* The hero's grid + radial mask, at card scale. */
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse 80% 70% at 30% 45%, black 40%, transparent 100%);
+        -webkit-mask-image: radial-gradient(
+          ellipse 80% 70% at 30% 45%,
+          black 40%,
+          transparent 100%
+        );
+      }
+
+      .glow {
+        position: absolute;
+        top: -220px;
+        right: -180px;
+        width: 720px;
+        height: 720px;
+        border-radius: 50%;
+        background: radial-gradient(circle, oklch(0.68 0.17 150 / 0.16), transparent 62%);
+      }
+
+      .content {
+        position: relative;
+        z-index: 1;
+        max-width: 880px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: var(--font-mono);
+        font-size: 20px;
+        letter-spacing: 0.04em;
+        color: var(--fg-dim);
+        margin-bottom: 34px;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      h1 {
+        font-size: 82px;
+        line-height: 1.03;
+        letter-spacing: -0.035em;
+        font-weight: 600;
+      }
+
+      h1 .mark {
+        color: var(--accent);
+      }
+
+      p {
+        margin-top: 30px;
+        font-size: 28px;
+        line-height: 1.45;
+        color: var(--fg-muted);
+        max-width: 760px;
+      }
+
+      .foot {
+        position: absolute;
+        left: 88px;
+        right: 88px;
+        bottom: 54px;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-family: var(--font-mono);
+        font-size: 21px;
+        color: var(--fg-dim);
+        border-top: 1px solid var(--border);
+        padding-top: 26px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div>
+    <div class="glow"></div>
+
+    <div class="content">
+      <div class="eyebrow"><span class="dot"></span>a personal fork of T3 Code</div>
+      <h1><span class="mark">Coil.</span><br />T3 Code, the way<br />I actually run it.</h1>
+      <p>Everything upstream ships, plus the things I wanted sooner. Rebased daily.</p>
+    </div>
+
+    <div class="foot">
+      <span>coil.curlycloud.dev</span>
+      <span>Curly Cloud</span>
+    </div>
+  </body>
+</html>
