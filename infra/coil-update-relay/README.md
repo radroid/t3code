@@ -21,12 +21,12 @@ release workflow ──POST /notify (HMAC)──> Worker ──> UpdateChannel (
                         desktop apps <──GET /latest ────┘
 ```
 
-| Route          | Auth | Purpose                                                            |
-| -------------- | ---- | ------------------------------------------------------------------ |
-| `POST /notify` | HMAC | The release workflow announcing a build. The only authenticated route. |
+| Route          | Auth | Purpose                                                                 |
+| -------------- | ---- | ----------------------------------------------------------------------- |
+| `POST /notify` | HMAC | The release workflow announcing a build. The only authenticated route.  |
 | `GET /latest`  | none | Current payload. The client's fallback tier. `Cache-Control: no-store`. |
-| `GET /events`  | none | SSE broadcast. Replays current payload on connect.                  |
-| `GET /health`  | none | Liveness.                                                           |
+| `GET /events`  | none | SSE broadcast. Replays current payload on connect.                      |
+| `GET /health`  | none | Liveness.                                                               |
 
 ## Three decisions worth knowing before you change anything
 
@@ -45,7 +45,7 @@ choosing.
 newer", and on this fork it especially cannot — `main` is force-pushed by the sync playbook, so a
 released commit may not even be an ancestor of `main`. Timestamps lose to clock skew between two
 matrix legs racing to notify. A payload whose `buildNumber` is `<=` the stored one is rejected with
-`409`, because an accepted out-of-order notify would move every client *backwards* onto an older
+`409`, because an accepted out-of-order notify would move every client _backwards_ onto an older
 build while reporting success.
 
 ## SSE streams are capped at 15 minutes
@@ -90,8 +90,28 @@ POST `/notify` by hand), and only then deploy the shim — otherwise every insta
 pointed at a relay whose `/latest` is `null`. That reads as "nothing to act on" rather than an
 error, so nothing breaks, but no client sees an update until the next release.
 
+The shim reaches this Worker through a **service binding**, not a `fetch` to its public hostname.
+That is not a preference. A subrequest from one Worker to a `workers.dev` hostname on the same
+account is answered by Cloudflare's own HTML 404 and never arrives: the shim logs `outcome: ok`
+with no exception, and `wrangler tail` on the target records zero requests. Repointing the
+inherited `host` header does not help. If you ever split these two Workers across packages, the
+binding is the thing that has to survive the split.
+
 Retire it only when the Worker's request log shows no `/events` or `/latest` traffic on the old
 hostname. There is no deadline by which that becomes true.
+
+### Renaming this Worker
+
+A renamed Worker is a **new** Worker. Two things do not come with it, and neither fails at deploy
+time:
+
+- **Secrets.** `wrangler secret list` on the new name returns `[]`. Without
+  `T3X_UPDATE_HMAC_SECRET` every `/notify` is a `401`, three retries deep, after the release has
+  already published its assets. Cloudflare secrets are write-only, so the old value cannot be
+  copied — mint a new one and set it on the Worker and in `gh secret set` together.
+- **`T3X_UPDATE_RELAY_URL`.** The release workflow's target is a repo _variable_, so it is invisible
+  to any test and to review. It keeps pointing at the old hostname until someone changes the value.
+  (#71 kept every `T3X_`-prefixed name deliberately; the _value_ still had to move.)
 
 ## Testing
 
