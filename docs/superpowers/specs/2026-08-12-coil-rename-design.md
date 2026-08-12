@@ -116,11 +116,12 @@ source, which stays in git history.
 
 ### 3. A LaunchAgent plist hardcodes a script path
 
-`~/Library/LaunchAgents/dev.t3x.autobuild.plist` runs
-`/Users/rajdholakia/Developer/t3code/scripts/t3x/auto-build-desktop.sh --watch`. Renaming
-`scripts/t3x/` leaves launchd invoking a path that no longer exists. launchd does not report this
-anywhere the user looks; the nightly build simply stops happening. Issue #41 is the same failure
-class and cost 103 minutes before anyone noticed.
+`~/Library/LaunchAgents/dev.t3x.autobuild.plist` is already installed on disk, outside this repo,
+and its `ProgramArguments` name the pre-rename script path absolutely:
+`/Users/rajdholakia/Developer/t3code/scripts/<old>/auto-build-desktop.sh --watch`. Moving that
+directory to `scripts/coil/` leaves launchd invoking a path that no longer exists. launchd does not
+report this anywhere the user looks; the nightly build simply stops happening. Issue #41 is the same
+failure class and cost 103 minutes before anyone noticed.
 
 **Resolution.** The plist is reinstalled as a cutover step —
 `scripts/coil/auto-build-desktop.sh --print-launchd --install` — and the agent label moves from

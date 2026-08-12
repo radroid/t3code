@@ -14,9 +14,9 @@ issue that an agent picks up. Two gaps surfaced in production:
 1. **The escalation never actually fired.** `gh issue create --label t3x-sync` aborts the
    whole creation when the label lookup lags behind the preceding `gh label create` (GitHub
    API replication race) or the label is absent. Both scheduled runs (2026-07-24 verify-fail,
-   2026-07-25 conflict in `docs/t3x/SEAMS.md`) went red with **no issue ever created**, so the
+   2026-07-25 conflict in `docs/coil/SEAMS.md`) went red with **no issue ever created**, so the
    handoff channel was silent. *(Fixed separately — see the escalation-resilience commit.)*
-2. **The handoff model is a scheduled poller, not on-demand.** `docs/t3x/sync-agent-runbook.md`
+2. **The handoff model is a scheduled poller, not on-demand.** `docs/coil/sync-agent-runbook.md`
    assumed a **daily Claude scheduled routine** the user wires up in the Claude app, which runs
    every day and mostly no-ops. The user wants the opposite: do nothing until a conflict
    happens, then **activate an agent with one action** to get a fix.
@@ -47,7 +47,7 @@ daily sync → conflict/verify-fail/dropped-patch
    → git push branch · gh pr create → main · comment PR link on the issue
    → user reviews + lands the PR by force-updating main to the reviewed tip
      (the branch is a rebase, so the GitHub merge button can't land it —
-      see docs/t3x/sync-agent-runbook.md § "Landing a sync PR")
+      see docs/coil/sync-agent-runbook.md § "Landing a sync PR")
 ```
 
 ### Component: `.github/workflows/t3x-sync-resolve.yml`
@@ -105,7 +105,7 @@ secret names so whichever the install flow set will work.
 ### Doc changes
 
 - `t3x-upstream-sync.yml` escalation body: add the `@claude resolve` call-to-action.
-- `docs/t3x/sync-agent-runbook.md`: rewrite from "daily scheduled routine" to this on-demand CI
+- `docs/coil/sync-agent-runbook.md`: rewrite from "daily scheduled routine" to this on-demand CI
   model, keeping the resolution checklist (which the workflow prompt mirrors) and a local-CLI
   fallback for when the user is at their machine.
 
@@ -115,7 +115,7 @@ secret names so whichever the install flow set will work.
 | --- | --- | --- |
 | Resolver workflow | `.github/workflows/t3x-sync-resolve.yml` | none (new file) |
 | Escalation CTA | `.github/workflows/t3x-upstream-sync.yml` (body text) | none (t3x-owned) |
-| Runbook rewrite | `docs/t3x/sync-agent-runbook.md` | none (t3x-owned) |
+| Runbook rewrite | `docs/coil/sync-agent-runbook.md` | none (t3x-owned) |
 | This spec | `docs/superpowers/specs/2026-07-25-sync-conflict-agent-design.md` | none (new file) |
 
 ## Rollback

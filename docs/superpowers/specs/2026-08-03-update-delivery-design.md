@@ -6,7 +6,7 @@
 ## Problem
 
 A merge to `main` reaches an installed fork desktop app only by accident today. The local
-watcher (`scripts/t3x/auto-build-desktop.sh`) rebuilds on a 12-hour cadence, swaps the bundle
+watcher (`scripts/coil/auto-build-desktop.sh`) rebuilds on a 12-hour cadence, swaps the bundle
 silently, and relaunches through a race that left the app dark for 103 minutes on 2026-08-02
 (#41). There is no moment at which a human is told "a new build exists, restart when you're
 ready".
@@ -75,20 +75,20 @@ Five units, each independently testable.
                 ▼
  ┌──────────────────────────────┐
  │ C. Worker (fork-owned)       │  GET /latest  → JSON, no-store
- │    infra/t3x-update-relay/   │  GET /events  → SSE, 15-min cap
+ │    infra/coil-update-relay/   │  GET /events  → SSE, 15-min cap
  └──────────────┬───────────────┘
                 │ push  (+ 15-min floor poll, always)
                 ▼
  ┌──────────────────────────────┐
  │ D. Desktop subscriber        │  compares shortSha vs t3codeCommitHash
- │    apps/desktop/src/t3x/     │  rejects buildNumber <= own
+ │    apps/desktop/src/coil/     │  rejects buildNumber <= own
  │      updateDelivery/         │  → stages to a swap-ready bundle
  └──────────────┬───────────────┘
                 │
                 ▼
  ┌──────────────────────────────┐
  │ E. Toast (top-right)         │  "Update ready · Restart"
- │    apps/web/.../t3x/         │  click → mv + DesktopLifecycle.relaunch
+ │    apps/web/.../coil/         │  click → mv + DesktopLifecycle.relaunch
  └──────────────────────────────┘
 ```
 
@@ -246,7 +246,7 @@ The final step of the release workflow POSTs to the Worker:
 `shortSha` is 12 characters to match `t3codeCommitHash`, which is what the app can actually read
 about itself. Comparing anything else means comparing against a value the app does not have.
 
-Signed `X-T3X-Signature: sha256=<hmac>` over `X-T3X-Timestamp` + the raw body. A workflow step
+Signed `X-Coil-Signature: sha256=<hmac>` over `X-Coil-Timestamp` + the raw body. A workflow step
 rather than a GitHub repo webhook, deliberately: it is versioned and reviewable in-repo, needs no
 webhook UI configuration, and is naturally gated on the build having actually succeeded — a repo
 webhook fires on push regardless of whether anything was built.
@@ -262,7 +262,7 @@ notifies.
 the failure mode of publishing one anyway is a Windows user whose toast points at an asset that
 does not exist.
 
-### C. Worker — `infra/t3x-update-relay/` _(new, fork-owned)_
+### C. Worker — `infra/coil-update-relay/` _(new, fork-owned)_
 
 A separate Worker, **not** a route in `infra/relay/`. `infra/relay/` is upstream-owned with zero
 fork edits today; adding routes there would open a new front on the seam ledger, whose own
@@ -274,7 +274,7 @@ does not have. There is nothing to piggyback on.
 Every inherited upstream workflow is `disabled_manually` on this fork, `release.yml` included —
 which is why a fork-owned release workflow is required rather than merely convenient.
 
-- `POST /notify` — verify HMAC over `X-T3X-Timestamp` + raw body, reject a timestamp skewed more
+- `POST /notify` — verify HMAC over `X-Coil-Timestamp` + raw body, reject a timestamp skewed more
   than 5 minutes, reject non-monotonic payloads, store as latest, broadcast. The timestamp is an
   explicit header, **not** `builtAt`: uploading ~470 MB routinely pushes notify well past 5
   minutes after the build finished.
@@ -305,7 +305,7 @@ KV-backed and will not deploy on a free account.
 Deployed by its own workflow with one secret (`CLOUDFLARE_API_TOKEN`) and one shared
 (`T3X_UPDATE_HMAC_SECRET`).
 
-### D. Desktop subscriber — `apps/desktop/src/t3x/updateDelivery/` _(new, fork-owned)_
+### D. Desktop subscriber — `apps/desktop/src/coil/updateDelivery/` _(new, fork-owned)_
 
 Lives in the **desktop main process**, because that is the thing being updated: it is always
 local, even when the app is driving a remote environment, so a server-side owner would report
@@ -449,7 +449,7 @@ passkey support. At merge-to-main cadence that is per-update, not occasional. Th
 the unsigned decision, but it is a real recurring cost of it and the toast should say so on first
 update.
 
-### E. Toast — `apps/web/src/components/t3x/UpdateToast.tsx` _(new, fork-owned)_
+### E. Toast — `apps/web/src/components/coil/UpdateToast.tsx` _(new, fork-owned)_
 
 Mounted in `apps/web/src/routes/__root.tsx`, which already carries a seam-ledger row for
 `NotificationCoordinator` / `ThreadOutboxDrain` / `PushSubscriptionManager`. One more mount
@@ -546,7 +546,7 @@ trigger; adding a mac x64 artifact later would make it a real second surface.
 
 ## Seam budget
 
-Target: **zero new rows** in `docs/t3x/SEAMS.md`.
+Target: **zero new rows** in `docs/coil/SEAMS.md`.
 
 Everything new lives in fork-owned files. Existing rows that gain lines:
 
@@ -572,7 +572,7 @@ Two things that would have cost rows and do **not**, because a workflow-level eq
 ## Out of scope for v1
 
 Code signing and notarization; Linux and Windows arm64; mobile; any change to how upstream
-releases are consumed; upstreaming any of this. `scripts/t3x/auto-build-desktop.sh` remains for
+releases are consumed; upstreaming any of this. `scripts/coil/auto-build-desktop.sh` remains for
 local dev builds but is no longer the delivery path — its `--relaunch` mode should be removed
 once this lands, closing #41 at the source.
 

@@ -73,11 +73,11 @@ origin    https://github.com/radroid/t3code.git      (fetch + push)   ← the fo
 capped, not per-feature.**
 
 ```
-apps/server/src/t3x/          ← you own it; upstream never touches it
-  index.ts                    ← T3xLayerLive = Layer.mergeAll(autoResume, feature2, …, featureN)
+apps/server/src/coil/          ← you own it; upstream never touches it
+  index.ts                    ← CoilLayerLive = Layer.mergeAll(autoResume, feature2, …, featureN)
   autoResume/…                ← Project B lives here
-apps/web/src/t3x/             ← same, for any future UI
-docs/t3x/SEAMS.md             ← authoritative list of every upstream line touched
+apps/web/src/coil/             ← same, for any future UI
+docs/coil/SEAMS.md             ← authoritative list of every upstream line touched
 ```
 
 - Every new feature registers itself **inside `t3x/index.ts`** (a file upstream never
@@ -112,7 +112,7 @@ New file in an upstream-owned directory → conflicts with nothing. Triggers: da
    upstream commits that touched them.
 5. **Verify (daily depth):** `pnpm install --frozen-lockfile`, then `typecheck` +
    `lint` + server tests. (Full build is weekly — A5.)
-6. Outcome (driven by `scripts/t3x/sync-upstream.sh` exit codes; the push step fires
+6. Outcome (driven by `scripts/coil/sync-upstream.sh` exit codes; the push step fires
    **only** on exit 0):
    - **0 — green** → `git push --force-with-lease` to `origin/main`. Done, zero tokens.
    - **10 — no-op** → upstream unchanged; nothing to do.
@@ -155,9 +155,9 @@ open GitHub issue labelled `t3x-sync`, discriminated by a `kind` field
     hides. Then pushes and closes the issue.
 - The Claude routine is set up by the user in the Claude app on a daily schedule; this
   spec provides the exact prompt/checklist it should run (delivered as
-  `docs/t3x/sync-agent-runbook.md`).
+  `docs/coil/sync-agent-runbook.md`).
 
-## A7. Setup script — `scripts/t3x/setup-fork.sh`
+## A7. Setup script — `scripts/coil/setup-fork.sh`
 
 Idempotent, reversible, documents every action. Performs A1 (remotes + rerere) and
 prints the `gh` commands for A3 (or runs them behind a `--disable-workflows` flag).
@@ -169,11 +169,11 @@ Safe to re-run; detects already-applied state.
 
 | Artifact               | Path                                      | Upstream conflict risk |
 | ---------------------- | ----------------------------------------- | ---------------------- |
-| Remote/rerere setup    | `scripts/t3x/setup-fork.sh`               | none (new file)        |
+| Remote/rerere setup    | `scripts/coil/setup-fork.sh`               | none (new file)        |
 | Daily sync workflow    | `.github/workflows/t3x-upstream-sync.yml` | none (new file)        |
 | Weekly verify workflow | `.github/workflows/t3x-weekly-verify.yml` | none (new file)        |
-| Seam ledger            | `docs/t3x/SEAMS.md`                       | none (new file)        |
-| Sync-agent runbook     | `docs/t3x/sync-agent-runbook.md`          | none (new file)        |
+| Seam ledger            | `docs/coil/SEAMS.md`                       | none (new file)        |
+| Sync-agent runbook     | `docs/coil/sync-agent-runbook.md`          | none (new file)        |
 
 **Total edits to upstream-owned files: zero.** (Project B adds the only 2-line seam.)
 

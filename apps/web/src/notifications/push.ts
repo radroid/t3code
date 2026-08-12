@@ -2,8 +2,8 @@
  * Web Push client orchestration: register the service worker, subscribe with the server's
  * VAPID key, and register/unregister the subscription with the server.
  *
- * The server routes are raw `/api/t3x/push/*` routes, so they are called exactly like
- * `AutoResumeOverlay` calls `/api/t3x/auto-resume`: over `primaryEnvironmentHttpLayer`, the one
+ * The server routes are raw `/api/coil/push/*` routes, so they are called exactly like
+ * `AutoResumeOverlay` calls `/api/coil/auto-resume`: over `primaryEnvironmentHttpLayer`, the one
  * place in the web app that authenticates the primary environment (session cookies for a
  * same-origin browser, desktop bearer token otherwise). Every failure is swallowed to null/false
  * — push is an enhancement and must never surface an error into the app.
@@ -21,9 +21,9 @@ import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary/target"
 import { serializePushSubscription, urlBase64ToUint8Array } from "./push.logic";
 import { pushServiceWorkerSupported, registerPushServiceWorker } from "./serviceWorker";
 
-const VAPID_KEY_PATH = "/api/t3x/push/vapid-public-key";
-const SUBSCRIBE_PATH = "/api/t3x/push/subscribe";
-const UNSUBSCRIBE_PATH = "/api/t3x/push/unsubscribe";
+const VAPID_KEY_PATH = "/api/coil/push/vapid-public-key";
+const SUBSCRIBE_PATH = "/api/coil/push/subscribe";
+const UNSUBSCRIBE_PATH = "/api/coil/push/unsubscribe";
 
 const pushRuntime = ManagedRuntime.make(primaryEnvironmentHttpLayer);
 
