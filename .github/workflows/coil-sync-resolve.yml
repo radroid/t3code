@@ -1,4 +1,4 @@
-# t3x sync-conflict resolver — on-demand agent for an escalated upstream rebase.
+# coil sync-conflict resolver — on-demand agent for an escalated upstream rebase.
 # See docs/superpowers/specs/2026-07-25-sync-conflict-agent-design.md and
 # docs/coil/sync-agent-runbook.md.
 #
@@ -105,7 +105,7 @@ jobs:
           # Only trusted, numeric context is interpolated (run_id, issue number) — never the
           # comment body — so there is no workflow-injection surface here.
           prompt: |
-            You are the t3x upstream-sync resolver for the radroid/t3code fork. The daily
+            You are the coil upstream-sync resolver for the radroid/t3code fork. The daily
             rebase of fork `main` onto `upstream/main` was escalated because it could not
             complete automatically. Resolve it and open a PR. Do NOT push to `main`.
 
@@ -118,7 +118,7 @@ jobs:
             Steps:
             1. Create a working branch: `git switch -c coil/sync-${{ github.run_id }}`.
             2. `git rebase upstream/main`. Resolve every conflict by understanding intent —
-               favour upstream's structure while preserving the fork's t3x behaviour. Loop
+               favour upstream's structure while preserving the fork's coil behaviour. Loop
                `git add -A && git rebase --continue` until the rebase completes.
             3. Review the upstream commits that touched files listed in docs/coil/SEAMS.md even
                where they did NOT textually conflict, and adjust the fork's patches if upstream
@@ -131,7 +131,7 @@ jobs:
                come after a `--` separator or it is silently ignored. Fix the fork's patches until
                all three pass.
             5. Push the branch: `git push -u origin HEAD`.
-            6. Open a PR into `main` with `gh pr create`, title "t3x: resolve upstream sync
+            6. Open a PR into `main` with `gh pr create`, title "coil: resolve upstream sync
                (run ${{ github.run_id }})". In the body summarise: the upstream range merged,
                each conflicted file and how you resolved it, any dropped patches, and the
                typecheck/lint/test results.
