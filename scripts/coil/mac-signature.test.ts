@@ -275,10 +275,10 @@ it.layer(NodeServices.layer)("the fork's bundle id agrees everywhere", (it) => {
 
   it.effect("the release workflow builds with it", () =>
     Effect.gen(function* () {
-      const workflow = yield* readRepoFile(".github", "workflows", "t3x-release.yml");
+      const workflow = yield* readRepoFile(".github", "workflows", "coil-release.yml");
       const match = new RegExp(`${DESKTOP_APP_ID_ENV_VAR}: (\\S+)`).exec(workflow);
 
-      assert.ok(match, `${DESKTOP_APP_ID_ENV_VAR} is not set anywhere in t3x-release.yml`);
+      assert.ok(match, `${DESKTOP_APP_ID_ENV_VAR} is not set anywhere in coil-release.yml`);
       assert.strictEqual(match[1], DESKTOP_BUNDLE_IDENTIFIER);
     }),
   );

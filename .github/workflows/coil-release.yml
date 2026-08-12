@@ -1,7 +1,7 @@
 # coil fork release — build the desktop app on every green merge to main and publish it.
 #
 # Upstream's release.yml cannot be reused: it runs on blacksmith-12vcpu-macos-26 and
-# blacksmith-32vcpu-windows-2025, runners this fork has no access to (the same reason t3x-ci.yml
+# blacksmith-32vcpu-windows-2025, runners this fork has no access to (the same reason coil-ci.yml
 # exists alongside ci.yml). Every inherited upstream workflow, release.yml included, is
 # disabled_manually on this fork.
 #
@@ -13,14 +13,14 @@ name: coil fork release
 
 # workflow_run, NOT push.
 #
-# t3x-ci is a separate workflow and `needs:` cannot cross workflows, so this is the only way to
+# coil-ci is a separate workflow and `needs:` cannot cross workflows, so this is the only way to
 # gate on it. The cost is a footgun that matters enormously here: under workflow_run, github.sha
 # is the DEFAULT BRANCH TIP, not the commit that was tested. Every checkout below pins
 # workflow_run.head_sha, and the build asserts it got that commit — for a design whose entire
 # identity is the commit, building the wrong one is silent and fatal.
 on:
   workflow_run:
-    workflows: ["t3x fork CI"]
+    workflows: ["coil fork CI"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -262,7 +262,7 @@ jobs:
         shell: bash
         # `--filter` is required: ensure:electron is a package task (@t3tools/desktop), not a root
         # one, and `vp run ensure:electron` fails the job outright with "Task not found". Matches
-        # ci.yml, release.yml and t3x-weekly-verify.yml, which all scope it the same way.
+        # ci.yml, release.yml and coil-weekly-verify.yml, which all scope it the same way.
         run: vp run --filter @t3tools/desktop ensure:electron
 
       # Issue #70: WITHOUT this step the mac artifact is ad-hoc signed, its designated requirement

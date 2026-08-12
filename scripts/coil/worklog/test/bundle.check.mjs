@@ -105,7 +105,7 @@ function thread(overrides = {}) {
     threadId: "thread-1",
     projectId: "project-1",
     title: "Sync fork with upstream",
-    branch: "t3x/sync",
+    branch: "coil/sync",
     worktreePath: null,
     createdAt: at(DAY_A, 9, 0),
     updatedAt: at(DAY_A, 11, 0),
