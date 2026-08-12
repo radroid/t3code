@@ -36,17 +36,24 @@ export function describeRefusal(refusal: InstallRefusal): string {
   switch (refusal.kind) {
     case "translocated":
       return (
-        "T3 Code is running from a randomised read-only copy created by macOS App Translocation, " +
+        "T3 Coil is running from a randomised read-only copy created by macOS App Translocation, " +
         "so it cannot update itself. Move the app to /Applications once, reopen it, and updates " +
         "will work from then on."
       );
     case "not-a-bundle":
       return `Could not find the enclosing .app for ${refusal.execPath}, so there is nothing safe to replace.`;
+    // Reworded for the rename in #71, not softened. This refusal fires exactly once per user, on
+    // the first build after "T3 Code (Alpha)" became "T3 Coil (Alpha)", and the old wording read
+    // as a fault: it explains a mechanism and leaves the reader with nothing to do. The check
+    // itself is unchanged and still the only thing standing between a rename and two installed
+    // apps, so the message tells them the one safe way through instead of hiding the refusal.
     case "name-mismatch":
       return (
         `The downloaded build is named "${refusal.incoming}" but the running app is ` +
-        `"${refusal.installed}". Installing it would create a second app and leave this one ` +
-        "untouched, so it was refused."
+        `"${refusal.installed}". That is expected the first time after the app was renamed. ` +
+        "Installing it here would leave two copies, so open the downloaded .dmg and drag the app " +
+        "to /Applications yourself, replacing the old one. Updates go back to being automatic " +
+        "after that."
       );
   }
 }
@@ -106,10 +113,11 @@ export function resolveMacInstallTarget(args: {
   const appName = posixBasename(appBundlePath);
 
   // `resolveDesktopProductName` returns `desktopPackageJson.productName`, which is
-  // "T3 Code (Alpha)" on this fork — not "T3 Code". The shell installer records what happens when
+  // "T3 Coil (Alpha)" on this fork — not "T3 Code". The shell installer records what happens when
   // this is computed rather than read: it "always claimed T3 Code.app — an app that does not
-  // exist — while a real install replaced T3 Code (Alpha).app". Comparing the two names is what
-  // stops a rename from quietly producing two installed apps.
+  // exist — while a real install replaced T3 Code (Alpha).app" (its wording, from before #71
+  // renamed the app). Comparing the two names is what stops a rename from quietly producing two
+  // installed apps — which is exactly what it is doing for #71's own rename.
   if (appName !== args.incomingAppName) {
     return {
       kind: "refused",
