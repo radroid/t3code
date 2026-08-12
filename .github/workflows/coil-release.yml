@@ -545,6 +545,11 @@ jobs:
           # Issue #53. Takes the packaged asar from 189.66 MiB / 14,765 files to 99.02 MiB / 3,429.
           # Scoped to this step on purpose — see the note on the step that produces it.
           T3X_DESKTOP_FILE_EXCLUSIONS: ${{ steps.exclusions.outputs.value }}
+          # Keeps electron-builder's staging tree after the build so the two checks below have
+          # something to read. Without it `stageRoot` is a SCOPED temp dir — deleted the moment the
+          # build process exits — and `app.asar` exists nowhere on disk by the time they run. The
+          # cleanup step below removes it again, so the disk cost does not reach the upload.
+          T3CODE_DESKTOP_KEEP_STAGE: "1"
         run: |
           set -euo pipefail
           node scripts/build-desktop-artifact.ts \
@@ -555,6 +560,47 @@ jobs:
             --skip-build \
             --verbose
 
+      # BOTH checks below used to search `release/`, and neither could work there.
+      #
+      # `release/` holds only the finished artifacts, because the build copies FILES out of its
+      # staging dir and skips everything else — `if (!stat || stat.type !== "File") continue` in
+      # scripts/build-desktop-artifact.ts. The macOS `.app` and the Windows `win-unpacked/` are
+      # DIRECTORIES, so the trees that contain `app.asar` are never copied there. And the staging dir
+      # itself was scoped, so it had already been deleted.
+      #
+      # The two failed in opposite directions, which is why only one was noticed: the asar check
+      # exited 1 and took the release down, while the app-update.yml check found nothing, printed
+      # "No app-update.yml packaged", and passed. It had never once been able to fail.
+      #
+      # `os.tmpdir()` is read through node rather than assuming /tmp or %TEMP%, so this resolves the
+      # same directory the build used on both runners. Backslashes are folded to forward slashes
+      # because git-bash's `find` cannot take a native Windows path but does accept `C:/...`.
+      - name: Locate the staged bundle
+        id: packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(node -p 'require("node:os").tmpdir().replace(/\\/g, "/")')"
+
+          # Newest first. A retried build leaves an older stage behind, and a check that reads the
+          # previous run's tree is worth less than no check at all.
+          dist=""
+          for candidate in $(ls -dt "$tmp"/t3code-desktop-*-stage-*/app/dist 2>/dev/null || true); do
+            dist="$candidate"
+            break
+          done
+
+          if [[ -z "$dist" || ! -d "$dist" ]]; then
+            echo "::error::No staging dist found under $tmp — the checks below would verify nothing." >&2
+            echo "Contents of $tmp:" >&2
+            ls -la "$tmp" >&2 || true
+            exit 1
+          fi
+
+          echo "dist=$dist" >> "$GITHUB_OUTPUT"
+          echo "Verifying the tree at $dist"
+          ls -la "$dist" || true
+
       - name: Verify no update feed was packaged
         shell: bash
         run: |
@@ -562,9 +608,9 @@ jobs:
           # The machine-checkable form of "exactly one update surface". This is the claim most
           # likely to regress silently on an upstream sync, so it fails the release rather than
           # shipping an app with two updaters that disagree.
-          if find release -name "app-update.yml" -print -quit | grep -q .; then
+          if find "${{ steps.packaged.outputs.dist }}" -name "app-update.yml" -print -quit | grep -q .; then
             echo "::error::app-update.yml was packaged. Upstream's updater would be live in this build." >&2
-            find release -name "app-update.yml" >&2
+            find "${{ steps.packaged.outputs.dist }}" -name "app-update.yml" >&2
             exit 1
           fi
           echo "No app-update.yml packaged."
@@ -586,12 +632,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          asar="$(find release -name "app.asar" -print -quit)"
+          asar="$(find "${{ steps.packaged.outputs.dist }}" -name "app.asar" -print -quit)"
           if [[ -z "$asar" ]]; then
-            echo "::error::No app.asar found under release/. Nothing was verified." >&2
+            echo "::error::No app.asar under ${{ steps.packaged.outputs.dist }}. Nothing was verified." >&2
             exit 1
           fi
           node scripts/coil/verify-desktop-bundle.mjs --asar "$asar"
+
+      # The staging tree is a second full copy of the app — kept only for the two checks above, and
+      # dropped here rather than at job end so it is gone before the upload. `always()` because a
+      # failed check is exactly when the runner is closest to full.
+      - name: Remove the staged bundle
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          dist="${{ steps.packaged.outputs.dist }}"
+          # Delete the stage root, not the dist inside it: <tmp>/t3code-desktop-...-stage-*/app/dist
+          [[ -n "$dist" ]] && rm -rf "$(dirname "$(dirname "$dist")")" || true
+          exit 0
 
       # The machine-checkable form of "this update will not re-ask for permissions" (issue #70),
       # made against the .app inside the shipped .dmg rather than a staging copy.
