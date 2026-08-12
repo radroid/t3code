@@ -61,7 +61,7 @@ reconnects immediately and gets the current payload replayed on connect.
 
 ```bash
 pnpm dlx wrangler@4 secret put T3X_UPDATE_HMAC_SECRET
-pnpm --filter t3x-update-relay deploy
+pnpm --filter coil-update-relay deploy
 ```
 
 `wrangler` is deliberately **not** a dependency. It drags ~500 lines into `pnpm-lock.yaml`, which
@@ -72,10 +72,31 @@ needed at deploy time. `pnpm dlx` fetches it for that one command instead.
 > the Workers free plan only in their SQLite-backed form, and since 2026-07 new KV-backed
 > namespaces are refused outright. The wrong one fails at deploy time, not review time.
 
+### The legacy hostname
+
+This Worker was called `t3x-update-relay` until #71. That hostname is **not** retired, and cannot
+be: `DEFAULT_RELAY_URL` is compiled into every desktop build, the env override that could point an
+install elsewhere is never set in practice, and a build that stops finding its relay has no
+remaining channel through which to be told about a new one.
+
+So the old hostname is redeployed as a pass-through to this one, from this same package:
+
+```bash
+pnpm --filter coil-update-relay deploy:legacy
+```
+
+Order matters. Deploy `coil-update-relay` first, notify it at least once (publish a release, or
+POST `/notify` by hand), and only then deploy the shim — otherwise every installed build is briefly
+pointed at a relay whose `/latest` is `null`. That reads as "nothing to act on" rather than an
+error, so nothing breaks, but no client sees an update until the next release.
+
+Retire it only when the Worker's request log shows no `/events` or `/latest` traffic on the old
+hostname. There is no deadline by which that becomes true.
+
 ## Testing
 
 ```bash
-pnpm --filter t3x-update-relay test
+pnpm --filter coil-update-relay test
 ```
 
 Covers signature verification (including a replayed request whose timestamp header was swapped for
