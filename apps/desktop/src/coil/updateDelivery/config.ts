@@ -110,13 +110,24 @@ export function encodePendingInstall(target: PendingInstall): string {
 /**
  * The build counter of the running app, read out of its own version string.
  *
- * `t3x-release.yml` builds `<base>-t3x.<run_number>` and `build-update-manifest.mjs` asserts that
+ * `coil-release.yml` builds `<base>-coil.<counter>` and `build-update-manifest.mjs` asserts that
  * the manifest's `buildNumber` is that same number, so parsing it back out here is reading the
  * value the release wrote — not re-deriving it. An upstream build (`0.0.31`, no suffix) yields
  * `undefined`, which `decideUpdateAction` treats as "no floor", so the first fork build installs.
+ *
+ * Both suffixes, because this function is asked about two different version strings. The obvious
+ * one is the running app's own, and for a `-t3x.` build that is answered by the `-t3x.`-only code
+ * it shipped with — this branch never runs there. The one that matters is the version the app is
+ * asked to *compare against* around the cutover: a build carrying this code can still be offered,
+ * or be preceded by, a `-t3x.` release. Returning `undefined` for those would erase the floor
+ * entirely and make a genuinely older build look installable.
+ *
+ * Note the numbers stay comparable across the rename by construction, not by luck: the counter is
+ * `github.run_number + 100` precisely so `-coil.101` outranks `-t3x.26`. Nothing here compares the
+ * suffixes themselves, which is fortunate — `coil` sorts before `t3x`.
  */
 export function parseBuildNumber(version: string): number | undefined {
-  const match = /-t3x\.(\d+)$/u.exec(version.trim());
+  const match = /-(?:coil|t3x)\.(\d+)$/u.exec(version.trim());
   if (match === null) return undefined;
   const parsed = Number(match[1]);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
