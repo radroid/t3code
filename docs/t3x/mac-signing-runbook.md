@@ -4,9 +4,11 @@ Issue #70. Every update used to re-ask for Screen Recording, Accessibility, Micr
 Folders and Local Network. That was not the updater misbehaving and not a quarantine problem — it
 was code signing, and the fix cost $0.
 
-**Zero upstream seams.** Everything here lives in `scripts/t3x/`, `.github/workflows/t3x-release.yml`
-and this directory. `scripts/build-desktop-artifact.ts` is not touched, so this adds no row to
-`SEAMS.md` — see [Why no upstream edit was needed](#why-no-upstream-edit-was-needed).
+**One upstream line, and not the one the issue predicted.** The signing half needs no upstream edit at
+all — see [Why signing needed no upstream edit](#why-signing-needed-no-upstream-edit). The second half
+(a bundle id of the fork's own, below) spends exactly one line in `scripts/build-desktop-artifact.ts`,
+recorded as `SEAMS.md`'s 38th row. Everything else lives in `scripts/t3x/`,
+`.github/workflows/t3x-release.yml` and this directory.
 
 ## The diagnosis, in two commands
 
@@ -164,7 +166,7 @@ round of prompts between them, not two. `scripts/t3x/mac-signature.test.ts` asse
 sets the variable and that the recorded requirement names this id, because a forgotten variable or a
 sync that reverts the seam would silently put the fork back to sharing upstream's row.
 
-## Why no upstream edit was needed
+## Why signing needed no upstream edit
 
 `scripts/build-desktop-artifact.ts:1996` sets `CSC_IDENTITY_AUTO_DISCOVERY=false` whenever `--signed`
 is absent, and issue #70's plan concluded from that a third signing mode had to be added to the file.
