@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "t3x-update-relay",
+  "name": "coil-update-relay",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-01",
   "observability": { "enabled": true },
