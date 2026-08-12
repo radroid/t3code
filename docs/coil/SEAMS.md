@@ -1,15 +1,16 @@
-# t3x seam ledger
+# coil seam ledger
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **40 upstream-owned files, +2197 / -1047 lines**, against merge-base
-`78f462c4e` (upstream v0.0.33, the 2026-08-10 sync). The only deletion added since the
-2026-08-10 baseline is `scripts/build-desktop-artifact.ts` (row 38) — one line for #70, deliberately shaped as
-an env escape hatch so upstream's default and its tests survive it. Rows 39 and 40 (`README.md`,
-`docs/user/install.md`, #72) are pure insertions above upstream's own text. The −134 that #58 added
-on 2026-08-11 are **all** `pnpm-lock.yaml`, the one row the additive invariant below has never
-covered because it is regenerated rather than merged. Everything else the fork adds lives in new
+Measured, not asserted: **PLACEHOLDER_FILES upstream-owned files, +PLACEHOLDER_ADD / -PLACEHOLDER_DEL lines**, against merge-base
+`78f462c4e` (upstream v0.0.33, the 2026-08-10 sync). Everything else the fork adds lives in new
 files upstream has never seen and cannot conflict.
+
+> **Re-baselined 2026-08-12 for #71**, which renamed the fork's identity from `t3x` to `coil` and
+> the app from `T3 Code (Alpha)` to `T3 Coil (Alpha)`. The directory and symbol renames cost
+> nothing here — they move fork-owned files, and the fork-added lines inside upstream files change
+> content without changing count. The app rename is what moved these numbers: **7 new rows and 2
+> grown deletion counts**, argued for below.
 
 > **Corrected 2026-08-11 (#40).** The header read +1968 while the regeneration recipe below returned
 > +1981 against the same `origin/main` — a 13-line drift in the `pnpm-lock.yaml` row (see its own
@@ -30,6 +31,33 @@ files upstream has never seen and cannot conflict.
 > file, and the invariant above weakens from "no deletions anywhere" to "one known deletion, at a known
 > line". Keep it that way. The additive rule is what makes a clean rebase evidence of anything, so a
 > second displacement should have to argue for itself in this file the way that one did.
+>
+> **2026-08-12 (#71): the argument for the second set.** Renaming the app is not expressible as an
+> insertion. `T3 Code` has to stop being the name, and every one of these is a literal that already
+> exists in an upstream file, so each is a replacement:
+>
+> | File | | What moves |
+> | --- | --- | --- |
+> | `apps/desktop/src/app/DesktopEnvironment.ts` | +9/-1 | `APP_BASE_NAME`. The only one that really matters — `displayName` is derived from it and reaches `app.setName()`, the About panel, window titles, the Linux `.desktop` entry, and the whole web UI through `getAppBranding()`. The other 8 lines are a comment explaining why `legacyUserDataDirName` two lines below must NOT follow it |
+> | `apps/desktop/package.json` | -1 → -2 | `productName`, the `.app` bundle name |
+> | `apps/desktop/scripts/electron-launcher.mjs` | +1/-1 | the dev-mode display name |
+> | `apps/web/src/branding.ts` | +1/-1 | the browser-only fallback, used when no desktop branding is injected |
+> | `apps/web/index.html` | -0 → -1 | the boot `<title>` |
+> | `apps/desktop/src/app/DesktopAppIdentity.test.ts` | +5/-2 | asserts the new name AND keeps the legacy-userData assertions on the old one |
+> | `apps/web/src/branding.test.ts` | +14/-11 | fixtures, minus the injected-branding case which deliberately keeps `T3 Code` |
+> | `apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts` | +1/-1 | fixture |
+> | `scripts/build-desktop-artifact.test.ts` | +4/-1 | asserts `resolveDesktopProductName` returns the fork's name |
+>
+> Five of the nine are tests, which is the cheap half: a test fixture that upstream also edits
+> conflicts loudly and is resolved by reading two lines. The four source rows are each a single
+> string literal, which is the smallest displacement a rename admits. `T3 Coil (Alpha)` was chosen
+> over an unsuffixed `T3 Coil` precisely to keep it that way — dropping the stage label would have
+> meant restructuring `resolveDesktopAppBranding` rather than replacing a constant.
+>
+> **What was NOT taken.** 31 further upstream files carry `T3 Code` in body copy ("T3 Code needs the
+> relay client…"). Renaming those would nearly double this ledger to buy prose consistency, and is
+> deliberately declined. The app's own name is computed, not hardcoded, in every surface that
+> matters; the leftovers are sentences.
 
 > **Read the two dependency rows with their note, not their number.** `pnpm-lock.yaml` sits at
 > +490 / -871 and so at risk **77577**, still the top row by a wide margin. That figure is the
@@ -81,7 +109,7 @@ files upstream has never seen and cannot conflict.
 
 > **Update delivery adds no NEW rows.** Almost all of the feature
 > (`docs/superpowers/specs/2026-08-03-update-delivery-design.md`) is new fork-owned files —
-> `infra/coil-update-relay/`, `.github/workflows/t3x-release.yml`, `scripts/coil/`,
+> `infra/coil-update-relay/`, `.github/workflows/coil-release.yml`, `scripts/coil/`,
 > `apps/desktop/src/coil/updateDelivery/`, `apps/desktop/src/ipc/methods/coilUpdate.ts`,
 > `packages/contracts/src/coil/`, `apps/web/src/components/coil/` — plus the `pnpm-lock.yaml`
 > row below. Two things that would each have cost a row were solved at the workflow level instead:
@@ -113,14 +141,14 @@ files upstream has never seen and cannot conflict.
 > consults the flag **only when no identity was named** — `findIdentity()` reads
 > `qualifier || process.env.CSC_NAME` first and, when non-empty, goes straight to
 > `security find-identity`. So the signing half is entirely fork-owned (`CSC_NAME` exported by
-> `.github/workflows/t3x-release.yml` and `scripts/coil/auto-build-desktop.sh`), at zero rows.
+> `.github/workflows/coil-release.yml` and `scripts/coil/auto-build-desktop.sh`), at zero rows.
 >
 > The row is spent on the **second** cause instead, which no environment variable existed for: macOS
 > stores one TCC permission row per `(service, bundle id)`, and the fork shared
 > `com.t3tools.t3code` with upstream's nightly — so whichever app launched last owned the grants and
 > the other was re-prompted, however well either was signed. `DESKTOP_APP_ID` is now
 > `process.env.T3X_DESKTOP_APP_ID?.trim() || "com.t3tools.t3code"`, and the fork sets that variable to
-> `dev.curlycloud.coil`.
+> `dev.curlycloud.t3coil`.
 >
 > **The shape of the edit is the point.** A changed literal would have been +1/-1 and would have
 > broken three upstream assertions in `build-desktop-artifact.test.ts`, adding a second row on a
@@ -272,8 +300,8 @@ Sorted by risk, worst first.
 
 - `packages/contracts/src/settings.test.ts` — the fork's `notifyOnNeedsInput` block sat at the same
   `describe` anchor upstream keeps appending to, producing the add/add conflict in issue #29. Moved
-  to `packages/contracts/src/coil/settings.t3x.test.ts`; the upstream file is byte-identical again.
-  **This is the pattern to copy:** fork test cases belong in a `t3x/` sibling, never appended to an
+  to `packages/contracts/src/coil/settings.coil.test.ts`; the upstream file is byte-identical again.
+  **This is the pattern to copy:** fork test cases belong in a `coil/` sibling, never appended to an
   upstream spec.
 
 ## Logic mirrors (semantic dependencies, not code seams)
@@ -323,7 +351,7 @@ immediate-send branch only, and the fork's queue branch returns _before_ it.
 - `apps/server/src/coil/**`, `apps/web/src/coil/**`, `packages/contracts/src/coil/**` — feature code
   and the `CoilLayerLive` aggregator.
 - `scripts/coil/**` — fork setup, upstream sync, desktop auto-build (incl. opt-in git hooks).
-- `.github/workflows/t3x-*.yml` — `coil-upstream-sync.yml`, `coil-weekly-verify.yml`,
+- `.github/workflows/coil-*.yml` — `coil-upstream-sync.yml`, `coil-weekly-verify.yml`,
   `coil-sync-resolve.yml`, `coil-ci.yml` (the fork's PR/main gate; upstream's `ci.yml` needs
   blacksmith runners the fork cannot use).
 - `docs/coil/**`, `docs/superpowers/specs/**` — including `docs/coil/agents/**` (issue tracker, triage
@@ -332,7 +360,7 @@ immediate-send branch only, and the fork's queue branch returns _before_ it.
   `docs/adr/` precisely because those three are paths upstream could plausibly create.
 
 Note that a fork-created file is only conflict-free if upstream never creates a file at the same
-path. Roughly half of the fork's new files sit outside the four `t3x`-named namespaces above, so
+path. Roughly half of the fork's new files sit outside the four `coil`-named namespaces above, so
 that guarantee is weaker than it looks.
 
 ### Desktop auto-build (`scripts/coil/auto-build-desktop.sh`)
