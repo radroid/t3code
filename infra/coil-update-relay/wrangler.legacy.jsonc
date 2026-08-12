@@ -22,7 +22,7 @@
   // the cutover an ordinary code deploy — and, just as importantly, makes rolling back to the real
   // relay an ordinary code deploy rather than a migration.
   "durable_objects": {
-    "bindings": [{ "name": "UPDATE_CHANNEL", "class_name": "UpdateChannel" }]
+    "bindings": [{ "name": "UPDATE_CHANNEL", "class_name": "UpdateChannel" }],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UpdateChannel"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UpdateChannel"] }],
 }

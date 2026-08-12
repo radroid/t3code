@@ -163,9 +163,9 @@ checkout — script changes take effect after that checkout is updated.
 | What                  | Path                                                      |
 | --------------------- | --------------------------------------------------------- |
 | Built `.dmg`          | `<repo>/release/` (override: `T3CODE_DESKTOP_OUTPUT_DIR`) |
-| Last-built SHA marker | `~/.t3/userdata/coil-autobuild-last-sha`                   |
-| Status JSON           | `~/.t3/userdata/coil-autobuild-status.json`                |
-| Log                   | `~/.t3/userdata/logs/coil-autobuild.log`                   |
+| Last-built SHA marker | `~/.t3/userdata/coil-autobuild-last-sha`                  |
+| Status JSON           | `~/.t3/userdata/coil-autobuild-status.json`               |
+| Log                   | `~/.t3/userdata/logs/coil-autobuild.log`                  |
 
 Status JSON looks like:
 
