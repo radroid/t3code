@@ -7,9 +7,11 @@
  * desktop app's updater consumes, so the site and the app agree on what "latest" means by
  * construction rather than by coincidence.
  */
-// This hostname is `t3x`-named on purpose: it is the live relay every installed desktop build
-// polls, and renaming it would strand them. Issue #71 migrates it. Do not sweep it into a rename.
-const MANIFEST_URL = "https://t3x-update-relay.businesses.workers.dev/latest";
+// Moved to the renamed relay by #71. Safe to move here, unlike in the desktop app: this page is
+// fetched fresh on every visit, so it has no old copies of itself in the field. The old hostname
+// still answers — it proxies to this one for builds that predate the rename — but pointing the
+// site through a shim it does not need would just add a hop.
+const MANIFEST_URL = "https://coil-update-relay.businesses.workers.dev/latest";
 const CACHE_KEY = "coil-latest-manifest";
 
 export const RELEASES_URL = "https://github.com/radroid/t3code/releases";

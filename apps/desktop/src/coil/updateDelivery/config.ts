@@ -20,8 +20,15 @@ import { SHORT_SHA_LENGTH } from "./manifest.ts";
  * metadata, it is stable across every build, and baking it in through the packaged `package.json`
  * would mean editing `scripts/build-desktop-artifact.ts` — an upstream file this fork does not
  * touch, and a seam row that buys nothing.
+ *
+ * Being hardcoded is also why the #71 rename could not simply move it. Every build shipped before
+ * this line changed has the OLD hostname compiled in, cannot be reconfigured (the override below
+ * is never set on a normal install), and has no other channel through which to be told. So the old
+ * hostname was not renamed — it stays deployed, permanently, as a pass-through to this one. See
+ * `infra/coil-update-relay/src/legacyWorker.ts`. Changing this constant is safe precisely because
+ * that file exists; changing it without one would be a silent, unrecoverable strand.
  */
-export const DEFAULT_RELAY_URL = "https://t3x-update-relay.businesses.workers.dev";
+export const DEFAULT_RELAY_URL = "https://coil-update-relay.businesses.workers.dev";
 
 export const RELAY_URL_ENV_VAR = "T3X_UPDATE_RELAY_URL";
 
