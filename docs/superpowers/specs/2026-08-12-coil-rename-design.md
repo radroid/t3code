@@ -11,22 +11,22 @@ capability that quietly stops working. The bulk of this document is about those 
 
 ## Decisions
 
-| Question | Decision |
-|---|---|
-| Scope | All four stages of the issue, including the relay |
-| App name | `T3 Coil (Alpha)` |
-| Bundle id | `dev.curlycloud.coil` → `dev.curlycloud.t3coil` |
-| Signing certificate | `T3X Code Signing` → `T3 Coil Code Signing` |
-| First renamed build | One-time manual install; the updater's refusal is reworded, not bypassed |
-| Relay | `coil-update-relay` becomes authoritative; `t3x-update-relay` stays deployed as a proxy |
-| GitHub secrets and repo variables | Keep the `T3X_` prefix |
+| Question                          | Decision                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| Scope                             | All four stages of the issue, including the relay                                       |
+| App name                          | `T3 Coil (Alpha)`                                                                       |
+| Bundle id                         | `dev.curlycloud.coil` → `dev.curlycloud.t3coil`                                         |
+| Signing certificate               | `T3X Code Signing` → `T3 Coil Code Signing`                                             |
+| First renamed build               | One-time manual install; the updater's refusal is reworded, not bypassed                |
+| Relay                             | `coil-update-relay` becomes authoritative; `t3x-update-relay` stays deployed as a proxy |
+| GitHub secrets and repo variables | Keep the `T3X_` prefix                                                                  |
 
 Two of these have a cost that is paid by the user rather than by CI, and both are worth restating
 because neither is recoverable by editing code after the fact.
 
 **The bundle id and the certificate each cost one full round of macOS permission dialogs.** macOS
 keys TCC grants — Screen Recording, Accessibility, Files & Folders — on the pair
-`(service, bundle id)`, and the *designated requirement* that authenticates the app names both the
+`(service, bundle id)`, and the _designated requirement_ that authenticates the app names both the
 bundle id and the signing certificate. Changing either invalidates every existing grant. Changing
 both at once costs one round of prompts, not two, which is the only reason to do them together.
 This is the second such reset in a week (PR #85 was the first), and it should be the last: both
@@ -59,7 +59,7 @@ publish build 1, every installed client would evaluate `1 <= 26`, and all of the
 forever. There is no error surface for this: skipping is the normal, expected outcome of that
 branch, so it looks exactly like being up to date.
 
-Issue #71 names this hazard but attributes it to the *version string*, and concludes the suffix
+Issue #71 names this hazard but attributes it to the _version string_, and concludes the suffix
 change is safe because the updater never compares versions. Both halves of that are true and
 neither is the risk. The risk is the filename.
 
@@ -106,7 +106,7 @@ costs the same handful of lines.
 
 **Verification before cutover, against a real old build.** The `T3X_UPDATE_RELAY_URL` override does
 work when the `.app` is launched from a terminal rather than Finder, which makes it possible to
-point the *currently installed* build at a throwaway shim and confirm both `/latest` and `/events`
+point the _currently installed_ build at a throwaway shim and confirm both `/latest` and `/events`
 behave. That is the only test that proves anything about clients in the field, so it is a gate on
 the relay cutover rather than a nice-to-have.
 
@@ -134,7 +134,7 @@ script path moved, and a regenerated plist and an unchanged script agree by cons
 the variables as well would have created a window where a hand-edited plist sets names the script
 no longer reads, silently reverting to defaults for the build worktree and the applications
 directory. The state files it writes (`<state-dir>/coil-autobuild-last-sha` and
-`coil-autobuild-status.json`) *do* move, because losing them costs exactly one redundant rebuild.
+`coil-autobuild-status.json`) _do_ move, because losing them costs exactly one redundant rebuild.
 
 ### 4. `app.setName()` sets a Keychain service name
 
@@ -148,7 +148,7 @@ Threads, settings and sessions are **not** affected, and this is worth stating p
 adjacent literals look like they should be. `userDataDirName = "t3code"` and
 `legacyUserDataDirName = "T3 Code (Alpha)"` (`DesktopEnvironment.ts:171-172`) are hardcoded, not
 derived from `displayName` or from the bundle id. That is why PR #85 moved nobody's threads, and it
-is why this rename does not either. Renaming *those* would orphan every thread and is out of scope.
+is why this rename does not either. Renaming _those_ would orphan every thread and is out of scope.
 
 **Resolution.** Accept the re-encrypt, but make it legible: the decode path is verified to degrade
 to a per-environment "re-enter this token" state rather than an error or an empty list. No
@@ -157,13 +157,13 @@ choice is whether the user finds out from a clear prompt or from a confusing fai
 
 ## What is deliberately not renamed
 
-| Kept | Why |
-|---|---|
-| `userDataDirName` / `legacyUserDataDirName` | Renaming orphans every thread, setting and session |
-| GitHub secrets and repo variables (`T3X_*`) | Invisible to users and to macOS; renaming opens a window between merge and re-setting them where the release is broken, for no gain |
-| `~/.t3x/mac-signing`, `t3x-signing.keychain` | Local paths on one machine; moving them adds a manual step to an already manual certificate rotation |
-| `t3codeCommitHash`, `@t3tools/*`, `T3CODE_*` | Upstream's identity, not the fork's |
-| `apps/marketing/` | Untouched by design — see SEAMS.md's parallel-path note |
+| Kept                                         | Why                                                                                                                                 |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `userDataDirName` / `legacyUserDataDirName`  | Renaming orphans every thread, setting and session                                                                                  |
+| GitHub secrets and repo variables (`T3X_*`)  | Invisible to users and to macOS; renaming opens a window between merge and re-setting them where the release is broken, for no gain |
+| `~/.t3x/mac-signing`, `t3x-signing.keychain` | Local paths on one machine; moving them adds a manual step to an already manual certificate rotation                                |
+| `t3codeCommitHash`, `@t3tools/*`, `T3CODE_*` | Upstream's identity, not the fork's                                                                                                 |
+| `apps/marketing/`                            | Untouched by design — see SEAMS.md's parallel-path note                                                                             |
 
 ## Seam impact
 
@@ -190,7 +190,7 @@ rolled back by reverting a commit.
 2. **App identity.** Name, bundle id, certificate, reworded refusal.
 3. **Release identity.** Tags, version suffix, the counter offset.
 4. **Automation.** Workflow filenames, the `coil-sync` label, `coil/sync-*` branch and recovery-tag
-   prefixes. These are matched by *running* workflows, so they land together, and they land only
+   prefixes. These are matched by _running_ workflows, so they land together, and they land only
    when no sync issue or sync PR is open. `coil-ci.yml`'s push trigger matches both branch prefixes
    for one cycle.
 5. **Relay.** Deploy `coil-update-relay`, verify the shim against an installed build, then redeploy
