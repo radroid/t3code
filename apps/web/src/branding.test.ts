@@ -72,6 +72,36 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBeNull();
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBeNull();
   });
+
+  // coil: the sidebar renders this beside the `T3` glyph, so it is the word the running app calls
+  // itself. Asserted here rather than by rendering the component, because the risk is drift in the
+  // derivation, not in the markup.
+  it("derives the sidebar wordmark suffix from the base name", async () => {
+    const branding = await import("./branding");
+
+    expect(branding.APP_WORDMARK_SUFFIX).toBe("Coil");
+  });
+
+  // The prefix strip must key off the injected name too, or a desktop build that renames itself
+  // would keep drawing the previous word next to the glyph — the exact drift it exists to prevent.
+  it("derives the sidebar wordmark suffix from injected desktop branding", async () => {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        desktopBridge: {
+          getAppBranding: () => ({
+            baseName: "T3 Code",
+            stageLabel: "Nightly",
+            displayName: "T3 Code (Nightly)",
+          }),
+        },
+      },
+    });
+
+    const branding = await import("./branding");
+
+    expect(branding.APP_WORDMARK_SUFFIX).toBe("Code");
+  });
 });
 
 describe("branding logic", () => {
