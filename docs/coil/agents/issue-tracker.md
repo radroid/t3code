@@ -36,11 +36,11 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 ### Sync PRs are not button-mergeable
 
-Branches named `t3x/sync-<id>` are rebases onto upstream, not merges. GitHub's merge button will
+Branches named `coil/sync-<id>` are rebases onto upstream, not merges. GitHub's merge button will
 refuse or produce the wrong history. Land them with:
 
 ```bash
-git push --force-with-lease origin t3x/sync-<id>:main
+git push --force-with-lease origin coil/sync-<id>:main
 ```
 
 ## When a skill says "publish to the issue tracker"
@@ -116,6 +116,6 @@ gh label create wayfinder:task --color B4A8E8 --description "Wayfinder ticket: m
 
 ### Existing label collision
 
-The fork already uses `t3x-sync` for the daily upstream-sync escalation. Those issues are
+The fork already uses `coil-sync` for the daily upstream-sync escalation. Those issues are
 machine-filed and are **not** part of the wayfinder or triage flow — skip them when querying the
 frontier or the triage queue.

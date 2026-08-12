@@ -99,7 +99,7 @@ already applied.
 
 Anchored the auto-resume capsule to the composer's measured box, which fixes the half-pixel
 drift on a narrow window ([#67](https://github.com/radroid/t3code/pull/67)), and landed the
-day's sync on \`t3x/sync-20260810\`.
+day's sync on \`coil/sync-20260810\`.
 
 ## Client work
 
@@ -423,7 +423,7 @@ NodeTest.test("private-branch: a branch attributable to a non-public project war
 
 NodeTest.test("private-branch: an unattributable branch and a file path are left alone", () => {
   NodeAssert.deepEqual(lint("Merged feat/keyboard-shortcuts today."), []);
-  NodeAssert.deepEqual(lint("Merged t3x/sync-20260810 and moved on."), []);
+  NodeAssert.deepEqual(lint("Merged coil/sync-20260810 and moved on."), []);
   NodeAssert.deepEqual(lint("Touched lib/redact.mjs and nothing else."), []);
   // No non-public project in the registry means the rule cannot fire at all.
   const publicOnly = { version: 1, projects: { t3code: registryFixture().projects.t3code } };

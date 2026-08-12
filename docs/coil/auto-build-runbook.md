@@ -110,7 +110,7 @@ Rebuilds are keyed on a **new commit SHA**, not on file saves — a `.dmg` build
 takes minutes, so watching raw file writes would rebuild continuously mid-edit.
 
 The last successfully built SHA is recorded in
-`~/.t3/userdata/t3x-autobuild-last-sha`. If `git rev-parse HEAD` matches it, the
+`~/.t3/userdata/coil-autobuild-last-sha`. If `git rev-parse HEAD` matches it, the
 script logs "no change" and exits `3`. Use `--force` to rebuild anyway.
 
 Because the marker only advances on a **successful** build, a failed build is
@@ -163,9 +163,9 @@ checkout — script changes take effect after that checkout is updated.
 | What                  | Path                                                      |
 | --------------------- | --------------------------------------------------------- |
 | Built `.dmg`          | `<repo>/release/` (override: `T3CODE_DESKTOP_OUTPUT_DIR`) |
-| Last-built SHA marker | `~/.t3/userdata/t3x-autobuild-last-sha`                   |
-| Status JSON           | `~/.t3/userdata/t3x-autobuild-status.json`                |
-| Log                   | `~/.t3/userdata/logs/t3x-autobuild.log`                   |
+| Last-built SHA marker | `~/.t3/userdata/coil-autobuild-last-sha`                   |
+| Status JSON           | `~/.t3/userdata/coil-autobuild-status.json`                |
+| Log                   | `~/.t3/userdata/logs/coil-autobuild.log`                   |
 
 Status JSON looks like:
 
@@ -227,8 +227,8 @@ TCC-protected repo path.
 ```bash
 scripts/coil/auto-build-desktop.sh --print-launchd \
   --ref origin/main --install --relaunch --interval 43200 \
-  > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
-launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+  > ~/Library/LaunchAgents/dev.coil.autobuild.plist
+launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.coil.autobuild.plist
 ```
 
 These are the flags the agent on this machine actually runs with, and they are the ones to
@@ -239,8 +239,8 @@ what gets installed.
 **Verify it actually runs** — a loaded agent is not a working one:
 
 ```bash
-launchctl print "gui/$UID/dev.t3x.autobuild" | grep -E "state|pid|last exit code"
-tail -f ~/.t3/userdata/logs/t3x-autobuild.log
+launchctl print "gui/$UID/dev.coil.autobuild" | grep -E "state|pid|last exit code"
+tail -f ~/.t3/userdata/logs/coil-autobuild.log
 ```
 
 Want `state = running` with a pid and `last exit code = (never exited)`. A
@@ -249,8 +249,8 @@ Want `state = running` with a pid and `last exit code = (never exited)`. A
 Stop / remove it:
 
 ```bash
-launchctl bootout "gui/$UID/dev.t3x.autobuild"
-rm ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+launchctl bootout "gui/$UID/dev.coil.autobuild"
+rm ~/Library/LaunchAgents/dev.coil.autobuild.plist
 ```
 
 `--print-launchd` substitutes the real repo path, script path, interval and log
@@ -285,7 +285,7 @@ scripts/coil/auto-build-desktop.sh --diff-launchd \
   --ref origin/main --install --relaunch --interval 43200
 ```
 
-Pass it the same flags the agent runs with — `launchctl print "gui/$UID/dev.t3x.autobuild"`
+Pass it the same flags the agent runs with — `launchctl print "gui/$UID/dev.coil.autobuild"`
 shows what those were — or the only difference it reports will be the flags themselves.
 
 > **A plist fix does not reach an already-installed agent.** launchd keeps the copy it was
@@ -295,11 +295,11 @@ shows what those were — or the only difference it reports will be the flags th
 > ```bash
 > scripts/coil/auto-build-desktop.sh --diff-launchd \
 >   --ref origin/main --install --relaunch --interval 43200   # see the gap first
-> launchctl bootout "gui/$UID/dev.t3x.autobuild"
+> launchctl bootout "gui/$UID/dev.coil.autobuild"
 > scripts/coil/auto-build-desktop.sh --print-launchd \
 >   --ref origin/main --install --relaunch --interval 43200 \
->   > ~/Library/LaunchAgents/dev.t3x.autobuild.plist
-> launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.t3x.autobuild.plist
+>   > ~/Library/LaunchAgents/dev.coil.autobuild.plist
+> launchctl bootstrap "gui/$UID" ~/Library/LaunchAgents/dev.coil.autobuild.plist
 > ```
 >
 > Re-run this after any commit that touches the `--print-launchd` block, and pass the same
