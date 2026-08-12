@@ -1,4 +1,4 @@
-# t3x fork release — build the desktop app on every green merge to main and publish it.
+# coil fork release — build the desktop app on every green merge to main and publish it.
 #
 # Upstream's release.yml cannot be reused: it runs on blacksmith-12vcpu-macos-26 and
 # blacksmith-32vcpu-windows-2025, runners this fork has no access to (the same reason t3x-ci.yml
@@ -9,7 +9,7 @@
 # public repositories, and this fork is public. The build costs nothing.
 #
 # Design: docs/superpowers/specs/2026-08-03-update-delivery-design.md
-name: t3x fork release
+name: coil fork release
 
 # workflow_run, NOT push.
 #
@@ -36,7 +36,7 @@ permissions:
 # Not cancel-in-progress. A half-cancelled release can leave a tag created and assets missing,
 # and two merges landing minutes apart is normal here.
 concurrency:
-  group: t3x-release
+  group: coil-release
   cancel-in-progress: false
 
 env:
@@ -52,6 +52,7 @@ jobs:
       sha: ${{ steps.identity.outputs.sha }}
       short_sha: ${{ steps.identity.outputs.short_sha }}
       version: ${{ steps.identity.outputs.version }}
+      build_number: ${{ steps.identity.outputs.build_number }}
       tag: ${{ steps.identity.outputs.tag }}
       changes: ${{ steps.identity.outputs.changes }}
     steps:
@@ -77,7 +78,23 @@ jobs:
         # workflow_dispatch path it is user-supplied, and `${{ }}` interpolation splices the raw
         # value into the shell source before bash ever sees it.
         env:
-          BUILD_COUNTER: ${{ github.run_number }}
+          # +100 is LOAD-BEARING. Do not "simplify" it away.
+          #
+          # `github.run_number` is scoped to a workflow, and GitHub identifies a workflow by its
+          # FILE PATH. Renaming this file (it used to be the t3x-prefixed one) for #71 therefore
+          # did not continue the old sequence — it began a new one at 1.
+          #
+          # This number is the manifest's `buildNumber`, and `decision.ts` is a pure
+          # `manifest.buildNumber <= installed.buildNumber` comparison. Published builds were at
+          # 26 when this file was renamed, so an un-offset counter would have shipped build 1 to
+          # every installed client, each of which would have evaluated `1 <= 26` and skipped —
+          # forever, and silently, because "skip" is the ordinary outcome of that branch and looks
+          # exactly like being up to date.
+          #
+          # 100 clears both the old high-water marks: 32 (the last run under the previous filename)
+          # and 26 (the last published build). The first coil build is 101. Renaming this file
+          # again would need a fresh offset above whatever is published by then.
+          BUILD_COUNTER: ${{ github.run_number + 100 }}
         run: |
           set -euo pipefail
           if [[ ! "$BUILD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -101,9 +118,9 @@ jobs:
           # The upstream base does not move between syncs (0.0.31 -> 0.0.31, issue #47), so without
           # a fork-owned counter every build here would carry an identical version. An earlier
           # draft used the short sha instead: identifiable, but semver compares prerelease
-          # identifiers, and `-t3x.a3f9c21b` vs `-t3x.b0e77c14` sorts alphabetically by hash, which
-          # orders nothing. A numeric identifier sorts numerically, so 0.0.31-t3x.43 correctly
-          # precedes 0.0.31-t3x.44.
+          # identifiers, and `-coil.a3f9c21b` vs `-coil.b0e77c14` sorts alphabetically by hash, which
+          # orders nothing. A numeric identifier sorts numerically, so 0.0.31-coil.43 correctly
+          # precedes 0.0.31-coil.44.
           #
           # This is the SAME number the manifest carries as buildNumber and the relay orders on.
           # One counter, used everywhere, rather than a version scheme that disagrees with the
@@ -114,13 +131,14 @@ jobs:
           # "which commit". Keeping those separate is the whole lesson of #47.
           #
           # --build-version becomes electron-builder's `version` and must be valid semver — a raw
-          # sha is not. resolveDesktopUpdateChannel only special-cases -nightly.<d>.<d>, so a -t3x.
+          # sha is not. resolveDesktopUpdateChannel only special-cases -nightly.<d>.<d>, so a -coil.
           # prerelease stays on the "latest" channel and the product name is unchanged.
           base="$(node -p "require('./apps/desktop/package.json').version")"
           echo "sha=$sha"                          >> "$GITHUB_OUTPUT"
           echo "short_sha=$short_sha"              >> "$GITHUB_OUTPUT"
-          echo "version=${base}-t3x.${BUILD_COUNTER}" >> "$GITHUB_OUTPUT"
-          echo "tag=t3x-build-${short_sha}"      >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_COUNTER}"        >> "$GITHUB_OUTPUT"
+          echo "version=${base}-coil.${BUILD_COUNTER}" >> "$GITHUB_OUTPUT"
+          echo "tag=coil-build-${short_sha}"       >> "$GITHUB_OUTPUT"
 
           # What changed since the last release we actually published.
           #
@@ -132,11 +150,17 @@ jobs:
           #
           # Newest first. Merge commits are dropped: on a squash-merge fork their subjects are
           # duplicates of the commit they merged.
-          previous="$(git tag --list 't3x-build-*' --sort=-creatordate | head -n 1 || true)"
+          # Both prefixes, permanently. #71 renamed the tag from `t3x-build-*` to `coil-build-*`,
+          # and a lookup that knew only the new one would have found nothing on the first coil
+          # release, taken the "first release ever" branch below, and shipped an empty changelog
+          # for a build that had 20-odd commits in it. The old tags do not expire, so neither does
+          # this: dropping `t3x-build-*` later would silently re-break the same release note the
+          # day someone rebuilds an old sha.
+          previous="$(git tag --list 'coil-build-*' 't3x-build-*' --sort=-creatordate | head -n 1 || true)"
           if [[ -z "$previous" ]]; then
             # First release ever: there is no range. Emitting the entire history as a "changelog"
             # would render a toast with thousands of entries.
-            echo "No previous t3x-build-* tag; emitting an empty changelog."
+            echo "No previous coil-build-* or t3x-build-* tag; emitting an empty changelog."
             changes=""
           else
             echo "Changelog range: ${previous}..${sha}"
@@ -155,7 +179,7 @@ jobs:
           #    (`tag=`, `sha=`) — which this workflow then uses to tag and publish a release.
           # 2. Control characters stripped, so nothing can smuggle a newline or an escape sequence
           #    into a value that later lands in an env var and a toast.
-          delim="T3X_CHANGES_$(openssl rand -hex 16)"
+          delim="COIL_CHANGES_$(openssl rand -hex 16)"
           changes="$(printf '%s' "$changes" | tr -d '\000-\010\013\014\016-\037')"
           {
             echo "changes<<${delim}"
@@ -357,7 +381,7 @@ jobs:
           expected='vp run --filter @t3tools/desktop --filter t3 build'
           actual="$(node -p 'require("./package.json").scripts["build:desktop"] || ""')"
           if [[ "$actual" != "$expected" ]]; then
-            echo "::error::root build:desktop is now '$actual' (expected '$expected'). Re-inline it in t3x-release.yml." >&2
+            echo "::error::root build:desktop is now '$actual' (expected '$expected'). Re-inline it in coil-release.yml." >&2
             exit 1
           fi
 
@@ -517,7 +541,7 @@ jobs:
             exit 1
           fi
 
-          dest="staged/T3Code-${SHORT_SHA}-${ARCH}.${ASSET_EXT}"
+          dest="staged/T3Coil-${SHORT_SHA}-${ARCH}.${ASSET_EXT}"
           mv "$src" "$dest"
 
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -545,7 +569,7 @@ jobs:
       - name: Upload staged artifact
         uses: actions/upload-artifact@v4
         with:
-          name: t3x-release-${{ matrix.manifest_platform }}
+          name: coil-release-${{ matrix.manifest_platform }}
           path: staged/*
           retention-days: 3
           if-no-files-found: error
@@ -570,7 +594,7 @@ jobs:
       - name: Download built artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: t3x-release-*
+          pattern: coil-release-*
           merge-multiple: true
           path: staged
 
@@ -583,20 +607,25 @@ jobs:
           SHORT_SHA: ${{ needs.resolve.outputs.short_sha }}
           VERSION: ${{ needs.resolve.outputs.version }}
           REPOSITORY: ${{ github.repository }}
-          RUN_NUMBER: ${{ github.run_number }}
-          # run_id addresses the run URL; run_number is the build counter. Different numbers —
-          # passing run_number here yields a link to whichever run happens to own that id.
+          # The RESOLVED counter, not github.run_number. Since #71 the two differ by the +100
+          # offset the resolve job applies, and build-update-manifest.mjs asserts that VERSION ends
+          # with `-coil.<RUN_NUMBER>`. Passing the raw run_number here would fail that assertion on
+          # every single release — loudly, which is the only reason this was caught rather than
+          # shipped. One counter, resolved once, read everywhere.
+          RUN_NUMBER: ${{ needs.resolve.outputs.build_number }}
+          # run_id addresses the run URL; the build counter is a different number entirely —
+          # passing the counter here yields a link to whichever run happens to own that id.
           RUN_ID: ${{ github.run_id }}
           # Read as an env var, never interpolated into shell source: these are commit subjects,
           # so the content is chosen by whoever wrote the commit.
           CHANGES: ${{ needs.resolve.outputs.changes }}
-        run: node scripts/coil/build-update-manifest.mjs staged staged/t3x-latest.json
+        run: node scripts/coil/build-update-manifest.mjs staged staged/coil-latest.json
 
       # The install steps used to live inline in this file, which made the release body the only
       # place they existed — and the download page pointed at "the release notes" without linking
       # them, so a first-time reader could go from the landing page to an app macOS calls damaged
       # having never seen one (issue #72). Both surfaces now render
-      # scripts/t3x/install-instructions.json.
+      # scripts/coil/install-instructions.json.
       #
       # A rendering failure must not cost a release: by the time this step runs, both matrix legs
       # have finished and ~22 minutes of macOS and Windows compute is already spent. So a failure
@@ -610,9 +639,9 @@ jobs:
           NOTES_PATH: ${{ runner.temp }}/release-notes.md
         run: |
           set -uo pipefail
-          if ! node scripts/t3x/render-release-notes.mjs \
+          if ! node scripts/coil/render-release-notes.mjs \
             --sha "$FULL_SHA" --short-sha "$SHORT_SHA" > "$NOTES_PATH"; then
-            echo "::warning::Could not render the install notes; publishing a minimal body. This is a bug in scripts/t3x/render-release-notes.mjs — the release itself is fine."
+            echo "::warning::Could not render the install notes; publishing a minimal body. This is a bug in scripts/coil/render-release-notes.mjs — the release itself is fine."
             printf 'Automated fork build of `%s`.\n\nInstall instructions: https://coil.curlycloud.dev/download\n' \
               "$FULL_SHA" > "$NOTES_PATH"
           fi
@@ -630,8 +659,8 @@ jobs:
           name: ${{ needs.resolve.outputs.version }}
           prerelease: true
           files: |
-            staged/T3Code-*
-            staged/t3x-latest.json
+            staged/T3Coil-*
+            staged/coil-latest.json
           fail_on_unmatched_files: true
           body_path: ${{ steps.notes.outputs.path }}
 
@@ -665,7 +694,7 @@ jobs:
       # comes along to heal it.
       #
       # If it still gives up, the build is recoverable without a new commit — this workflow takes a
-      # `sha` input, so `gh workflow run t3x-release.yml -f sha=<sha>` republishes it.
+      # `sha` input, so `gh workflow run coil-release.yml -f sha=<sha>` republishes it.
       - name: Retry the release if the action gave up
         if: ${{ steps.create_release.outcome == 'failure' }}
         shell: bash
@@ -704,7 +733,7 @@ jobs:
             # release is completed with `upload --clobber` rather than recreated.
             if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
               echo "Release $RELEASE_TAG exists; uploading assets."
-              if gh release upload "$RELEASE_TAG" staged/T3Code-* staged/t3x-latest.json --clobber; then
+              if gh release upload "$RELEASE_TAG" staged/T3Coil-* staged/coil-latest.json --clobber; then
                 exit 0
               fi
             elif gh release create "$RELEASE_TAG" \
@@ -712,7 +741,7 @@ jobs:
               --title "$RELEASE_NAME" \
               --prerelease \
               --notes-file "$NOTES_FILE" \
-              staged/T3Code-* staged/t3x-latest.json; then
+              staged/T3Coil-* staged/coil-latest.json; then
               exit 0
             fi
 
@@ -726,7 +755,7 @@ jobs:
           done
 
           echo "::error::Could not publish $RELEASE_TAG after $attempt attempts over 7.5 minutes." >&2
-          echo "::error::Republish without a new commit: gh workflow run t3x-release.yml -f sha=$TARGET_SHA" >&2
+          echo "::error::Republish without a new commit: gh workflow run coil-release.yml -f sha=$TARGET_SHA" >&2
           exit 1
 
       - name: Notify the update relay
@@ -742,7 +771,7 @@ jobs:
             exit 0
           fi
 
-          body="$(cat staged/t3x-latest.json)"
+          body="$(cat staged/coil-latest.json)"
 
           # Build 20 (run 31391175380) died here: the publish had already durably applied — the
           # relay served the new manifest on /latest — but the Durable Object round trip threw a

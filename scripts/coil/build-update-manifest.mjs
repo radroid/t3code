@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Assembles t3x-latest.json from the per-platform asset descriptors each build leg uploaded.
+// Assembles coil-latest.json from the per-platform asset descriptors each build leg uploaded.
 //
 // This runs in the `publish` job, which `needs: [build]` — so it only runs when EVERY matrix leg
 // succeeded. That is deliberate: a half-platform release would give Windows users a toast pointing
@@ -43,7 +43,7 @@ if (runId === String(buildNumber)) {
   // github.run_number is a small counter, so equality means the workflow passed the same value to
   // both — and the run link would point at whatever run happens to have that id.
   throw new Error(
-    `RUN_ID (${runId}) equals RUN_NUMBER — the workflow is passing github.run_number to both. ` +
+    `RUN_ID (${runId}) equals RUN_NUMBER — the workflow is passing one number to both. ` +
       "The run link needs github.run_id.",
   );
 }
@@ -69,12 +69,13 @@ if (!Number.isSafeInteger(buildNumber) || buildNumber <= 0) {
 
 // The version's counter and the manifest's ordering key are the same number by construction.
 // Asserted rather than assumed: if they ever drift, the app would order updates by one value while
-// displaying another, and "0.0.31-t3x.44 is installed" could be a build the client considers older
+// displaying another, and "0.0.31-coil.144 is installed" could be a build the client considers older
 // than what it already has. Cheap check, silent failure if omitted.
-if (!version.endsWith(`-t3x.${buildNumber}`)) {
+if (!version.endsWith(`-coil.${buildNumber}`)) {
   throw new Error(
-    `VERSION "${version}" does not end with the build counter "-t3x.${buildNumber}". ` +
-      "The release workflow must derive both from github.run_number.",
+    `VERSION "${version}" does not end with the build counter "-coil.${buildNumber}". ` +
+      "Both must come from the resolve job's build_number output — since #71 that is " +
+      "github.run_number PLUS an offset, so passing the raw run_number to either one drifts them.",
   );
 }
 
