@@ -42,7 +42,7 @@ const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 // nightly are frequently installed side by side and shared `com.t3tools.t3code`, so whichever
 // launched last owned the Screen Recording / Accessibility / Files & Folders grants and the other
 // was re-prompted. A distinct id for the fork is the only fix — the two apps are otherwise the same
-// app to macOS. Set by .github/workflows/t3x-release.yml and scripts/coil/auto-build-desktop.sh;
+// app to macOS. Set by .github/workflows/coil-release.yml and scripts/coil/auto-build-desktop.sh;
 // scripts/coil/verify-mac-signature.ts fails any artifact whose signing identifier is not the
 // expected one, so an unset variable cannot ship silently.
 const DESKTOP_APP_ID = process.env.T3X_DESKTOP_APP_ID?.trim() || "com.t3tools.t3code";

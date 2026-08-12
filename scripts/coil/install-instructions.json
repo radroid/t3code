@@ -2,7 +2,7 @@
   "$comment": [
     "The single source for first-run install instructions. Two surfaces render this and they",
     "must not drift: the download page (apps/coil-home/src/lib/install.ts, which shows the steps",
-    "inline with copy buttons) and every GitHub release body (scripts/coil/render-release-notes.ts,",
+    "inline with copy buttons) and every GitHub release body (scripts/coil/render-release-notes.mjs,",
     "which the release workflow writes to a file and passes as the release notes).",
     "",
     "Before this file existed the only copy lived inline in .github/workflows/coil-release.yml, and",
