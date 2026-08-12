@@ -1,10 +1,12 @@
 {
-  "name": "t3x-update-relay",
+  "name": "coil-update-relay",
   "private": true,
   "type": "module",
   "scripts": {
     "//deploy": "wrangler is run via `pnpm dlx`, not depended on. It drags ~500 lines into pnpm-lock.yaml, which SEAMS.md records as the second-worst rebase-conflict surface in this fork — and it is only ever needed at deploy time, on CI, where a one-shot fetch costs nothing.",
     "deploy": "pnpm dlx wrangler@4 deploy",
+    "//deploy:legacy": "Redeploys the pre-#71 t3x-update-relay hostname as a pass-through to this one. Builds shipped before the rename have that hostname compiled in and cannot be told about a new one, so it serves indefinitely. Deploy it only AFTER coil-update-relay is live and populated.",
+    "deploy:legacy": "pnpm dlx wrangler@4 deploy --config wrangler.legacy.jsonc",
     "dev": "pnpm dlx wrangler@4 dev",
     "test": "vp test run",
     "typecheck": "tsgo --noEmit"
