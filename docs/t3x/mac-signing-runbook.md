@@ -219,6 +219,12 @@ so a rotation that forgets them fails the next release instead of quietly re-pro
 
 ## Related
 
+- **Issue #71 — renaming the fork to `coil`.** Read the notes on that issue before renaming anything
+  here. Two things it has to respect: renaming the signing certificate (`T3X Code Signing`, which a
+  sweep of `T3X` will find) changes the designated requirement and costs another round of prompts,
+  and renaming `productName` makes the updater refuse the first renamed build by design
+  (`resolveMacInstallTarget`, "would create a second app"). Renaming the _visible app_ is otherwise
+  free in permission terms — grants are keyed to the bundle id and the certificate, not the name.
 - `docs/t3x/auto-build-runbook.md` — the local build/install loop, which signs the same way.
 - Issue #41 — the autobuild relaunch race. Unrelated, adjacent.
 - Issue #72 / PR #78 (still open, branch `t3x/install-instructions`) — the first-launch install copy,
