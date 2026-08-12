@@ -30,7 +30,7 @@
 #   scripts/coil/auto-build-desktop.sh --print-launchd     # emit a ready-to-use LaunchAgent plist
 #   scripts/coil/auto-build-desktop.sh --diff-launchd      # diff that plist against the installed one
 #     Pass --diff-launchd the SAME flags the agent runs with, or the diff is just those
-#     flags. `launchctl print gui/$UID/dev.t3x.autobuild` shows what it was installed with.
+#     flags. `launchctl print gui/$UID/dev.coil.autobuild` shows what it was installed with.
 #     Exit 0 = identical, 1 = differs (diff on stdout), 2 = nothing installed.
 #   scripts/coil/auto-build-desktop.sh --help
 #
@@ -54,9 +54,9 @@ REPO="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 
 STATE_DIR="${T3X_AUTOBUILD_STATE_DIR:-$HOME/.t3/userdata}"
 LOG_DIR="$STATE_DIR/logs"
-LAST_SHA_FILE="$STATE_DIR/t3x-autobuild-last-sha"
-STATUS_FILE="$STATE_DIR/t3x-autobuild-status.json"
-LOG_FILE="$LOG_DIR/t3x-autobuild.log"
+LAST_SHA_FILE="$STATE_DIR/coil-autobuild-last-sha"
+STATUS_FILE="$STATE_DIR/coil-autobuild-status.json"
+LOG_FILE="$LOG_DIR/coil-autobuild.log"
 
 KEEP_DMGS="${T3X_AUTOBUILD_KEEP_DMGS:-3}"
 # Validated because it is fed to `tail -n +$((KEEP_DMGS + 1))`: a non-numeric value makes
@@ -297,7 +297,7 @@ prune_dmgs() {
 # EVERY merge, so two quick `git pull`s start two electron-builder runs writing the same
 # output dir — and one can rm -rf the install target while the other is mid-copy.
 # mkdir is atomic on every filesystem we care about; `flock` is not on stock macOS.
-LOCK_DIR="$STATE_DIR/t3x-autobuild.lock"
+LOCK_DIR="$STATE_DIR/coil-autobuild.lock"
 
 release_lock() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
 
@@ -391,18 +391,18 @@ verify_signature() {
 # resolveDesktopProductName). Only used when no .dmg exists yet to read the name out of;
 # if that upstream logic changes, this prediction goes stale (the dmg peek below does not).
 predicted_app_name() {
-  python3 - "$REPO/apps/desktop/package.json" <<'PY' 2>/dev/null || printf 'T3 Code'
+  python3 - "$REPO/apps/desktop/package.json" <<'PY' 2>/dev/null || printf 'T3 Coil'
 import json, re, sys
 try:
     pkg = json.load(open(sys.argv[1]))
 except Exception:
-    print("T3 Code"); raise SystemExit(0)
+    print("T3 Coil"); raise SystemExit(0)
 version = pkg.get("version", "")
 # resolveDesktopUpdateChannel: /-nightly\.\d{8}\.\d+$/ -> nightly, else latest
 if re.search(r"-nightly\.\d{8}\.\d+$", version):
     print("T3 Code (Nightly)")
 else:
-    print(pkg.get("productName") or "T3 Code")
+    print(pkg.get("productName") or "T3 Coil")
 PY
 }
 
@@ -827,7 +827,7 @@ EOF
     exit 2
   fi
 
-  local label="dev.t3x.autobuild"
+  local label="dev.coil.autobuild"
   local x_script x_repo x_log x_path
   x_script="$(xml_escape "$SCRIPT_DIR/auto-build-desktop.sh")"
   x_path="$(xml_escape "$agent_path")"
@@ -967,7 +967,7 @@ fi
 # gap. That is how the live agent came to carry a hand-edited PATH the generator did not
 # know about for eleven days. This is the check that would have caught it.
 if [[ "${DIFF_LAUNCHD:-0}" -eq 1 ]]; then
-  installed="$HOME/Library/LaunchAgents/dev.t3x.autobuild.plist"
+  installed="$HOME/Library/LaunchAgents/dev.coil.autobuild.plist"
   if [[ ! -f "$installed" ]]; then
     echo "No agent installed at $installed — nothing to diff." >&2
     exit 2
@@ -992,7 +992,7 @@ The installed agent and this script disagree. If the installed side is the one t
 right, the fix belongs in --print-launchd — a hand-edit to the live plist is lost the next
 time anyone regenerates it. To adopt this script's version:
 
-  launchctl bootout "gui/\$UID/dev.t3x.autobuild"
+  launchctl bootout "gui/\$UID/dev.coil.autobuild"
   $0 --print-launchd ${ORIGINAL_ARGV_NO_DIFF[*]:-} > "$installed"
   launchctl bootstrap "gui/\$UID" "$installed"
 EOF

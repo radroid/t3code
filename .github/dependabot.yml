@@ -1,4 +1,4 @@
-# t3x fork Dependabot config. Upstream has no `.github/dependabot.yml`, so this file is
+# coil fork Dependabot config. Upstream has no `.github/dependabot.yml`, so this file is
 # fork-owned and costs no seam-ledger row.
 #
 # It configures NO version updates. Its only job is to stop Dependabot opening *security*
