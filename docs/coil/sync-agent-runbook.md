@@ -1,24 +1,24 @@
 # t3x daily sync — conflict-resolver runbook
 
-The daily GitHub Action (`t3x-upstream-sync.yml`) does the mechanical rebase every day for
+The daily GitHub Action (`coil-upstream-sync.yml`) does the mechanical rebase every day for
 free. When it **can't** complete — a merge conflict, a red verify, or a dropped patch — it
-opens (or updates) a single `t3x-sync` issue with a status JSON block. This runbook is how that
+opens (or updates) a single `coil-sync` issue with a status JSON block. This runbook is how that
 issue gets resolved: **on demand, by activating an agent**. This resolver runs only when asked —
-though `t3x-ci.yml` still gates every push and PR, and `t3x-weekly-verify.yml` runs on Sundays.
+though `coil-ci.yml` still gates every push and PR, and `coil-weekly-verify.yml` runs on Sundays.
 
 See the design specs `docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md` (the
-daily/weekly sync + the `t3x-sync` escalation contract) and
+daily/weekly sync + the `coil-sync` escalation contract) and
 `docs/superpowers/specs/2026-07-25-sync-conflict-agent-design.md` (this resolver).
 
 ## Activate the agent (the one action)
 
-On the open `t3x-sync` issue, comment:
+On the open `coil-sync` issue, comment:
 
 ```
 @claude resolve
 ```
 
-That triggers `.github/workflows/t3x-sync-resolve.yml`, which runs Claude Code in CI to replay
+That triggers `.github/workflows/coil-sync-resolve.yml`, which runs Claude Code in CI to replay
 the rebase, resolve the conflicts, run verify, and **open a PR into `main`**. It never pushes to
 `main` — you review it and land it yourself (see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button)).
 The agent comments the PR link back on the issue when done.
@@ -28,7 +28,7 @@ The agent comments the PR link back on the issue when done.
 > dispatch it instead:
 >
 > ```
-> gh workflow run "t3x sync resolve (agent)" -R radroid/t3code -f issue=<n> -f model=claude-opus-5
+> gh workflow run "coil sync resolve (agent)" -R radroid/t3code -f issue=<n> -f model=claude-opus-5
 > ```
 
 **Check the budget before you pick a path.** The job is capped at `timeout-minutes: 45` and
@@ -39,7 +39,7 @@ edit; `workflow_dispatch` reads the workflow file from `--ref`, so you can carry
 scratch branch without merging it (the job still checks out and rebases `main`):
 
 ```
-gh workflow run t3x-sync-resolve.yml -R radroid/t3code \
+gh workflow run coil-sync-resolve.yml -R radroid/t3code \
   --ref t3x/bigger-resolve-budget -f issue=<n> -f model=claude-opus-5
 ```
 
@@ -58,12 +58,12 @@ run from a `GITHUB_TOKEN`-authored event, and `github-actions[bot]` reports `aut
 NONE`, which fails the workflow's own permission check. Resolution is always human-initiated. Do not
 "fix" the phrasing in the escalation body — it is the copy-pasteable instruction for the human.
 
-A comment that fails the gate (missing `t3x-sync` label, wrong author, edited rather than newly
+A comment that fails the gate (missing `coil-sync` label, wrong author, edited rather than newly
 created) shows up in the Actions tab as **skipped**, not as an error. Check there if nothing happens.
 
-### Not every `t3x-sync` issue is a rebase conflict
+### Not every `coil-sync` issue is a rebase conflict
 
-`t3x-weekly-verify.yml` escalates onto the _same_ label and issue with `**kind:** weekly-build`.
+`coil-weekly-verify.yml` escalates onto the _same_ label and issue with `**kind:** weekly-build`.
 `@claude resolve` passes the full gate on those too and will spend an entire agent budget replaying
 a rebase that is not the problem. Read the `**Result:**` / `**kind:**` line first; a `weekly-build`
 failure means fix the build.
@@ -72,7 +72,7 @@ failure means fix the build.
 
 `**Result:** push-failed` means the rebase was clean and typecheck/lint/test were all green, and
 then `git push --force-with-lease origin main` was rejected. Replaying the rebase fixes nothing;
-fix the credential and re-run _t3x upstream sync (daily)_.
+fix the credential and re-run _coil upstream sync (daily)_.
 
 The dominant cause: **GitHub forbids `GITHUB_TOKEN` from creating or updating any file under
 the `.github/workflows/` directory** — on `main` or on a branch. It is not grantable from the
@@ -94,15 +94,15 @@ definitive answer:
 
 ```
 git switch --detach upstream/main
-git checkout <sync-branch> -- .github/workflows/t3x-ci.yml
+git checkout <sync-branch> -- .github/workflows/coil-ci.yml
 git switch -c t3x/ci-control-upstream && git commit -am "ci: control run" && git push -u origin HEAD
-gh workflow run t3x-ci.yml -R radroid/t3code --ref t3x/ci-control-upstream
+gh workflow run coil-ci.yml -R radroid/t3code --ref t3x/ci-control-upstream
 ```
 
 That branch is pristine upstream plus one fork-owned file. If it fails the same way, the failure is
 upstream-inherited and no fork patch caused it. Delete the branch afterwards.
 
-Fix such failures in `.github/workflows/t3x-ci.yml` (fork-owned) rather than by patching the upstream
+Fix such failures in `.github/workflows/coil-ci.yml` (fork-owned) rather than by patching the upstream
 file — patching adds a row to `docs/coil/SEAMS.md` and permanent rebase cost for a CI-environment
 problem. The `--testTimeout` override on the Test step exists for exactly this reason; its comment
 records the case.
@@ -111,7 +111,7 @@ records the case.
 
 This is the checklist the workflow prompt mirrors — follow it if you resolve locally instead.
 
-1. `git fetch upstream && git switch -c t3x/sync-<id> main`
+1. `git fetch upstream && git switch -c coil/sync-<id> main`
 2. `git rebase upstream/main`. Resolve each conflict by understanding intent — favour
    upstream's structure while preserving the fork's t3x behaviour. `git add -A && git rebase --continue`.
    `rerere` auto-applies anything resolved before, but **only in a local clone** (`setup-fork.sh`
@@ -138,7 +138,7 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
 7. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
    and **lands it — see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button);
    the GitHub merge button does not work on a rebased branch.** The recovery tag
-   `t3x/last-good-*` from the Action is the rollback point.
+   `coil/last-good-*` from the Action is the rollback point.
 8. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
    breaks auto-resume's detection): do NOT open a green PR. Push the branch, open a **draft**
    PR, and comment on the issue with exactly what is blocked and what decision is needed.
@@ -151,17 +151,17 @@ conflicts on the fork's own files), and **Merge / Squash / Rebase all fail** —
 meant to _replace_ `main`'s history, not extend it. Land it by force-updating `main` to the
 reviewed tip instead.
 
-The branch is `t3x/sync-<workflow run id>` — the run id, not the issue number. A **draft** PR means
+The branch is `coil/sync-<workflow run id>` — the run id, not the issue number. A **draft** PR means
 the resolver could not get all three verify steps green; read its issue comment before anything else.
 
-**1. Get a CI signal — it may not appear on its own.** `t3x-ci.yml` has a `push` trigger on
-`t3x/sync-**`, but it only fires if the resolver pushed with a PAT (`T3X_SYNC_TOKEN`). On the
+**1. Get a CI signal — it may not appear on its own.** `coil-ci.yml` has a `push` trigger on
+`coil/sync-**`, but it only fires if the resolver pushed with a PAT (`T3X_SYNC_TOKEN`). On the
 `GITHUB_TOKEN` fallback GitHub creates no workflow runs from its own events, so neither that
 trigger nor `pull_request` fires. Check first; if there is no run, dispatch it:
 
 ```
-gh workflow run t3x-ci.yml -R radroid/t3code --ref t3x/sync-<id>
-gh run list -R radroid/t3code --workflow t3x-ci.yml --branch t3x/sync-<id>
+gh workflow run coil-ci.yml -R radroid/t3code --ref coil/sync-<id>
+gh run list -R radroid/t3code --workflow coil-ci.yml --branch coil/sync-<id>
 ```
 
 **2. Review what the resolver changed in each fork patch.** A plain `git diff` against `main` is a
@@ -170,11 +170,11 @@ useless whole-upstream delta; use `range-diff`:
 ```
 git fetch origin && git fetch upstream
 OLD=$(git merge-base origin/main upstream/main)
-NEW=$(git merge-base origin/t3x/sync-<id> upstream/main)
-git range-diff "$OLD..origin/main" "$NEW..origin/t3x/sync-<id>"
+NEW=$(git merge-base origin/coil/sync-<id> upstream/main)
+git range-diff "$OLD..origin/main" "$NEW..origin/coil/sync-<id>"
 ```
 
-Confirm no fork patch silently vanished — `git rev-list --count --no-merges upstream/main..origin/t3x/sync-<id>`
+Confirm no fork patch silently vanished — `git rev-list --count --no-merges upstream/main..origin/coil/sync-<id>`
 should equal the pre-sync patch count.
 
 **3. Land it.** Save the old `main` first; step 5 needs it.
@@ -182,7 +182,7 @@ should equal the pre-sync patch count.
 ```
 git fetch origin
 OLD_MAIN=$(git rev-parse origin/main)          # SAVE THIS
-git push --force-with-lease origin origin/t3x/sync-<id>:main
+git push --force-with-lease origin origin/coil/sync-<id>:main
 ```
 
 `--force-with-lease` leases against your local `refs/remotes/origin/main`, so the `git fetch`
@@ -207,22 +207,22 @@ git push --force-with-lease origin t3x/<feature>
 Any branch left un-rebased shows `[origin/main: ahead N, behind M]` and cannot land.
 
 - `main` has **no branch protection** (verified: no protection, no rulesets), so the force-push is
-  allowed but unguarded. Rollback is the `t3x/last-good-*` tag from the escalation issue:
-  `git push --force-with-lease origin t3x/last-good-<stamp>^{commit}:main`. The tag is cut per daily
+  allowed but unguarded. Rollback is the `coil/last-good-*` tag from the escalation issue:
+  `git push --force-with-lease origin coil/last-good-<stamp>^{commit}:main`. The tag is cut per daily
   run on pre-rebase `main`, so if feature PRs merged after it, rolling back drops them. If the tag
   push failed the issue says `none` and there is no rollback point.
 - Repair local checkouts: `git fetch origin && git branch -f main origin/main` (a plain
   `git checkout main` fails if another worktree holds it). The auto-build worktree needs no action —
   it force-detaches to the freshly fetched sha on every tick.
 - To re-gate locally before landing:
-  `git switch --detach origin/t3x/sync-<id> && vp run typecheck && vp run lint && vp run test`.
+  `git switch --detach origin/coil/sync-<id> && vp run typecheck && vp run lint && vp run test`.
 
 ## One-time setup
 
 1. Install the **Claude GitHub App**: run `/install-github-app` in Claude Code (repo admin
    required). It adds the auth secret (`CLAUDE_CODE_OAUTH_TOKEN`, or `ANTHROPIC_API_KEY`).
 2. When the installer offers to add the **generic `@claude` responder** workflow, choose
-   **Skip** — this repo ships its own `t3x-sync-resolve.yml`, and a generic responder would
+   **Skip** — this repo ships its own `coil-sync-resolve.yml`, and a generic responder would
    double-fire on the same `@claude resolve` comment.
 3. Add the repo secret **`T3X_SYNC_TOKEN`**. Without it both sync workflows push as
    `GITHUB_TOKEN` and cannot land any upstream range that touches `.github/workflows/**`
@@ -240,7 +240,7 @@ Any branch left un-rebased shows `[origin/main: ahead N, behind M]` and cannot l
 
    Fine-grained PATs expire; when one does, the daily job escalates as `push-failed` rather than
    failing silently. Note that pushes made with a PAT are authored by **you**, not
-   `github-actions[bot]`, so they do trigger workflows — `t3x-ci.yml` will start firing on
+   `github-actions[bot]`, so they do trigger workflows — `coil-ci.yml` will start firing on
    resolver branches by itself, and pushes to `main` will run the fork's CI.
 
 Only a user with write access (`OWNER`/`MEMBER`/`COLLABORATOR`) can trigger the resolver, so the
@@ -249,7 +249,7 @@ API budget can't be spent by a passer-by on the public fork.
 ## Force a sync outside the daily schedule
 
 ```
-gh workflow run "t3x upstream sync (daily)" -R radroid/t3code -f dry_run=true
+gh workflow run "coil upstream sync (daily)" -R radroid/t3code -f dry_run=true
 ```
 
 (drop `dry_run` to actually push a clean rebase).

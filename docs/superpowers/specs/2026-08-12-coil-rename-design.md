@@ -116,19 +116,25 @@ source, which stays in git history.
 
 ### 3. A LaunchAgent plist hardcodes a script path
 
-`~/Library/LaunchAgents/dev.t3x.autobuild.plist` is already installed on disk, outside this repo,
-and its `ProgramArguments` name the pre-rename script path absolutely:
+The installed LaunchAgent — `dev.` + `t3x` + `.autobuild.plist`, on disk, outside this repo —
+names the pre-rename script path absolutely in its `ProgramArguments`:
 `/Users/rajdholakia/Developer/t3code/scripts/<old>/auto-build-desktop.sh --watch`. Moving that
 directory to `scripts/coil/` leaves launchd invoking a path that no longer exists. launchd does not
 report this anywhere the user looks; the nightly build simply stops happening. Issue #41 is the same
 failure class and cost 103 minutes before anyone noticed.
 
 **Resolution.** The plist is reinstalled as a cutover step —
-`scripts/coil/auto-build-desktop.sh --print-launchd --install` — and the agent label moves from
-`dev.t3x.autobuild` to `dev.coil.autobuild`, so the old agent must be unloaded rather than
-overwritten. For one release the script reads both `T3X_AUTOBUILD_*` and `COIL_AUTOBUILD_*`
-environment names, so a plist that is half-migrated falls back to defaults instead of silently
-running with the wrong worktree or applications directory.
+`scripts/coil/auto-build-desktop.sh --print-launchd --install` — and the agent label moves to
+`dev.coil.autobuild`, so the old agent must be unloaded rather than overwritten: a plist under the
+old label keeps running from its own copy of the arguments.
+
+The `T3X_AUTOBUILD_*` environment names inside the plist are **not** renamed, which is what keeps
+this a one-step migration rather than two. The plist has to be regenerated anyway because the
+script path moved, and a regenerated plist and an unchanged script agree by construction; renaming
+the variables as well would have created a window where a hand-edited plist sets names the script
+no longer reads, silently reverting to defaults for the build worktree and the applications
+directory. The state files it writes (`<state-dir>/coil-autobuild-last-sha` and
+`coil-autobuild-status.json`) *do* move, because losing them costs exactly one redundant rebuild.
 
 ### 4. `app.setName()` sets a Keychain service name
 
@@ -183,7 +189,7 @@ rolled back by reverting a commit.
 1. **Docs, scripts, source directories, IPC surface.** No runtime effect.
 2. **App identity.** Name, bundle id, certificate, reworded refusal.
 3. **Release identity.** Tags, version suffix, the counter offset.
-4. **Automation.** Workflow filenames, the `t3x-sync` label, `t3x/sync-*` branch and recovery-tag
+4. **Automation.** Workflow filenames, the `coil-sync` label, `coil/sync-*` branch and recovery-tag
    prefixes. These are matched by *running* workflows, so they land together, and they land only
    when no sync issue or sync PR is open. `coil-ci.yml`'s push trigger matches both branch prefixes
    for one cycle.

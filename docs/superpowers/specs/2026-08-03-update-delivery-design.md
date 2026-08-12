@@ -55,7 +55,7 @@ Five units, each independently testable.
        │
        ▼
  ┌──────────────────────────────┐
- │ A. t3x-release.yml           │  on: workflow_run [t3x fork CI] == success
+ │ A. t3x-release.yml           │  on: workflow_run [coil fork CI] == success
  │    macos-latest  → dmg arm64 │  checkout ref: workflow_run.head_sha
  │    windows-latest→ nsis x64  │  build env: GITHUB_REPOSITORY=""
  └──────────────┬───────────────┘
@@ -96,15 +96,15 @@ Five units, each independently testable.
 
 Upstream's `release.yml` cannot be reused: it runs on `blacksmith-12vcpu-macos-26` and
 `blacksmith-32vcpu-windows-2025`, runners this fork has no access to. This mirrors the existing
-`t3x-ci.yml` ↔ `ci.yml` relationship — same job, runners we can actually use.
+`coil-ci.yml` ↔ `ci.yml` relationship — same job, runners we can actually use.
 
-**Trigger — `workflow_run`, not `push`.** `t3x-ci` is a separate workflow, and `needs:` cannot
+**Trigger — `workflow_run`, not `push`.** `coil-ci` is a separate workflow, and `needs:` cannot
 cross workflows. The only mechanism is:
 
 ```yaml
 on:
   workflow_run:
-    workflows: ["t3x fork CI"]
+    workflows: ["coil fork CI"]
     types: [completed]
     branches: [main]
 ```
@@ -125,7 +125,7 @@ Also required at the workflow level: `permissions: contents: write` (upstream's 
 1. `actions/checkout` with `ref: <head_sha>` and a sparse-checkout excluding `.repos/` — it is
    tracked, 12,961 files, 126 MB, and upstream excludes it from every job.
 2. `voidzero-dev/setup-vp@v1`, then `ensure:electron` (upstream runs this in `preflight`, and the
-   fork's own `t3x-weekly-verify.yml` runs it too).
+   fork's own `coil-weekly-verify.yml` runs it too).
 3. **Rust toolchain** — `dtolnay/rust-toolchain@stable` with the explicit target, plus
    `Swatinem/rust-cache`. This is not optional: `stageResourceMonitor` is called with no platform
    or flag guard (`build-desktop-artifact.ts:1840`), shells `cargo build --locked --release`, and
@@ -223,7 +223,7 @@ this is insurance against a known-intermittent failure rather than a response to
 runner. It is still worth doing: #47 records that a failed build leaves no artifact, and any
 consumer picking "the newest installer" then silently reinstalls a stale one.
 
-> Note: `t3x-ci.yml` currently describes `ubuntu-latest` as "2-core" in three comments. Public-repo
+> Note: `coil-ci.yml` currently describes `ubuntu-latest` as "2-core" in three comments. Public-repo
 > standard runners were doubled to 4 vCPU / 16 GB in Dec 2023, so those comments are stale. Not
 > fixed here — it is unrelated to this change — but the timeout values they justify should be
 > re-derived from a real measurement rather than from the stated core count.
@@ -596,7 +596,7 @@ wrong, and each would have produced a silent failure rather than a loud one:
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Fork builds set `T3CODE_DISABLE_AUTO_UPDATE` to silence the pill | It is a process env var with no delivery mechanism to a packaged app. Withhold `GITHUB_REPOSITORY` instead |
 | `resolveGitHubPublishConfig` makes publishing work for free      | electron-builder runs `--publish never`; worse, that config **enables** upstream's updater                 |
-| Trigger is `push` gated on `t3x-ci`                              | `needs:` cannot cross workflows; `workflow_run` + `head_sha` pinning, or the wrong commit is built         |
+| Trigger is `push` gated on `coil-ci`                              | `needs:` cannot cross workflows; `workflow_run` + `head_sha` pinning, or the wrong commit is built         |
 | Inject `T3X_BUILD_SHA`, identity is the 40-char SHA              | `t3codeCommitHash` already ships at 12 chars; a 40-char comparison never matches                           |
 | The click is an instant restart                                  | Only if staging goes all the way to a swap-ready bundle                                                    |
 | `app.relaunch()` + `app.quit()` fixes #41                        | `DesktopLifecycle.relaunch` exists; and the unbounded shutdown wait reintroduces #41                       |
