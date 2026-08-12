@@ -39,12 +39,12 @@ A self-signed code-signing certificate, created by `scripts/coil/setup-mac-signi
 
 |                       |                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Common name           | `T3 Coil Code Signing`                                                                                         |
+| Common name           | `T3 Coil Code Signing`                                                                                     |
 | Validity              | 10 years (`notAfter=Aug 8 2036`)                                                                           |
-| Public certificate    | [`docs/coil/mac-signing/certificate.pem`](mac-signing/certificate.pem), committed                           |
+| Public certificate    | [`docs/coil/mac-signing/certificate.pem`](mac-signing/certificate.pem), committed                          |
 | Private key           | `~/.t3x/mac-signing/t3x-signing.p12`, mode 0600, never in the repo                                         |
 | Keychain              | `~/Library/Keychains/t3x-signing.keychain-db`, its own, password in `~/.t3x/mac-signing/keychain-password` |
-| Resulting requirement | [`docs/coil/mac-signing/designated-requirement.txt`](mac-signing/designated-requirement.txt)                |
+| Resulting requirement | [`docs/coil/mac-signing/designated-requirement.txt`](mac-signing/designated-requirement.txt)               |
 
 A dedicated keychain rather than the login keychain, because its password is one we generate: that is
 what lets `security set-key-partition-list` run non-interactively, so `codesign` never raises the
