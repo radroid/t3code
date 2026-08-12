@@ -159,6 +159,24 @@ export function useThreadOutboxDrain(): void {
     async (queuedMessage: QueuedThreadMessage, thread: EnvironmentThreadShell) => {
       const settings = resolveQueuedThreadSettings(queuedMessage, thread);
       const { reportFailure, completeDelivery } = makeDeliveryHelpers(queuedMessage);
+      // Stamped at DISPATCH, not carried over from enqueue (radroid/t3code#40 A1+A2).
+      // This is what upstream's immediate-send path does, and shipping the enqueue
+      // time instead broke two things at once:
+      //
+      //  * the snapshot sorts `ORDER BY thread_id, created_at ASC, message_id`, so a
+      //    reordered queue delivered rows in the new order and rebuilt the transcript
+      //    in the old one. Invisible live (the reducer appends in arrival order) and
+      //    permanent from the first reload, reconnect resync, or thread reopen.
+      //  * `hasQueuedTurnStart` only recognises an unadopted turn start within
+      //    `QUEUED_TURN_START_GRACE_MS` (2 min) of the message time. A message that
+      //    waited longer than that — the normal case for a queued one — arrived with
+      //    the anti-double-send gate already expired, so `canSettle` read the thread
+      //    as settleable and a second `turn/start` could go out. On Codex that
+      //    orphans the first turn's events.
+      //
+      // The queue's own `queuedMessage.createdAt` is untouched; it still orders the
+      // queue list (`threadOutbox.logic.ts` `sortKey ?? createdAt`).
+      const dispatchedAt = new Date().toISOString();
 
       if (!modelSelectionsEqual(settings.modelSelection, thread.modelSelection)) {
         const updateResult = await updateThreadMetadata({
@@ -182,7 +200,7 @@ export function useThreadOutboxDrain(): void {
             commandId: settingsCommandId(queuedMessage, "runtime-mode"),
             threadId: queuedMessage.threadId,
             runtimeMode: settings.runtimeMode,
-            createdAt: queuedMessage.createdAt,
+            createdAt: dispatchedAt,
           },
         });
         if (AsyncResult.isFailure(runtimeResult)) {
@@ -198,7 +216,7 @@ export function useThreadOutboxDrain(): void {
             commandId: settingsCommandId(queuedMessage, "interaction-mode"),
             threadId: queuedMessage.threadId,
             interactionMode: settings.interactionMode,
-            createdAt: queuedMessage.createdAt,
+            createdAt: dispatchedAt,
           },
         });
         if (AsyncResult.isFailure(interactionResult)) {
@@ -221,7 +239,7 @@ export function useThreadOutboxDrain(): void {
           modelSelection: settings.modelSelection,
           runtimeMode: settings.runtimeMode,
           interactionMode: settings.interactionMode,
-          createdAt: queuedMessage.createdAt,
+          createdAt: dispatchedAt,
         },
       });
       return completeDelivery(deliveryResult);

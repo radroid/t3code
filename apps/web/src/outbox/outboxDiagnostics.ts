@@ -26,14 +26,29 @@ export interface ComposerDispatchDiagnostics {
   readonly phase: string;
   readonly queueCount: number;
   readonly connection: EnvironmentConnectionPhase;
+  /** What the composer's picker resolved to — display state, not routing. */
   readonly provider: ProviderDriverKind | null;
+  /**
+   * The thread's persisted routing binding, which is what the steer allowlist
+   * actually consults. Logged separately from `provider` because the two can
+   * disagree — a disabled or unrecognised instance makes the picker fall back
+   * to the first enabled provider — and that divergence was itself the bug in
+   * radroid/t3code#40 A4. Seeing both makes it visible in one line.
+   */
+  readonly steerProvider: string | null;
   readonly threadId: ThreadId | null;
 }
 
 /**
- * One line per composer submit, recording which way it went and every input to
- * that decision. `steer` is the case worth grepping for: it is the only one
- * that hands a message to a turn that is already running.
+ * One line per composer submit **that actually dispatched**, recording which
+ * way it went and every input to that decision. `steer` is the case worth
+ * grepping for: it is the only one that hands a message to a turn that is
+ * already running.
+ *
+ * Call this at each path's real dispatch point, never at the top of the submit
+ * handler: a breadcrumb that also fires for submits a guard rejected (empty
+ * composer, thread still loading, send already in flight) is worse than none,
+ * because it is the only client-side evidence anyone has during triage.
  */
 export function logComposerDispatch(input: ComposerDispatchDiagnostics): void {
   const decision = input.queued ? "queue" : input.steerable ? "steer" : "send";
@@ -42,6 +57,7 @@ export function logComposerDispatch(input: ComposerDispatchDiagnostics): void {
     phase: input.phase,
     connection: input.connection,
     provider: input.provider,
+    steerProvider: input.steerProvider,
     queueCount: input.queueCount,
     threadId: input.threadId,
   });
