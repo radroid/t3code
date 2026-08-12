@@ -61,7 +61,7 @@ export function checkDiskSpace(args: {
  *
  * Runs on startup as well as after a successful install, because the case that matters is the one
  * where no install ever completed: the app crashed, or the user quit mid-stage, and nothing ran
- * the cleanup path. `T3X_AUTOBUILD_KEEP_DMGS` exists in the shell installer for the same reason.
+ * the cleanup path.
  *
  * Partial downloads are always swept, including one for the current target — a `.part` file from a
  * previous run cannot be resumed, because its bytes were never checksummed.
@@ -90,7 +90,12 @@ export function verifyChecksum(expected: string, actual: string): ChecksumVerdic
 
 export type StagingProgress =
   | { readonly kind: "idle" }
-  | { readonly kind: "downloading"; readonly shortSha: string; readonly receivedBytes: number; readonly totalBytes: number }
+  | {
+      readonly kind: "downloading";
+      readonly shortSha: string;
+      readonly receivedBytes: number;
+      readonly totalBytes: number;
+    }
   | { readonly kind: "verifying"; readonly shortSha: string }
   | { readonly kind: "unpacking"; readonly shortSha: string }
   | { readonly kind: "ready"; readonly shortSha: string };

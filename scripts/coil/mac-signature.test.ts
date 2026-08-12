@@ -244,7 +244,7 @@ describe("normalizeRequirement", () => {
 });
 
 /**
- * The bundle id has to agree in four places, and nothing at runtime would notice if it stopped.
+ * The bundle id has to agree in three places, and nothing at runtime would notice if it stopped.
  *
  * `scripts/build-desktop-artifact.ts` is upstream-owned and carries only the escape hatch — an
  * upstream sync that reverts that one line leaves every fork build silently claiming
@@ -280,15 +280,6 @@ it.layer(NodeServices.layer)("the fork's bundle id agrees everywhere", (it) => {
 
       assert.ok(match, `${DESKTOP_APP_ID_ENV_VAR} is not set anywhere in coil-release.yml`);
       assert.strictEqual(match[1], DESKTOP_BUNDLE_IDENTIFIER);
-    }),
-  );
-
-  it.effect("the local autobuild builds with it", () =>
-    Effect.gen(function* () {
-      const script = yield* readRepoFile("scripts", "coil", "auto-build-desktop.sh");
-
-      assert.match(script, new RegExp(`DESKTOP_APP_ID="${DESKTOP_BUNDLE_IDENTIFIER}"`));
-      assert.match(script, new RegExp(`${DESKTOP_APP_ID_ENV_VAR}="\\$DESKTOP_APP_ID"`));
     }),
   );
 

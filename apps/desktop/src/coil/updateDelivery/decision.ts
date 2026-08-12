@@ -99,8 +99,8 @@ export function decideUpdateAction(
 
   // No counter means no way to order, and "cannot order" must not silently mean "accept".
   //
-  // Only builds from `coil-release.yml` carry `-coil.<n>`; anything built locally
-  // (`auto-build-desktop.sh`, a hand-run `build:desktop`) is a bare `0.0.31`. Treating a missing
+  // Only builds from `coil-release.yml` carry `-coil.<n>`; anything built locally (a hand-run
+  // `build:desktop`) is a bare `0.0.31`. Treating a missing
   // counter as "no floor" let such a build install ANY announced release over itself — including
   // one cut from an older commit than the one it was built from. That downgrade reports success,
   // looks identical to a real update, and is only undone by the next release.

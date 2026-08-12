@@ -147,7 +147,7 @@ files upstream has never seen and cannot conflict.
 > consults the flag **only when no identity was named** — `findIdentity()` reads
 > `qualifier || process.env.CSC_NAME` first and, when non-empty, goes straight to
 > `security find-identity`. So the signing half is entirely fork-owned (`CSC_NAME` exported by
-> `.github/workflows/coil-release.yml` and `scripts/coil/auto-build-desktop.sh`), at zero rows.
+> `.github/workflows/coil-release.yml`), at zero rows.
 >
 > The row is spent on the **second** cause instead, which no environment variable existed for: macOS
 > stores one TCC permission row per `(service, bundle id)`, and the fork shared
@@ -363,7 +363,7 @@ immediate-send branch only, and the fork's queue branch returns _before_ it.
 
 - `apps/server/src/coil/**`, `apps/web/src/coil/**`, `packages/contracts/src/coil/**` — feature code
   and the `CoilLayerLive` aggregator.
-- `scripts/coil/**` — fork setup, upstream sync, desktop auto-build (incl. opt-in git hooks).
+- `scripts/coil/**` — fork setup, upstream sync, release manifests, macOS signing.
 - `.github/workflows/coil-*.yml` — `coil-upstream-sync.yml`, `coil-weekly-verify.yml`,
   `coil-sync-resolve.yml`, `coil-ci.yml` (the fork's PR/main gate; upstream's `ci.yml` needs
   blacksmith runners the fork cannot use).
@@ -376,11 +376,15 @@ Note that a fork-created file is only conflict-free if upstream never creates a 
 path. Roughly half of the fork's new files sit outside the four `coil`-named namespaces above, so
 that guarantee is weaker than it looks.
 
-### Desktop auto-build (`scripts/coil/auto-build-desktop.sh`)
+### Desktop auto-build — retired
 
-**Zero seams.** Shells out to the existing `pnpm dist:desktop:dmg:arm64` rather than importing or
-editing `scripts/build-desktop-artifact.ts` (hot), and deliberately adds **no** script entry to the
-root `package.json` (also hot) — it is invoked by path. See `docs/coil/auto-build-runbook.md`.
+`scripts/coil/auto-build-desktop.sh` polled `origin/main` on a 12h cadence, built a dmg locally and
+installed it over `/Applications`. Update delivery (#51, #55) superseded it: CI already builds every
+green merge to main, signs it with the same identity, and the app offers the restart itself. It cost
+zero seams while it existed — it shelled out to `pnpm dist:desktop:dmg:arm64` rather than editing
+`scripts/build-desktop-artifact.ts` (hot), and was invoked by path so it added no entry to the root
+`package.json` (also hot). Kept here because "why is there no local build loop" is a question the
+next reader will have.
 
 ## Regenerating
 
