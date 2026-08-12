@@ -72,29 +72,44 @@ describe("selectUpdateToastView", () => {
     });
   });
 
-  describe("the unsigned-build permission warning", () => {
+  describe("the first-update App Management warning", () => {
     it("warns on the first update", () => {
-      // TCC authorises on code-signing identity, and ad-hoc signatures change every build, so
-      // grants reset on every update. The user needs to understand that once.
+      // The updater replaces the bundle in /Applications, and a self-signed build has no team
+      // identifier for macOS to match, so App Management is raised once. The user needs to
+      // recognise that dialog rather than read it as the update having gone wrong.
       const view = selectUpdateToastView(input({ hasUpdatedBefore: false }));
-      expect(view.kind === "ready" && view.description).toContain("permissions again");
+      expect(view.kind === "ready" && view.description).toContain("App Management");
+    });
+
+    it("quotes the dialog's own wording, so it is recognisable when it appears", () => {
+      // The point of the note is recognition. Describing the prompt in our own words instead of
+      // macOS's is what made the previous version useless: it promised "screen-recording and
+      // automation", which is not what the dialog says and not a permission this app requests.
+      const view = selectUpdateToastView(input({ hasUpdatedBefore: false }));
+      expect(view.kind === "ready" && view.description).toContain("access to data from other apps");
+    });
+
+    it("does not claim the builds are unsigned", () => {
+      // They have been signed since #70/PR #85. The reason for the prompt is the missing team
+      // identifier, and saying "unsigned" sent a real diagnosis after the signature instead.
+      const view = selectUpdateToastView(input({ hasUpdatedBefore: false }));
+      expect(view.kind === "ready" && view.description).not.toContain("unsigned");
     });
 
     it("does not repeat it afterwards", () => {
       const view = selectUpdateToastView(input({ hasUpdatedBefore: true }));
-      expect(view.kind === "ready" && view.description).not.toContain("permissions again");
+      expect(view.kind === "ready" && view.description).not.toContain("App Management");
     });
 
     it("stays off Windows entirely, first update or not", () => {
-      // Screen recording and automation prompts are a macOS concept. Windows was being promised
-      // permission dialogs its OS will never show.
+      // App Management is a macOS concept. Windows was being promised a dialog its OS never shows.
       const view = selectUpdateToastView(input({ platform: WINDOWS, hasUpdatedBefore: false }));
-      expect(view.kind === "ready" && view.description).not.toContain("permissions again");
+      expect(view.kind === "ready" && view.description).not.toContain("App Management");
     });
   });
 
   describe("what the action actually does, per platform", () => {
-    it('calls it a restart on macOS, because that is what it is', () => {
+    it("calls it a restart on macOS, because that is what it is", () => {
       // Delete then rename. Staging already paid for everything expensive.
       const view = selectUpdateToastView(input());
       expect(view.kind === "ready" && view.actionLabel).toBe("Restart");
