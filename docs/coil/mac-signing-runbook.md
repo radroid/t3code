@@ -39,7 +39,7 @@ A self-signed code-signing certificate, created by `scripts/coil/setup-mac-signi
 
 |                       |                                                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Common name           | `T3X Code Signing`                                                                                         |
+| Common name           | `T3 Coil Code Signing`                                                                                         |
 | Validity              | 10 years (`notAfter=Aug 8 2036`)                                                                           |
 | Public certificate    | [`docs/coil/mac-signing/certificate.pem`](mac-signing/certificate.pem), committed                           |
 | Private key           | `~/.t3x/mac-signing/t3x-signing.p12`, mode 0600, never in the repo                                         |
@@ -70,10 +70,10 @@ success unless `security find-identity -v -p codesigning` lists the identity. On
 ad-hoc build. If the script is running somewhere with no terminal to answer on, it prints the exact
 command and stops rather than hanging on a `sudo` prompt.
 
-Expect `security find-identity -v -p codesigning` to list `T3X Code Signing` **twice** afterwards, with
+Expect `security find-identity -v -p codesigning` to list `T3 Coil Code Signing` **twice** afterwards, with
 the same SHA-1 both times: `add-trusted-cert -k /Library/Keychains/System.keychain` copies the
 certificate into the System keychain as well as trusting it, so it is visible from two keychains at
-once. Verified harmless — `codesign -s "T3X Code Signing"` with no `--keychain` (which is exactly how
+once. Verified harmless — `codesign -s "T3 Coil Code Signing"` with no `--keychain` (which is exactly how
 electron-builder signs) resolves it, signs, and produces the expected requirement. Two entries for two
 _different_ certificates of the same name would be a real problem; two for one certificate is not.
 
@@ -154,7 +154,7 @@ one id share one row per permission, so whichever launched most recently owned t
 was re-prompted — no matter how perfectly either was signed. Anyone running the fork's build next to
 upstream's nightly was getting dialogs from this even with a stable certificate.
 
-So the fork now has its own: **`dev.curlycloud.coil`**, after `coil` (coil.curlycloud.dev). Set
+So the fork now has its own: **`dev.curlycloud.t3coil`**, after `coil` (coil.curlycloud.dev). Set
 through `T3X_DESKTOP_APP_ID`, which is the one upstream-owned line this whole change spends —
 `DESKTOP_APP_ID` in `scripts/build-desktop-artifact.ts` reads it and falls back to upstream's value,
 so upstream's own assertions on that constant still pass and an unset environment builds exactly what
@@ -229,7 +229,7 @@ so a rotation that forgets them fails the next release instead of quietly re-pro
 ## Related
 
 - **Issue #71 — renaming the fork to `coil`.** Read the notes on that issue before renaming anything
-  here. Two things it has to respect: renaming the signing certificate (`T3X Code Signing`, which a
+  here. Two things it has to respect: renaming the signing certificate (`T3 Coil Code Signing`, which a
   sweep of `T3X` will find) changes the designated requirement and costs another round of prompts,
   and renaming `productName` makes the updater refuse the first renamed build by design
   (`resolveMacInstallTarget`, "would create a second app"). Renaming the _visible app_ is otherwise

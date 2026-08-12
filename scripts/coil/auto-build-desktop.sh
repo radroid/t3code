@@ -337,7 +337,7 @@ SETUP_SIGNING="$SCRIPT_DIR/setup-mac-signing.sh"
 # Kept in one place so the build and the verifier cannot disagree about it. The single source of
 # truth is DESKTOP_BUNDLE_IDENTIFIER in scripts/coil/mac-signature.ts, and a test asserts this
 # literal matches it.
-DESKTOP_APP_ID="dev.curlycloud.coil"
+DESKTOP_APP_ID="dev.curlycloud.t3coil"
 
 # Prints the identity name, or nothing at all when this machine has none set up. Never fails: an
 # unsigned build is worse than a signed one but better than no build.

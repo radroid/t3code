@@ -265,7 +265,7 @@ jobs:
         env:
           CSC_P12_BASE64: ${{ secrets.T3X_MAC_CSC_P12_BASE64 }}
           CSC_P12_PASSWORD: ${{ secrets.T3X_MAC_CSC_PASSWORD }}
-          IDENTITY_NAME: T3X Code Signing
+          IDENTITY_NAME: T3 Coil Code Signing
         run: |
           set -euo pipefail
 
@@ -426,7 +426,7 @@ jobs:
           # last owned the grants and the other got re-prompted, however well either was signed.
           # Keep this in step with DESKTOP_BUNDLE_IDENTIFIER in scripts/coil/mac-signature.ts; a test
           # asserts the two agree, and the verify step below fails an artifact carrying the wrong id.
-          T3X_DESKTOP_APP_ID: dev.curlycloud.coil
+          T3X_DESKTOP_APP_ID: dev.curlycloud.t3coil
         run: |
           set -euo pipefail
           node scripts/build-desktop-artifact.ts \
