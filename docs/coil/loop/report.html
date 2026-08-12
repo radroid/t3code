@@ -1,0 +1,2996 @@
+<!doctype html>
+<html lang="en" data-report-theme="night">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Loop Watch — design report · t3code #38</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Public+Sans:ital,wght@0,300..800;1,300..800&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:opsz,wght@9..40,300..800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ============================================================
+   REPORT CHROME — an incident dossier. Instrument Serif display,
+   Public Sans body, JetBrains Mono for evidence. Deliberately NOT
+   the product's typeface, so the prototypes read as screens.
+   ============================================================ */
+      :root {
+        --ink: #e7e5e2;
+        --ink-dim: #9d9a95;
+        --ink-faint: #6b6862;
+        --paper: #0b0b0c;
+        --paper-2: #111113;
+        --paper-3: #17171a;
+        --rule: #26262a;
+        --rule-soft: #1c1c20;
+        --sky: #38bdf8;
+        --amber: #f59e0b;
+        --rose: #fb7185;
+        --emerald: #34d399;
+        --violet: #a78bfa;
+        --indigo: #818cf8;
+        --zinc: #a1a1aa;
+        --accent: var(--amber);
+        --serif: "Instrument Serif", Georgia, serif;
+        --sans: "Public Sans", ui-sans-serif, sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, monospace;
+        --measure: 74ch;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.65;
+        font-weight: 350;
+        -webkit-font-smoothing: antialiased;
+        background-image:
+          radial-gradient(120vw 60vh at 82% -12%, rgba(245, 158, 11, 0.055), transparent 62%),
+          radial-gradient(90vw 50vh at 8% 4%, rgba(56, 189, 248, 0.04), transparent 60%);
+        background-attachment: fixed;
+      }
+      /* film grain */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9999;
+        opacity: 0.032;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+      .wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 28px;
+      }
+      a {
+        color: inherit;
+      }
+
+      /* ---------- masthead ---------- */
+      .rule-top {
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          var(--amber),
+          var(--rose) 38%,
+          var(--sky) 74%,
+          transparent
+        );
+      }
+      header.mast {
+        padding: 78px 0 46px;
+        border-bottom: 1px solid var(--rule);
+      }
+      .kicker {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--accent);
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 26px;
+      }
+      .kicker .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 12px var(--accent);
+      }
+      h1 {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: clamp(56px, 9.2vw, 124px);
+        line-height: 0.88;
+        letter-spacing: -0.022em;
+        margin: 0 0 6px;
+      }
+      h1 em {
+        font-style: italic;
+        color: var(--accent);
+      }
+      .dek {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: clamp(21px, 2.5vw, 31px);
+        line-height: 1.32;
+        color: var(--ink-dim);
+        max-width: 32ch;
+        margin: 22px 0 0;
+      }
+      .mast-grid {
+        display: grid;
+        grid-template-columns: 1.35fr 0.85fr;
+        gap: 56px;
+        align-items: end;
+      }
+      @media (max-width: 900px) {
+        .mast-grid {
+          grid-template-columns: 1fr;
+          gap: 34px;
+        }
+      }
+      .facts {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 1.9;
+      }
+      .facts div {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 7px 0;
+        border-bottom: 1px dashed var(--rule-soft);
+      }
+      .facts span:first-child {
+        color: var(--ink-faint);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 10px;
+      }
+      .facts span:last-child {
+        color: var(--ink);
+        text-align: right;
+      }
+      .facts .hi {
+        color: var(--emerald);
+      }
+
+      /* ---------- sections ---------- */
+      section {
+        padding: 74px 0;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      .sec-head {
+        display: flex;
+        align-items: baseline;
+        gap: 18px;
+        margin-bottom: 34px;
+        flex-wrap: wrap;
+      }
+      .sec-num {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--accent);
+        letter-spacing: 0.2em;
+        padding-top: 6px;
+      }
+      h2 {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: clamp(32px, 4.6vw, 54px);
+        line-height: 1.02;
+        letter-spacing: -0.018em;
+        margin: 0;
+      }
+      h3 {
+        font-family: var(--sans);
+        font-weight: 650;
+        font-size: 15px;
+        letter-spacing: 0.01em;
+        margin: 36px 0 12px;
+        color: var(--ink);
+      }
+      h4 {
+        font-family: var(--mono);
+        font-weight: 500;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin: 0 0 12px;
+      }
+      p {
+        max-width: var(--measure);
+        color: var(--ink-dim);
+        margin: 0 0 16px;
+      }
+      p strong,
+      li strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.855em;
+        background: var(--paper-3);
+        border: 1px solid var(--rule-soft);
+        border-radius: 4px;
+        padding: 0.1em 0.38em;
+        color: #d8d5d0;
+      }
+      .lede {
+        font-size: 19px;
+        line-height: 1.6;
+        color: var(--ink);
+        max-width: 60ch;
+      }
+      ul {
+        max-width: var(--measure);
+        color: var(--ink-dim);
+        padding-left: 20px;
+      }
+      li {
+        margin: 8px 0;
+      }
+      li::marker {
+        color: var(--ink-faint);
+      }
+
+      /* ---------- the night: strip chart ---------- */
+      .chart {
+        margin: 30px 0 8px;
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--paper-2);
+        overflow: hidden;
+      }
+      .chart-hd {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--rule-soft);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .track {
+        position: relative;
+        height: 62px;
+        margin: 0 20px;
+        border-bottom: 1px solid var(--rule-soft);
+      }
+      .track:last-of-type {
+        border-bottom: 0;
+      }
+      .track-label {
+        position: absolute;
+        left: 0;
+        top: 6px;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        z-index: 3;
+      }
+      .lane {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 30px;
+        height: 16px;
+        border-radius: 3px;
+        background: var(--paper-3);
+      }
+      .blk {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-radius: 3px;
+      }
+      .blk.work {
+        background: linear-gradient(180deg, rgba(56, 189, 248, 0.85), rgba(56, 189, 248, 0.5));
+      }
+      .blk.orphan {
+        background: repeating-linear-gradient(
+          45deg,
+          rgba(245, 158, 11, 0.85) 0 4px,
+          rgba(245, 158, 11, 0.4) 4px 8px
+        );
+      }
+      .blk.dead {
+        background: rgba(251, 113, 133, 0.14);
+        border: 1px dashed rgba(251, 113, 133, 0.5);
+      }
+      .blk.nudge {
+        background: linear-gradient(180deg, rgba(52, 211, 153, 0.95), rgba(52, 211, 153, 0.6));
+        box-shadow:
+          0 0 0 1px rgba(52, 211, 153, 0.45),
+          0 0 14px rgba(52, 211, 153, 0.4);
+        z-index: 2;
+      }
+      .tick {
+        position: absolute;
+        top: 22px;
+        width: 1px;
+        height: 32px;
+        background: var(--rule);
+      }
+      .human {
+        position: absolute;
+        top: 24px;
+        width: 2px;
+        height: 28px;
+        background: var(--ink-dim);
+        border-radius: 1px;
+      }
+      .human::after {
+        content: "";
+        position: absolute;
+        top: -5px;
+        left: -2px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ink-dim);
+      }
+      .axis {
+        display: flex;
+        justify-content: space-between;
+        padding: 9px 20px 15px;
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--ink-faint);
+        letter-spacing: 0.08em;
+      }
+      .legend {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--ink-faint);
+        padding: 0 20px 16px;
+        letter-spacing: 0.06em;
+      }
+      .legend i {
+        display: inline-block;
+        width: 16px;
+        height: 9px;
+        border-radius: 2px;
+        margin-right: 7px;
+        vertical-align: -1px;
+      }
+      .callout {
+        position: absolute;
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--ink-dim);
+        white-space: nowrap;
+        top: 2px;
+      }
+
+      /* transcript */
+      .transcript {
+        border-left: 2px solid var(--rule);
+        padding-left: 22px;
+        margin: 26px 0;
+        max-width: var(--measure);
+      }
+      .transcript div {
+        display: grid;
+        grid-template-columns: 74px 1fr;
+        gap: 16px;
+        padding: 5px 0;
+        font-size: 14.5px;
+        color: var(--ink-dim);
+      }
+      .transcript time {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--ink-faint);
+        padding-top: 3px;
+      }
+      .transcript div.gap {
+        display: block;
+        color: var(--rose);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        letter-spacing: 0.06em;
+        padding: 13px 0;
+        white-space: nowrap;
+      }
+
+      /* ---------- finding cards ---------- */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(292px, 1fr));
+        gap: 1px;
+        background: var(--rule-soft);
+        border: 1px solid var(--rule-soft);
+        border-radius: 12px;
+        overflow: hidden;
+        margin: 28px 0;
+      }
+      .card {
+        background: var(--paper-2);
+        padding: 26px 24px;
+      }
+      .card .tag {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+        display: block;
+      }
+      .card.good .tag {
+        color: var(--emerald);
+      }
+      .card.trap .tag {
+        color: var(--rose);
+      }
+      .card h5 {
+        font-family: var(--sans);
+        font-weight: 650;
+        font-size: 16px;
+        margin: 0 0 10px;
+        line-height: 1.3;
+        color: var(--ink);
+      }
+      .card p {
+        font-size: 14px;
+        margin: 0;
+        color: var(--ink-dim);
+        line-height: 1.6;
+      }
+      .card .ev {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--ink-faint);
+        margin-top: 14px;
+        display: block;
+        word-break: break-all;
+        line-height: 1.55;
+      }
+
+      /* ---------- design scorecards ---------- */
+      .designs {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+        gap: 14px;
+        margin: 28px 0;
+      }
+      .dcard {
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        padding: 22px 20px;
+        background: var(--paper-2);
+        position: relative;
+        overflow: hidden;
+      }
+      .dcard.win {
+        border-color: rgba(52, 211, 153, 0.45);
+        background:
+          linear-gradient(180deg, rgba(52, 211, 153, 0.055), transparent 55%), var(--paper-2);
+      }
+      .dcard .badge {
+        position: absolute;
+        top: 0;
+        right: 0;
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.16em;
+        padding: 5px 11px;
+        background: var(--emerald);
+        color: #04140e;
+        border-bottom-left-radius: 8px;
+        font-weight: 700;
+      }
+      .dcard .dname {
+        font-family: var(--serif);
+        font-size: 30px;
+        line-height: 1.02;
+        margin: 0 0 5px;
+        color: var(--ink);
+      }
+      .dcard .dsub {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--ink-faint);
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        margin: 0 0 18px;
+      }
+      .score {
+        font-family: var(--mono);
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        line-height: 1;
+      }
+      .score small {
+        font-size: 12px;
+        color: var(--ink-faint);
+        font-weight: 400;
+      }
+      .bars {
+        margin: 16px 0 14px;
+        display: grid;
+        gap: 7px;
+      }
+      .bar {
+        display: grid;
+        grid-template-columns: 64px 1fr 22px;
+        gap: 9px;
+        align-items: center;
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--ink-faint);
+        letter-spacing: 0.06em;
+      }
+      .bar .t {
+        height: 5px;
+        border-radius: 3px;
+        background: var(--paper-3);
+        overflow: hidden;
+      }
+      .bar .t i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--ink-dim);
+      }
+      .dcard.win .bar .t i {
+        background: var(--emerald);
+      }
+      .dcard p {
+        font-size: 13.5px;
+        margin: 0;
+        color: var(--ink-dim);
+        line-height: 1.55;
+      }
+
+      /* ---------- mechanism diagram ---------- */
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+        margin: 30px 0;
+      }
+      .step {
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        padding: 18px;
+        background: var(--paper-2);
+        position: relative;
+      }
+      .step .n {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        color: var(--accent);
+        letter-spacing: 0.18em;
+        display: block;
+        margin-bottom: 9px;
+      }
+      .step h5 {
+        margin: 0 0 7px;
+        font-size: 14.5px;
+        font-weight: 650;
+        color: var(--ink);
+      }
+      .step p {
+        font-size: 12.8px;
+        margin: 0;
+        line-height: 1.55;
+      }
+      .step code {
+        font-size: 11px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 24px 0;
+        font-size: 13.5px;
+      }
+      th {
+        text-align: left;
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding: 0 14px 11px;
+        border-bottom: 1px solid var(--rule);
+        font-weight: 500;
+      }
+      td {
+        padding: 13px 14px;
+        border-bottom: 1px solid var(--rule-soft);
+        color: var(--ink-dim);
+        vertical-align: top;
+      }
+      td:first-child {
+        color: var(--ink);
+      }
+      tr:hover td {
+        background: rgba(255, 255, 255, 0.017);
+      }
+      td.num {
+        font-family: var(--mono);
+        text-align: right;
+        white-space: nowrap;
+      }
+      .risk-lo {
+        color: var(--emerald);
+      }
+      .risk-hi {
+        color: var(--rose);
+      }
+
+      /* ============================================================
+   PROTOTYPE STAGE — inside these frames it is T3 Code, not the
+   report. DM Sans, the app's real tokens, its real class names.
+   ============================================================ */
+      .stage-bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 26px 0 20px;
+      }
+      .seg {
+        display: inline-flex;
+        background: var(--paper-3);
+        border: 1px solid var(--rule);
+        border-radius: 9px;
+        padding: 3px;
+        gap: 2px;
+      }
+      .seg button {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        background: none;
+        border: 0;
+        color: var(--ink-faint);
+        padding: 7px 13px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: 0.16s;
+      }
+      .seg button:hover {
+        color: var(--ink);
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--ink);
+        color: var(--paper);
+        font-weight: 600;
+      }
+      .hint {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--ink-faint);
+        letter-spacing: 0.07em;
+      }
+
+      .frame {
+        border: 1px solid var(--rule);
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--paper-2);
+        margin: 0 0 30px;
+        box-shadow: 0 26px 70px -30px rgba(0, 0, 0, 0.92);
+      }
+      .frame-hd {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 11px 15px;
+        border-bottom: 1px solid var(--rule-soft);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .frame-hd .lights {
+        display: flex;
+        gap: 6px;
+        margin-right: 5px;
+      }
+      .frame-hd .lights i {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--rule);
+      }
+      .frame-hd .path {
+        margin-left: auto;
+        color: var(--ink-faint);
+        opacity: 0.62;
+        text-transform: none;
+        letter-spacing: 0.02em;
+        font-size: 9.5px;
+      }
+      .frame-body {
+        padding: 0;
+      }
+
+      /* ---- the app itself ---- */
+      /* the report's own <code> chip must not leak into the product screens */
+      .t3 code {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.86em;
+        background: var(--t3-muted);
+        border: 1px solid var(--t3-border);
+        border-radius: 4px;
+        padding: 0.08em 0.34em;
+        color: var(--t3-fg);
+      }
+      .t3 {
+        font-family:
+          "DM Sans",
+          "DM Sans Variable",
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        --radius: 0.625rem;
+        --control-radius: 0.5rem;
+        background: var(--t3-bg);
+        color: var(--t3-fg);
+        font-size: 14px;
+        line-height: 1.5;
+        letter-spacing: -0.006em;
+      }
+      /* light (the app's :root) */
+      .t3[data-t3="light"] {
+        --t3-bg: #fcfcfd;
+        --t3-fg: #27272a;
+        --t3-card: #fff;
+        --t3-muted: #fafafa;
+        --t3-muted-fg: #71717a;
+        --t3-accent: #f4f4f5;
+        --t3-border: #e4e4e7;
+        --t3-input: #d4d4d8;
+        --t3-primary: oklch(0.488 0.217 264);
+        --t3-primary-fg: #fff;
+        --t3-sidebar: #fafafa;
+        --t3-row-hover: #fcfcfd;
+        --t3-row-active: #fff;
+        --t3-sky: #0284c7;
+        --t3-amber: #d97706;
+        --t3-indigo: #4f46e5;
+        --t3-violet: #7c3aed;
+        --t3-emerald: #059669;
+        --t3-rose: #e11d48;
+        --t3-zinc: #71717a;
+        --t3-sky-dot: #0ea5e9;
+        --t3-amber-dot: #f59e0b;
+        --t3-indigo-dot: #6366f1;
+        --t3-violet-dot: #8b5cf6;
+        --t3-emerald-dot: #10b981;
+        --t3-rose-dot: #f43f5e;
+        --t3-zinc-dot: #a1a1aa;
+        --t3-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px -14px rgba(0, 0, 0, 0.22);
+      }
+      /* dark (the app's @variant dark + sidebar-version override) */
+      .t3[data-t3="dark"] {
+        --t3-bg: #0a0a0a;
+        --t3-fg: #f5f5f5;
+        --t3-card: #101011;
+        --t3-muted: rgba(255, 255, 255, 0.04);
+        --t3-muted-fg: #8f8f8f;
+        --t3-accent: rgba(255, 255, 255, 0.04);
+        --t3-border: rgba(255, 255, 255, 0.06);
+        --t3-input: rgba(255, 255, 255, 0.08);
+        --t3-primary: oklch(0.588 0.217 264);
+        --t3-primary-fg: #fff;
+        --t3-sidebar: #000;
+        --t3-row-hover: rgba(241, 243, 247, 0.08);
+        --t3-row-active: rgba(241, 243, 247, 0.11);
+        --t3-sky: #7dd3fc;
+        --t3-amber: #fcd34d;
+        --t3-indigo: #a5b4fc;
+        --t3-violet: #c4b5fd;
+        --t3-emerald: #6ee7b7;
+        --t3-rose: #fda4af;
+        --t3-zinc: #a1a1aa;
+        --t3-sky-dot: #7dd3fc;
+        --t3-amber-dot: #fcd34d;
+        --t3-indigo-dot: #a5b4fc;
+        --t3-violet-dot: #c4b5fd;
+        --t3-emerald-dot: #6ee7b7;
+        --t3-rose-dot: #fda4af;
+        --t3-zinc-dot: #a1a1aa;
+        --t3-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 34px -16px rgba(0, 0, 0, 0.9);
+      }
+
+      /* SettingsRow, ported faithfully from settingsLayout.tsx */
+      .s-container {
+        max-width: 56rem;
+        margin: 0 auto;
+        padding: 34px 30px 40px;
+        display: flex;
+        flex-direction: column;
+        gap: 3rem;
+      }
+      .s-section-title {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.005em;
+        margin: 0 0 2px;
+      }
+      .s-section-sub {
+        font-size: 12.5px;
+        color: var(--t3-muted-fg);
+        margin: 0 0 14px;
+      }
+      .s-rows {
+        display: flex;
+        flex-direction: column;
+      }
+      .s-row {
+        display: flex;
+        gap: 26px;
+        align-items: flex-start;
+        padding: 17px 0;
+        border-top: 1px solid var(--t3-border);
+      }
+      .s-row:first-child {
+        border-top: 0;
+      }
+      .s-row .txt {
+        flex: 1;
+        min-width: 0;
+      }
+      .s-row .ttl {
+        font-size: 13.5px;
+        font-weight: 550;
+        margin: 0 0 3px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .s-row .dsc {
+        font-size: 12.5px;
+        color: var(--t3-muted-fg);
+        margin: 0;
+        line-height: 1.55;
+        max-width: 60ch;
+      }
+      .s-row .ctl {
+        flex-shrink: 0;
+        padding-top: 1px;
+      }
+      .s-sub {
+        padding-left: 0;
+        border-top: 1px solid var(--t3-border);
+      }
+
+      /* base-ui Switch */
+      .sw {
+        position: relative;
+        width: 34px;
+        height: 20px;
+        border-radius: 999px;
+        border: 1px solid var(--t3-input);
+        background: var(--t3-muted);
+        cursor: pointer;
+        padding: 0;
+        transition: 0.18s;
+        flex-shrink: 0;
+      }
+      .sw::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--t3-fg);
+        opacity: 0.55;
+        transition: 0.18s cubic-bezier(0.3, 0.9, 0.4, 1);
+      }
+      .sw[aria-checked="true"] {
+        background: var(--t3-primary);
+        border-color: transparent;
+      }
+      .sw[aria-checked="true"]::after {
+        transform: translateX(14px);
+        background: #fff;
+        opacity: 1;
+      }
+      .sw:focus-visible {
+        outline: 2px solid var(--t3-primary);
+        outline-offset: 2px;
+      }
+
+      .inp {
+        font: inherit;
+        font-size: 13px;
+        background: var(--t3-card);
+        color: var(--t3-fg);
+        border: 1px solid var(--t3-input);
+        border-radius: var(--control-radius);
+        padding: 5px 9px;
+        width: 76px;
+        text-align: right;
+      }
+      .inp.time {
+        width: 104px;
+        text-align: left;
+        font-family: "DM Sans", sans-serif;
+      }
+      .inp:focus {
+        outline: 2px solid var(--t3-primary);
+        outline-offset: -1px;
+        border-color: transparent;
+      }
+      .unit {
+        font-size: 12px;
+        color: var(--t3-muted-fg);
+        margin-left: 8px;
+      }
+
+      .pill-beta {
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: var(--t3-accent);
+        color: var(--t3-muted-fg);
+      }
+
+      /* ---- LoopPill (the per-thread overlay) ---- */
+      .chatpane {
+        position: relative;
+        min-height: 600px;
+        background: var(--t3-bg);
+        padding: 0;
+      }
+      .topbar {
+        height: 52px;
+        border-bottom: 1px solid var(--t3-border);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 550;
+      }
+      .topbar .crumb {
+        color: var(--t3-muted-fg);
+        font-weight: 400;
+      }
+      .msgs {
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+      .msg {
+        max-width: 66ch;
+        font-size: 13.5px;
+        line-height: 1.62;
+        color: var(--t3-fg);
+      }
+      .msg .who {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.11em;
+        text-transform: uppercase;
+        color: var(--t3-muted-fg);
+        margin-bottom: 5px;
+      }
+      .msg.u {
+        opacity: 0.9;
+      }
+      .msg.sys {
+        border-left: 2px solid var(--t3-border);
+        padding: 7px 0 7px 13px;
+        color: var(--t3-muted-fg);
+        font-size: 12.5px;
+        display: flex;
+        gap: 9px;
+        align-items: flex-start;
+        max-width: none;
+      }
+      .msg.sys .k {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 10px;
+        color: var(--t3-muted-fg);
+        opacity: 0.72;
+        flex-shrink: 0;
+        padding-top: 1px;
+      }
+      .msg.sys.err {
+        border-left-color: var(--t3-rose-dot);
+      }
+      .msg.sys.err .k {
+        color: var(--t3-rose);
+      }
+
+      .loop-pill-wrap {
+        position: absolute;
+        top: 60px;
+        right: 12px;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      .loop-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 11px 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--t3-border);
+        background: var(--t3-card);
+        box-shadow: var(--t3-shadow);
+        font-size: 12px;
+        font-weight: 550;
+        cursor: pointer;
+        color: var(--t3-fg);
+        transition: 0.16s;
+        white-space: nowrap;
+      }
+      .loop-pill:hover {
+        border-color: var(--t3-input);
+      }
+      .loop-pill .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--t3-zinc-dot);
+        flex-shrink: 0;
+      }
+      .loop-pill .budget {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 10.5px;
+        color: var(--t3-muted-fg);
+        letter-spacing: 0.03em;
+      }
+      .loop-pill .chev {
+        opacity: 0.45;
+        font-size: 9px;
+      }
+      .pulse {
+        animation: pl 1.9s ease-in-out infinite;
+      }
+      @keyframes pl {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.42;
+          transform: scale(0.84);
+        }
+      }
+
+      /* the auto-resume pill already shipping, for context */
+      .ar-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--t3-border);
+        background: var(--t3-card);
+        box-shadow: var(--t3-shadow);
+        font-size: 11.5px;
+        color: var(--t3-muted-fg);
+      }
+
+      .loop-panel {
+        width: 326px;
+        border-radius: var(--radius);
+        border: 1px solid var(--t3-border);
+        background: var(--t3-card);
+        box-shadow: var(--t3-shadow);
+        overflow: hidden;
+        font-size: 12.5px;
+      }
+      .lp-hd {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--t3-border);
+      }
+      .lp-hd b {
+        font-size: 12.5px;
+        font-weight: 650;
+      }
+      .lp-body {
+        padding: 4px 14px 12px;
+      }
+      .lp-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--t3-border);
+      }
+      .lp-row:last-child {
+        border-bottom: 0;
+      }
+      .lp-row .l {
+        color: var(--t3-muted-fg);
+        font-size: 12px;
+      }
+      .lp-row .l small {
+        display: block;
+        font-size: 10.5px;
+        opacity: 0.74;
+        margin-top: 2px;
+      }
+      .meter {
+        height: 5px;
+        border-radius: 3px;
+        background: var(--t3-accent);
+        overflow: hidden;
+        margin-top: 7px;
+      }
+      .meter i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--t3-primary);
+        transition: width 0.4s;
+      }
+      .meter.spent i {
+        background: var(--t3-zinc-dot);
+      }
+      .lp-note {
+        font-size: 11px;
+        color: var(--t3-muted-fg);
+        background: var(--t3-muted);
+        border-radius: var(--control-radius);
+        padding: 9px 10px;
+        margin-top: 11px;
+        line-height: 1.55;
+      }
+      .lp-note code {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 10px;
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--t3-fg);
+        word-break: break-all;
+      }
+      .sentinel-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 10px;
+      }
+      .ta {
+        width: 100%;
+        font: inherit;
+        font-size: 11.5px;
+        line-height: 1.5;
+        background: var(--t3-bg);
+        color: var(--t3-fg);
+        border: 1px solid var(--t3-input);
+        border-radius: var(--control-radius);
+        padding: 8px 9px;
+        resize: vertical;
+        min-height: 66px;
+        margin-top: 8px;
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      /* roster */
+      .roster {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      .roster th {
+        font-family: "DM Sans", sans-serif;
+        font-size: 10.5px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--t3-muted-fg);
+        padding: 0 12px 9px;
+        border-bottom: 1px solid var(--t3-border);
+        font-weight: 600;
+      }
+      .roster td {
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--t3-border);
+        color: var(--t3-fg);
+      }
+      .roster tr:last-child td {
+        border-bottom: 0;
+      }
+      .state-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11.5px;
+        font-weight: 550;
+      }
+      .state-chip .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .mono-s {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 11px;
+        color: var(--t3-muted-fg);
+      }
+      .btn-x {
+        font: inherit;
+        font-size: 11.5px;
+        font-weight: 550;
+        background: var(--t3-card);
+        color: var(--t3-fg);
+        border: 1px solid var(--t3-input);
+        border-radius: var(--control-radius);
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      .btn-x:hover {
+        background: var(--t3-accent);
+      }
+
+      /* rejected surface */
+      .rejected {
+        position: relative;
+        filter: grayscale(0.85) opacity(0.42);
+      }
+      .rejected::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          135deg,
+          transparent 0 13px,
+          rgba(251, 113, 133, 0.13) 13px 26px
+        );
+      }
+      .stamp {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(-7deg);
+        z-index: 5;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        color: var(--rose);
+        border: 2.5px solid var(--rose);
+        padding: 11px 22px;
+        border-radius: 6px;
+        background: rgba(11, 11, 12, 0.9);
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .rej-wrap {
+        position: relative;
+      }
+
+      /* misc */
+      .note {
+        border-left: 2px solid var(--accent);
+        padding: 3px 0 3px 18px;
+        margin: 26px 0;
+        font-size: 14.5px;
+        color: var(--ink-dim);
+        max-width: var(--measure);
+      }
+      .note b {
+        color: var(--ink);
+      }
+      .two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 34px;
+      }
+      @media (max-width: 860px) {
+        .two {
+          grid-template-columns: 1fr;
+          gap: 24px;
+        }
+      }
+      footer {
+        padding: 56px 0 82px;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--ink-faint);
+        letter-spacing: 0.09em;
+        line-height: 2;
+      }
+      .phase {
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 13px;
+        background: var(--paper-2);
+      }
+      .phase.p1 {
+        border-color: rgba(52, 211, 153, 0.4);
+      }
+      .phase-t {
+        display: flex;
+        align-items: baseline;
+        gap: 13px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .phase-t .p {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.17em;
+        color: var(--accent);
+        text-transform: uppercase;
+      }
+      .phase-t h5 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .phase p {
+        font-size: 14px;
+        margin: 0 0 12px;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .chips span {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        padding: 4px 8px;
+        border-radius: 5px;
+        background: var(--paper-3);
+        border: 1px solid var(--rule-soft);
+        color: var(--ink-faint);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="rule-top"></div>
+
+    <div class="wrap">
+      <!-- ══════════════════════════ MASTHEAD ══════════════════════════ -->
+      <header class="mast">
+        <div class="kicker">
+          <span class="dot"></span>Design
+          report<span>·</span>radroid/t3code&nbsp;#38<span>·</span>2&nbsp;August&nbsp;2026
+        </div>
+        <div class="mast-grid">
+          <div>
+            <h1>Loop<br /><em>Watch</em></h1>
+            <p class="dek">
+              A deadman's switch for overnight runs — so a thread that has quietly died stops
+              looking exactly like one that has quietly finished.
+            </p>
+          </div>
+          <div class="facts">
+            <div><span>Branch</span><span>t3x/loop-supervisor</span></div>
+            <div><span>Worktree</span><span>~/Developer/t3code-loop</span></div>
+            <div><span>Server seams</span><span class="hi">0 new</span></div>
+            <div><span>Web seams</span><span>1 new row · 2 lines</span></div>
+            <div><span>Added rebase risk</span><span class="hi">6</span></div>
+            <div><span>Contracts touched</span><span class="hi">none</span></div>
+            <div><span>Designs weighed</span><span>4 · 12 judgements</span></div>
+            <div><span>Status</span><span>awaiting your call</span></div>
+          </div>
+        </div>
+      </header>
+
+      <!-- ══════════════════════════ 01 THE NIGHT ══════════════════════════ -->
+      <section id="night">
+        <div class="sec-head">
+          <span class="sec-num">01</span>
+          <h2>The night that started this</h2>
+        </div>
+        <p class="lede">
+          Thread <code>3a85bdd3</code>, “Overnight TDD agent orchestration”. Thirty-one turns across
+          seventeen hours. Twice, T3 Code marked a turn <strong>completed</strong> while subagents
+          were still working — and then nothing restarted the run. You were the loop, all night.
+        </p>
+
+        <div class="chart">
+          <div class="chart-hd">
+            <span>2026-07-30 21:34Z → 2026-07-31 14:54Z · 17h 20m</span>
+            <span>project eddy-knowledge-hub · 31 turns · 18 human messages</span>
+          </div>
+
+          <div class="track" id="trk-actual">
+            <span class="track-label">What happened</span>
+            <div class="lane" id="lane-actual"></div>
+          </div>
+
+          <div class="track" id="trk-human">
+            <span class="track-label">You, awake</span>
+            <div class="lane" style="background: transparent" id="lane-human"></div>
+          </div>
+
+          <div class="track" id="trk-watch">
+            <span class="track-label">With Loop Watch</span>
+            <div class="lane" id="lane-watch"></div>
+          </div>
+
+          <div class="axis" id="axis"></div>
+          <div class="legend">
+            <span><i class="blk work" style="position: static"></i>turn running</span>
+            <span
+              ><i class="blk orphan" style="position: static"></i>orphaned subagent activity</span
+            >
+            <span
+              ><i class="blk dead" style="position: static"></i>dead air — nothing scheduled</span
+            >
+            <span><i class="blk nudge" style="position: static"></i>automated check-in</span>
+            <span><i style="background: var(--ink-dim); position: static"></i>human message</span>
+          </div>
+        </div>
+
+        <div class="two">
+          <div>
+            <h4>Stall A — the expensive one</h4>
+            <div class="transcript">
+              <div>
+                <time>00:19:19</time><span>Turn marked <strong>completed</strong>.</span>
+              </div>
+              <div>
+                <time>00:19–00:52</time
+                ><span
+                  ><strong>1,358</strong> activities keep arriving — 715 <code>task.progress</code>,
+                  57 <code>task.started</code>, 58 <code>task.completed</code>, 527
+                  <code>context-window.updated</code>. Subagents worked for 33 more minutes inside a
+                  turn the server had already closed.</span
+                >
+              </div>
+              <div class="gap">— 3 h 31 m of total silence —</div>
+              <div>
+                <time>04:23:48</time><span>“Can you continue the process in a /loop?”</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h4>Stall B — the one that cost the morning</h4>
+            <div class="transcript">
+              <div>
+                <time>07:40:32</time
+                ><span>A <code>local_workflow</code> task <em>starts</em>…</span>
+              </div>
+              <div>
+                <time>07:40:44</time
+                ><span>…and 12 seconds later the turn is marked <strong>completed</strong>.</span>
+              </div>
+              <div>
+                <time>07:48:47</time><span>61 orphaned activities later, everything stops.</span>
+              </div>
+              <div class="gap">— 6 h 50 m of total silence —</div>
+              <div><time>14:39:06</time><span>“You stopped again”</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="note">
+          <b>Neither stall was recoverable by anything shipping today.</b> The thread has zero
+          <code>coil.auto-resume.*</code> activities and no entry in
+          <code>t3x-auto-resume.json</code> — auto-resume only arms on a rate-limit rejection, and
+          there was none. Both turns reported <code>state: completed</code> with no error tone
+          anywhere. From the sidebar, a finished run and a dead run were the same row.
+        </div>
+      </section>
+
+      <!-- ══════════════════════════ 02 FINDINGS ══════════════════════════ -->
+      <section id="findings">
+        <div class="sec-head">
+          <span class="sec-num">02</span>
+          <h2>What the codebase actually allows</h2>
+        </div>
+        <p class="lede">
+          Seven agents read the tree against merge-base <code>64bf01619</code>. Three findings
+          decided the design; three traps killed the designs that ignored them.
+        </p>
+
+        <h3>The findings</h3>
+        <div class="cards">
+          <div class="card good">
+            <span class="tag">Finding 01 — the whole trigger</span>
+            <h5>Idle detection is already subagent-aware, for free</h5>
+            <p>
+              <code>thread.activity-appended</code> bumps
+              <code>projection_threads.updated_at</code> in <em>both</em> writers — the SQL pipeline
+              and the in-memory projector. Background subagent <code>task.*</code> events are
+              activity appends. So a plain <code>now − shell.updatedAt &gt; N</code> test stays
+              quiet through all 1,358 orphaned activities and fires exactly at the start of the dead
+              air. It reads a SQL column, not a hot stream, so it is also the only candidate trigger
+              that survives a server restart.
+            </p>
+            <span class="ev">ProjectionPipeline.ts:794-808 · projector.ts:747-750</span>
+          </div>
+          <div class="card good">
+            <span class="tag">Finding 02 — zero server seams</span>
+            <h5>A fork reactor can already restart a thread</h5>
+            <p>
+              <code>engine.dispatch({type:"thread.turn.start", …})</code> from a fork-owned reactor
+              registered in <code>t3x/index.ts</code> produces an ordinary user turn — byte-for-byte
+              the path a keystroke takes. Auto-resume has done exactly this in production since #6.
+              The three <code>server.ts</code> seam lines already exist; the loop adds none.
+            </p>
+            <span class="ev">t3x/autoResume/Reactor.ts:100-123 · t3x/index.ts:70,99</span>
+          </div>
+          <div class="card good">
+            <span class="tag">Finding 03 — the settings surface exists</span>
+            <h5>There is already a Beta panel to hang this on</h5>
+            <p>
+              <code>BetaSettingsPanel.tsx</code> (upstream churn 3) is a working template with a
+              <code>Switch</code> row and a numeric sub-row. Two lines mount a fork-owned section
+              inside its existing container — <strong>risk 6</strong>, against
+              <strong>risk 1044</strong> for the main settings panel the fork already edits.
+            </p>
+            <span class="ev">BetaSettingsPanel.tsx:57-118 · settingsLayout.tsx:125-141</span>
+          </div>
+        </div>
+
+        <h3>The traps</h3>
+        <div class="cards">
+          <div class="card trap">
+            <span class="tag">Trap 01 — would deadlock</span>
+            <h5>Never gate on <code>session.status</code></h5>
+            <p>
+              A background subagent's assistant message auto-opens a <em>synthetic turn</em> that
+              pins <code>session.status = "running"</code>, and nothing closes it but a later SDK
+              result. On exactly the issue-38 threads, status can be stuck “running” forever — so
+              reusing auto-resume's <code>threadIsProgressing</code> as a veto would never fire.
+              Here “running” only <em>lengthens</em> the fuse: 15 minutes idle, 45 if a turn looks
+              busy.
+            </p>
+            <span class="ev">ClaudeAdapter.ts:2469-2489 · autoResume/guards.ts:107-111</span>
+          </div>
+          <div class="card trap">
+            <span class="tag">Trap 02 — silently destructive</span>
+            <h5><code>thread.turn.start</code> clears snooze <em>and</em> the keep-active pin</h5>
+            <p>
+              The decider unsettles for <code>settledOverride !== null</code> — so it wipes an
+              explicit “keep active” pin, not just a settle — and unsnoozes unconditionally. No
+              opt-out. Loop Watch therefore <em>refuses to dispatch</em> on a snoozed thread, and
+              re-issues <code>thread.unsettle{reason:"user"}</code> to restore the pin when one was
+              there.
+            </p>
+            <span class="ev">decider.ts:820-844 · contracts/orchestration.ts:594-601</span>
+          </div>
+          <div class="card trap">
+            <span class="tag">Trap 03 — collision course</span>
+            <h5>Upstream is building this, in the sidebar</h5>
+            <p>
+              Upstream #3164 “Automations &amp; Triggers (for loops)” is
+              <strong>🚧 In Progress</strong>, landing in <code>apps/web</code>; #5123 asks for a
+              <code>thread.wake-if-idle</code> command whose landing zone upstream has pre-announced
+              in a contracts comment. So: no sidebar section, no command literal, no contracts edit,
+              nothing named “automation” — and when #5123 lands, our nudge branch becomes a
+              <em>caller</em> with no migration.
+            </p>
+            <span class="ev">pingdotgg/t3code#3164 · #5123 · contracts/orchestration.ts</span>
+          </div>
+        </div>
+
+        <div class="note">
+          <b>One more thing that decided the shape:</b> T3 Code drives Claude through
+          <code>@anthropic-ai/claude-agent-sdk</code> in streaming-input mode — not the interactive
+          CLI harness. There is no self-scheduling tool inside a turn. The agent literally
+          <em>cannot</em> re-invoke itself across a turn boundary, which is why your
+          <code>/loop</code> attempt that night could never have worked. Any loop has to be driven
+          server-side.
+        </div>
+      </section>
+
+      <!-- ══════════════════════════ 03 THE FIELD ══════════════════════════ -->
+      <section id="options">
+        <div class="sec-head">
+          <span class="sec-num">03</span>
+          <h2>Four designs, three judges each</h2>
+        </div>
+        <p class="lede">
+          Each design was written independently from the same verified ground truth, then scored by
+          an upstream-conflict steward, an adversarial SRE, and you — the person who was awake at
+          4am.
+        </p>
+
+        <div class="designs">
+          <div class="dcard win">
+            <span class="badge">Winner</span>
+            <p class="dname">Deadman</p>
+            <p class="dsub">quiescence</p>
+            <div class="score">7.67<small>/10</small></div>
+            <div class="bars">
+              <div class="bar">
+                <span>conflict</span><span class="t"><i style="width: 80%"></i></span><span>8</span>
+              </div>
+              <div class="bar">
+                <span>SRE</span><span class="t"><i style="width: 80%"></i></span><span>8</span>
+              </div>
+              <div class="bar">
+                <span>product</span><span class="t"><i style="width: 70%"></i></span><span>7</span>
+              </div>
+            </div>
+            <p>
+              The only design with no fatal flaw on any lens. Its trigger —
+              <code>updated_at</code> staleness — was independently named “best idea worth stealing”
+              by judges reviewing the other three.
+            </p>
+          </div>
+
+          <div class="dcard">
+            <p class="dname">Runway</p>
+            <p class="dsub">budget ledger</p>
+            <div class="score">6.33<small>/10</small></div>
+            <div class="bars">
+              <div class="bar">
+                <span>conflict</span><span class="t"><i style="width: 70%"></i></span><span>7</span>
+              </div>
+              <div class="bar">
+                <span>SRE</span><span class="t"><i style="width: 60%"></i></span><span>6</span>
+              </div>
+              <div class="bar">
+                <span>product</span><span class="t"><i style="width: 60%"></i></span><span>6</span>
+              </div>
+            </div>
+            <p>
+              Headline mechanism died: hitting <em>Stop</em> emits a real
+              <code>turn.completed</code>, so arming on it restarts the work you just killed. Its
+              product instincts survived — the mandatory budget and the 07:00 deadline are grafted
+              in.
+            </p>
+          </div>
+
+          <div class="dcard">
+            <p class="dname">Night&nbsp;Watch</p>
+            <p class="dsub">observability-first</p>
+            <div class="score">6.33<small>/10</small></div>
+            <div class="bars">
+              <div class="bar">
+                <span>conflict</span><span class="t"><i style="width: 70%"></i></span><span>7</span>
+              </div>
+              <div class="bar">
+                <span>SRE</span><span class="t"><i style="width: 60%"></i></span><span>6</span>
+              </div>
+              <div class="bar">
+                <span>product</span><span class="t"><i style="width: 60%"></i></span><span>6</span>
+              </div>
+            </div>
+            <p>
+              Right diagnosis, two invented mechanisms. Its
+              <code>.loop/state.json</code> done-marker doesn't exist in your own template. But its
+              honest terminal vocabulary — <em>done</em> ≠ <em>spent</em> ≠ <em>stalled</em> — is
+              the most valuable graft in the field.
+            </p>
+          </div>
+
+          <div class="dcard">
+            <p class="dname">Baton</p>
+            <p class="dsub">agent-authored contract</p>
+            <div class="score">6.00<small>/10</small></div>
+            <div class="bars">
+              <div class="bar">
+                <span>conflict</span><span class="t"><i style="width: 70%"></i></span><span>7</span>
+              </div>
+              <div class="bar">
+                <span>SRE</span><span class="t"><i style="width: 50%"></i></span><span>5</span>
+              </div>
+              <div class="bar">
+                <span>product</span><span class="t"><i style="width: 60%"></i></span><span>6</span>
+              </div>
+            </div>
+            <p>
+              Read its contract file from the wrong directory on every worktree-backed thread, and
+              gated “done” on a timestamp the model types — models don't know the wall clock, so
+              done was often unreachable. Both failures became rules.
+            </p>
+          </div>
+        </div>
+
+        <p style="margin-top: 22px">
+          Full designs, every judgement, and every rejected idea with its reason:
+          <code>docs/coil/loop/OPTIONS.md</code>. The evidence they were built on:
+          <code>docs/coil/loop/RESEARCH.md</code>.
+        </p>
+      </section>
+
+      <!-- ══════════════════════════ 04 HOW IT WORKS ══════════════════════════ -->
+      <section id="mechanism">
+        <div class="sec-head">
+          <span class="sec-num">04</span>
+          <h2>How Loop Watch works</h2>
+        </div>
+        <p class="lede">
+          One reactor under <code>apps/server/src/coil/loop/</code>, shaped exactly like the
+          auto-resume one beside it. It watches one SQL column, and it is read-only on your
+          filesystem.
+        </p>
+
+        <div class="flow">
+          <div class="step">
+            <span class="n">01 · Arm</span>
+            <h5>You flip two switches</h5>
+            <p>
+              The beta master toggle in Settings, and <em>Loop watch</em> on the thread you're
+              walking away from. Nothing is ever supervised implicitly. Max 3 armed threads.
+            </p>
+          </div>
+          <div class="step">
+            <span class="n">02 · Watch</span>
+            <h5>Poll every 60s</h5>
+            <p>
+              Per armed thread: two single-row reads. <code>idleMs = now − shell.updatedAt</code>.
+              Zero SQL when nothing is armed. Never <code>getSnapshot()</code>.
+            </p>
+          </div>
+          <div class="step">
+            <span class="n">03 · Gate</span>
+            <h5>Fourteen guards</h5>
+            <p>
+              Snoozed, settled, needs-approval, needs-input, plan-ready, rate-limited, auto-resume
+              pending — all <em>skip without spending budget</em>, and say so in the pill.
+            </p>
+          </div>
+          <div class="step">
+            <span class="n">04 · Nudge</span>
+            <h5>An ordinary user turn</h5>
+            <p>
+              Counter persisted <em>before</em> dispatch so a failing provider burns budget, not 480
+              retries. Then the keep-active pin is repaired, then a breadcrumb lands on the
+              timeline.
+            </p>
+          </div>
+          <div class="step">
+            <span class="n">05 · Stop</span>
+            <h5>Four ways, all sticky</h5>
+            <p>
+              <span style="color: var(--emerald)">done</span> (you wrote the sentinel) ·
+              <span style="color: var(--zinc)">spent</span> (budget or 07:00) ·
+              <span style="color: var(--rose)">stalled</span> (two dead nudges) ·
+              <span style="color: var(--ink-dim)">handed-back</span> (you typed). Only a human
+              re-arms.
+            </p>
+          </div>
+        </div>
+
+        <div class="two">
+          <div>
+            <h3>The stop signal is a file you can <code>touch</code></h3>
+            <p>
+              When the work is done — or when it's blocked on you — the agent writes
+              <code>.t3x/loop-done</code> with one line of reason. That's an ordinary
+              <code>Write</code> call. It works identically under <code>claude</code> in a terminal,
+              with no bespoke tool and no protocol.
+            </p>
+            <p>
+              The supervisor <strong>only ever stats</strong> that path — worktree first, then
+              workspace root, newest <code>mtime</code> wins, honoured only if it's newer than the
+              moment you armed. It never writes to your filesystem, which is what makes it safe to
+              point at any repo. <code>touch .t3x/loop-done</code> stops a run from a terminal;
+              <code>rm</code> keeps it going.
+            </p>
+          </div>
+          <div>
+            <h3>The check-in text is the feature</h3>
+            <p style="font-size: 13px">
+              Restated in full every time, because a six-check-in overnight run will compact away
+              anything taught once. Overridable per thread, or committed to
+              <code>.t3x/loop-prompt.md</code>.
+            </p>
+            <pre
+              style="
+                font-family: var(--mono);
+                font-size: 11.5px;
+                line-height: 1.72;
+                color: var(--ink-dim);
+                background: var(--paper-2);
+                border: 1px solid var(--rule-soft);
+                border-radius: 9px;
+                padding: 16px;
+                overflow-x: auto;
+                margin: 0;
+              "
+            >
+[t3x loop watch — automated check-in 2 of 6]
+
+This thread has produced no activity for 47
+minutes. If you are still working, ignore this
+message and carry on.
+
+Otherwise: do NOT restart from the top and do NOT
+redo finished work. First re-read your own progress
+notes for this repo (.loop/state.json, logs/,
+GOALS.md, iter-NNN.md — whatever this repo uses),
+then continue from the next unfinished item.
+
+When the work is finished, or when you are blocked
+and need a human, write this exact file:
+
+  /Users/you/repo/.t3x/loop-done
+
+with one line saying why you stopped. That file is
+the only way to end this loop early. Otherwise it
+ends after 6 check-ins, or at 07:00, whichever
+comes first.
+
+I am the scheduler for this thread. Do not schedule
+your own wake-ups.</pre
+            >
+          </div>
+        </div>
+        <div class="note">
+          That last line is not decoration. Your <code>autonomous-build-loop</code> skill has the
+          agent scheduling its own wake-ups — which, inside T3 Code, silently do nothing. One
+          sentence resolves two schedulers into one.
+        </div>
+      </section>
+
+      <!-- ══════════════════════════ 05 PROTOTYPES ══════════════════════════ -->
+      <section id="prototypes">
+        <div class="sec-head">
+          <span class="sec-num">05</span>
+          <h2>Prototypes</h2>
+        </div>
+        <p class="lede">
+          Dummy, but not generic — these use T3 Code's real tokens, its real DM&nbsp;Sans, its real
+          <code>SettingsRow</code> geometry and its real status-pill colour language, in both
+          themes. Click things; they respond.
+        </p>
+
+        <div class="stage-bar">
+          <div class="seg" role="group" aria-label="Theme">
+            <button data-theme="dark" aria-pressed="true">Dark</button>
+            <button data-theme="light" aria-pressed="false">Light</button>
+          </div>
+          <span class="hint">↑ the app supports both; the sidebar goes pure black in dark</span>
+        </div>
+
+        <!-- ── P1 · settings ── -->
+        <h3>P1 — the beta toggle, where you asked for it</h3>
+        <p>
+          Mounted as a fork-owned section <em>inside</em> the existing Beta panel's container, after
+          upstream's own section. Two lines of upstream edit, in a churn-3 file.
+        </p>
+        <div class="frame">
+          <div class="frame-hd">
+            <span class="lights"><i></i><i></i><i></i></span>Settings › Beta<span class="path"
+              >apps/web/src/coil/LoopBetaSection.tsx</span
+            >
+          </div>
+          <div class="frame-body">
+            <div class="t3" data-t3="dark">
+              <div class="s-container">
+                <div>
+                  <p class="s-section-title">Beta features</p>
+                  <div class="s-rows">
+                    <div class="s-row">
+                      <div class="txt">
+                        <p class="ttl">Sidebar v2</p>
+                        <p class="dsc">
+                          One flat thread list in creation order. Active work renders as rich cards;
+                          settled threads collapse to compact rows.
+                        </p>
+                      </div>
+                      <div class="ctl">
+                        <button class="sw" role="switch" aria-checked="true" data-toggle></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <p class="s-section-title">Loop watch <span class="pill-beta">beta</span></p>
+                  <p class="s-section-sub">
+                    Restart a long-running thread that has gone quiet, and stop when it says it's
+                    finished.
+                  </p>
+                  <div class="s-rows">
+                    <div class="s-row">
+                      <div class="txt">
+                        <p class="ttl">Loop watch</p>
+                        <p class="dsc">
+                          Watches threads you explicitly arm. When one produces no activity for a
+                          while, it sends a check-in asking the agent to continue from its own
+                          progress notes. Off by default; a thread is never supervised unless you
+                          arm it.
+                        </p>
+                      </div>
+                      <div class="ctl">
+                        <button
+                          class="sw"
+                          role="switch"
+                          aria-checked="true"
+                          id="loop-master"
+                          data-toggle
+                        ></button>
+                      </div>
+                    </div>
+
+                    <div id="loop-subrows">
+                      <div class="s-row s-sub">
+                        <div class="txt">
+                          <p class="ttl">Check in after</p>
+                          <p class="dsc">Silence on an idle thread before the first check-in.</p>
+                        </div>
+                        <div class="ctl">
+                          <input class="inp" type="number" value="15" min="5" max="240" /><span
+                            class="unit"
+                            >min</span
+                          >
+                        </div>
+                      </div>
+                      <div class="s-row s-sub">
+                        <div class="txt">
+                          <p class="ttl">…if a turn still looks busy</p>
+                          <p class="dsc">
+                            A longer fuse when a turn or session still reports running — a silent
+                            40-minute test run is normal, a silent 45-minute one is not.
+                          </p>
+                        </div>
+                        <div class="ctl">
+                          <input class="inp" type="number" value="45" min="10" max="360" /><span
+                            class="unit"
+                            >min</span
+                          >
+                        </div>
+                      </div>
+                      <div class="s-row s-sub">
+                        <div class="txt">
+                          <p class="ttl">Check-in budget</p>
+                          <p class="dsc">
+                            Hard cap per arm. Cannot be disabled and cannot exceed 20. Only
+                            re-arming resets it.
+                          </p>
+                        </div>
+                        <div class="ctl">
+                          <input class="inp" type="number" value="6" min="1" max="20" /><span
+                            class="unit"
+                            >check-ins</span
+                          >
+                        </div>
+                      </div>
+                      <div class="s-row s-sub">
+                        <div class="txt">
+                          <p class="ttl">Stop by</p>
+                          <p class="dsc">
+                            Every armed thread stands down at this time, whatever its budget. Your
+                            browser converts it to the next occurrence in your timezone.
+                          </p>
+                        </div>
+                        <div class="ctl"><input class="inp time" type="time" value="07:00" /></div>
+                      </div>
+                      <div class="s-row s-sub">
+                        <div class="txt">
+                          <p class="ttl">Threads armed</p>
+                          <p class="dsc">
+                            Up to 3 at once. Worst case is 3 × 6 = 18 extra turns per arm cycle.
+                          </p>
+                        </div>
+                        <div class="ctl"><span class="mono-s">2 / 3</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── P2 · the pill ── -->
+        <h3>P2 — the per-thread pill, and every state it can be in</h3>
+        <p>
+          Mounted where <code>AutoResumeOverlay</code> already is. The two existing fork lines in
+          the thread route are <em>rewritten in place</em> to a fork-owned aggregator, so the seam
+          row stays at exactly its current size and every future per-thread surface is free.
+        </p>
+
+        <div class="stage-bar">
+          <div class="seg" role="group" aria-label="Loop state" id="state-seg">
+            <button data-state="off" aria-pressed="false">off</button>
+            <button data-state="watching" aria-pressed="true">watching</button>
+            <button data-state="nudged" aria-pressed="false">nudged</button>
+            <button data-state="paused" aria-pressed="false">paused</button>
+            <button data-state="done" aria-pressed="false">done</button>
+            <button data-state="spent" aria-pressed="false">spent</button>
+            <button data-state="stalled" aria-pressed="false">stalled</button>
+            <button data-state="handed" aria-pressed="false">handed back</button>
+          </div>
+        </div>
+
+        <div class="frame">
+          <div class="frame-hd">
+            <span class="lights"><i></i><i></i><i></i></span>Thread<span class="path"
+              >apps/web/src/coil/LoopPill.tsx</span
+            >
+          </div>
+          <div class="frame-body">
+            <div class="t3" data-t3="dark">
+              <div class="chatpane">
+                <div class="topbar">
+                  <span>Overnight TDD agent orchestration</span
+                  ><span class="crumb">· eddy-knowledge-hub</span>
+                </div>
+                <div class="loop-pill-wrap">
+                  <span class="ar-pill"
+                    ><span
+                      style="
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 50%;
+                        background: var(--t3-zinc-dot);
+                        display: inline-block;
+                      "
+                    ></span
+                    >Auto-resume on</span
+                  >
+                  <button class="loop-pill" id="pill" aria-expanded="true">
+                    <span class="dot" id="pill-dot"></span>
+                    <span id="pill-label">Loop watching</span>
+                    <span class="budget" id="pill-budget">· 12m idle</span>
+                    <span class="chev">▾</span>
+                  </button>
+                  <div class="loop-panel" id="panel">
+                    <div class="lp-hd">
+                      <b>Loop watch</b
+                      ><button
+                        class="sw"
+                        role="switch"
+                        aria-checked="true"
+                        id="arm-sw"
+                        data-toggle
+                      ></button>
+                    </div>
+                    <div class="lp-body">
+                      <div class="lp-row">
+                        <span class="l">State</span
+                        ><span id="p-state" class="state-chip"
+                          ><span class="dot"></span>watching</span
+                        >
+                      </div>
+                      <div class="lp-row" style="display: block">
+                        <div style="display: flex; justify-content: space-between">
+                          <span class="l">Check-ins used</span
+                          ><span class="mono-s" id="p-budget-n">0 / 6</span>
+                        </div>
+                        <div class="meter" id="p-meter"><i style="width: 0%"></i></div>
+                      </div>
+                      <div class="lp-row">
+                        <span class="l">Stops by</span><span class="mono-s">07:00 · in 4h 12m</span>
+                      </div>
+                      <div class="lp-row">
+                        <span class="l">Check in after<small>this thread only</small></span
+                        ><span
+                          ><input class="inp" type="number" value="15" style="width: 58px" /><span
+                            class="unit"
+                            >min</span
+                          ></span
+                        >
+                      </div>
+                      <div class="lp-row">
+                        <span class="l">…if busy</span
+                        ><span
+                          ><input class="inp" type="number" value="45" style="width: 58px" /><span
+                            class="unit"
+                            >min</span
+                          ></span
+                        >
+                      </div>
+                      <div class="lp-note">
+                        Stop signal — the agent writes:<br />
+                        <code>~/Developer/eddy-knowledge-hub/.t3x/loop-done</code><br />
+                        <span class="sentinel-state" id="p-sentinel" style="margin-top: 6px"
+                          ><span style="color: var(--t3-muted-fg)">✕</span> not present</span
+                        >
+                      </div>
+                      <div
+                        class="lp-row"
+                        style="display: block; border-bottom: 0; padding-bottom: 2px"
+                      >
+                        <span class="l"
+                          >Check-in text
+                          <small
+                            >blank uses the default, or commit
+                            <code
+                              style="
+                                font-family: &quot;JetBrains Mono&quot;, monospace;
+                                font-size: 10px;
+                              "
+                              >.t3x/loop-prompt.md</code
+                            ></small
+                          ></span
+                        >
+                        <textarea
+                          class="ta"
+                          placeholder="Default check-in — restates the stop protocol every time."
+                        ></textarea>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="msgs" id="thread-msgs">
+                  <div class="msg">
+                    <div class="who">Assistant</div>
+                    Ran the failing spec for
+                    <code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >packages/ingest</code
+                    >
+                    and dispatched four subagents to triage the fixtures. Waiting on their reports.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── P3 · timeline ── -->
+        <h3>P3 — what it leaves on the timeline</h3>
+        <p>
+          Every check-in, every refusal, every stop. Fork-namespaced activity kinds render in the
+          existing timeline for free — <code>kind</code> is an open string and
+          <code>payload</code> is unknown, so this costs zero contract surface. A run's whole
+          history is readable without a log file.
+        </p>
+        <div class="frame">
+          <div class="frame-hd">
+            <span class="lights"><i></i><i></i><i></i></span>Thread timeline<span class="path"
+              >engine.dispatch · thread.activity.append</span
+            >
+          </div>
+          <div class="frame-body">
+            <div class="t3" data-t3="dark">
+              <div style="padding: 20px 22px; display: flex; flex-direction: column; gap: 11px">
+                <div class="msg sys">
+                  <span class="k">00:04</span
+                  ><span
+                    ><code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >t3x.loop.armed</code
+                    >
+                    — Loop watch armed. Up to 6 check-ins, stopping by 07:00.</span
+                  >
+                </div>
+                <div class="msg sys">
+                  <span class="k">01:07</span
+                  ><span
+                    ><code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >t3x.loop.nudged</code
+                    >
+                    — Loop check-in 1 of 6 after 47 min of silence.</span
+                  >
+                </div>
+                <div class="msg sys">
+                  <span class="k">02:31</span
+                  ><span
+                    ><code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >t3x.loop.skipped</code
+                    >
+                    — Paused: waiting on an approval. Budget not spent.</span
+                  >
+                </div>
+                <div class="msg sys">
+                  <span class="k">03:58</span
+                  ><span
+                    ><code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >t3x.loop.nudged</code
+                    >
+                    — Loop check-in 2 of 6 after 21 min of silence.</span
+                  >
+                </div>
+                <div class="msg sys">
+                  <span class="k">05:12</span
+                  ><span
+                    ><code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >t3x.loop.stopped</code
+                    >
+                    — Stopped: the agent wrote
+                    <code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >.t3x/loop-done</code
+                    >
+                    — “backlog empty, 3 PRs open”.</span
+                  >
+                </div>
+                <div class="msg sys err">
+                  <span class="k">alt</span
+                  ><span
+                    ><code
+                      style="font-family: &quot;JetBrains Mono&quot;, monospace; font-size: 11px"
+                      >t3x.loop.stopped</code
+                    >
+                    — Stopped: budget spent (6 of 6). The run did not report finishing.</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── P4 · roster ── -->
+        <h3>P4 — “did any of my runs give up overnight?”</h3>
+        <p>
+          One page, not three thread-opens. This is the half of #38 that isn't about restarting
+          anything — it's about being able to tell <em>finished</em> from
+          <em>ran out of rope</em> from <em>died</em>.
+        </p>
+        <div class="frame">
+          <div class="frame-hd">
+            <span class="lights"><i></i><i></i><i></i></span>Settings › Beta › Threads armed<span
+              class="path"
+              >GET /api/coil/loop</span
+            >
+          </div>
+          <div class="frame-body">
+            <div class="t3" data-t3="dark">
+              <div style="padding: 20px 22px">
+                <table class="roster">
+                  <thead>
+                    <tr>
+                      <th>Thread</th>
+                      <th>State</th>
+                      <th>Check-ins</th>
+                      <th>Last motion</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>
+                        Overnight TDD orchestration
+                        <div class="mono-s">eddy-knowledge-hub</div>
+                      </td>
+                      <td>
+                        <span class="state-chip" style="color: var(--t3-emerald)"
+                          ><span class="dot" style="background: var(--t3-emerald-dot)"></span
+                          >done</span
+                        >
+                        <div class="mono-s">wrote loop-done</div>
+                      </td>
+                      <td class="mono-s">2 / 6</td>
+                      <td class="mono-s">05:12</td>
+                      <td><button class="btn-x">Re-arm</button></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        Sync conflict resolver
+                        <div class="mono-s">t3code</div>
+                      </td>
+                      <td>
+                        <span class="state-chip" style="color: var(--t3-zinc)"
+                          ><span class="dot" style="background: var(--t3-zinc-dot)"></span
+                          >spent</span
+                        >
+                        <div class="mono-s">budget 6/6 — did not report finishing</div>
+                      </td>
+                      <td class="mono-s">6 / 6</td>
+                      <td class="mono-s">06:41</td>
+                      <td><button class="btn-x">Re-arm</button></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        Mobile QA sweep
+                        <div class="mono-s">t3code-work</div>
+                      </td>
+                      <td>
+                        <span class="state-chip" style="color: var(--t3-rose)"
+                          ><span class="dot" style="background: var(--t3-rose-dot)"></span
+                          >stalled</span
+                        >
+                        <div class="mono-s">2 check-ins produced nothing</div>
+                      </td>
+                      <td class="mono-s">3 / 6</td>
+                      <td class="mono-s">02:04</td>
+                      <td><button class="btn-x">Re-arm</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p style="font-size: 12px; color: var(--t3-muted-fg); margin: 16px 0 0">
+                  <b style="color: var(--t3-fg)">spent</b> is deliberately zinc, never green. “It
+                  finished” and “it ran out of rope” are the two things you could not tell apart on
+                  the night — dressing one up as the other would rebuild the exact bug.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── P5 · rejected ── -->
+        <h3>P5 — the pinned sidebar rail we are <em>not</em> building</h3>
+        <p>
+          #38 asks for a pinned, visually distinct thread type at the top of the sidebar. It's the
+          right instinct and it lost on three independent grounds. Shown so the decision is
+          reversible with open eyes.
+        </p>
+        <div class="rej-wrap">
+          <div class="stamp">Not in v1</div>
+          <div class="frame rejected">
+            <div class="frame-hd">
+              <span class="lights"><i></i><i></i><i></i></span>Sidebar<span class="path"
+                >AppSidebarLayout.tsx:203 — churn 15, would be seam row 35</span
+              >
+            </div>
+            <div class="frame-body">
+              <div class="t3" data-t3="dark">
+                <div style="background: var(--t3-sidebar); padding: 12px; width: 280px">
+                  <div
+                    style="
+                      font-size: 10.5px;
+                      font-weight: 700;
+                      letter-spacing: 0.09em;
+                      text-transform: uppercase;
+                      color: var(--t3-muted-fg);
+                      padding: 6px 8px;
+                    "
+                  >
+                    Watching · 2
+                  </div>
+                  <div
+                    style="
+                      background: var(--t3-row-active);
+                      border-radius: 7px;
+                      padding: 9px 10px;
+                      margin-bottom: 3px;
+                    "
+                  >
+                    <div style="font-size: 13px; font-weight: 550">Overnight TDD orchestration</div>
+                    <div
+                      style="
+                        font-size: 11px;
+                        color: var(--t3-sky);
+                        display: flex;
+                        align-items: center;
+                        gap: 5px;
+                        margin-top: 3px;
+                      "
+                    >
+                      <span
+                        style="
+                          width: 6px;
+                          height: 6px;
+                          border-radius: 50%;
+                          background: var(--t3-sky-dot);
+                        "
+                        class="pulse"
+                      ></span
+                      >Working · check-in 2/6
+                    </div>
+                  </div>
+                  <div style="border-radius: 7px; padding: 9px 10px">
+                    <div style="font-size: 13px; font-weight: 550">Sync conflict resolver</div>
+                    <div
+                      style="
+                        font-size: 11px;
+                        color: var(--t3-rose);
+                        display: flex;
+                        align-items: center;
+                        gap: 5px;
+                        margin-top: 3px;
+                      "
+                    >
+                      <span
+                        style="
+                          width: 6px;
+                          height: 6px;
+                          border-radius: 50%;
+                          background: var(--t3-rose-dot);
+                        "
+                      ></span
+                      >Stalled 41m
+                    </div>
+                  </div>
+                  <div style="height: 1px; background: var(--t3-border); margin: 11px 4px"></div>
+                  <div style="font-size: 10.5px; color: var(--t3-muted-fg); padding: 4px 8px">
+                    Threads
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <ul>
+          <li>
+            <strong>It is exactly where upstream #3164 will land.</strong> The automations feature
+            is in progress and targets <code>apps/web</code>. Building a rival rail there buys a
+            guaranteed conflict on the file we can least afford.
+          </li>
+          <li>
+            <strong>It would be seam row 35</strong>, against SEAMS.md's explicit “before adding row
+            35, re-isolate something instead” tripwire. <code>SidebarV2.tsx</code> is churn 33 and
+            <code>Sidebar.tsx</code> is 32 — the two worst files in the tree.
+          </li>
+          <li>
+            <strong>The zero-seam version doesn't work where it matters.</strong> Portalling into
+            <code>[data-slot="sidebar-content"]</code> launders a churn-15 dependency into a runtime
+            string the ledger can't see — and on mobile the sidebar renders through a base-ui Sheet
+            whose popup is absent while closed, so the rail would be silently missing on the phone
+            you actually read at 4am.
+          </li>
+          <li>
+            <strong>What replaces it:</strong> the roster in P4 answers the same question from one
+            page, and Phase 2 pushes terminal transitions to your phone through the Web Push
+            machinery the fork already ships.
+          </li>
+        </ul>
+      </section>
+
+      <!-- ══════════════════════════ 06 COST ══════════════════════════ -->
+      <section id="cost">
+        <div class="sec-head">
+          <span class="sec-num">06</span>
+          <h2>What this costs you at the next rebase</h2>
+        </div>
+        <p class="lede">
+          The fork edits 34 upstream-owned files today, carrying an aggregate rebase risk in the
+          tens of thousands. Loop Watch adds <strong>6</strong>.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Upstream file</th>
+              <th class="num">Fork Δ</th>
+              <th class="num">Churn</th>
+              <th class="num">Risk</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>BetaSettingsPanel.tsx</code></td>
+              <td class="num">+2</td>
+              <td class="num">3</td>
+              <td class="num risk-lo">6</td>
+              <td>
+                One import, one <code>&lt;CoilBetaSettings /&gt;</code> sibling inside the existing
+                container. New ledger row.
+              </td>
+            </tr>
+            <tr>
+              <td><code>_chat.$environmentId.$threadId.tsx</code></td>
+              <td class="num">±0</td>
+              <td class="num">5</td>
+              <td class="num risk-lo">0</td>
+              <td>
+                Existing row, rewritten in place: <code>AutoResumeOverlay</code> →
+                <code>ThreadCoilOverlay</code>. Row stays +10/−6.
+              </td>
+            </tr>
+            <tr>
+              <td><code>apps/server/src/coil/index.ts</code></td>
+              <td class="num">+4</td>
+              <td class="num">0</td>
+              <td class="num risk-lo">0</td>
+              <td>Fork-owned aggregator. The intended mount point.</td>
+            </tr>
+            <tr>
+              <td><code>packages/contracts/**</code></td>
+              <td class="num">—</td>
+              <td class="num">—</td>
+              <td class="num risk-lo">0</td>
+              <td>Untouched. No command literal, no settings field, no migration.</td>
+            </tr>
+            <tr>
+              <td><code>ClaudeAdapter.ts</code></td>
+              <td class="num">—</td>
+              <td class="num">12</td>
+              <td class="num risk-lo">0</td>
+              <td>
+                Untouched. No <code>options.hooks</code>, no SDK-field coupling. An SDK bump can't
+                break this.
+              </td>
+            </tr>
+            <tr style="opacity: 0.55">
+              <td><em>rejected:</em> <code>AppSidebarLayout.tsx</code></td>
+              <td class="num">+2</td>
+              <td class="num">15</td>
+              <td class="num risk-hi">30</td>
+              <td>The pinned rail. Deferred — see P5.</td>
+            </tr>
+            <tr style="opacity: 0.55">
+              <td><em>rejected:</em> <code>settings.ts</code> (contracts)</td>
+              <td class="num">+3</td>
+              <td class="num">18</td>
+              <td class="num risk-hi">54</td>
+              <td>
+                Persisted schema, the issue-#29 conflict anchor. Config lives in the fork's own JSON
+                store instead.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="note">
+          <b>And a small paydown rides along.</b> <code>authenticateWithOperateScope</code> is
+          currently pasted independently into two fork route files with only one of them in the
+          ledger; it moves to a shared <code>t3x/http/auth.ts</code> rather than becoming a third
+          copy. Phase 4 proposes collapsing the three <code>__root.tsx</code> mounts into one
+          aggregator: <strong>risk 54 → 18, a net −36</strong>.
+        </div>
+      </section>
+
+      <!-- ══════════════════════════ 07 PLAN ══════════════════════════ -->
+      <section id="plan">
+        <div class="sec-head">
+          <span class="sec-num">07</span>
+          <h2>The plan</h2>
+        </div>
+
+        <div class="phase p1">
+          <div class="phase-t">
+            <span class="p">Phase 1 · ships alone · closes #38</span>
+            <h5>The loop that fixes the night</h5>
+          </div>
+          <p>
+            The reactor, the store, the guards, the sentinel, the route, the pill, the beta section.
+            Pure <code>decide.ts</code> holding every guard in table order so the whole policy is
+            unit-testable without Effect or IO — including a fork-owned
+            <code>updatedAtContract.test.ts</code> that turns the design's one silent logic-mirror
+            into a red test if upstream ever stops bumping <code>updated_at</code> on activity
+            append.
+          </p>
+          <div class="chips">
+            <span>t3x/loop/Reactor.ts</span><span>decide.ts</span><span>guards.ts</span
+            ><span>sentinel.ts</span><span>state.ts</span><span>config.ts</span><span>http.ts</span
+            ><span>+8 test files</span><span>LoopPill.tsx</span><span>LoopBetaSection.tsx</span
+            ><span>ThreadCoilOverlay.tsx</span><span>SEAMS.md</span>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-t">
+            <span class="p">Phase 2</span>
+            <h5>Deadline and phone — “it works” becomes “I can sleep”</h5>
+          </div>
+          <p>
+            The 07:00 wall-clock stop, computed browser-side so the server owns no timezone logic.
+            Web Push on <em>terminal transitions only</em>, reusing the fork's existing
+            <code>webPush/send.ts</code> at zero seam and zero service-worker change. Plus an
+            in-page fallback, because <code>sw.js</code> suppresses push whenever that device has a
+            T3 window open — which for a phone with a backgrounded tab over Tailscale means today
+            you'd get nothing at all.
+          </p>
+          <div class="chips">
+            <span>loop/notify.ts</span><span>NotificationCoordinator.tsx</span
+            ><span>LoopBetaSection.tsx</span>
+          </div>
+        </div>
+
+        <div class="phase">
+          <div class="phase-t">
+            <span class="p">Phase 3 · each item gated on verification</span>
+            <h5>Sharper liveness</h5>
+          </div>
+          <p>
+            A synthetic-turn fast path that would fire at 01:07 instead of 01:37 on the issue-38
+            shape — <em>if</em> the projection carries <code>latestTurn.requestedAt</code> from a
+            synthetic start; verify before building. Optional strike-reset hints from
+            <code>.loop/state.json</code>'s <code>iter</code> (which your template really does
+            carry) and worktree HEAD movement. The SDK's <code>Stop</code>/<code>SubagentStop</code>
+            hooks are strictly better drain signals but need <code>options.hooks</code> in a
+            churn-12 file — gated on an NDJSON capture proving <code>updatedAt</code> is genuinely
+            too coarse. And: adopt upstream #5123's <code>thread.wake-if-idle</code> as a caller if
+            it lands.
+          </p>
+        </div>
+
+        <div class="phase">
+          <div class="phase-t">
+            <span class="p">Phase 4 · independent</span>
+            <h5>Ledger paydown</h5>
+          </div>
+          <p>
+            Collapse the three headless fork mounts in <code>__root.tsx</code> into one
+            <code>&lt;CoilRoot /&gt;</code>. Honest caveat: this reduces risk but does not remove a
+            row, and SEAMS.md's tripwire asks for re-isolation. The only change that truly removes
+            one is migrating <code>notifyOnNeedsInput</code> out of the contracts settings schema —
+            a real data migration, proposed separately, not bundled.
+          </p>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════ 08 RISKS ══════════════════════════ -->
+      <section id="risks">
+        <div class="sec-head">
+          <span class="sec-num">08</span>
+          <h2>What this honestly does not solve</h2>
+        </div>
+        <p class="lede">Written down now, so nobody discovers them at 4am.</p>
+        <ul>
+          <li>
+            <strong>A single silent tool call longer than 45 minutes reads as idle.</strong> The
+            nudge is then absorbed as a <em>steer</em> into the live turn with no visible turn
+            boundary, and you'd see a derailed agent with no obvious cause. On this repo that's not
+            hypothetical — the full suite needs <code>--concurrency-limit 2</code> and a raised hook
+            timeout. Mitigated by the 45-minute default, per-thread overrides, and a check-in
+            written to be harmless as an interjection. Not eliminated.
+          </li>
+          <li>
+            <strong
+              >Without the sentinel, <code>done</code> is unreachable and every run ends
+              <code>spent</code>.</strong
+            >
+            Your own loop protocol says outright that the loop never halts on a semantic event, so
+            your agents are conditioned against declaring completion at all. That's why the absolute
+            path is interpolated, why the contract is restated every check-in — and why
+            <code>spent</code> is visually distinct rather than quietly green.
+          </li>
+          <li>
+            <strong>Phone delivery is not solved by Phase 2 alone.</strong> The service worker
+            returns early whenever <em>that device</em> has a T3 window open, so a phone with a
+            backgrounded, frozen tab suppresses its own push. Three of the four designs got this
+            backwards. The in-page fallback is a partial answer and needs real on-device testing
+            before anyone calls it working.
+          </li>
+          <li>
+            <strong>Two fork reactors now dispatch turns to the same thread</strong>, with no shared
+            lock. The pending-resume guard plus durable rate-limit suppression closes both
+            directions I can find, but a third producer would have nothing to compose against. A new
+            Parallel-paths row in SEAMS.md is the only tripwire.
+          </li>
+          <li>
+            <strong>The trigger rests on incidental upstream bookkeeping.</strong> A full-row upsert
+            per activity append is precisely the shape upstream optimises. The shipped contract test
+            catches a semantic change — but only if it keeps running against real projection wiring
+            rather than stubs. This fork has been bitten by a semantically-dead test once already.
+          </li>
+          <li>
+            <strong>Upstream #3164 may make this redundant.</strong> If automations ship with their
+            own enablement and budget gates, Loop Watch becomes a parallel path that bypasses all of
+            them with no conflict, no type error and no failing test. Retirement is
+            <code>rm -r apps/server/src/coil/loop apps/web/src/coil/Loop*</code> plus reverting three
+            lines, and the ledger row will carry that adopt-or-sunset criterion explicitly.
+          </li>
+          <li>
+            <strong>Cost is not metered in dollars.</strong> The budget is turns and wall-clock.
+            <code>total_cost_usd</code> flows from the SDK but nothing in this repo has ever read
+            it, and its per-turn vs per-session semantics are unverified — a ledger whose whole
+            selling point is trust must not rest on a number nobody has checked.
+          </li>
+        </ul>
+      </section>
+
+      <footer>
+        <div>Loop Watch · design report · radroid/t3code#38</div>
+        <div>
+          Worktree ~/Developer/t3code-loop · branch t3x/loop-supervisor · merge-base 64bf01619
+        </div>
+        <div>
+          Companions — DESIGN.md (the build spec) · OPTIONS.md (all four designs, all twelve
+          judgements) · RESEARCH.md (the codebase evidence)
+        </div>
+        <div>Nothing has been implemented yet. Phase 1 awaits your go.</div>
+      </footer>
+    </div>
+
+    <script>
+      /* ── the night, drawn from the real timestamps in issue #38 ── */
+      (function () {
+        const T0 = Date.parse("2026-07-30T21:34:00Z"),
+          T1 = Date.parse("2026-07-31T14:54:00Z");
+        const pct = (t) => ((Date.parse(t) - T0) / (T1 - T0)) * 100;
+        const el = (cls, a, b, extra) => {
+          const d = document.createElement("div");
+          d.className = "blk " + cls;
+          d.style.left = pct(a) + "%";
+          d.style.width = Math.max(pct(b) - pct(a), 0.35) + "%";
+          if (extra) d.title = extra;
+          return d;
+        };
+        const actual = document.getElementById("lane-actual");
+        // working stretches
+        [
+          ["2026-07-30T21:34:00Z", "2026-07-31T00:19:19Z"],
+          ["2026-07-31T04:23:48Z", "2026-07-31T07:40:44Z"],
+          ["2026-07-31T14:39:06Z", "2026-07-31T14:54:00Z"],
+        ].forEach(([a, b]) => actual.appendChild(el("work", a, b, "turn running")));
+        // orphaned activity after the turn closed
+        actual.appendChild(
+          el(
+            "orphan",
+            "2026-07-31T00:19:19Z",
+            "2026-07-31T00:52:43Z",
+            "1,358 activities after the turn was marked completed",
+          ),
+        );
+        actual.appendChild(
+          el(
+            "orphan",
+            "2026-07-31T07:40:44Z",
+            "2026-07-31T07:48:47Z",
+            "61 activities after the turn was marked completed",
+          ),
+        );
+        // dead air
+        actual.appendChild(
+          el(
+            "dead",
+            "2026-07-31T00:52:43Z",
+            "2026-07-31T04:23:48Z",
+            "3h 31m of silence — nothing scheduled",
+          ),
+        );
+        actual.appendChild(
+          el(
+            "dead",
+            "2026-07-31T07:48:47Z",
+            "2026-07-31T14:39:06Z",
+            "6h 50m of silence — nothing scheduled",
+          ),
+        );
+
+        // the humans
+        const human = document.getElementById("lane-human");
+        [
+          "00:10:20",
+          "00:11:05",
+          "00:13:53",
+          "00:18:55",
+          "04:23:48",
+          "05:49:31",
+          "06:00:20",
+          "06:42:14",
+          "07:15:17",
+          "14:39:06",
+          "14:53:19",
+        ].forEach((t) => {
+          const iso = "2026-07-31T" + t + "Z";
+          const m = document.createElement("div");
+          m.className = "human";
+          m.style.left = pct(iso) + "%";
+          m.title = t + "Z — you, checking in";
+          document.getElementById("trk-human").appendChild(m);
+        });
+
+        // what Loop Watch would have done
+        const watch = document.getElementById("lane-watch");
+        [
+          ["2026-07-30T21:34:00Z", "2026-07-31T00:19:19Z"],
+          ["2026-07-31T04:23:48Z", "2026-07-31T07:40:44Z"],
+          ["2026-07-31T14:39:06Z", "2026-07-31T14:54:00Z"],
+        ].forEach(([a, b]) => watch.appendChild(el("work", a, b)));
+        watch.appendChild(el("orphan", "2026-07-31T00:19:19Z", "2026-07-31T00:52:43Z"));
+        watch.appendChild(el("orphan", "2026-07-31T07:40:44Z", "2026-07-31T07:48:47Z"));
+        // fires 15m after quiescence (busy fuse would be 45m — both shown as one marker band)
+        watch.appendChild(
+          el("dead", "2026-07-31T00:52:43Z", "2026-07-31T01:07:43Z", "15 min idle fuse"),
+        );
+        watch.appendChild(
+          el(
+            "nudge",
+            "2026-07-31T01:07:43Z",
+            "2026-07-31T01:22:00Z",
+            "check-in 1 of 6 — 3h 16m earlier than the human",
+          ),
+        );
+        watch.appendChild(
+          el("dead", "2026-07-31T07:48:47Z", "2026-07-31T08:03:47Z", "15 min idle fuse"),
+        );
+        watch.appendChild(
+          el(
+            "nudge",
+            "2026-07-31T08:03:47Z",
+            "2026-07-31T08:18:00Z",
+            "check-in 2 of 6 — 6h 35m earlier than the human",
+          ),
+        );
+
+        // callouts
+        const c1 = document.createElement("span");
+        c1.className = "callout";
+        c1.style.left = pct("2026-07-31T01:07:43Z") + "%";
+        c1.textContent = "↓ 3h16m earlier";
+        document.getElementById("trk-watch").appendChild(c1);
+        const c2 = document.createElement("span");
+        c2.className = "callout";
+        c2.style.left = pct("2026-07-31T08:03:47Z") + "%";
+        c2.textContent = "↓ 6h35m earlier";
+        document.getElementById("trk-watch").appendChild(c2);
+
+        // axis
+        const ax = document.getElementById("axis");
+        ["21:34", "00:00", "03:00", "06:00", "09:00", "12:00", "14:54"].forEach((t) => {
+          const s = document.createElement("span");
+          s.textContent = t + "Z";
+          ax.appendChild(s);
+        });
+      })();
+
+      /* ── theme switch for the prototype frames ── */
+      document.querySelectorAll(".seg [data-theme]").forEach((b) => {
+        b.addEventListener("click", () => {
+          document
+            .querySelectorAll(".seg [data-theme]")
+            .forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+          document.querySelectorAll(".t3").forEach((t) => (t.dataset.t3 = b.dataset.theme));
+        });
+      });
+
+      /* ── switches ── */
+      document.querySelectorAll("[data-toggle]").forEach((sw) => {
+        sw.addEventListener("click", () => {
+          const next = sw.getAttribute("aria-checked") !== "true";
+          sw.setAttribute("aria-checked", String(next));
+          if (sw.id === "loop-master") document.getElementById("loop-subrows").hidden = !next;
+          if (sw.id === "arm-sw") applyState(next ? "watching" : "off");
+        });
+      });
+
+      /* ── the pill's state machine ── */
+      const STATES = {
+        off: { label: "Loop off", budget: "", dot: "zinc", chip: "off", meter: 0, msg: null },
+        watching: {
+          label: "Loop watching",
+          budget: "· 12m idle",
+          dot: "sky",
+          chip: "watching",
+          meter: 0,
+          pulse: true,
+          msg: null,
+        },
+        nudged: {
+          label: "Loop 2/6",
+          budget: "· ends 07:00",
+          dot: "sky",
+          chip: "checked in",
+          meter: 33,
+          pulse: true,
+          msg: {
+            k: "01:07",
+            t: "<code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">t3x.loop.nudged</code> — Loop check-in 2 of 6 after 47 min of silence.",
+          },
+        },
+        paused: {
+          label: "Loop paused — needs you",
+          budget: "",
+          dot: "amber",
+          chip: "paused · approval",
+          meter: 33,
+          msg: {
+            k: "02:31",
+            t: "<code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">t3x.loop.skipped</code> — Paused: waiting on an approval. Budget not spent.",
+          },
+        },
+        done: {
+          label: "Loop done",
+          budget: "· 2 check-ins",
+          dot: "emerald",
+          chip: "done",
+          meter: 33,
+          msg: {
+            k: "05:12",
+            t: "<code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">t3x.loop.stopped</code> — Stopped: the agent wrote <code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">.t3x/loop-done</code> — “backlog empty, 3 PRs open”.",
+          },
+        },
+        spent: {
+          label: "Loop spent",
+          budget: "· 6/6",
+          dot: "zinc",
+          chip: "spent",
+          meter: 100,
+          msg: {
+            k: "07:00",
+            t: "<code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">t3x.loop.stopped</code> — Stopped: budget spent (6 of 6). The run did not report finishing.",
+            err: true,
+          },
+        },
+        stalled: {
+          label: "Loop stalled",
+          budget: "· 2 dead check-ins",
+          dot: "rose",
+          chip: "stalled",
+          meter: 50,
+          msg: {
+            k: "02:04",
+            t: "<code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">t3x.loop.stopped</code> — Stopped: two check-ins produced no work. The session looks dead.",
+            err: true,
+          },
+        },
+        handed: {
+          label: "Loop off — you took over",
+          budget: "",
+          dot: "zinc",
+          chip: "handed back",
+          meter: 17,
+          msg: {
+            k: "04:23",
+            t: "<code style=\"font-family:'JetBrains Mono',monospace;font-size:11px\">t3x.loop.stopped</code> — Stood down: you sent a message. Re-arm when you walk away again.",
+          },
+        },
+      };
+      const BASE_MSG =
+        '<div class="who">Assistant</div>Ran the failing spec for <code style="font-family:\'JetBrains Mono\',monospace;font-size:11px">packages/ingest</code> and dispatched four subagents to triage the fixtures. Waiting on their reports.';
+
+      function applyState(key) {
+        const s = STATES[key];
+        if (!s) return;
+        document
+          .querySelectorAll("#state-seg button")
+          .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.state === key)));
+        const dot = document.getElementById("pill-dot");
+        dot.style.background = "var(--t3-" + s.dot + "-dot)";
+        dot.classList.toggle("pulse", !!s.pulse);
+        document.getElementById("pill-label").textContent = s.label;
+        document.getElementById("pill-budget").textContent = s.budget;
+        document.getElementById("panel").hidden = key === "off";
+        const chip = document.getElementById("p-state");
+        chip.innerHTML =
+          '<span class="dot" style="background:var(--t3-' + s.dot + '-dot)"></span>' + s.chip;
+        chip.style.color = "var(--t3-" + s.dot + ")";
+        const used = Math.round((s.meter / 100) * 6);
+        document.getElementById("p-budget-n").textContent = used + " / 6";
+        const meter = document.getElementById("p-meter");
+        meter.classList.toggle("spent", key === "spent");
+        meter.firstElementChild.style.width = s.meter + "%";
+        document.getElementById("p-sentinel").innerHTML =
+          key === "done"
+            ? '<span style="color:var(--t3-emerald)">✓</span> written 05:12 — “backlog empty, 3 PRs open”'
+            : '<span style="color:var(--t3-muted-fg)">✕</span> not present';
+        const armSw = document.getElementById("arm-sw");
+        armSw.setAttribute(
+          "aria-checked",
+          String(!["off", "handed", "done", "spent", "stalled"].includes(key)),
+        );
+        const msgs = document.getElementById("thread-msgs");
+        msgs.innerHTML = '<div class="msg">' + BASE_MSG + "</div>";
+        if (s.msg) {
+          const d = document.createElement("div");
+          d.className = "msg sys" + (s.msg.err ? " err" : "");
+          d.innerHTML = '<span class="k">' + s.msg.k + "</span><span>" + s.msg.t + "</span>";
+          msgs.appendChild(d);
+        }
+      }
+      document
+        .querySelectorAll("#state-seg button")
+        .forEach((b) => b.addEventListener("click", () => applyState(b.dataset.state)));
+      document.getElementById("pill").addEventListener("click", () => {
+        const p = document.getElementById("panel");
+        p.hidden = !p.hidden;
+      });
+      applyState("watching");
+    </script>
+  </body>
+</html>

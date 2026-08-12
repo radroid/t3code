@@ -3,7 +3,7 @@
 **Date:** 2026-08-08
 **Fork:** `radroid/t3code`
 **Supersedes the UI section of:** `2026-07-24-t3x-autoresume-ui-design.md` (§C, "The control UI")
-**Scope:** `apps/web/src/t3x/` only. Zero upstream edits — the existing mount line in
+**Scope:** `apps/web/src/coil/` only. Zero upstream edits — the existing mount line in
 `_chat.$environmentId.$threadId.tsx` keeps the same props, so the hottest seam (churn 80) is untouched.
 
 ## Why
@@ -52,7 +52,7 @@ would fling the capsule to the top of the thread.
 
 > **New soft seam.** A _read-only DOM dependency_ on an upstream attribute, not a code edit. It
 > degrades gracefully: if the element is absent the overlay falls back to a fixed 76px offset and
-> stays usable. Recorded in `docs/t3x/SEAMS.md`.
+> stays usable. Recorded in `docs/coil/SEAMS.md`.
 
 Consequences of anchoring to the bottom:
 
