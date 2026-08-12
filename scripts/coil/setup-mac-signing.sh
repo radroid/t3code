@@ -22,7 +22,7 @@
 #
 # A dedicated keychain, not your login keychain, for one reason: its password is one we generate, so
 # `security set-key-partition-list` can be run non-interactively and `codesign` never raises the
-# "wants to use a key in your keychain" dialog. An unattended autobuild cannot answer a dialog.
+# "wants to use a key in your keychain" dialog. A CI runner cannot answer a dialog.
 #
 # Usage:
 #   scripts/coil/setup-mac-signing.sh                  # create it (idempotent), then self-verify
@@ -258,7 +258,7 @@ EOF
   if ! keychain_exists; then
     log "creating keychain $KEYCHAIN_PATH"
     security create-keychain -p "$keychain_password" "$KEYCHAIN_CREATE_NAME"
-    # No -t: a keychain that auto-locks after N seconds of idleness makes an overnight autobuild
+    # No -t: a keychain that auto-locks after N seconds of idleness makes a long unattended build
     # fail with "no identity found" for no visible reason.
     security set-keychain-settings "$KEYCHAIN_PATH"
   fi
@@ -355,7 +355,7 @@ case "$MODE" in
       fi
     fi
     log ""
-    log "Next: builds pick the identity up through CSC_NAME. scripts/coil/auto-build-desktop.sh does"
-    log "that on its own; the release workflow needs the two secrets from --print-ci-secrets."
+    log "Next: builds pick the identity up through CSC_NAME, which the release workflow exports"
+    log "from the two secrets that --print-ci-secrets emits."
     ;;
 esac
