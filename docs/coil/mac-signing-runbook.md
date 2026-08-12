@@ -160,13 +160,17 @@ through `T3X_DESKTOP_APP_ID`, which is the one upstream-owned line this whole ch
 so upstream's own assertions on that constant still pass and an unset environment builds exactly what
 upstream builds. See `SEAMS.md`.
 
-Two deliberate non-changes:
+One deliberate non-change, and one that has since changed:
 
-- **`productName` stays `T3 Code (Alpha)`.** The updater refuses an install when the `.app` name inside
-  the dmg differs from the installed one (`resolveMacInstallTarget`), so renaming the app would break
-  the update path this is meant to make quiet. The rename stops at the bundle id (#71).
 - **User data does not move.** `~/Library/Application Support/t3code` comes from a hardcoded
-  `userDataDirName`, not from the bundle id — threads, settings and sessions are untouched.
+  `userDataDirName`, not from the bundle id or the app name — threads, settings and sessions are
+  untouched. This held through #70 and again through #71.
+- **`productName` no longer stays `T3 Code (Alpha)`.** It became `T3 Coil (Alpha)` in #71, along
+  with the bundle id (`dev.curlycloud.t3coil`) and the certificate (`T3 Coil Code Signing`). The
+  hazard this note used to warn about is real and was accepted rather than avoided: the updater
+  refuses an install when the `.app` name in the dmg differs from the installed one, so the first
+  renamed build has to be installed by hand, once. `describeRefusal` says exactly that now instead
+  of reading like a fault.
 
 Since it lands in the same release as the signing change, the two identity changes cost **one**
 round of prompts between them, not two. `scripts/coil/mac-signature.test.ts` asserts every build path
@@ -228,12 +232,13 @@ so a rotation that forgets them fails the next release instead of quietly re-pro
 
 ## Related
 
-- **Issue #71 — renaming the fork to `coil`.** Read the notes on that issue before renaming anything
-  here. Two things it has to respect: renaming the signing certificate (`T3 Coil Code Signing`, which a
-  sweep of `T3X` will find) changes the designated requirement and costs another round of prompts,
-  and renaming `productName` makes the updater refuse the first renamed build by design
-  (`resolveMacInstallTarget`, "would create a second app"). Renaming the _visible app_ is otherwise
-  free in permission terms — grants are keyed to the bundle id and the certificate, not the name.
+- **Issue #71 — renaming the fork to `coil`.** Done. It moved all three identities at once — bundle
+  id, certificate and visible name — deliberately, so the permission reset is paid once rather than
+  once per change. The certificate rename is the half that is not a code change: a new common name
+  is a new certificate, so `--rotate` has to run and `designated-requirement.txt` has to be
+  re-recorded from it before the release can sign anything. Renaming the visible app is free in TCC
+  terms — grants key on the designated requirement, which names the bundle id and the certificate,
+  not `productName`.
 - `docs/coil/auto-build-runbook.md` — the local build/install loop, which signs the same way.
 - Issue #41 — the autobuild relaunch race. Unrelated, adjacent.
 - Issue #72 / PR #78 (still open, branch `t3x/install-instructions`) — the first-launch install copy,

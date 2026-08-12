@@ -35,13 +35,13 @@ The name is **not** a flag — it is derived from the version in
 
 | Version                | Channel  | `.app` produced         |
 | ---------------------- | -------- | ----------------------- |
-| plain (e.g. `0.0.28`)  | `latest` | `T3 Code (Alpha).app`   |
+| plain (e.g. `0.0.28`)  | `latest` | `T3 Coil (Alpha).app`   |
 | `…-nightly.YYYYMMDD.N` | nightly  | `T3 Code (Nightly).app` |
 
-The `latest` name comes from `"productName": "T3 Code (Alpha)"` in
+The `latest` name comes from `"productName": "T3 Coil (Alpha)"` in
 `apps/desktop/package.json` — **not** the `"T3 Code"` fallback, which only
 applies if that field is ever removed upstream. So a default local build
-replaces **`T3 Code (Alpha).app`**, the app most fork users already run.
+replaces **`T3 Coil (Alpha).app`**, the app most fork users already run.
 
 Don't trust the table — ask the script. `--dry-run` mounts the built `.dmg`
 read-only and reports the **real** name, falling back to the prediction above
@@ -58,8 +58,8 @@ last build" before it reaches the install step.)
 It prints one of:
 
 ```
-DRY-RUN install: read 'T3 Code (Alpha).app' from …/release/T3-Code-0.0.28-arm64.dmg
-DRY-RUN: '/Applications/T3 Code (Alpha).app' exists and WOULD be replaced
+DRY-RUN install: read 'T3 Coil (Alpha).app' from …/release/T3-Code-0.0.28-arm64.dmg
+DRY-RUN: '/Applications/T3 Coil (Alpha).app' exists and WOULD be replaced
 ```
 
 ```
