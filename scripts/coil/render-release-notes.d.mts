@@ -6,7 +6,7 @@
  * stripping) and this package's tsconfig does not set `allowJs`. Without this file the test
  * imports it as `any` and `tsgo --noEmit` fails on the implicit type.
  *
- * These shapes describe scripts/t3x/install-instructions.json.
+ * These shapes describe scripts/coil/install-instructions.json.
  */
 
 export interface InstallStep {
