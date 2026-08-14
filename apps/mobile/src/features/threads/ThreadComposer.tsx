@@ -895,7 +895,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   maxWidth={152}
                   onPress={openSettings}
                 />
-
                 {showStopAction ? (
                   <ComposerToolbarButton
                     accessibilityLabel="Stop"
