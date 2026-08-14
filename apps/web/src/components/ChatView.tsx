@@ -5025,9 +5025,16 @@ function ChatViewContent(props: ChatViewProps) {
         createdAt: new Date().toISOString(),
       });
     } catch (error) {
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to queue message.",
+      // A toast, not setThreadError: enqueue failures repeat with identical
+      // strings (quota, storage), and the error banner's dismissal mask
+      // (upstream #6123) is keyed on (thread, message) — a dismissed banner
+      // would silently swallow every retry of the same failure.
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Message not queued",
+          description: error instanceof Error ? error.message : "Failed to queue message.",
+        }),
       );
       return;
     }
