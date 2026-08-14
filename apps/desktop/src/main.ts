@@ -193,8 +193,9 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
   // coil: fork-owned update delivery. Sits beside DesktopUpdates rather than replacing it —
-  // upstream's updater is silenced by building with GITHUB_REPOSITORY="" (no app-update.yml is
-  // packaged, so it self-disables), which costs no seam here.
+  // upstream's updater is silenced by building with T3CODE_DESKTOP_UPDATE_REPOSITORY: "disabled"
+  // (no app-update.yml is packaged, so it self-disables; a GITHUB_REPOSITORY override cannot work
+  // in Actions, see coil-release.yml), which costs no seam here.
   CoilUpdateDelivery.layer,
   desktopSshLayer,
 ).pipe(

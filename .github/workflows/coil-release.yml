@@ -647,9 +647,12 @@ jobs:
       # not depend on attribution: a bundle that imports what it does not contain is broken either way,
       # and an earlier draft that warned on unattributed gaps passed a build that could not start.
       #
-      # Runs on BOTH platforms: the Windows bundle unpacks node_modules outside the asar (the checker
-      # merges app.asar.unpacked back in) and its graph differs (WSL backend, Linux fff binaries), so a
-      # mac-only check would not cover it.
+      # Runs on BOTH platforms: the Windows artifact ships the server tree as a resources/server.asar
+      # sidecar next to app.asar (the checker discovers and merges it, plus both .unpacked siblings)
+      # and its graph differs (WSL backend, Linux fff binaries), so a mac-only check would not cover
+      # it. The checker also fails outright if any first-party bundle directory is invisible to it —
+      # the 2026-08-14 sync proved a packaging-topology change can otherwise leave a whole layer
+      # unverified (issue #102).
       - name: Verify the packaged bundle still resolves
         shell: bash
         run: |

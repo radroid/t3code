@@ -478,7 +478,7 @@ it.layer(NodeServices.layer)("the packaging seam agrees everywhere", (it) => {
  */
 describe("verifyPackagedApp over a real asar", () => {
   /** Writes a minimal but format-correct asar: [4][8+n+pad][4+n+pad][n][json][pad][contents]. */
-  const writeAsar = (dir: string, files: Record<string, string>): string => {
+  const writeAsar = (dir: string, files: Record<string, string>, name = "app.asar"): string => {
     const entries: Record<string, { size: number; offset: string }> = {};
     const blobs: Buffer[] = [];
     let offset = 0;
@@ -509,7 +509,7 @@ describe("verifyPackagedApp over a real asar", () => {
     preamble.writeUInt32LE(4 + json.length + pad, 8);
     preamble.writeUInt32LE(json.length, 12);
 
-    const asarPath = NodePath.join(dir, "app.asar");
+    const asarPath = NodePath.join(dir, name);
     NodeFS.writeFileSync(asarPath, Buffer.concat([preamble, json, Buffer.alloc(pad), ...blobs]));
     return asarPath;
   };
@@ -527,6 +527,7 @@ describe("verifyPackagedApp over a real asar", () => {
     withTempDir((dir) => {
       const asarPath = writeAsar(dir, {
         "apps/server/dist/bin.mjs": 'import x from "effect";\n',
+        "apps/desktop/dist-electron/main.cjs": "const x = 1;",
         "node_modules/effect/package.json": '{"name":"effect"}',
         "node_modules/effect/dist/index.js": "module.exports = {};",
       });
@@ -584,6 +585,7 @@ describe("verifyPackagedApp over a real asar", () => {
         // The @noble/hashes shape that failed a good release before comments were blanked.
         "apps/server/dist/bin.mjs":
           "/**\n * @example\n * import { hmac } from '@noble/hashes/hmac';\n */\nconst x = 1;\n",
+        "apps/desktop/dist-electron/main.cjs": "const x = 1;",
       });
       assert.ok(verifyPackagedApp(asarPath).ok, "a JSDoc example is not an import");
     });
@@ -594,8 +596,55 @@ describe("verifyPackagedApp over a real asar", () => {
       const asarPath = writeAsar(dir, {
         "apps/desktop/dist-electron/main.cjs":
           'require("electron");require("@t3tools/shared");require("node:fs");',
+        "apps/server/dist/bin.mjs": "const x = 1;",
       });
       assert.ok(verifyPackagedApp(asarPath).ok);
+    });
+  });
+
+  /*
+   * The 2026-08-14 regression (issue #102). Upstream moved the Windows server tree out of app.asar
+   * into a resources/server.asar sidecar: node-pty (mentioned by main.cjs's embedded WSL scripts)
+   * stopped resolving from app.asar and the gate went red on a shippable build — and, worse, the
+   * server bundles silently stopped being scanned at all. The sidecar is part of the shipped app;
+   * the view must include it.
+   */
+  it("resolves imports from a sibling server.asar sidecar and scans its bundles", () => {
+    withTempDir((dir) => {
+      const asarPath = writeAsar(dir, {
+        "apps/desktop/dist-electron/main.cjs": 'require("node-pty");',
+      });
+      writeAsar(
+        dir,
+        {
+          // The server bundle imports a package that exists nowhere: with the sidecar merged into
+          // the view this MUST fail, proving server bundles are scanned rather than merely stored.
+          "apps/server/dist/bin.mjs": 'import x from "not-shipped";\n',
+          "node_modules/node-pty/package.json": '{"name":"node-pty"}',
+          "node_modules/node-pty/lib/index.js": "module.exports = {};",
+        },
+        "server.asar",
+      );
+      const result = verifyPackagedApp(asarPath);
+      assert.deepStrictEqual(result.uncoveredBundleDirs, [], "sidecar bundles must be visible");
+      assert.deepStrictEqual(
+        result.missing.map((entry) => entry.name),
+        ["not-shipped"],
+        "node-pty resolves from the sidecar; the sidecar's own broken import still fails",
+      );
+    });
+  });
+
+  // A packaging-topology change that hides a whole bundle directory must be an error, not an empty
+  // green result — the pre-#102 gate verified only the Electron bundle on Windows and passed.
+  it("fails when a first-party bundle directory is invisible to the checker", () => {
+    withTempDir((dir) => {
+      const asarPath = writeAsar(dir, {
+        "apps/desktop/dist-electron/main.cjs": 'require("electron");',
+      });
+      const result = verifyPackagedApp(asarPath);
+      assert.isFalse(result.ok, "an unscanned layer must fail the release");
+      assert.deepStrictEqual(result.uncoveredBundleDirs, ["apps/server/dist"]);
     });
   });
 });
