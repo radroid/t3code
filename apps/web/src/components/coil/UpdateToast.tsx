@@ -7,8 +7,10 @@
  * subscription and the toast calls.
  *
  * There is exactly one update surface in a fork build. Upstream's two — the sidebar pill and
- * `desktopUpdate.toast.tsx` — are both silenced by building with `GITHUB_REPOSITORY: ""`, which
- * packages no `app-update.yml`, which makes electron-updater self-disable. See the design doc.
+ * `desktopUpdate.toast.tsx` — are both silenced by building with
+ * `T3CODE_DESKTOP_UPDATE_REPOSITORY: "disabled"` (a `GITHUB_REPOSITORY` override cannot work in
+ * Actions), which packages no `app-update.yml`, which makes electron-updater self-disable. See the
+ * design doc and coil-release.yml.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
