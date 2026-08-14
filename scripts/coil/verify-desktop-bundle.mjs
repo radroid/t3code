@@ -72,6 +72,22 @@ export const FIRST_PARTY_BUNDLE_DIRS = ["apps/desktop/dist-electron", "apps/serv
 const RUNTIME_PROVIDED = new Set(["electron"]);
 const BUNDLED_WORKSPACE_PREFIXES = ["@t3tools/"];
 
+/*
+ * Imports the shipped app can never reach, so their absence is not a break.
+ *
+ * The server bundle imports these behind Bun-runtime detection (`typeof Bun !== "undefined"` in
+ * server.ts's HttpServerLive, `process.versions.bun !== undefined` in persistence/Layers/Sqlite.ts),
+ * and the shipped desktop app always runs the server under Node via ELECTRON_RUN_AS_NODE — the Bun
+ * branch cannot execute. Upstream agrees by construction: its Windows server.asar sidecar stages
+ * only the CLI's runtime external dependencies, which exclude both (that omission is what surfaced
+ * this list — release run 31839839479). The macOS artifact carries them incidentally, because its
+ * staging installs the full production dependency set.
+ *
+ * If the shipped server ever runs under Bun, this list is wrong and the failure is a MODULE_NOT_FOUND
+ * at startup on the Bun path — re-check both guard sites before growing or trusting it.
+ */
+const UNREACHABLE_IN_SHIPPED_RUNTIME = new Set(["@effect/platform-bun", "@effect/sql-sqlite-bun"]);
+
 /**
  * @typedef {object} PackagedFile
  * @property {number} size
@@ -219,6 +235,7 @@ export function isPackagedSpecifier(specifier) {
   const name = packageNameFromSpecifier(specifier);
   if (name === undefined) return false;
   if (RUNTIME_PROVIDED.has(name)) return false;
+  if (UNREACHABLE_IN_SHIPPED_RUNTIME.has(name)) return false;
   return !BUNDLED_WORKSPACE_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
