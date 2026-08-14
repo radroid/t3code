@@ -635,6 +635,20 @@ describe("verifyPackagedApp over a real asar", () => {
     });
   });
 
+  // The Bun-runtime variants are imported behind runtime detection the shipped app (always Node,
+  // via ELECTRON_RUN_AS_NODE) can never satisfy, and upstream's Windows sidecar deliberately omits
+  // them — their absence is not a break. Release run 31839839479 failed on exactly this.
+  it("does not require Bun-runtime-only packages the shipped app cannot load", () => {
+    withTempDir((dir) => {
+      const asarPath = writeAsar(dir, {
+        "apps/server/dist/bin.mjs":
+          'import("@effect/platform-bun/BunHttpServer");import("@effect/sql-sqlite-bun/SqliteClient");',
+        "apps/desktop/dist-electron/main.cjs": "const x = 1;",
+      });
+      assert.ok(verifyPackagedApp(asarPath).ok, "unreachable Bun-runtime imports are not breaks");
+    });
+  });
+
   // A packaging-topology change that hides a whole bundle directory must be an error, not an empty
   // green result — the pre-#102 gate verified only the Electron bundle on Windows and passed.
   it("fails when a first-party bundle directory is invisible to the checker", () => {
