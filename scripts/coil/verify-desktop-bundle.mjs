@@ -15,12 +15,16 @@
  * granularity of the risk, because every fork exclusion removes a whole package or a file type,
  * never an individual entry point.
  *
- * BOTH HALVES OF THE APP, WHICH IS THE POINT ON WINDOWS. The Windows artifact sets
- * `asarUnpack: ["apps/server/dist/**", "**\/node_modules/**"]`, so on that platform the bundles AND
- * every dependency live in `app.asar.unpacked/` on disk and the asar is nearly empty. A checker that
- * read only the archive would find nothing on Windows, blame the fork's globs for all of it, and fail
- * every Windows release. So the two sources are merged into one view before anything is checked, and
- * `--verify-app` is the supported entry point precisely because it finds both.
+ * EVERY LAYER OF THE APP, WHICH IS THE POINT ON WINDOWS. The Windows artifact ships the server tree
+ * as a separate `resources/server.asar` sidecar (plus its `.unpacked` sibling for natives) so the
+ * NSIS installer extracts a handful of archives instead of thousands of files; `app.asar` holds only
+ * the Electron main-process bundle. A checker that read only `app.asar` would verify a fraction of
+ * the app and could not fail on the rest — which happened: the 2026-08-14 sync imported that split
+ * and this gate red-flagged `node-pty` as unresolvable when it had merely moved into the sidecar
+ * (issue #102). So the view merges `app.asar`, `app.asar.unpacked/`, and any sibling `server.asar`
+ * (+ `.unpacked`) before anything is checked, and additionally requires that every entry in
+ * FIRST_PARTY_BUNDLE_DIRS contributed at least one scanned bundle — a layer this checker cannot see
+ * fails the release instead of silently passing it.
  *
  * ANY MISSING IMPORT FAILS, and an earlier draft of this file got that wrong in a way worth recording.
  * It split findings into "a fork glob removed this" (error) and "missing for some other reason"
@@ -323,6 +327,8 @@ export function findExcludingGlob(name, globs = defaultAttributionGlobs()) {
  *   ok: boolean,
  *   checked: number,
  *   missing: { name: string, importedBy: string, glob: string | undefined }[],
+ *   sidecars: string[],
+ *   uncoveredBundleDirs: string[],
  *   totalBytes: number,
  *   totalFiles: number,
  *   mapBytes: number,
@@ -330,7 +336,38 @@ export function findExcludingGlob(name, globs = defaultAttributionGlobs()) {
  */
 export function verifyPackagedApp(asarPath) {
   const files = readPackagedFiles(asarPath);
+
+  // Windows ships the server tree as a resources/server.asar sidecar beside app.asar (see the
+  // module header). Its archive and .unpacked sibling are part of the shipped app, so they join
+  // the view: server bundles get scanned again, and a package that moved into the sidecar
+  // (node-pty, for the WSL probe scripts) counts as loadable because it is.
+  /** @type {string[]} */
+  const sidecars = [];
+  const serverAsarPath = NodePath.join(NodePath.dirname(asarPath), "server.asar");
+  if (serverAsarPath !== asarPath && NodeFS.existsSync(serverAsarPath)) {
+    for (const [relative, file] of readPackagedFiles(serverAsarPath)) {
+      if (!files.has(relative)) files.set(relative, file);
+    }
+    sidecars.push(serverAsarPath);
+  }
+
   const required = collectRequiredPackages(files);
+
+  // A bundle directory nobody scanned is a layer this checker cannot see — exactly how the
+  // pre-#102 gate verified only the Electron bundle on Windows and could not fail on the server
+  // half. Absence must be an error, not an empty (green) result.
+  const scannedDirs = new Set();
+  for (const filePath of files.keys()) {
+    for (const dir of FIRST_PARTY_BUNDLE_DIRS) {
+      if (
+        filePath.startsWith(`${dir}/`) &&
+        [".js", ".mjs", ".cjs"].includes(NodePath.posix.extname(filePath))
+      ) {
+        scannedDirs.add(dir);
+      }
+    }
+  }
+  const uncoveredBundleDirs = FIRST_PARTY_BUNDLE_DIRS.filter((dir) => !scannedDirs.has(dir));
 
   /** @type {{ name: string, importedBy: string, glob: string | undefined }[]} */
   const missing = [];
@@ -350,9 +387,11 @@ export function verifyPackagedApp(asarPath) {
   }
 
   return {
-    ok: missing.length === 0,
+    ok: missing.length === 0 && uncoveredBundleDirs.length === 0,
     checked: required.size,
     missing,
+    sidecars,
+    uncoveredBundleDirs,
     totalBytes,
     totalFiles: files.size,
     mapBytes,
@@ -432,6 +471,7 @@ if (isEntryPoint()) {
   process.stdout.write(
     [
       `app.asar:        ${asarPath}`,
+      `sidecars:        ${result.sidecars.length > 0 ? result.sidecars.join(", ") : "none"}`,
       `packaged size:   ${formatMiB(result.totalBytes)} across ${result.totalFiles} files`,
       `source maps:     ${formatMiB(result.mapBytes)}`,
       `imports checked: ${result.checked} packages`,
@@ -439,7 +479,12 @@ if (isEntryPoint()) {
     ].join("\n"),
   );
 
-  if (!result.ok) {
+  if (result.uncoveredBundleDirs.length > 0) {
+    process.stderr.write(
+      `::error::No bundles found under ${result.uncoveredBundleDirs.join(", ")} in any packaged layer. A layer this checker cannot see passes nothing — the app's packaging topology changed and this script must learn the new location.\n`,
+    );
+  }
+  if (result.missing.length > 0) {
     process.stderr.write(
       `::error::${result.missing.length} package(s) are imported by the packaged bundles but are not loadable from the shipped app. This bundle would throw MODULE_NOT_FOUND at runtime.\n`,
     );
@@ -450,8 +495,8 @@ if (isEntryPoint()) {
           : `  ${entry.name} — imported by ${entry.importedBy}; removed by ${entry.glob} — fix that glob in scripts/coil/desktop-file-exclusions.mjs\n`,
       );
     }
-    process.exit(1);
   }
+  if (!result.ok) process.exit(1);
 
   process.stdout.write("Desktop bundle verification passed.\n");
 }
