@@ -27,6 +27,13 @@ export interface VerifyResult {
     readonly importedBy: string;
     readonly glob: string | undefined;
   }[];
+  /** Sibling `server.asar` sidecars merged into the view (the Windows server tree since #102). */
+  readonly sidecars: readonly string[];
+  /**
+   * FIRST_PARTY_BUNDLE_DIRS entries that contributed no scanned bundle in any packaged layer.
+   * Non-empty fails the release: a layer the checker cannot see must not pass silently.
+   */
+  readonly uncoveredBundleDirs: readonly string[];
   readonly totalBytes: number;
   readonly totalFiles: number;
   readonly mapBytes: number;
