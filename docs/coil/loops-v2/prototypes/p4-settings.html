@@ -205,14 +205,26 @@
 
                 <div class="set-row">
                   <div class="set-row-main">
-                    <div class="set-row-title">Let the model schedule its own wake-ups</div>
+                    <div class="set-row-title">Let the model pace itself</div>
                     <div class="set-row-desc">
-                      Claude can arm up to 50 recurring jobs by itself, re-firing for seven days, and
-                      in full-access it does not need your approval to do it. With this off, T3 is
-                      the only scheduler.
+                      Claude schedules its own wake-ups and is good at it within about half an hour.
+                      Leave this on — T3 reads what it scheduled and stays out of the way. Turn it off
+                      only if you want T3 to be the sole scheduler on this machine.
                     </div>
                   </div>
-                  <div class="set-row-ctl"><button class="switch" aria-label="Model self-scheduling"></button></div>
+                  <div class="set-row-ctl"><button class="switch on" aria-label="Model self-scheduling"></button></div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Check in when the model's own wake doesn't land</div>
+                    <div class="set-row-desc">
+                      A self-paced wake lives in the provider process, so a restart or a stopped
+                      session loses it with no trace. This is the backstop: T3 records what was
+                      scheduled and covers it if nothing happens.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl"><button class="switch on" aria-label="Backstop"></button></div>
                 </div>
 
                 <div class="set-row">
@@ -238,14 +250,15 @@
                 </div>
 
                 <div class="warn">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--amber);flex:0 0 15px;margin-top:1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--amber);flex:0 0 15px;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
                   <div>
-                    <b>The first switch is open right now, with or without this feature.</b>
-                    A full-access Claude thread can already arm its own crons — <code class="k">canUseTool</code>
-                    auto-allows and <code class="k">ScheduleWakeup</code> self-permits. Turning it off sets
-                    <code class="k">CLAUDE_CODE_DISABLE_CRON=1</code> in the environment the adapter already
-                    passes, which costs nothing upstream. This row is worth shipping even if nothing
-                    else here is.
+                    <b>These two rows are the whole relationship between the two schedulers.</b>
+                    The model paces itself well inside its range — under about 30 minutes, before the
+                    session reaper's idle threshold, and capped at an hour by
+                    <code class="k">ScheduleWakeup</code> itself. What it cannot do is survive a
+                    restart: the cron table is in-process
+                    (<code class="k">cron_durable</code> is still false), so a lost wake leaves no
+                    record it ever existed. T3's job is that gap, not the pacing.
                   </div>
                 </div>
               </section>

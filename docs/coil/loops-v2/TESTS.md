@@ -41,6 +41,23 @@ resolves to one row here.
 10. Unparseable `updatedAt` does not produce `NaN` idle and does not fire.
 11. `updatedAt` in the future (clock skew) yields idle 0, not negative.
 
+### 1.1b Deference to the agent's own scheduler
+
+The rule that stops T3 firing on top of a healthy self-paced thread. These are the cases that
+decide whether the two schedulers cooperate or fight.
+
+11b. A recorded `nextFireAtMs` inside the threshold window → `skip`, budget untouched. ★
+11c. A recorded `nextFireAtMs` **beyond** the threshold window → normal staleness rules apply.
+11d. `nextFireAtMs` in the past **with** `updatedAt` movement after it → the wake landed; clear it
+     and treat the thread as normally active.
+11e. `nextFireAtMs` in the past **without** `updatedAt` movement → `fire`, reason `wake_lost`. ★
+     This is the strongest trigger in the design: an unmet commitment, not an inference.
+11f. No cron record at all (non-Claude adapter, or the model never scheduled) → falls back to pure
+     staleness, unchanged. ★ Every non-Claude adapter must behave exactly as before.
+11g. A stale cron record whose session has since been stopped is not treated as a live wake. ★
+11h. `gate_off` reported → recorded as a degraded state and surfaced, never silently ignored. ★
+11i. Two records for the same thread (a re-arm) → newest wins, no duplicate fire.
+
 ### 1.2 Budget and deadline
 
 12. `checkInsUsed < maxCheckIns` → allowed.
@@ -143,6 +160,19 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 70. Answering an already-answered blocker is idempotent, not a second append.
 
 ---
+
+### 4b. `crons.ts` — the Stop-hook record
+
+70b. A `Stop` hook payload with `session_crons` populated is normalised to
+     `{ id, kind, nextFireAtMs, prompt }` and persisted.
+70c. An **empty** `session_crons` array clears the record — the agent stopped self-pacing. ★
+70d. A payload with `session_crons` **absent** (older SDK) leaves the record untouched rather than
+     clearing it. ★ Absent and empty must not mean the same thing.
+70e. A malformed entry is dropped individually; the rest of the array still records.
+70f. The hook callback never throws into the adapter — any failure logs and returns. ★
+     A fork observability bug must not be able to break a turn.
+70g. `SubagentStop` is handled identically to `Stop`.
+70h. The record survives a store round-trip (it is the only durable copy of the wake).
 
 ## 5. `http.ts` — the routes
 
@@ -263,6 +293,12 @@ Heavier tests; a handful, each replaying a real failure.
      to silence. ★ (§9.3 of BACKEND.md's acceptance test)
 136. **Human takeover at 04:00.** Assert disarm, no budget reset, and one-tap re-arm restores a
      full budget.
+136b. **Self-paced, healthy.** Agent schedules a wake every 20 minutes for three hours. Assert T3
+     fires **zero** times and spends **zero** budget, while the deadline still applies. ★
+     This is the regression test for "T3 does not fight the agent".
+136c. **Self-paced, wake lost to a restart.** Agent schedules a wake for +25 min; the server
+     restarts at +10 min. Assert the record survives, the wake is noticed as unmet, and T3 covers
+     it exactly once. ★ This is the durability gap, as a test.
 137. **The done-file.** Agent writes it at check-in 3; assert `done`, three check-ins unused, and
      `done` is not reported as `spent`. ★
 

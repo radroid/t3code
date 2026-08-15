@@ -228,6 +228,7 @@
       /* ---------------- evidence block ---------------- */
       .eb {
         font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+        white-space: pre;
         background: var(--bg-2); border: 1px solid var(--rule);
         border-radius: 10px; padding: 16px 18px; margin: 20px 0 24px;
         overflow-x: auto; color: var(--ink-2); max-width: 100%;
@@ -285,7 +286,7 @@
         <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
         <p class="standfirst">
           A consolidated design for running a thread unattended — and, more importantly, for what you
-          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 137
+          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 157
           test cases</b>, and the three things I found that make the previous design out of date.
         </p>
         <div class="meta-strip">
@@ -306,9 +307,11 @@
         <div class="verdict">
           <div class="vh">Recommendation</div>
           <p>
-            Build <b>a durable, T3-native loop reactor</b> — a fork-owned supervisor that restarts a
-            silent thread on an idle clock, bounded by a mandatory check-in budget and a wall-clock
-            deadline, with state on disk so a 3am reboot loses nothing.
+            Build <b>a durable, T3-native loop reactor</b> that <b>backstops the agent's own
+            scheduler rather than replacing it</b> — bounded by a mandatory check-in budget and a
+            wall-clock deadline, with state on disk so a restart loses nothing. On a thread that is
+            self-pacing happily it should fire almost never; how rarely it fires is the measure of a
+            good implementation.
           </p>
           <p>
             Make its user-facing surface <b>a console, not a pill</b>: when you open a loop you get a
@@ -339,7 +342,7 @@
 
         <h4 class="sub2">Contents</h4>
         <div class="toc">
-          <a href="#night"><i>01</i> The night this comes from</a>
+          <a href="#why"><i>01</i> What unattended work needs</a>
           <a href="#changed"><i>02</i> Three things that moved</a>
           <a href="#console"><i>03</i> The console</a>
           <a href="#where"><i>04</i> Where a loop lives</a>
@@ -347,7 +350,7 @@
           <a href="#mobile"><i>06</i> On the phone</a>
           <a href="#settings"><i>07</i> Settings</a>
           <a href="#states"><i>08</i> Arming and states</a>
-          <a href="#limits"><i>09</i> Auto-resume and limits</a>
+          <a href="#limits"><i>09</i> Two schedulers</a>
           <a href="#maintainer"><i>10</i> Maintainer bots</a>
           <a href="#backend"><i>11</i> The backend</a>
           <a href="#rejected"><i>12</i> Angles rejected</a>
@@ -357,64 +360,113 @@
       </div>
     </section>
 
-    <!-- ==================== 1 · THE NIGHT ==================== -->
-    <section class="band" id="night">
+    <!-- ==================== 1 · THE PROBLEM ==================== -->
+    <section class="band" id="why">
       <div class="wrap">
-        <div class="secnum"><i>01</i> Evidence</div>
-        <h2 class="sec">The night this comes from</h2>
+        <div class="secnum"><i>01</i> The problem</div>
+        <h2 class="sec">What unattended work actually needs</h2>
         <p class="lead">
-          Everything below is downstream of one real run: thread
-          <code>3a85bdd3</code>, "Overnight TDD agent orchestration", 31 turns across seventeen hours.
+          Three things, and they have moved apart. One of them is now largely handled by machinery
+          that already exists — which is what makes the other two worth building rather than
+          re-litigating.
         </p>
 
-        <div class="eb">
-<span class="c">                      Stall A            Stall B</span>
-Turn marked completed  00:19:19Z          07:40:44Z
-Background activity    <span class="hl">1,358 more</span>         61 more
-  still arriving       (until 00:52)      (until 07:48)
-Then total silence     <span class="hl">3h 31m</span>             <span class="hl">6h 50m</span>
-Ended by               human: "continue"  human: "You stopped again"
-</div>
+        <table class="tbl">
+          <thead>
+            <tr><th>What it needs</th><th>State today</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>1 · It keeps going</b><br /><span style="color:var(--ink-3);font-size:13.5px">the agent picks work back up without you typing</span></td>
+              <td class="yes">
+                <b>Largely working.</b> Claude's own scheduler paces a session well within its range,
+                and upstream's liveness tracking means a busy thread is now visible rather than
+                silent. See <a href="#limits">§9</a>.
+              </td>
+            </tr>
+            <tr>
+              <td><b>2 · It stops on purpose, and you can tell why</b><br /><span style="color:var(--ink-3);font-size:13.5px">finished vs out of budget vs died vs waiting</span></td>
+              <td class="no">
+                <b>Nothing does this.</b> There is no budget, no deadline, no terminal vocabulary,
+                and nothing that survives a restart to remember any of it.
+              </td>
+            </tr>
+            <tr>
+              <td><b>3 · It collects what it needs from you</b><br /><span style="color:var(--ink-3);font-size:13.5px">so a night isn't lost to one unanswered question</span></td>
+              <td class="no">
+                <b>Nothing does this either</b>, and the one native mechanism that comes close
+                (<code>AskUserQuestion</code>) halts the run while it waits. See <a href="#console">§3</a>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
 
         <p>
-          Stall A's 1,358 orphaned activities were 715 <code>task.progress</code>, 57
-          <code>task.started</code>, 58 <code>task.completed</code>, 527
-          <code>context-window.updated</code>. Subagents kept working for 33 minutes inside a turn the
-          server had already closed. In Stall B a task <em>started</em> twelve seconds
-          <strong>before</strong> the turn closed.
-        </p>
-        <p>
-          Both turns reported <code>state: completed</code> with no error anywhere. The thread was not
-          settled, snoozed, archived or rate-limited. Auto-resume was never involved and could not
-          have been — it triggers on <em>needs-input</em>, and this thread never needed input.
+          <strong>2 and 3 are the feature.</strong> The framing matters because it changes what gets
+          built: not a replacement scheduler, but the durable state, the bounds, and the collection
+          surface that no scheduler provides.
         </p>
 
-        <div class="call hot">
-          <div class="ch">The actual cost</div>
+        <h3 class="sub">The failure modes, in rough order of how often they bite</h3>
+        <ol>
+          <li>
+            <strong>You cannot tell a finished run from an exhausted one.</strong> The most common and
+            the most boring. A run stops; the transcript ends; whether it got there or gave up takes
+            five minutes of reading to establish. This is the one that costs you time every single
+            morning, not once a quarter.
+          </li>
+          <li>
+            <strong>One question eats the remaining hours.</strong> The agent hits a genuine fork,
+            asks correctly, and waits. Nothing is broken, nothing looks broken, and the night is gone.
+          </li>
+          <li>
+            <strong>Nothing bounds the spend.</strong> A loop with no deadline and no cap is a loop
+            you have to be awake to stop.
+          </li>
+          <li>
+            <strong>A restart loses the plot.</strong> Session-scoped state — including a pending
+            self-paced wake — does not survive the app restarting, and leaves no trace that it ever
+            existed.
+          </li>
+          <li>
+            <strong>An outright stall.</strong> Real, and it is what originally motivated the issue,
+            but the rarest of the five and the one most improved since.
+          </li>
+        </ol>
+
+        <div class="call">
+          <div class="ch">The stall, for the record</div>
           <p>
-            All eighteen user messages that night were human. <em>"Did you get started?"</em> ·
-            <em>"Any updates?"</em> · <em>"Are you still working?"</em> · <em>"Continuing?"</em> ·
-            <em>"I am going to bed now, ensure that your sub agents are not dying"</em> ·
-            <em>"You stopped again"</em>. The human was the loop, all night. That is the thing being
-            replaced.
+            The run behind issue #38 — thread <code>3a85bdd3</code>, 31 turns — closed a turn at
+            00:19 while <b>1,358 background activities</b> kept arriving for another 33 minutes, then
+            went silent for 3h31m. It happened twice in one night, and every one of the eighteen user
+            messages was a human asking whether it was still going.
+          </p>
+          <p>
+            It is a good illustration and a bad axis to design around. Upstream has since shipped
+            <code>ThreadBackgroundLiveness</code>, which makes exactly this case visible in the
+            sidebar, and the scheduler has improved besides. <strong>I over-weighted it in an earlier
+            draft of this report.</strong> It belongs here as one exhibit, not as the reason for
+            everything below.
           </p>
         </div>
 
-        <h3 class="sub">What upstream has since fixed — and what it has not</h3>
+        <h3 class="sub">What upstream fixed, and the shape of what is left</h3>
         <p>
-          Upstream's <code>ThreadBackgroundLiveness</code> (in the fork since the 2026-08-08 sync) now
-          maps the whole <code>task.*</code> lifecycle and surfaces it as a sidebar pill and a composer
-          banner. That closes <strong>visibility</strong>: a stall is identifiable at a glance instead
-          of requiring you to open the thread and read its timeline.
+          <code>ThreadBackgroundLiveness</code> maps the whole <code>task.*</code> lifecycle and
+          surfaces it as a sidebar pill and a composer banner, so a busy-but-quiet thread reads as
+          busy. Upstream #5677 went further and taught the session reaper to skip threads with live
+          background work, so those sessions are no longer killed underneath you.
         </p>
         <p>
-          It does not close <strong>supervision</strong>. Every consumer of that signal is
-          presentation — nothing re-prompts, nothing enqueues a turn, nothing acts. And its own module
-          doc is explicit: <em>"no persistence, no migration. After a server restart the registry is
-          empty."</em> On the night above it would have shown a "working" pill for 33 minutes and then
-          gone quiet for 3h31m, exactly as before.
+          Both are <em>presentation and preservation</em>. Neither <em>acts</em>, neither
+          <em>bounds</em>, and the liveness registry is explicitly in-memory — its own module doc says
+          <em>"no persistence, no migration. After a server restart the registry is empty."</em>
         </p>
-        <p><strong>Durability and acting on the signal are the whole of what is left to build.</strong></p>
+        <p>
+          <strong>So the residue is durability, bounds, and the question channel</strong> — which is a
+          much smaller and much better-defined feature than "build a supervisor".
+        </p>
       </div>
     </section>
 
@@ -746,15 +798,22 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         </p>
 
         <div class="call hot">
-          <div class="ch">Ship this row even if you ship nothing else</div>
+          <div class="ch">Default it ON, and make it visible</div>
           <p>
             A <code>full-access</code> Claude thread today can arm up to <strong>50 recurring jobs,
-            re-firing for seven days</strong>, with no human in the path — because T3's
-            <code>canUseTool</code> auto-allows everything in full-access and
-            <code>ScheduleWakeup</code> self-permits. Turning it off means setting
-            <code>CLAUDE_CODE_DISABLE_CRON=1</code> in the environment the adapter already passes to
-            the binary. That is <strong>zero</strong> upstream lines, and it closes a live hole
-            independent of this entire feature.
+            re-firing for seven days</strong>, with no human in the path — <code>canUseTool</code>
+            auto-allows in full-access and <code>ScheduleWakeup</code> self-permits. An earlier draft
+            called that a hole to close. That was the wrong instinct: <strong>this capability works
+            and you use it</strong>. The problem is not that the model can schedule — it is that
+            <em>T3 cannot see that it did</em>.
+          </p>
+          <p>
+            So the fix is <strong>observability first</strong>: read <code>session_crons</code>, show
+            pending wakes on the console, and let the loop stand down when the agent has already
+            scheduled itself. The switch stays, defaulted <b>on</b>, as an escape hatch for a thread
+            where you want T3 to be the only scheduler —
+            <code>CLAUDE_CODE_DISABLE_CRON=1</code> through the environment the adapter already
+            passes, at zero upstream cost.
           </p>
         </div>
 
@@ -774,9 +833,9 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         <div class="secnum"><i>08</i> Vocabulary</div>
         <h2 class="sec">Arming a loop, and every state it can be in</h2>
         <p class="lead">
-          The vocabulary <em>is</em> the feature. The thing that failed on the original night was not
-          that information was missing — it was that "it finished", "it ran out of rope" and "it died"
-          all looked the same.
+          The vocabulary <em>is</em> the feature, and it is the answer to failure mode 1 — the one that costs
+          you time every morning. "It finished", "it ran out of rope" and "it died" must not look the
+          same, because distinguishing them is most of what you actually do at 9am.
         </p>
 
         <!--EMBED:p5-lifecycle.html|1720|P5|Arming + 13 states|Composer before/after at the top; the full state machine below.-->
@@ -799,13 +858,86 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <section class="band tint" id="limits">
       <div class="wrap">
         <div class="secnum"><i>09</i> Interaction</div>
-        <h2 class="sec">Loops, auto-resume, and running into limits</h2>
+        <h2 class="sec">Two schedulers, and where each one belongs</h2>
         <p class="lead">
-          You flagged this specifically. Two schedulers that can both revive the same thread is a race,
-          and the fork already owns one of them.
+          Claude's own scheduler works, and you have been using it. That is a correction to an earlier
+          draft of this report, which treated it as unusable. The right answer is not to replace it —
+          it is to know where its range ends.
         </p>
 
-        <h3 class="sub">The rule: one owner per wake</h3>
+        <h3 class="sub">What I got wrong, and what the numbers actually say</h3>
+        <p>
+          Issue #42's analysis was a static read taken on 2026-08-07, and I carried its conclusion
+          forward without re-measuring. Two things it did not have:
+        </p>
+        <div class="eb">
+<span class="c">gate cache, re-read today (~/.claude.json)</span>
+tengu_kairos_cron          <span class="ok">true</span>
+tengu_kairos_loop_dynamic  <span class="ok">true</span>
+tengu_kairos_loop_prompt   <span class="ok">true</span>   <span class="c">← new since that analysis</span>
+tengu_kairos_cron_durable  <span class="hl">false</span>  <span class="c">← still the real constraint</span>
+
+<span class="c">upstream 2c7267ad4 — "stop the reaper from silently killing live background subagents" (#5677)</span>
+ProviderSessionReaper now skips a binding when <span class="ok">backgroundLiveness != null</span>,
+not only when a turn is active.
+</div>
+        <p>
+          So the reaper is materially less aggressive than that analysis assumed, and the scheduling
+          gates are on. Put the numbers together and the practical range is clear:
+        </p>
+        <table class="tbl compact">
+          <thead><tr><th>Self-paced delay</th><th>Outcome</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td class="k">≤ ~30 min</td><td class="yes">works</td><td>fires before the reaper's 30-minute idle threshold is even reached</td></tr>
+            <tr><td class="k">30–60 min</td><td class="mid">racy</td><td>depends on the 5-minute sweep and whether background work kept the binding alive</td></tr>
+            <tr><td class="k">&gt; 60 min</td><td class="no">impossible</td><td><code>ScheduleWakeup</code> clamps <code>delaySeconds</code> to [60, 3600]</td></tr>
+            <tr><td class="k">across a restart</td><td class="no">lost silently</td><td><code>cron_durable</code> is false — the table is in-process, and nothing on disk records the wake existed</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>That explains both your experience and the original diagnosis.</strong> Self-pacing
+          at a 20–30 minute cadence — which is the normal case, and what the tooling nudges you toward
+          — lands squarely in the working band. The failures live at the edges: long gaps, restarts,
+          and any provider that is not Claude.
+        </p>
+
+        <div class="call good">
+          <div class="ch">The corrected position</div>
+          <p>
+            <strong>T3 does not replace the Claude scheduler. It backstops and bounds it.</strong>
+            The agent keeps pacing itself where it is good at that. T3 owns the things no in-process
+            scheduler can do: survive a restart, enforce a budget and a deadline, collect questions,
+            and say out loud whether a run finished or ran out.
+          </p>
+        </div>
+
+        <h3 class="sub">Which means observability comes before the kill switch</h3>
+        <p>
+          If the agent is genuinely self-pacing, the worst thing T3 can do is fire its own check-in on
+          top — two schedulers, doubled spend, and a confused agent. So the <code>Stop</code> hook's
+          <code>session_crons</code> field stops being a nice-to-have and becomes
+          <strong>load-bearing</strong>: it is the only way to know a thread has already scheduled
+          itself.
+        </p>
+        <p>
+          The rule falls out of that. <strong>If the thread has a pending self-paced wake within the
+          loop's idle threshold, the loop does not fire — it waits, spends nothing, and the console
+          says "self-pacing · next wake 02:35".</strong> The loop's own check-in becomes the fallback
+          for when the agent has <em>not</em> scheduled itself, which is exactly the case the agent
+          cannot handle: it has stopped.
+        </p>
+        <p>
+          I had this deferred to phase 3 as pure observability. It moves up: <strong>it is now part of
+          the trigger.</strong> The cost is unchanged — a single spread of <code>hooks</code> into the
+          existing <code>queryOptions</code> object in <code>ClaudeAdapter.ts</code>, with every line
+          of logic fork-side.
+        </p>
+
+        <h3 class="sub">And the third scheduler: auto-resume</h3>
+        <p>
+          The fork already owns one, so it is really three. The rule is the same one: <b>one owner per
+          wake.</b>
+        </p>
         <p>
           A loop never nudges a thread with a pending auto-resume (guard 9). But that alone is not
           enough, and the reason is subtle: auto-resume only arms when <em>its own</em> per-thread
@@ -823,13 +955,22 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         <table class="tbl compact">
           <thead><tr><th>Situation</th><th>Who owns the wake</th><th>Budget</th><th>Console says</th></tr></thead>
           <tbody>
+            <tr><td><b>Agent scheduled itself, due soon</b></td><td><b>the agent</b></td><td class="yes">spends nothing</td><td>Self-pacing · next wake 02:35</td></tr>
+            <tr><td>Agent scheduled itself, but the wake passed with no activity</td><td>loop — the fallback</td><td class="mid">spends one</td><td>Its wake didn't land · check-in 3 of 6</td></tr>
             <tr><td>Usage limit, auto-resume on</td><td>auto-resume</td><td class="yes">spends nothing</td><td>Held — resumes 08:22</td></tr>
             <tr><td>Usage limit, auto-resume off</td><td>nobody — loop stands down</td><td class="yes">spends nothing</td><td>Held — limit until 08:22</td></tr>
-            <tr><td>Thread quiet, no limit</td><td>loop</td><td class="mid">spends one</td><td>Check-in 3 of 6</td></tr>
+            <tr><td>Thread quiet, nothing scheduled</td><td>loop</td><td class="mid">spends one</td><td>Check-in 3 of 6</td></tr>
             <tr><td>Pending approval</td><td>you</td><td class="yes">spends nothing</td><td>Paused — needs approval</td></tr>
             <tr><td>You typed something</td><td>you</td><td class="yes">disarms, no reset</td><td>Loop off — you took over</td></tr>
           </tbody>
         </table>
+        <p>
+          Row two is the one that earns the whole design. A self-paced wake that was armed and then
+          <em>did not land</em> — because the session was stopped, the app restarted, or the gate
+          flipped — is invisible today: there is no record it was ever scheduled. With
+          <code>session_crons</code> persisted fork-side, T3 knows a wake was due, notices nothing
+          happened, and covers it. <strong>That is the durability gap, stated precisely.</strong>
+        </p>
 
         <div class="call">
           <div class="ch">Belt and braces</div>
@@ -912,8 +1053,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           <code>session.status = "running"</code>, and <em>nothing closes it</em>. Gating on it would
           deadlock permanently on exactly the threads this feature exists to save. Meanwhile
           <code>thread.activity-appended</code> rewrites <code>updatedAt</code>, so the predicate stayed
-          quiet through all 1,358 orphaned activities on the original night and would have fired at
-          ~01:07 instead of the human typing at 04:23. It reads a durable SQL column rather than a hot
+          quiet through all 1,358 orphaned activities in the #38 run and would have fired at ~01:07. It reads a durable SQL column rather than a hot
           stream, which is why it is the only trigger that survives a mid-loop restart.
         </p>
 
@@ -942,6 +1082,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
             <tr><td class="k">server.ts</td><td class="yes">0</td><td>already has its row</td></tr>
             <tr><td class="k">packages/contracts</td><td class="yes">0</td><td>activity <code>kind</code> is open, payload is <code>Unknown</code></td></tr>
             <tr><td class="k">Sidebar.tsx</td><td class="yes">0</td><td>a loop is a pinned thread</td></tr>
+            <tr><td class="k">ClaudeAdapter.ts</td><td class="no">+1</td><td><b>new row</b> — one spread of <code>hooks</code> to read <code>session_crons</code>. Additive, read-only, and it fails to a type error rather than silent drift. This is the price of not fighting the agent's own scheduler.</td></tr>
             <tr><td class="k">settingsSearch.ts + a route</td><td class="mid">open</td><td>the one real bill — see §13</td></tr>
           </tbody>
         </table>
@@ -958,28 +1099,63 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           before discarding.
         </p>
 
-        <h3 class="sub">Build on Claude's own cron / ScheduleWakeup</h3>
+        <h3 class="sub">Replacing Claude's scheduler rather than composing with it</h3>
+        <div class="call warn">
+          <div class="ch">Corrected</div>
+          <p>
+            An earlier draft of this report listed Claude's cron / <code>ScheduleWakeup</code> here as
+            rejected outright, on "four independent disqualifiers". That was wrong, and it was wrong
+            for a specific reason: it inherited issue #42's static analysis from 2026-08-07 without
+            re-measuring. The gates are on, and upstream #5677 has since made the session reaper
+            skip threads with live background work. See <a href="#limits">§9</a> for the numbers.
+          </p>
+        </div>
         <p>
-          The most attractive option, because it might already work with zero code. Issue #42
-          established that the scheduler is compiled into the Claude platform binary, spread
-          unconditionally into its tool registry, and constructed inside the <em>non-interactive</em>
-          entrypoint the SDK uses — so a cron-fired turn plausibly reaches T3 today.
+          What is genuinely rejected is narrower: <strong>building the whole feature on it, and
+          nothing else.</strong> Three constraints are real and re-verified today, and each one
+          defines a job T3 has to do rather than a reason to dismiss the scheduler.
         </p>
-        <p>Four independent disqualifiers, any one of which is fatal:</p>
         <table class="tbl compact">
-          <thead><tr><th>Problem</th><th>Detail</th></tr></thead>
+          <thead><tr><th>Constraint</th><th>Still true?</th><th>So T3 owns…</th></tr></thead>
           <tbody>
-            <tr><td>Session-lifetime only</td><td>durable crons are gated off, so it lives in an in-process table. The session reaper stops a binding after 30 minutes idle, and <em>a pending wake is not an active turn</em>. Delays clamp to [60, 3600]. Anything over ~30 min is dead on arrival — and nothing on disk records it was ever scheduled.</td></tr>
-            <tr><td>Remote gate, no override</td><td>the wakeup tool's gate is code-default <em>false</em>, currently true only because a GrowthBook result was cached locally. No env escape hatch. And the fork relocates the config dir per provider instance — so the same build can have working loops on one instance and dead ones on another.</td></tr>
-            <tr><td>Claude-only</td><td>nothing equivalent under codex, cursor, grok, opencode. A dead affordance on four of five adapters.</td></tr>
-            <tr><td>Unbounded</td><td>the binary owns the table. You cannot cancel, cap, budget or audit what you cannot address.</td></tr>
+            <tr>
+              <td>In-process only — <code>cron_durable</code> is false</td>
+              <td class="no">yes</td>
+              <td>durability. A wake lost to a restart leaves no trace; T3's store is the trace.</td>
+            </tr>
+            <tr>
+              <td>Delay clamps to [60, 3600]</td>
+              <td class="no">yes</td>
+              <td>anything longer than an hour, and the wall-clock deadline.</td>
+            </tr>
+            <tr>
+              <td>Claude-only — no equivalent on codex, cursor, grok, opencode</td>
+              <td class="no">yes</td>
+              <td>the other four adapters, which otherwise get nothing.</td>
+            </tr>
+            <tr>
+              <td>Gate is code-default false, true from a cached remote evaluation</td>
+              <td class="mid">true, but on</td>
+              <td>a visible degraded state rather than a loop that silently stops pacing.</td>
+            </tr>
+            <tr>
+              <td>T3 has no handle on the binary's table</td>
+              <td class="mid">partly</td>
+              <td>budget, cap and audit — but it can now <em>read</em> the table via <code>session_crons</code>.</td>
+            </tr>
           </tbody>
         </table>
         <p>
-          <strong>What survives:</strong> the <code>Stop</code> hook exposes <code>session_crons</code>,
-          which is the only way to know whether a thread will wake <em>itself</em>. Worth reading later
-          as pure observability — to warn that a second scheduler is fighting ours. Phase 3, not
-          load-bearing.
+          <strong>What this changes in practice:</strong> the loop's check-in is a <em>fallback</em>,
+          not the primary pacing mechanism. On a Claude thread that is self-pacing happily, T3 should
+          fire almost never — and the measure of a good implementation is how rarely it needs to.
+        </p>
+        <p>
+          <strong>And what survives from the original point:</strong> the <code>Stop</code> hook
+          exposes <code>session_crons</code>, which is the only way to know whether a thread will wake
+          <em>itself</em>. I had that filed as phase-3 observability. Given the above it is
+          <strong>phase 1 and load-bearing</strong> — it is what stops T3 firing on top of an agent
+          that is already pacing itself.
         </p>
 
         <h3 class="sub">Arm on turn boundaries instead of an idle clock</h3>
@@ -994,8 +1170,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         <h3 class="sub">An agent-authored JSON state contract</h3>
         <p>
           Rejected by the original panel and still rejected. It outsources the hardest judgement to the
-          thing that just failed — the agent on the original night marked a turn complete with 33
-          minutes of work still running — and it degrades silently: an agent that stops honouring the
+          thing whose judgement you are trying to check — and it degrades silently: an agent that stops honouring the
           schema goes quiet in a way indistinguishable from the bug. A one-line sentinel file with an
           mtime gate gets the same result for a fraction of the protocol surface.
         </p>
@@ -1093,7 +1268,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         <div class="secnum"><i>13</i> Confidence</div>
         <h2 class="sec">How this gets tested</h2>
         <p class="lead">
-          137 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
+          157 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
           in the tree. The starred ones each encode a specific bug this design exists to prevent.
         </p>
 
@@ -1112,12 +1287,19 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           </tbody>
         </table>
 
-        <h3 class="sub">The three I would write first</h3>
+        <h3 class="sub">The four I would write first</h3>
         <ol>
           <li>
-            <strong>Replay the original night.</strong> A turn completing at 00:19 with
-            <code>task.*</code> activity until 00:52, then silence. Assert: no fire during the activity
-            stream, exactly one fire at ~01:07. This is the acceptance test for the entire feature.
+            <strong>Self-paced, healthy.</strong> Agent schedules its own wake every 20 minutes for
+            three hours. Assert T3 fires <b>zero</b> times and spends <b>zero</b> budget, while the
+            deadline still applies. This is the regression test for "T3 does not fight the agent",
+            and it is the one I would write before any other.
+          </li>
+          <li>
+            <strong>Self-paced, wake lost to a restart.</strong> Agent schedules a wake for +25 min;
+            the server restarts at +10 min. Assert the record survives, the unmet wake is noticed,
+            and T3 covers it exactly once. This is the durability gap stated as a test — and it is
+            the case that justifies the whole feature existing alongside a working scheduler.
           </li>
           <li>
             <strong>The two question channels, side by side.</strong> One test where the agent calls
@@ -1202,10 +1384,17 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         </div>
 
         <div class="dec">
-          <div class="dec-q">4 · Ship the cron kill switch immediately, ahead of everything?</div>
+          <div class="dec-q">4 · How much should T3 defer to the agent's own scheduler?</div>
           <div class="dec-r">
-            The 50-recurring-jobs hole is open in full-access right now and closing it costs zero
-            upstream lines. It is independent of this whole feature.
+            Self-pacing works in its range and you use it. The question is what T3 does when a thread
+            has already scheduled itself: stand down entirely, stand down but keep the deadline and
+            budget as an outer bound, or ignore it and pace on its own clock. Standing down needs the
+            <code>session_crons</code> read to be in phase 1 rather than phase 3.
+          </div>
+          <div class="dec-opts" style="margin-bottom: 8px">
+            <span class="dec-opt rec">Defer, but keep budget + deadline as the outer bound — recommended</span>
+            <span class="dec-opt">Defer completely while a wake is pending</span>
+            <span class="dec-opt">T3 paces regardless</span>
           </div>
           <div class="dec-opts">
             <span class="dec-opt rec">Yes, separate PR this week — recommended</span>
@@ -1232,7 +1421,8 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         </p>
         <ol>
           <li><strong>The cron kill switch.</strong> Zero seam, closes a live hole, one afternoon.</li>
-          <li><strong>The reactor + durable store</strong>, no UI. Behind the master toggle, default off. This is the part that fixes the night.</li>
+          <li><strong>Read <code>session_crons</code> + the durable store</strong>, no UI. Behind the master toggle, default off. Recording what the agent scheduled — and noticing when a wake does not land — is the smallest thing that is useful on its own.</li>
+          <li><strong>The reactor</strong>, as the fallback for when nothing was scheduled or the wake was lost.</li>
           <li><strong>The console</strong>, reading only the two sources that need no model cooperation. Useful immediately.</li>
           <li><strong><code>raise_blocker</code></strong> and the deferred channel. This is where it stops being a supervisor and starts being a collaborator.</li>
           <li><strong>The workspace</strong>, once there are enough loops to warrant it.</li>

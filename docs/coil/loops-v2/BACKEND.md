@@ -1,58 +1,106 @@
 # Loops — backend design
 
-**Decision taken 2026-08-15:** a **durable, T3-native scheduler**, fork-owned, provider-agnostic.
-Claude's own cron tools become an *observed signal* and a *thing to bound*, never the mechanism.
+**Decision taken 2026-08-15:** a **durable, T3-native scheduler** that **backstops the agent's own
+scheduler rather than replacing it**. Fork-owned, provider-agnostic.
 
-This document explains what gets built, why each piece is shaped the way it is, and — as
-importantly — the four architectures that were considered and rejected. Line references are
-against the current tree (merge-base `196c8ea0d`, 2026-08-14 sync), not the 2026-08-02 base the
-archived design used.
+> **Revised 2026-08-15, same day.** The first draft of this document treated Claude's cron /
+> `ScheduleWakeup` as unusable and listed four "fatal" disqualifiers. That was wrong. It inherited
+> issue #42's static analysis from 2026-08-07 without re-measuring, and the ground has moved — see
+> §1.1. The scheduler works within its range; T3's job is the range it cannot cover. The reactor
+> design below is unchanged, but its *role* is now fallback rather than primary, and reading
+> `session_crons` moves from phase 3 to phase 1.
+
+Line references are against the current tree (merge-base `196c8ea0d`, 2026-08-14 sync), not the
+2026-08-02 base the archived design used.
 
 ---
 
 ## 0. The one-paragraph version
 
 A fork-owned reactor ticks once a minute. For each **armed** thread it reads one SQL projection
-column — `updatedAt` — and if the thread has been silent past its threshold and all fourteen guards
-pass, it dispatches an ordinary `thread.turn.start`, exactly as auto-resume already does in
-production. Budget, deadline, strikes and stop reasons live in a durable JSON file so a 3am reboot
-loses nothing. A second, non-blocking question channel (`raise_blocker`, an MCP tool) lets the agent
-bank a human decision without halting, and the console reads blocking pending-inputs, deferred
-blockers and the loop's own stop reasons from three independent sources — so it stays useful even
-if the model never cooperates.
+column — `updatedAt` — plus the thread's last-known `session_crons`. If the agent has already
+scheduled its own wake and that wake is still plausible, **the loop stands down and spends
+nothing**. Otherwise, if the thread has been silent past its threshold and all guards pass, it
+dispatches an ordinary `thread.turn.start`, exactly as auto-resume already does in production.
+Budget, deadline, strikes and stop reasons live in a durable JSON file so a 3am reboot loses
+nothing. A second, non-blocking question channel (`raise_blocker`, an MCP tool) lets the agent bank
+a human decision without halting, and the console reads blocking pending-inputs, deferred blockers
+and the loop's own stop reasons from three independent sources — so it stays useful even if the
+model never cooperates.
 
-Total new upstream surface: **one line** in an existing fork-owned aggregator, plus **one**
-existing seam row rewritten in place. Everything else is new files upstream has never seen.
+**On a healthy self-pacing Claude thread this reactor should almost never fire.** How rarely it
+fires is the measure of a correct implementation, not a sign it is doing nothing.
+
+Total new upstream surface: **one line** in an existing fork-owned aggregator, **one** existing seam
+row rewritten in place, and **one spread** of `hooks` into `ClaudeAdapter`'s existing `queryOptions`
+object. Everything else is new files upstream has never seen.
 
 ---
 
-## 1. Why not the four alternatives
+## 1. The alternatives, and what happened to each
 
-These are ordered by how attractive they look before you check.
+Ordered by how attractive they look before you check. The first one is not rejected — it is
+composed with, and getting that wrong was the main error in the first draft.
 
-### 1.1 Rejected — build on Claude's own cron/`ScheduleWakeup`
+### 1.1 Compose with — Claude's own cron/`ScheduleWakeup`
 
-This is what issue #42 established is *possible*. `CronCreate`, `CronDelete`, `CronList` and
-`ScheduleWakeup` are compiled into the Claude platform binary, spread unconditionally into its tool
-registry, and the scheduler is constructed inside the **non-interactive** `print.ts` entrypoint —
-the same one the SDK uses. On fire it injects a synthetic prompt and kicks its own drain loop, and
-T3 already handles the resulting turn (`ClaudeAdapter.ts` auto-starts a synthetic turn for
-assistant messages arriving without one). So `/loop 2m say hi` typed into a composer plausibly
-works today with zero code.
+**This is the correction.** Issue #42 established the mechanism exists: `CronCreate`, `CronDelete`,
+`CronList` and `ScheduleWakeup` are compiled into the Claude platform binary, spread unconditionally
+into its tool registry, and the scheduler is constructed inside the **non-interactive** `print.ts`
+entrypoint — the same one the SDK uses. On fire it injects a synthetic prompt and kicks its own
+drain loop, and T3 already handles the resulting turn (`ClaudeAdapter.ts` auto-starts a synthetic
+turn for assistant messages arriving without one).
 
-It is still the wrong foundation, for four independent reasons, any one of which is disqualifying:
+#42 then concluded it was unusable. Re-measured today, that conclusion does not hold.
 
-| | Why it fails |
+**Gate cache, re-read from `~/.claude.json`:**
+
+```
+tengu_kairos_cron          true
+tengu_kairos_loop_dynamic  true
+tengu_kairos_loop_prompt   true     <- new since the #42 analysis
+tengu_kairos_cron_durable  false    <- still the real constraint
+```
+
+**And the reaper has changed.** Upstream `2c7267ad4` — *"stop the reaper from silently killing live
+background subagents"* (#5677) — added a second skip condition to `ProviderSessionReaper`:
+
+```ts
+if (thread?.backgroundLiveness != null) {   // ProviderSessionReaper.ts
+  // provider.session.reaper.skipped-background-work
+  continue;
+}
+```
+
+So a session with live background work is no longer reaped at all, and the 30-minute threshold with
+a 5-minute sweep only bites a genuinely idle binding.
+
+**The practical range:**
+
+| Self-paced delay | Outcome | Why |
+|---|---|---|
+| <= ~30 min | **works** | fires before the reaper's idle threshold is reached |
+| 30-60 min | racy | depends on the sweep and whether background work kept the binding alive |
+| > 60 min | impossible | `ScheduleWakeup` clamps `delaySeconds` to `[60, 3600]` |
+| across a restart | **lost silently** | `cron_durable` false, so an in-process table, and nothing on disk records the wake existed |
+
+Self-pacing at a 20-30 minute cadence — the normal case, and what the tooling nudges toward — sits
+squarely in the working band. **That is why it works in practice, and the design must not fight it.**
+
+**What is genuinely T3's job**, each constraint re-verified today:
+
+| Constraint | T3 owns |
 |---|---|
-| **Session-lifetime only** | `tengu_kairos_cron_durable` is **false**, so `durable:true` silently downgrades to an in-process table. `ProviderSessionReaper` stops a binding after 30 minutes of inactivity, and a *pending wake is not an active turn*. `ScheduleWakeup` clamps delay to `[60, 3600]`. Any delay over ~1800s is dead on arrival and **nothing on disk records that it was ever scheduled.** |
-| **Gated remotely, with no local override** | `ScheduleWakeup`'s runtime gate is code-default **false**, currently true only because a GrowthBook evaluation was cached to `~/.claude.json`. There is no env escape hatch. Worse, `ClaudeHome.ts` relocates `CLAUDE_CONFIG_DIR` per provider instance — so the same build can have working loops on one instance and silently dead ones on another, because the gate cache moved. |
-| **Claude-only** | Nothing equivalent exists under `codex`, `cursor`, `grok`, `opencode`. Any UI built on it is a dead affordance on four of five adapters. |
-| **Nothing to bound it with** | The binary owns the cron table; T3 has no handle on it. You cannot cancel, cap, budget or audit what you cannot address. |
+| In-process only (`cron_durable` false) | **durability** — a wake lost to a restart leaves no trace; T3's store *is* the trace |
+| Clamped to <= 1 hour | anything longer, plus the wall-clock deadline |
+| Claude-only — nothing under `codex`, `cursor`, `grok`, `opencode` | the other four adapters, which otherwise get nothing |
+| Gate is code-default false, true from a cached remote evaluation; `ClaudeHome.ts` relocates `CLAUDE_CONFIG_DIR` per provider instance, so the cache can differ between instances | a **visible degraded state** rather than a loop that silently stops pacing |
+| T3 has no write handle on the binary's table | budget, cap, audit — but it can now **read** it via `session_crons` |
 
-**What we keep from it.** The `Stop` hook's `session_crons` field is real and is the only way to
-know *"is this thread going to wake itself, and when"*. That is worth reading — later, as
-observability, to detect and warn about a **second scheduler** fighting ours. It is Phase 3, and
-it is not load-bearing.
+**So `session_crons` moves from phase 3 to phase 1, and becomes part of the trigger.** If the agent
+has a pending wake inside the loop's idle threshold, the loop stands down. The loop's check-in is
+the fallback for the case the agent structurally cannot handle: it has stopped, or its wake was
+lost.
 
 ### 1.2 Rejected — a DB migration for loop state
 
@@ -89,6 +137,7 @@ apps/server/src/coil/loop/
   guards.ts         pure predicates, one per guard
   config.ts         env defaults + prompt resolution
   sentinel.ts       stat the done-file, worktree-first
+  crons.ts          Stop-hook subscription: record what the agent scheduled
   blockers.ts       the deferred-question store
   http.ts           raw routes under /api/coil/loop
   *.test.ts         one per module
@@ -171,10 +220,30 @@ answer at 09:04 while the thread is idle, and the next check-in prompt carries i
 ```
 idleMs    = now - max(Date.parse(shell.updatedAt), processStartedAtMs)
 threshold = busyTurn ? config.busyIdleMs : config.idleMs
+
+selfPacedWakeMs = record.crons.nextFireAtMs        // from the Stop hook, persisted
+
 fire when idleMs >= threshold
+       && !(selfPacedWakeMs != null && selfPacedWakeMs <= now + threshold)
 ```
 
 `busyTurn` is `shell.session?.status ∈ {running, starting} || shell.latestTurn?.state === "running"`.
+
+**The self-paced clause is the deference rule.** If the agent has already scheduled a wake that
+will land inside the next threshold window, T3 does nothing — no dispatch, no budget spent, and the
+console reads *"Self-pacing · next wake 02:35"*. The loop only acts when the agent has **not**
+scheduled itself, or when a scheduled wake **passed with no activity** — which is precisely the
+case an in-process scheduler cannot cover, because a lost wake leaves no trace of itself.
+
+`record.crons` is written by the `Stop` / `SubagentStop` hook callbacks (see §2's `crons.ts`),
+normalised to `{ id, kind, nextFireAtMs, prompt }` and persisted. Persisting is the whole point:
+the binary's table is in-process, so **T3's copy is the only durable record that a wake was ever
+armed.** A `nextFireAtMs` in the past with no subsequent `updatedAt` movement is the signal that a
+wake was lost, and it is the strongest trigger in this design — stronger than staleness, because it
+is an unmet commitment rather than an inference.
+
+Degraded states are explicit, never silent: `gate_off` when `ScheduleWakeup` reports the gate is
+off, and `wake_lost` when a recorded wake did not land. Both surface on the console.
 
 **Why `updatedAt` and nothing else.** `thread.activity-appended` is grouped with
 `thread.message-sent` in the projection pipeline and rewrites the row with
@@ -281,6 +350,7 @@ Terminal states are **sticky**; only a human re-arm clears them. Each writes a b
 | 8 | `!hasPendingApprovals && !hasPendingUserInput && !hasActionableProposedPlan` | ○ |
 | 9 | `autoResumeStore.getThread(threadId).pending === null` | ○ |
 | 10 | `now >= record.rateLimitedUntilMs` | ○ |
+| 10b | **no self-paced wake due inside the threshold window** (`record.crons.nextFireAtMs`) | ○ the deference rule — the agent is pacing itself, so T3 stands by. Console: *"Self-pacing · next wake 02:35"* |
 | 11 | `now - lastCheckIn.firedAtMs >= config.idleMs` | ○ structural floor: a tight loop stays impossible even if `updatedAt` fails to bump |
 | 12 | idle threshold met, on a freshly re-read shell | ○ |
 | 13 | budget, deadline, strikes, sentinel | **stop** |
@@ -402,6 +472,24 @@ ledger; this feature moves it to a shared `coil/http/auth.ts` rather than becomi
 | `apps/server/src/server.ts` | **0** | already has its 3-line row |
 | `packages/contracts` | **0** | activity `kind` is an open `TrimmedNonEmptyString`, payload is `Schema.Unknown` |
 | `Sidebar.tsx` / `Sidebar.logic.ts` | **0** | a loop is a **pinned thread** — `thread.pin` already exists |
+| `apps/server/src/provider/Layers/ClaudeAdapter.ts` | **+1** | **new row.** A single spread into the existing `queryOptions` object: `...(loop ? { hooks: loop.claudeHooks(threadId) } : {})`. `options.hooks` is set nowhere in this repo today, so this is the first subscription to a 30-event surface. |
+
+**The `ClaudeAdapter` row is new since the first draft** and it is the cost of the deference rule.
+It is worth arguing rather than waving through: the file is churn-12 and ~3950 lines, which is the
+most expensive kind of row this fork can take. Three things keep it cheap:
+
+1. **It is one line, and it is additive.** A spread into an object literal alongside the existing
+   `mcpServers` spread. Every line of logic lives fork-side in `coil/loop/crons.ts`.
+2. **It is a read.** No `allowedTools`, no `disallowedTools`, no permission change — the hook
+   callbacks observe `input.session_crons` and write to a fork-owned store. It cannot change what
+   the model is allowed to do.
+3. **It fails safe.** If upstream renames or removes the hook surface, the spread stops compiling
+   (a type error, not a silent drift), and if the hook simply never fires the loop degrades to the
+   staleness trigger it had before — which is the behaviour of the previous draft.
+
+If that row is unacceptable, the fallback is the pure-staleness trigger with a longer `idleMs` to
+reduce double-firing. It is strictly worse — it cannot tell "the agent is pacing itself" from "the
+agent has stopped" — but it costs zero upstream lines, so it is a legitimate phase-0.
 
 The settings surface is the one open bill, and it is a genuine choice:
 
