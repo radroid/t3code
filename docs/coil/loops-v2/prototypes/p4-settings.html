@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P4 · Settings → Loops</title>
+    <link rel="stylesheet" href="_shell.css" />
+    <style>
+      .snav { padding: 6px 6px 0; }
+      .snav-back {
+        display: flex; align-items: center; gap: 7px;
+        font-size: 12.5px; color: var(--muted-foreground);
+        padding: 7px 8px 12px; cursor: pointer;
+      }
+      .snav-item {
+        display: flex; align-items: center; gap: 9px;
+        padding: 6px 9px; border-radius: var(--radius-md);
+        font-size: 13px; color: var(--sidebar-foreground);
+        cursor: pointer; margin-bottom: 1px;
+      }
+      .snav-item:hover { background: var(--sidebar-row-hover); }
+      .snav-item.on { background: var(--sidebar-row-selected); }
+      .snav-item svg { width: 14px; height: 14px; flex: 0 0 14px; color: var(--sidebar-muted-foreground); opacity: 0.75; }
+      .snav-item.on svg { color: var(--foreground); opacity: 1; }
+      .snav-item .new {
+        margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
+        color: var(--sky); border: 1px solid rgb(56 189 248 / 30%);
+        background: rgb(56 189 248 / 10%); border-radius: 4px; padding: 1px 4px;
+      }
+
+      .gate {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background:
+          radial-gradient(130% 150% at 100% 0%, rgb(56 189 248 / 6%), transparent 60%),
+          var(--card);
+        padding: 15px 16px;
+        margin-bottom: 32px;
+      }
+      .gate.off { background: var(--card); }
+      .gate-t { font-size: 14.5px; font-weight: 560; letter-spacing: -0.01em; }
+      .gate-d { font-size: 12.5px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.55; max-width: 62ch; }
+
+      .sub { margin-left: 0; }
+      .set-section.disabled { opacity: 0.4; pointer-events: none; }
+
+      .roster { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+      .rrow {
+        display: grid; grid-template-columns: 1fr 128px 116px 92px;
+        gap: 12px; align-items: center;
+        padding: 10px 13px; border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      .rrow:last-child { border-bottom: none; }
+      .rrow.head {
+        font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+        color: var(--muted-foreground); background: rgb(255 255 255 / 2%);
+      }
+      .rrow .nm { display: flex; align-items: center; gap: 7px; min-width: 0; }
+      .rrow .nm span.ellip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      .warn {
+        display: flex; gap: 10px; align-items: flex-start;
+        border: 1px solid rgb(252 211 77 / 26%);
+        background: rgb(252 211 77 / 6%);
+        border-radius: var(--radius-md);
+        padding: 11px 13px; font-size: 12.5px; line-height: 1.55;
+        margin-top: 12px;
+      }
+      .warn b { color: var(--amber); }
+      code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
+      .hint { font-size: 11.5px; color: var(--muted-foreground); margin-top: 6px; line-height: 1.5; }
+      .seg { display: flex; gap: 0; border: 1px solid var(--input); border-radius: var(--radius-md); overflow: hidden; }
+      .seg button {
+        font: inherit; font-size: 12px; padding: 5px 11px; border: none; cursor: pointer;
+        background: transparent; color: var(--muted-foreground);
+      }
+      .seg button.on { background: var(--sidebar-control-surface); color: var(--foreground); }
+      .seg button + button { border-left: 1px solid var(--input); }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="sidebar-head"><span class="brand"><span class="brand-mark">C</span> T3 Coil</span></div>
+        <div class="sidebar-body snav">
+          <div class="snav-back">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Settings
+          </div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>General</div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="14" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 2a10 10 0 0 0 0 20c.6 0 1-.4 1-1v-2c0-.6.4-1 1-1h2a4 4 0 0 0 4-4 10 10 0 0 0-8-12z"/></svg>Appearance</div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>Keybindings</div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 2v6M9 14h.01M15 14h.01"/></svg>Providers</div>
+          <div class="snav-item on">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+            Loops <span class="new">NEW</span>
+          </div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>Source Control</div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>Connections</div>
+          <div class="snav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M10 13h4"/></svg>Archive</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <strong style="font-size:13.5px;font-weight:540">Settings</strong>
+          <span class="t-muted s13">/ Loops</span>
+        </div>
+        <div class="main-body">
+          <div class="set-wrap">
+            <h1 class="set-h1">Loops</h1>
+            <p class="set-sub">
+              A loop keeps a thread working while you are away, and collects what it needs from you
+              in one place.
+            </p>
+
+            <!-- ============ master gate ============ -->
+            <div class="gate" id="gate">
+              <div class="between">
+                <div>
+                  <div class="gate-t">Let threads run as loops</div>
+                  <div class="gate-d" id="gateDesc">
+                    When this is off, no thread can be armed, nothing is scheduled, and the loop
+                    supervisor never starts. Existing loops stop at their next check-in.
+                  </div>
+                </div>
+                <button class="switch on" id="master" aria-label="Enable loops"></button>
+              </div>
+            </div>
+
+            <div id="body">
+              <!-- ============ defaults ============ -->
+              <section class="set-section">
+                <h2 class="set-section-h">Defaults for a new loop</h2>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Check in after</div>
+                    <div class="set-row-desc">
+                      How long a thread can go completely silent before the loop nudges it.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl">
+                    <input class="input narrow" value="15" /><span class="s12 t-muted">min</span>
+                  </div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">…if a turn still looks busy</div>
+                    <div class="set-row-desc">
+                      A longer fuse when subagents are still reporting. A repo whose suite runs 40
+                      minutes needs a different number from a docs thread.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl">
+                    <input class="input narrow" value="45" /><span class="s12 t-muted">min</span>
+                  </div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Check-in budget</div>
+                    <div class="set-row-desc">
+                      Hard cap on how many times one loop may restart a thread. There is no unlimited
+                      option, deliberately.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl">
+                    <input class="input narrow" value="6" /><span class="s12 t-muted">max 20</span>
+                  </div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Stop by</div>
+                    <div class="set-row-desc">
+                      Wall-clock deadline. Your browser converts this to the next occurrence in your
+                      timezone; the server only ever stores an absolute time.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl">
+                    <input class="input" type="time" value="07:00" style="width: 108px" />
+                  </div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Loops running at once</div>
+                    <div class="set-row-desc">
+                      Ceiling across every project. Three loops at six check-ins is eighteen unattended
+                      turns a night.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl">
+                    <input class="input narrow" value="3" />
+                  </div>
+                </div>
+              </section>
+
+              <!-- ============ what it may do ============ -->
+              <section class="set-section">
+                <h2 class="set-section-h">What a loop may do unattended</h2>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Let the model schedule its own wake-ups</div>
+                    <div class="set-row-desc">
+                      Claude can arm up to 50 recurring jobs by itself, re-firing for seven days, and
+                      in full-access it does not need your approval to do it. With this off, T3 is
+                      the only scheduler.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl"><button class="switch" aria-label="Model self-scheduling"></button></div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Answer its own approval prompts</div>
+                    <div class="set-row-desc">
+                      Off means a loop that hits a permission prompt stops and puts it on your console
+                      instead of pushing past it.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl"><button class="switch" aria-label="Auto approvals"></button></div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Keep going through a usage limit</div>
+                    <div class="set-row-desc">
+                      Hands the wake to auto-resume and spends no check-in while held. Turning this
+                      off ends the loop at the limit instead.
+                    </div>
+                  </div>
+                  <div class="set-row-ctl"><button class="switch on" aria-label="Survive limits"></button></div>
+                </div>
+
+                <div class="warn">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--amber);flex:0 0 15px;margin-top:1px"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                  <div>
+                    <b>The first switch is open right now, with or without this feature.</b>
+                    A full-access Claude thread can already arm its own crons — <code class="k">canUseTool</code>
+                    auto-allows and <code class="k">ScheduleWakeup</code> self-permits. Turning it off sets
+                    <code class="k">CLAUDE_CODE_DISABLE_CRON=1</code> in the environment the adapter already
+                    passes, which costs nothing upstream. This row is worth shipping even if nothing
+                    else here is.
+                  </div>
+                </div>
+              </section>
+
+              <!-- ============ telling you ============ -->
+              <section class="set-section">
+                <h2 class="set-section-h">How you find out</h2>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Push when a loop needs you</div>
+                    <div class="set-row-desc">A question or approval it cannot get past. Uses the notifications you already set up.</div>
+                  </div>
+                  <div class="set-row-ctl"><button class="switch on"></button></div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Push when a loop stops</div>
+                    <div class="set-row-desc">Finished, out of budget, or gave up. Says which — they are not the same thing.</div>
+                  </div>
+                  <div class="set-row-ctl"><button class="switch on"></button></div>
+                </div>
+
+                <div class="set-row">
+                  <div class="set-row-main">
+                    <div class="set-row-title">Show loop check-ins in the transcript</div>
+                    <div class="set-row-desc">Leaves a breadcrumb each time the loop restarts a thread, so a run is auditable after the fact.</div>
+                  </div>
+                  <div class="set-row-ctl">
+                    <div class="seg">
+                      <button class="on">All</button><button>Stops only</button><button>Off</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- ============ roster ============ -->
+              <section class="set-section">
+                <h2 class="set-section-h">Armed right now <span class="t-muted" style="text-transform:none;letter-spacing:0;font-weight:400">— 3 of 3 used</span></h2>
+                <div class="roster">
+                  <div class="rrow head"><span>Loop</span><span>State</span><span>Budget</span><span></span></div>
+                  <div class="rrow">
+                    <span class="nm">
+                      <span class="dot indigo"></span><span class="ellip">Overnight: auth refactor</span>
+                    </span>
+                    <span class="t-indigo">Needs you</span>
+                    <span class="tnum t-muted">4 of 6 · 07:00</span>
+                    <span style="text-align:right"><button class="btn sm ghost">Disarm</button></span>
+                  </div>
+                  <div class="rrow">
+                    <span class="nm"><span class="dot sky pulse"></span><span class="ellip">Maintainer: issue queue</span></span>
+                    <span class="t-sky">Working</span>
+                    <span class="tnum t-muted">2 of 8 · 09:00</span>
+                    <span style="text-align:right"><button class="btn sm ghost">Disarm</button></span>
+                  </div>
+                  <div class="rrow">
+                    <span class="nm"><span class="dot amber"></span><span class="ellip">Flaky-test hunt</span></span>
+                    <span class="t-amber">Held — limit</span>
+                    <span class="tnum t-muted">2 of 6 · 07:00</span>
+                    <span style="text-align:right"><button class="btn sm ghost">Disarm</button></span>
+                  </div>
+                </div>
+                <div class="hint">
+                  Answers "did any of my runs give up overnight" from one page, without opening three
+                  threads. Arming itself is not here — that is a decision you make at the moment you
+                  walk away from a thread, not in Settings.
+                </div>
+              </section>
+
+              <!-- ============ prompt ============ -->
+              <section class="set-section">
+                <h2 class="set-section-h">What the loop says when it checks in</h2>
+                <div class="set-row" style="display:block">
+                  <div class="set-row-desc mb8">
+                    Restated in full every time, because an overnight run compacts and a contract taught
+                    once is gone by check-in four. <code class="k">{'{'}done_file{'}'}</code> and
+                    <code class="k">{'{'}budget{'}'}</code> are filled in per check-in.
+                  </div>
+                  <textarea class="textarea mono" rows="9" style="font-size:11.5px;line-height:1.65">[loop check-in {n} of {max}]
+
+This thread has produced no activity for {idle}. If you are still working, ignore
+this and carry on.
+
+Otherwise: do NOT restart from the top and do NOT redo finished work. Re-read your
+own progress notes first (.loop/state.json, GOALS.md, logs/ — whatever this repo
+uses), then continue from the next unfinished item.
+
+If you need a human decision but can work around it, call raise_blocker and keep
+going. Only stop if you genuinely cannot proceed.
+
+When the work is finished, or you are blocked and need a human, write:
+  {done_file}
+with one line saying why you stopped. That file is the only way to end early.
+Otherwise this ends after {max} check-ins, or at {deadline}, whichever is first.
+
+I am the scheduler for this thread. Do not schedule your own wake-ups.</textarea>
+                  <div class="hint">
+                    A per-repo override can live at <code class="k">.coil/loop-prompt.md</code> so it can be
+                    committed with the project.
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const master = document.getElementById("master");
+      const body = document.getElementById("body");
+      const gate = document.getElementById("gate");
+      const gateDesc = document.getElementById("gateDesc");
+      let on = true;
+      master.addEventListener("click", () => {
+        on = !on;
+        master.classList.toggle("on", on);
+        gate.classList.toggle("off", !on);
+        body.style.opacity = on ? "1" : "0.35";
+        body.style.pointerEvents = on ? "auto" : "none";
+        gateDesc.textContent = on
+          ? "When this is off, no thread can be armed, nothing is scheduled, and the loop supervisor never starts. Existing loops stop at their next check-in."
+          : "Loops are off. Nothing is armed, nothing is scheduled, and the supervisor is not running. Three armed loops were stood down.";
+      });
+      document.querySelectorAll(".switch:not(#master)").forEach((s) =>
+        s.addEventListener("click", () => s.classList.toggle("on")),
+      );
+      document.querySelectorAll(".seg button").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.parentElement.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+          b.classList.add("on");
+        }),
+      );
+    </script>
+  </body>
+</html>

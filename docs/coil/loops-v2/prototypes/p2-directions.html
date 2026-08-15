@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P2 · Where does a loop live in the sidebar?</title>
+    <link rel="stylesheet" href="_shell.css" />
+    <style>
+      body { overflow-y: auto; height: auto; }
+      .page { padding: 22px 24px 70px; max-width: 1320px; margin: 0 auto; }
+      h1 {
+        font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 5px;
+      }
+      .lede { font-size: 13px; color: var(--muted-foreground); max-width: 68ch; margin: 0 0 22px; line-height: 1.6; }
+
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+      @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+
+      .col-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--card);
+        overflow: hidden;
+      }
+      .col-head { padding: 13px 14px 12px; border-bottom: 1px solid var(--border); }
+      .col-tag {
+        font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+        color: var(--muted-foreground);
+      }
+      .col-title { font-size: 14.5px; font-weight: 570; margin-top: 3px; letter-spacing: -0.01em; }
+      .col-sub { font-size: 12px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.5; }
+
+      /* the fake sidebar preview */
+      .sb-preview {
+        background: var(--sidebar);
+        padding: 8px;
+        min-height: 396px;
+        border-bottom: 1px solid var(--border);
+      }
+      .sb-preview .trow { margin-bottom: 3px; }
+
+      .cost { padding: 12px 14px 14px; }
+      .cost-h {
+        font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+        color: var(--muted-foreground); margin-bottom: 7px;
+      }
+      .cost-row {
+        display: flex; gap: 8px; align-items: baseline;
+        font-size: 12px; padding: 3px 0; line-height: 1.45;
+      }
+      .cost-row .k { color: var(--muted-foreground); flex: 0 0 84px; }
+      .cost-row .v { flex: 1; }
+      .verdict {
+        margin-top: 11px; padding: 9px 10px;
+        border-radius: var(--radius-md);
+        font-size: 12px; line-height: 1.5;
+        border: 1px solid var(--border-strong);
+      }
+      .verdict.good { border-color: rgb(110 231 183 / 30%); background: rgb(110 231 183 / 7%); }
+      .verdict.mid  { border-color: rgb(252 211 77 / 28%);  background: rgb(252 211 77 / 6%); }
+      .verdict.bad  { border-color: rgb(251 113 133 / 28%); background: rgb(251 113 133 / 6%); }
+      .verdict b { font-weight: 620; }
+
+      /* direction B — the dedicated loops section */
+      .loop-section-head {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+        color: var(--sidebar-muted-foreground);
+        padding: 6px 8px 6px;
+      }
+      .loop-section-head .loop-glyph { width: 11px; height: 11px; flex: 0 0 11px; }
+
+      .trow.rich { padding: 9px 10px 9px 12px; }
+      .trow.rich .prog { margin-top: 7px; }
+      .prog-line { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--sidebar-muted-foreground); }
+
+      /* direction C — mode switcher */
+      .mode-switch {
+        display: flex; gap: 2px; padding: 3px;
+        background: rgb(255 255 255 / 5%);
+        border-radius: var(--radius-md);
+        margin-bottom: 9px;
+      }
+      .mode-switch button {
+        flex: 1; font: inherit; font-size: 11.5px; font-weight: 500;
+        border: none; background: transparent; color: var(--sidebar-muted-foreground);
+        border-radius: calc(var(--radius-md) - 2px); padding: 4px 6px; cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      }
+      .mode-switch button.on { background: var(--sidebar-control-surface); color: var(--foreground); }
+      .mode-switch .loop-glyph { width: 11px; height: 11px; flex: 0 0 11px; }
+
+      .note {
+        margin-top: 26px; border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px; font-size: 13px; color: #c8c8c8; line-height: 1.65;
+        max-width: 78ch;
+      }
+      .note b { color: var(--foreground); font-weight: 600; }
+      code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Where does a loop live in the sidebar?</h1>
+      <p class="lede">
+        Same four threads, same two loops, three structural answers. The difference that matters is
+        not how they look — it is what each one costs against upstream, because
+        <code class="k">Sidebar.tsx</code> is 3808 lines, is churned constantly, and the fork does
+        not touch it today.
+      </p>
+
+      <div class="grid">
+        <!-- ============================= A ============================= -->
+        <section class="col-card">
+          <div class="col-head">
+            <div class="col-tag">Direction A</div>
+            <div class="col-title">A loop is a pinned thread</div>
+            <div class="col-sub">
+              Arming a loop dispatches <code class="k">thread.pin</code>. Upstream's pinned block
+              already floats it above everything and stops it sinking into a shelf. The only loop-ness
+              on the row is the arc glyph, which rides in the title.
+            </div>
+          </div>
+
+          <div class="sb-preview">
+            <button class="trow is-loop is-active">
+              <div class="trow-top">
+                <span class="loop-glyph">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+                </span>
+                <span class="trow-title">Overnight: auth refactor</span>
+                <span class="trow-status"><span class="dot indigo"></span><span class="t-indigo">Input</span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">3 waiting · check-in 4/6</span></div>
+            </button>
+
+            <button class="trow is-loop is-recede">
+              <div class="trow-top">
+                <span class="loop-glyph">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+                </span>
+                <span class="trow-title">Maintainer: issue queue</span>
+                <span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">on #113 · check-in 2/8</span></div>
+            </button>
+
+            <div class="side-group-label">Threads <span class="count">4</span></div>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Fix clone diagnostics</span><span class="trow-status"><span class="dot emerald"></span><span class="t-emerald">Done</span></span></div>
+              <div class="trow-meta"><span class="ellip">t3code · 12m ago</span></div>
+            </button>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Seam ledger re-baseline</span></div>
+              <div class="trow-meta"><span class="ellip">t3code · 1h ago</span></div>
+            </button>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Dependabot sweep</span><span class="trow-status"><span class="dot amber"></span><span class="t-amber">Approval</span></span></div>
+              <div class="trow-meta"><span class="ellip">t3code · 3h ago</span></div>
+            </button>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Coil homepage copy</span></div>
+              <div class="trow-meta"><span class="ellip">coil-home · yesterday</span></div>
+            </button>
+          </div>
+
+          <div class="cost">
+            <div class="cost-h">Seam cost</div>
+            <div class="cost-row"><span class="k">Sidebar.tsx</span><span class="v t-emerald">untouched</span></div>
+            <div class="cost-row"><span class="k">contracts</span><span class="v t-emerald">untouched — <code class="k">thread.pin</code> already exists</span></div>
+            <div class="cost-row"><span class="k">New rows</span><span class="v">0</span></div>
+            <div class="cost-row"><span class="k">Where loop UI lives</span><span class="v">the existing <code class="k">ThreadCoilOverlay</code> row (+10/−6, risk 0)</span></div>
+            <div class="verdict good">
+              <b>Cheapest by a wide margin, and it is not a hack.</b> A pin is a lifecycle
+              transition, which is the one thing the sidebar's static-sort rule explicitly permits.
+              The cost is that a loop is only <em>distinguishable</em> by a glyph — a stranger
+              could not tell it from a pinned thread.
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================= B ============================= -->
+        <section class="col-card">
+          <div class="col-head">
+            <div class="col-tag">Direction B</div>
+            <div class="col-title">Loops get their own section</div>
+            <div class="col-sub">
+              A labelled group above Threads, with richer rows: progress against budget, the next
+              check-in, and how many items are waiting on you — visible without opening anything.
+            </div>
+          </div>
+
+          <div class="sb-preview">
+            <div class="loop-section-head">
+              <span class="loop-glyph">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+              </span>
+              Loops
+              <span class="grow"></span>
+              <span class="count s11 t-muted">2</span>
+            </div>
+
+            <button class="trow is-loop is-blocked is-active rich">
+              <div class="trow-top">
+                <span class="trow-title">Overnight: auth refactor</span>
+                <span class="trow-status"><span class="dot indigo"></span><span class="t-indigo">3 waiting</span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">paused 06:12 · stops 07:00</span></div>
+              <div class="prog">
+                <div class="ticks mb4"><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i></div>
+                <div class="prog-line"><span>check-in 4 of 6</span><span class="grow"></span><span>2h 52m idle</span></div>
+              </div>
+            </button>
+
+            <button class="trow is-loop rich is-recede">
+              <div class="trow-top">
+                <span class="trow-title">Maintainer: issue queue</span>
+                <span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">on #113 · 4 issues left</span></div>
+              <div class="prog">
+                <div class="ticks mb4"><i class="used"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="prog-line"><span>check-in 2 of 8</span><span class="grow"></span><span>moved 40s ago</span></div>
+              </div>
+            </button>
+
+            <div class="side-group-label">Threads <span class="count">4</span></div>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Fix clone diagnostics</span><span class="trow-status"><span class="dot emerald"></span><span class="t-emerald">Done</span></span></div>
+              <div class="trow-meta"><span class="ellip">t3code · 12m ago</span></div>
+            </button>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Seam ledger re-baseline</span></div>
+              <div class="trow-meta"><span class="ellip">t3code · 1h ago</span></div>
+            </button>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Dependabot sweep</span><span class="trow-status"><span class="dot amber"></span><span class="t-amber">Approval</span></span></div>
+              <div class="trow-meta"><span class="ellip">t3code · 3h ago</span></div>
+            </button>
+            <button class="trow is-recede">
+              <div class="trow-top"><span class="trow-title">Coil homepage copy</span></div>
+              <div class="trow-meta"><span class="ellip">coil-home · yesterday</span></div>
+            </button>
+          </div>
+
+          <div class="cost">
+            <div class="cost-h">Seam cost</div>
+            <div class="cost-row"><span class="k">Sidebar.tsx</span><span class="v t-rose">NEW row · 3808 lines · hot</span></div>
+            <div class="cost-row"><span class="k">Sidebar.logic.ts</span><span class="v t-rose">NEW row — partitioning + a status</span></div>
+            <div class="cost-row"><span class="k">contracts</span><span class="v t-amber">a loop flag on the thread shell</span></div>
+            <div class="cost-row"><span class="k">New rows</span><span class="v">2–3</span></div>
+            <div class="verdict bad">
+              <b>The most legible and the most expensive.</b> Both files are upstream-owned, neither is
+              in the ledger today, and the partitioning function is exactly where upstream keeps
+              changing things (pinned / snoozed / settled shelves all landed there this quarter).
+              Every sync would land on it.
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================= C ============================= -->
+        <section class="col-card">
+          <div class="col-head">
+            <div class="col-tag">Direction C</div>
+            <div class="col-title">Loops are a mode you switch into</div>
+            <div class="col-sub">
+              The sidebar keeps a two-up switch. <b>Chat</b> is today's shell, untouched.
+              <b>Loops</b> replaces the list with loops and their run ledgers — the same move
+              Settings already makes.
+            </div>
+          </div>
+
+          <div class="sb-preview">
+            <div class="mode-switch">
+              <button>Chat</button>
+              <button class="on">
+                <span class="loop-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+                Loops
+                <span class="pill indigo" style="height:15px;padding:0 5px;font-size:9.5px">3</span>
+              </button>
+            </div>
+
+            <div class="side-group-label" style="padding-top: 4px">Needs you <span class="count">1</span></div>
+            <button class="trow is-loop is-blocked is-active rich">
+              <div class="trow-top">
+                <span class="trow-title">Overnight: auth refactor</span>
+                <span class="trow-status"><span class="dot indigo"></span><span class="t-indigo">3</span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">2 questions · 1 approval</span></div>
+              <div class="prog">
+                <div class="ticks mb4"><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i></div>
+                <div class="prog-line"><span>4 of 6 · stops 07:00</span></div>
+              </div>
+            </button>
+
+            <div class="side-group-label">Running <span class="count">1</span></div>
+            <button class="trow is-loop rich is-recede">
+              <div class="trow-top">
+                <span class="trow-title">Maintainer: issue queue</span>
+                <span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">on #113 · 4 left</span></div>
+            </button>
+
+            <div class="side-group-label">Finished <span class="count">2</span></div>
+            <button class="trow is-loop is-spent is-recede">
+              <div class="trow-top"><span class="trow-title">Nightly dep sweep</span><span class="trow-status"><span class="dot zinc"></span><span class="t-zinc">Spent</span></span></div>
+              <div class="trow-meta"><span class="ellip">ran out 07:00 · 4/7 done</span></div>
+            </button>
+            <button class="trow is-loop is-done is-recede">
+              <div class="trow-top"><span class="trow-title">Docs backfill</span><span class="trow-status"><span class="dot emerald"></span><span class="t-emerald">Done</span></span></div>
+              <div class="trow-meta"><span class="ellip">finished 04:12 · 9/9</span></div>
+            </button>
+          </div>
+
+          <div class="cost">
+            <div class="cost-h">Seam cost</div>
+            <div class="cost-row"><span class="k">Sidebar.tsx</span><span class="v t-emerald">untouched — different tree</span></div>
+            <div class="cost-row"><span class="k">New routes</span><span class="v">fork-owned files · conflict with nothing</span></div>
+            <div class="cost-row"><span class="k">routeTree.gen.ts</span><span class="v t-amber">regenerates (generated, not merged)</span></div>
+            <div class="cost-row"><span class="k">New rows</span><span class="v">1 — wherever the switch mounts</span></div>
+            <div class="verdict mid">
+              <b>Cheaper than B and far more capable than A</b>, because everything lives in
+              fork-owned route files. The real cost is not seam, it is <em>product</em>: a mode you
+              have to switch into is a mode you forget to check. Mitigated only if the switch carries
+              an unread count, which is why it does above.
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="note">
+        <b>What the sidebar itself says about this.</b> <code class="k">Sidebar.logic.ts</code> carries an
+        explicit rule: <em>"static creation order… Activity NEVER reorders the list — a row holds its
+        position from open until settled, so the screen only moves at lifecycle transitions."</em>
+        A loop that floats up because it is busy breaks that rule. A loop that pins does not, because
+        pinning <em>is</em> a lifecycle transition. That single sentence is why A is idiomatic rather
+        than a shortcut — and why any design that sorts loops by activity should be rejected outright.
+      </div>
+    </div>
+  </body>
+</html>

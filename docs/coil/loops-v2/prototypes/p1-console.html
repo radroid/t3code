@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P1 · Loop Console — what you open at 9am</title>
+    <link rel="stylesheet" href="_shell.css" />
+    <style>
+      /* ---- console-specific ---- */
+      .console { max-width: 860px; margin: 0 auto; padding: 20px 22px 60px; }
+
+      .hero {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background:
+          radial-gradient(120% 140% at 100% 0%, rgb(56 189 248 / 7%), transparent 58%),
+          var(--card);
+        padding: 16px 18px;
+      }
+      .hero.blocked {
+        background:
+          radial-gradient(120% 140% at 100% 0%, rgb(165 180 252 / 9%), transparent 58%),
+          var(--card);
+      }
+      .hero.spent {
+        background:
+          radial-gradient(120% 140% at 100% 0%, rgb(161 161 170 / 7%), transparent 58%),
+          var(--card);
+      }
+      .hero.held {
+        background:
+          radial-gradient(120% 140% at 100% 0%, rgb(252 211 77 / 8%), transparent 58%),
+          var(--card);
+      }
+
+      .hero-line {
+        font-size: 17px;
+        font-weight: 550;
+        letter-spacing: -0.015em;
+        line-height: 1.35;
+      }
+      .hero-sub { font-size: 12.5px; color: var(--muted-foreground); margin-top: 4px; }
+
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--border);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        margin-top: 14px;
+      }
+      .fact { background: var(--card); padding: 9px 11px; }
+      .fact dt {
+        font-size: 10.5px;
+        color: var(--muted-foreground);
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+      }
+      .fact dd { margin: 0; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+      /* ---- the queue ---- */
+      .qsec-h {
+        display: flex; align-items: baseline; gap: 8px;
+        margin: 26px 0 4px;
+      }
+      .qsec-h h2 {
+        font-size: 13px; font-weight: 600; margin: 0;
+        letter-spacing: -0.005em;
+      }
+      .qsec-h .why { font-size: 12px; color: var(--muted-foreground); }
+
+      .qitem {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        padding: 13px 14px;
+        margin-top: 8px;
+        position: relative;
+        overflow: hidden;
+      }
+      .qitem::before {
+        content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+      }
+      .qitem.blocking::before { background: var(--indigo); }
+      .qitem.deferred::before { background: rgb(255 255 255 / 14%); }
+      .qitem.approval::before { background: var(--amber); }
+      .qitem.plan::before { background: var(--violet); }
+      .qitem.answered { opacity: 0.5; }
+      .qitem.answered::before { background: var(--emerald); }
+
+      .qhead { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 3px; }
+      .qhead .qh-label {
+        font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .qtitle { font-size: 13.5px; font-weight: 500; line-height: 1.45; }
+      .qmeta { font-size: 11.5px; color: var(--muted-foreground); margin-top: 3px; }
+
+      .opts { display: grid; gap: 5px; margin-top: 10px; }
+      .opt {
+        text-align: left;
+        border: 1px solid var(--border-strong);
+        background: rgb(255 255 255 / 2.5%);
+        border-radius: var(--radius-md);
+        padding: 8px 10px;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+        transition: background 110ms ease, border-color 110ms ease;
+      }
+      .opt:hover { background: rgb(255 255 255 / 6%); border-color: rgb(255 255 255 / 20%); }
+      .opt.picked {
+        border-color: rgb(110 231 183 / 45%);
+        background: rgb(110 231 183 / 9%);
+      }
+      .opt-l { font-size: 12.5px; font-weight: 500; }
+      .opt-d { font-size: 11.5px; color: var(--muted-foreground); margin-top: 1px; line-height: 1.45; }
+
+      .qfoot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+
+      .empty {
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius-lg);
+        padding: 26px 18px;
+        text-align: center;
+        margin-top: 8px;
+      }
+      .empty .big { font-size: 14px; font-weight: 500; }
+      .empty .small { font-size: 12.5px; color: var(--muted-foreground); margin-top: 4px; }
+
+      /* ---- iteration ledger ---- */
+      .ledger { margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+      .lrow {
+        display: grid;
+        grid-template-columns: 58px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      .lrow:last-child { border-bottom: none; }
+      .lrow .n {
+        font-family: var(--font-mono); font-size: 11px;
+        color: var(--muted-foreground);
+      }
+      .lrow .what { color: #cfcfcf; min-width: 0; }
+      .lrow .when { font-size: 11.5px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+      .lrow.is-now { background: rgb(56 189 248 / 5%); }
+
+      /* ---- scenario switcher (prototype affordance, not product) ---- */
+      .scen {
+        position: sticky; top: 0; z-index: 5;
+        display: flex; align-items: center; gap: 6px;
+        padding: 8px 14px;
+        background: #08080a;
+        border-bottom: 1px solid var(--border);
+        font-size: 11.5px;
+      }
+      .scen .lab {
+        color: #7a7a7a; letter-spacing: 0.06em; text-transform: uppercase;
+        font-size: 10px; font-weight: 600; margin-right: 2px;
+      }
+      .scen button {
+        font: inherit; font-size: 11.5px;
+        border: 1px solid var(--border-strong);
+        background: transparent; color: var(--muted-foreground);
+        border-radius: 999px; padding: 3px 10px; cursor: pointer;
+      }
+      .scen button:hover { color: var(--foreground); border-color: rgb(255 255 255 / 22%); }
+      .scen button.on { background: var(--foreground); color: #0a0a0a; border-color: var(--foreground); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <!-- Prototype-only control. Not part of the product surface. -->
+    <div class="scen">
+      <span class="lab">Scenario</span>
+      <button data-s="blocked" class="on">09:04 — three things need you</button>
+      <button data-s="clear">02:20 — running, nothing needed</button>
+      <button data-s="held">03:41 — parked on a usage limit</button>
+      <button data-s="spent">07:00 — out of rope</button>
+    </div>
+
+    <div class="app" style="height: calc(100vh - 37px)">
+      <!-- ================= sidebar ================= -->
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <span class="brand"><span class="brand-mark">C</span> T3 Coil</span>
+          <span class="grow"></span>
+          <button class="icon-btn" aria-label="New thread">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+        <div class="sidebar-body">
+          <!-- pinned block renders with NO header upstream; the loop rail is the cue -->
+          <button class="trow is-loop is-active" id="sbLoop">
+            <div class="trow-top">
+              <span class="loop-glyph" id="sbGlyph">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/>
+                </svg>
+              </span>
+              <span class="trow-title">Overnight: auth refactor</span>
+              <span class="trow-status" id="sbStatus"><span class="dot indigo"></span><span class="t-indigo">Input</span></span>
+            </div>
+            <div class="trow-meta">
+              <span class="ellip" id="sbMeta">3 waiting · check-in 4/6</span>
+            </div>
+          </button>
+
+          <button class="trow is-loop is-recede">
+            <div class="trow-top">
+              <span class="loop-glyph">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/>
+                </svg>
+              </span>
+              <span class="trow-title">Maintainer: issue queue</span>
+              <span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span>
+            </div>
+            <div class="trow-meta"><span class="ellip">on #113 · check-in 2/8</span></div>
+          </button>
+
+          <div class="side-group-label">Threads <span class="count">6</span></div>
+
+          <button class="trow is-recede">
+            <div class="trow-top">
+              <span class="trow-title">Fix clone diagnostics</span>
+              <span class="trow-status"><span class="dot emerald"></span><span class="t-emerald">Done</span></span>
+            </div>
+            <div class="trow-meta"><span class="ellip">t3code · 12m ago</span></div>
+          </button>
+          <button class="trow is-recede">
+            <div class="trow-top">
+              <span class="trow-title">Seam ledger re-baseline</span>
+            </div>
+            <div class="trow-meta"><span class="ellip">t3code · 1h ago</span></div>
+          </button>
+          <button class="trow is-recede">
+            <div class="trow-top">
+              <span class="trow-title">Dependabot sweep</span>
+              <span class="trow-status"><span class="dot amber"></span><span class="t-amber">Approval</span></span>
+            </div>
+            <div class="trow-meta"><span class="ellip">t3code · 3h ago</span></div>
+          </button>
+          <button class="trow is-recede">
+            <div class="trow-top"><span class="trow-title">Coil homepage copy</span></div>
+            <div class="trow-meta"><span class="ellip">coil-home · yesterday</span></div>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ================= main ================= -->
+      <main class="main">
+        <div class="topbar">
+          <span class="loop-glyph" style="color: var(--sky)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/>
+            </svg>
+          </span>
+          <strong style="font-size: 13.5px; font-weight: 540">Overnight: auth refactor</strong>
+          <span class="pill" id="topPill"><span class="dot indigo"></span>Needs you</span>
+          <span class="grow"></span>
+          <button class="btn sm ghost">Transcript</button>
+          <button class="btn sm ghost">Runs</button>
+        </div>
+
+        <div class="tabs">
+          <button class="tab on">
+            Console <span class="badge indigo" id="tabBadge">3</span>
+          </button>
+          <button class="tab">Transcript</button>
+          <button class="tab">Runs <span class="badge">4</span></button>
+          <button class="tab">Diff</button>
+        </div>
+
+        <div class="main-body">
+          <div class="console">
+            <!-- ============ hero ============ -->
+            <section class="hero blocked" id="hero">
+              <div class="between">
+                <div class="wrap-tight">
+                  <div class="hero-line" id="heroLine">Three things need you before this can finish.</div>
+                  <div class="hero-sub" id="heroSub">
+                    Loop paused itself at 06:12 — it could not choose without you. Everything else it
+                    could do, it did.
+                  </div>
+                </div>
+                <div class="row" style="flex: 0 0 auto">
+                  <button class="btn sm" id="btnPause">Pause</button>
+                  <button class="btn sm primary" id="btnResume">Answer &amp; resume</button>
+                </div>
+              </div>
+
+              <dl class="facts">
+                <div class="fact">
+                  <dt>State</dt>
+                  <dd id="fState" class="t-indigo">Waiting on you</dd>
+                </div>
+                <div class="fact">
+                  <dt>Check-ins left</dt>
+                  <dd id="fBudget">2 of 6</dd>
+                </div>
+                <div class="fact">
+                  <dt>Stops by</dt>
+                  <dd id="fDeadline">07:00</dd>
+                </div>
+                <div class="fact">
+                  <dt>Last moved</dt>
+                  <dd id="fMoved">2h 52m ago</dd>
+                </div>
+              </dl>
+
+              <div class="mt12">
+                <div class="between mb4">
+                  <span class="s11 t-muted">Check-in budget</span>
+                  <span class="s11 t-muted tnum" id="ticksLabel">4 used · 2 left</span>
+                </div>
+                <div class="ticks" id="ticks">
+                  <i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i>
+                </div>
+              </div>
+            </section>
+
+            <!-- ============ BLOCKING ============ -->
+            <div id="secBlocking">
+              <div class="qsec-h">
+                <h2>Stopped on these</h2>
+                <span class="why">the loop cannot proceed until they're answered</span>
+              </div>
+
+              <!-- native AskUserQuestion shape: id/header/question/options[{label,description}] -->
+              <article class="qitem blocking" data-q>
+                <div class="qhead">
+                  <span class="qh-label t-indigo">Question</span>
+                  <span class="grow"></span>
+                  <span class="s11 t-muted tnum">01:48</span>
+                </div>
+                <div class="qtitle">
+                  The refresh-token rotation changes the session table. Migrate in place or write a
+                  new table and backfill?
+                </div>
+                <div class="qmeta">Raised by the agent · blocking since 01:48 (7h 16m)</div>
+                <div class="opts">
+                  <button class="opt">
+                    <div class="opt-l">Migrate in place</div>
+                    <div class="opt-d">One migration, brief write-lock on <code class="mono">sessions</code>. Simplest, but no rollback without a restore.</div>
+                  </button>
+                  <button class="opt">
+                    <div class="opt-l">New table + backfill</div>
+                    <div class="opt-d">Dual-write, backfill, then cut over. Reversible at every step; roughly two more days of work.</div>
+                  </button>
+                  <button class="opt">
+                    <div class="opt-l">Stop and let me decide at the keyboard</div>
+                    <div class="opt-d">Park this branch of work; keep the rest of the loop running.</div>
+                  </button>
+                </div>
+                <div class="qfoot">
+                  <input class="input" placeholder="…or answer in your own words" style="font-size: 12.5px" />
+                </div>
+              </article>
+
+              <article class="qitem approval" data-q>
+                <div class="qhead">
+                  <span class="qh-label t-amber">Approval</span>
+                  <span class="grow"></span>
+                  <span class="s11 t-muted tnum">06:12</span>
+                </div>
+                <div class="qtitle">Run <code class="mono">pnpm db:migrate</code> against the dev database</div>
+                <div class="qmeta">Tool permission · blocking since 06:12 (2h 52m) · this is what stopped the loop</div>
+                <div class="opts">
+                  <button class="opt"><div class="opt-l">Allow once</div></button>
+                  <button class="opt"><div class="opt-l">Allow for this loop</div><div class="opt-d">Won't ask again for <code class="mono">pnpm db:*</code> until the loop ends.</div></button>
+                  <button class="opt"><div class="opt-l">Deny</div><div class="opt-d">The agent is told to find another route.</div></button>
+                </div>
+              </article>
+            </div>
+
+            <!-- ============ DEFERRED ============ -->
+            <div id="secDeferred">
+              <div class="qsec-h">
+                <h2>Answer when you can</h2>
+                <span class="why">the loop worked around these and kept going</span>
+              </div>
+
+              <article class="qitem deferred" data-q>
+                <div class="qhead">
+                  <span class="qh-label t-muted">Blocker</span>
+                  <span class="grow"></span>
+                  <span class="s11 t-muted tnum">04:33</span>
+                </div>
+                <div class="qtitle">
+                  <code class="mono">AUTH0_TENANT</code> isn't in the dev <code class="mono">.env</code>, so I stubbed the
+                  provider and left the integration test skipped.
+                </div>
+                <div class="qmeta">Raised by the agent · did not stop the loop · 1 test skipped</div>
+                <div class="opts">
+                  <button class="opt"><div class="opt-l">I'll add the secret</div><div class="opt-d">Loop re-runs the skipped test on the next check-in.</div></button>
+                  <button class="opt"><div class="opt-l">Leave it stubbed</div><div class="opt-d">Keeps the skip and stops asking.</div></button>
+                </div>
+              </article>
+
+              <article class="qitem deferred" data-q>
+                <div class="qhead">
+                  <span class="qh-label t-muted">Blocker</span>
+                  <span class="grow"></span>
+                  <span class="s11 t-muted tnum">05:10</span>
+                </div>
+                <div class="qtitle">
+                  Two call-sites in <code class="mono">apps/mobile</code> use the old session shape. Out of the scope you gave me — change them?
+                </div>
+                <div class="qmeta">Raised by the agent · did not stop the loop · scope question</div>
+                <div class="opts">
+                  <button class="opt"><div class="opt-l">Yes, include mobile</div></button>
+                  <button class="opt"><div class="opt-l">No — open an issue instead</div></button>
+                </div>
+              </article>
+            </div>
+
+            <!-- ============ EMPTY (all clear) ============ -->
+            <div id="secClear" hidden>
+              <div class="qsec-h">
+                <h2>Needs you</h2>
+                <span class="why">nothing right now</span>
+              </div>
+              <div class="empty">
+                <div class="big">Nothing is waiting on you.</div>
+                <div class="small">
+                  The loop is working. Next check-in at 02:35 if it goes quiet.<br />
+                  You'll get a push when it needs a decision or when it stops.
+                </div>
+              </div>
+            </div>
+
+            <!-- ============ HELD (limits) ============ -->
+            <div id="secHeld" hidden>
+              <div class="qsec-h">
+                <h2>Why it isn't running</h2>
+                <span class="why">this is not a stall</span>
+              </div>
+              <div class="qitem" style="border-color: rgb(252 211 77 / 26%)">
+                <div class="qhead">
+                  <span class="qh-label t-amber">Usage limit</span>
+                  <span class="grow"></span>
+                  <span class="s11 t-muted tnum">03:41</span>
+                </div>
+                <div class="qtitle">Anthropic 5-hour limit reached. Resumes automatically at 08:22.</div>
+                <div class="qmeta">
+                  Auto-resume owns the wake — the loop stood down so the two don't both fire.
+                  No check-in was spent.
+                </div>
+                <div class="qfoot">
+                  <button class="btn sm">Switch model and continue now</button>
+                  <button class="btn sm ghost">End the loop here</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ============ SPENT ============ -->
+            <div id="secSpent" hidden>
+              <div class="qsec-h">
+                <h2>Why it stopped</h2>
+                <span class="why">it ran out of rope — it did not finish</span>
+              </div>
+              <div class="qitem" style="border-color: rgb(161 161 170 / 30%)">
+                <div class="qhead">
+                  <span class="qh-label t-zinc">Spent</span>
+                  <span class="grow"></span>
+                  <span class="s11 t-muted tnum">07:00</span>
+                </div>
+                <div class="qtitle">All 6 check-ins used, and the 07:00 deadline passed.</div>
+                <div class="qmeta">
+                  The agent never wrote the done-file, so this is <em>out of budget</em>, not
+                  <em>finished</em>. 4 of 7 backlog items are done.
+                </div>
+                <div class="qfoot">
+                  <button class="btn sm primary">Give it 6 more</button>
+                  <button class="btn sm">Read what it did</button>
+                  <button class="btn sm ghost">Mark done</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ============ ledger ============ -->
+            <div class="qsec-h">
+              <h2>Check-ins</h2>
+              <span class="why">what the loop did each time it woke</span>
+            </div>
+            <div class="ledger" id="ledger">
+              <div class="lrow is-now">
+                <span class="n">#4</span>
+                <span class="what">Paused — tool approval needed for <code class="mono">pnpm db:migrate</code></span>
+                <span class="when">06:12</span>
+              </div>
+              <div class="lrow">
+                <span class="n">#3</span>
+                <span class="what">Wrote rotation tests, 14 pass / 1 skipped · raised 1 blocker</span>
+                <span class="when">05:04</span>
+              </div>
+              <div class="lrow">
+                <span class="n">#2</span>
+                <span class="what">Stood down — usage limit until 04:12 · no check-in spent</span>
+                <span class="when">03:41</span>
+              </div>
+              <div class="lrow">
+                <span class="n">#1</span>
+                <span class="what">Resumed after 51m quiet · finished the token-store extraction</span>
+                <span class="when">01:22</span>
+              </div>
+              <div class="lrow">
+                <span class="n">armed</span>
+                <span class="what">You armed the loop · budget 6 · stop by 07:00</span>
+                <span class="when">23:48</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      // ---- answering an option (blocking items shrink the "needs you" count) ----
+      let outstanding = 3;
+      const tabBadge = document.getElementById("tabBadge");
+
+      function refreshCount() {
+        if (outstanding <= 0) {
+          tabBadge.hidden = true;
+        } else {
+          tabBadge.hidden = false;
+          tabBadge.textContent = String(outstanding);
+        }
+        const sbMeta = document.getElementById("sbMeta");
+        if (SCENARIO === "blocked") {
+          sbMeta.textContent =
+            outstanding > 0 ? `${outstanding} waiting · check-in 4/6` : "answered · resuming";
+          if (outstanding === 0) {
+            document.getElementById("sbStatus").innerHTML =
+              '<span class="dot sky pulse"></span><span class="t-sky">Working</span>';
+            document.getElementById("sbLoop").classList.remove("is-blocked");
+            document.getElementById("heroLine").textContent = "All answered — the loop is going again.";
+            document.getElementById("heroSub").textContent =
+              "It picked up at check-in 5 of 6 with your answers restated in full, so a compaction can't lose them.";
+            document.getElementById("fState").textContent = "Working";
+            document.getElementById("fState").className = "t-sky";
+            document.getElementById("topPill").innerHTML =
+              '<span class="dot sky pulse"></span>Working';
+            document.getElementById("hero").className = "hero";
+          }
+        }
+      }
+
+      document.querySelectorAll("[data-q]").forEach((item) => {
+        item.querySelectorAll(".opt").forEach((opt) => {
+          opt.addEventListener("click", () => {
+            if (item.classList.contains("answered")) return;
+            item.querySelectorAll(".opt").forEach((o) => o.classList.remove("picked"));
+            opt.classList.add("picked");
+            item.classList.add("answered");
+            const label = item.querySelector(".qh-label");
+            if (item.classList.contains("blocking") || item.classList.contains("approval")) {
+              outstanding = Math.max(0, outstanding - 1);
+            } else {
+              outstanding = Math.max(0, outstanding - 1);
+            }
+            label.textContent = "Answered";
+            label.className = "qh-label t-emerald";
+            refreshCount();
+          });
+        });
+      });
+
+      // ---- scenarios ----
+      let SCENARIO = "blocked";
+      const S = {
+        blocked: {
+          heroCls: "hero blocked",
+          line: "Three things need you before this can finish.",
+          sub: "Loop paused itself at 06:12 — it could not choose without you. Everything else it could do, it did.",
+          state: ["Waiting on you", "t-indigo"],
+          budget: "2 of 6",
+          deadline: "07:00",
+          moved: "2h 52m ago",
+          ticks: "4 used · 2 left",
+          pill: '<span class="dot indigo"></span>Needs you',
+          sbStatus: '<span class="dot indigo"></span><span class="t-indigo">Input</span>',
+          sbMeta: "3 waiting · check-in 4/6",
+          show: ["secBlocking", "secDeferred"],
+          badge: 3,
+          rail: "is-blocked",
+        },
+        clear: {
+          heroCls: "hero",
+          line: "Running. Nothing needs you.",
+          sub: "Last moved 4 minutes ago. If it goes quiet for 15 minutes the loop checks in on it.",
+          state: ["Working", "t-sky"],
+          budget: "5 of 6",
+          deadline: "07:00",
+          moved: "4m ago",
+          ticks: "1 used · 5 left",
+          pill: '<span class="dot sky pulse"></span>Working',
+          sbStatus: '<span class="dot sky pulse"></span><span class="t-sky">Working</span>',
+          sbMeta: "running · check-in 1/6",
+          show: ["secClear"],
+          badge: 0,
+          rail: "",
+        },
+        held: {
+          heroCls: "hero held",
+          line: "Parked on a usage limit until 08:22.",
+          sub: "Not a stall, and not your problem — auto-resume already owns the wake. No check-in was spent.",
+          state: ["Held", "t-amber"],
+          budget: "4 of 6",
+          deadline: "07:00",
+          moved: "22m ago",
+          ticks: "2 used · 4 left",
+          pill: '<span class="dot amber"></span>Held',
+          sbStatus: '<span class="dot amber"></span><span class="t-amber">Held</span>',
+          sbMeta: "usage limit · resumes 08:22",
+          show: ["secHeld", "secDeferred"],
+          badge: 2,
+          rail: "is-held",
+        },
+        spent: {
+          heroCls: "hero spent",
+          line: "Out of rope at 07:00. It did not finish.",
+          sub: "6 of 6 check-ins used and the deadline passed. 4 of 7 backlog items are done — the rest are untouched.",
+          state: ["Spent", "t-zinc"],
+          budget: "0 of 6",
+          deadline: "07:00 — passed",
+          moved: "1h 04m ago",
+          ticks: "6 used · 0 left",
+          pill: '<span class="dot zinc"></span>Spent',
+          sbStatus: '<span class="dot zinc"></span><span class="t-zinc">Spent</span>',
+          sbMeta: "out of budget · 4/7 done",
+          show: ["secSpent", "secDeferred"],
+          badge: 2,
+          rail: "is-spent",
+        },
+      };
+
+      function applyScenario(key) {
+        SCENARIO = key;
+        const s = S[key];
+        document.getElementById("hero").className = s.heroCls;
+        document.getElementById("heroLine").textContent = s.line;
+        document.getElementById("heroSub").textContent = s.sub;
+        const st = document.getElementById("fState");
+        st.textContent = s.state[0];
+        st.className = s.state[1];
+        document.getElementById("fBudget").textContent = s.budget;
+        document.getElementById("fDeadline").textContent = s.deadline;
+        document.getElementById("fMoved").textContent = s.moved;
+        document.getElementById("ticksLabel").textContent = s.ticks;
+        document.getElementById("topPill").innerHTML = s.pill;
+        document.getElementById("sbStatus").innerHTML = s.sbStatus;
+        document.getElementById("sbMeta").textContent = s.sbMeta;
+
+        const used = parseInt(s.ticks, 10);
+        document.getElementById("ticks").innerHTML = Array.from({ length: 6 }, (_, i) =>
+          i < used ? `<i class="used${key === "spent" ? " spent" : ""}"></i>` : "<i></i>",
+        ).join("");
+
+        const loopRow = document.getElementById("sbLoop");
+        loopRow.className = `trow is-loop is-active ${s.rail}`;
+
+        ["secBlocking", "secDeferred", "secClear", "secHeld", "secSpent"].forEach((id) => {
+          document.getElementById(id).hidden = !s.show.includes(id);
+        });
+
+        outstanding = s.badge;
+        refreshCount();
+
+        document.getElementById("btnResume").textContent =
+          key === "spent" ? "Give it 6 more" : key === "clear" ? "Check in now" : "Answer & resume";
+      }
+
+      document.querySelectorAll(".scen button").forEach((b) => {
+        b.addEventListener("click", () => {
+          document.querySelectorAll(".scen button").forEach((x) => x.classList.remove("on"));
+          b.classList.add("on");
+          applyScenario(b.dataset.s);
+        });
+      });
+
+      applyScenario("blocked");
+    </script>
+  </body>
+</html>
