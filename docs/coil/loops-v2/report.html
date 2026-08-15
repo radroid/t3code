@@ -8947,6 +8947,69 @@ body {
           Would have saved the original night with zero clicks. Also exactly how a token-burn incident
           happens. Two switches stay.
         </p>
+
+        <h3 class="sub">Considered, not rejected — deferred with a reason</h3>
+        <p>
+          These are live ideas that a first version should not carry. Listing them so you can see they
+          were weighed rather than missed.
+        </p>
+        <table class="tbl compact">
+          <thead>
+            <tr><th>Idea</th><th>Why not now</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>Scheduled loops</b> — "start this every night at 23:00"</td>
+              <td>
+                Needs a thread-creation trigger, not just a thread-revival one, which is a second
+                mechanism with its own failure modes. It is also exactly where upstream's automations
+                work is heading. Ship revival first; a schedule is a wrapper around it later.
+              </td>
+            </tr>
+            <tr>
+              <td><b>Reusable loop templates</b> (Cursor Automations' shape — a saved definition with triggers and instructions)</td>
+              <td>
+                The right end state, and the prior art is strong. But a template is only worth it once
+                you have run the same loop several times, and nobody has run one yet. Building the
+                abstraction first would fix the wrong shape in place.
+              </td>
+            </tr>
+            <tr>
+              <td><b>Reading Claude's <code>session_crons</code></b> via the <code>Stop</code> hook</td>
+              <td>
+                Genuinely useful — it is the only way to know a thread will wake <em>itself</em>, which
+                would let the console warn that a second scheduler is competing with ours. But it needs
+                the first hook subscription in <code>ClaudeAdapter</code>, a churn-12 hot file, for
+                observability rather than function. Phase 3, gated on it actually happening.
+              </td>
+            </tr>
+            <tr>
+              <td><b>A loop that spans threads</b> — one loop driving several worktrees at once</td>
+              <td>
+                This is what the maintainer loop looks like if you squint, and the work-source
+                abstraction in <a href="#maintainer">§10</a> is the seam it would hang off. Deferred
+                because concurrency across worktrees multiplies every failure mode at once, and the
+                per-issue-thread shape gets most of the benefit.
+              </td>
+            </tr>
+            <tr>
+              <td><b>Summarising each check-in</b> so the ledger reads as prose rather than counts</td>
+              <td>
+                Cheap and appealing, and it is what would make the "Runs" tab genuinely readable. It
+                costs an extra model call per check-in, against a budget whose whole selling point is
+                that it is bounded and predictable. Worth doing once cost is metered, not before.
+              </td>
+            </tr>
+            <tr>
+              <td><b>Letting the loop answer its own low-stakes questions</b></td>
+              <td>
+                Tempting for approvals like "read this file". But the moment a loop can answer for you,
+                the console stops being a complete record of what needed a human — and that
+                completeness is the only reason to trust it at 9am.
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
