@@ -285,7 +285,7 @@
         <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
         <p class="standfirst">
           A consolidated design for running a thread unattended — and, more importantly, for what you
-          see when you come back to it. <b>Six clickable prototypes, one backend recommendation, 137
+          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 137
           test cases</b>, and the three things I found that make the previous design out of date.
         </p>
         <div class="meta-strip">
@@ -344,14 +344,15 @@
           <a href="#console"><i>03</i> The console</a>
           <a href="#where"><i>04</i> Where a loop lives</a>
           <a href="#workspace"><i>05</i> The workspace</a>
-          <a href="#settings"><i>06</i> Settings</a>
-          <a href="#states"><i>07</i> Arming and states</a>
-          <a href="#limits"><i>08</i> Auto-resume and limits</a>
-          <a href="#maintainer"><i>09</i> Maintainer bots</a>
-          <a href="#backend"><i>10</i> The backend</a>
-          <a href="#rejected"><i>11</i> Angles rejected</a>
-          <a href="#tests"><i>12</i> Testing</a>
-          <a href="#decide"><i>13</i> What I need from you</a>
+          <a href="#mobile"><i>06</i> On the phone</a>
+          <a href="#settings"><i>07</i> Settings</a>
+          <a href="#states"><i>08</i> Arming and states</a>
+          <a href="#limits"><i>09</i> Auto-resume and limits</a>
+          <a href="#maintainer"><i>10</i> Maintainer bots</a>
+          <a href="#backend"><i>11</i> The backend</a>
+          <a href="#rejected"><i>12</i> Angles rejected</a>
+          <a href="#tests"><i>13</i> Testing</a>
+          <a href="#decide"><i>14</i> What I need from you</a>
         </div>
       </div>
     </section>
@@ -1876,6 +1877,964 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           degrades to <em>"the loop is spent, and nothing is waiting on you"</em>, which is true and
           worth knowing, rather than to silence. <strong>That is the acceptance test</strong>, and it is
           why the prototype renders the empty state explicitly (scenario 2).
+        </p>
+
+        <h3 class="sub">Where the console renders — you said you were open to other ways</h3>
+        <p>
+          The <em>content</em> is settled. The <em>placement</em> is not, and the three answers have
+          genuinely different consequences. The third one turns out not to be a loop feature at all.
+        </p>
+
+        <div class="proto">
+        <div class="proto-bar">
+          <span class="proto-tag">P7</span>
+          <span class="proto-name">Three console placements</span>
+          <span class="proto-hint">Same content, three homes. Costs are measured, not estimated.</span>
+          <a class="proto-open" href="prototypes/p7-console-shapes.html" target="_blank" rel="noopener">Open standalone ↗</a>
+        </div>
+        <iframe title="Three console placements" height="1560" loading="lazy" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+    &lt;title&gt;P7 · Three places the console could live&lt;/title&gt;
+    &lt;style&gt;
+/* ==========================================================================
+   T3 Coil — prototype design system.
+
+   Values are lifted from apps/web/src/index.css and the real component
+   classes, NOT invented. Where a token is a Tailwind colour the literal
+   oklch/hex is inlined so these files open standalone with no build step.
+
+   Dark theme only: the loops feature is read at 4am and judged at 9am, and
+   dark is what this user runs.
+   ========================================================================== */
+
+:root {
+  /* --- base surfaces (index.css @layer base, .dark) --- */
+  --background: #0a0a0a;              /* neutral-950 */
+  --card: #0f0f0f;                    /* color-mix(background 97%, white) */
+  --surface-raised: #141414;
+  --popover: #121212;
+  --foreground: #f5f5f5;              /* neutral-100 */
+  --muted: #1a1a1a;
+  --muted-foreground: #8f8f8f;        /* neutral-500 lightened 10% */
+  --placeholder: #6b6b6b;
+  --border: rgb(255 255 255 / 6%);
+  --border-strong: rgb(255 255 255 / 11%);
+  --input: rgb(255 255 255 / 8%);
+  --ring: #3b6fd4;
+  --primary: oklch(0.571 0.21 264);
+  --primary-foreground: #ffffff;
+  --accent: rgb(255 255 255 / 6%);
+
+  /* --- sidebar (dark: --sidebar = --card) --- */
+  --sidebar: #0f0f0f;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-control-surface: #1a1a1a;
+  --sidebar-row-hover: rgb(255 255 255 / 5%);
+  --sidebar-row-active: rgb(255 255 255 / 6%);
+  --sidebar-row-selected: #1a1a1a;
+  --sidebar-border: var(--border);
+
+  /* --- radius scale (--radius: 0.625rem) --- */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* --- status hues. These are the system-wide convention set by
+         Sidebar.logic.ts + mobile Live Activity. Do not invent new ones. --- */
+  --sky: #38bdf8;          /* working            (sky-400)     */
+  --sky-dim: #7dd3fc;
+  --amber: #fcd34d;        /* approval / woke    (amber-300)   */
+  --indigo: #a5b4fc;       /* awaiting input     (indigo-300)  */
+  --violet: #c4b5fd;       /* plan ready         (violet-300)  */
+  --emerald: #6ee7b7;      /* done               (emerald-300) */
+  --red: #fca5a5;          /* failed             (red-300)     */
+  --zinc: #a1a1aa;         /* spent — NEVER emerald            */
+  --rose: #fb7185;         /* stalled                          */
+
+  --font-sans: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ==========================================================================
+   App shell — sidebar + main, matching AppSidebarLayout
+   ========================================================================== */
+
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 268px;
+  flex: 0 0 268px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-head {
+  padding: 10px 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;               /* --workspace-topbar-height */
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;            /* --sidebar-content-inset */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 8%) transparent;
+}
+
+.sidebar-foot {
+  padding: 8px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.topbar {
+  height: 52px;
+  flex: 0 0 52px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+}
+
+.main-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 8%) transparent;
+}
+
+/* ==========================================================================
+   Sidebar primitives
+   ========================================================================== */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 560;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.brand-mark {
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(140deg, #4f7cf0, #7c5cf0);
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700; color: #fff;
+  flex: 0 0 20px;
+}
+
+.side-group-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--sidebar-muted-foreground);
+  padding: 14px 8px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.side-group-label .count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* Thread row — .card variant, mirroring SidebarThreadRow */
+.trow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;              /* --sidebar-row-content-inset */
+  margin-bottom: 2px;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.trow:hover { background: var(--sidebar-row-hover); }
+.trow.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border);
+}
+/* In-flight + read-ready rows recede (inbox-zero). Only the coloured status
+   label stands out. Straight from SidebarThreadRow's shouldRecede. */
+.trow.is-recede .trow-title { opacity: 0.62; }
+.trow.is-recede .trow-meta { opacity: 0.5; }
+
+.trow-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.trow-title {
+  font-size: 13px;
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.trow-status {
+  font-size: 11px;
+  font-weight: 500;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: -0.005em;
+}
+
+.trow-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--sidebar-muted-foreground);
+  min-width: 0;
+}
+.trow-meta .sep { opacity: 0.4; }
+.trow-meta .ellip {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+
+/* status dots */
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px; display: inline-block; }
+.dot.sky { background: var(--sky); }
+.dot.amber { background: var(--amber); }
+.dot.indigo { background: var(--indigo); }
+.dot.violet { background: var(--violet); }
+.dot.emerald { background: var(--emerald); }
+.dot.red { background: var(--red); }
+.dot.zinc { background: var(--zinc); }
+.dot.rose { background: var(--rose); }
+
+/* Stepped pulse — copied from index.css @keyframes status-pulse, which is
+   deliberately stepped so a 120Hz display draws ~6 frames/cycle not 288. */
+@keyframes status-pulse {
+  0%, 40%   { opacity: 1;   animation-timing-function: steps(6); }
+  50%, 90%  { opacity: 0.5; animation-timing-function: steps(6); }
+  100%      { opacity: 1; }
+}
+.pulse { animation: status-pulse 2s infinite; }
+
+.t-sky { color: var(--sky); }
+.t-amber { color: var(--amber); }
+.t-indigo { color: var(--indigo); }
+.t-violet { color: var(--violet); }
+.t-emerald { color: var(--emerald); }
+.t-red { color: var(--red); }
+.t-zinc { color: var(--zinc); }
+.t-rose { color: var(--rose); }
+.t-muted { color: var(--muted-foreground); }
+
+/* ==========================================================================
+   Buttons / controls
+   ========================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--sidebar-control-surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 480;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:hover { background: #212121; border-color: rgb(255 255 255 / 16%); }
+.btn.primary {
+  background: var(--primary);
+  border-color: transparent;
+  color: #fff;
+}
+.btn.primary:hover { filter: brightness(1.1); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--accent); }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
+.btn.danger { color: var(--red); border-color: rgb(252 165 165 / 22%); }
+.btn.danger:hover { background: rgb(252 165 165 / 8%); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+.icon-btn {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--accent); color: var(--foreground); }
+
+/* switch — base-ui Switch shape */
+.switch {
+  width: 34px; height: 20px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  border: none;
+  position: relative;
+  cursor: pointer;
+  flex: 0 0 34px;
+  transition: background 160ms ease;
+  padding: 0;
+}
+.switch::after {
+  content: &quot;&quot;;
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.switch.on { background: var(--primary); }
+.switch.on::after { transform: translateX(14px); }
+
+.input, .textarea, .select {
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  width: 100%;
+}
+.input:focus, .textarea:focus, .select:focus {
+  outline: none;
+  border-color: rgb(99 132 220 / 55%);
+  box-shadow: 0 0 0 3px rgb(59 111 212 / 15%);
+}
+.textarea { resize: vertical; min-height: 68px; line-height: 1.55; }
+.input.narrow { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Cards / panels
+   ========================================================================== */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.pill.sky { color: var(--sky); border-color: rgb(56 189 248 / 26%); background: rgb(56 189 248 / 9%); }
+.pill.amber { color: var(--amber); border-color: rgb(252 211 77 / 26%); background: rgb(252 211 77 / 9%); }
+.pill.indigo { color: var(--indigo); border-color: rgb(165 180 252 / 26%); background: rgb(165 180 252 / 9%); }
+.pill.violet { color: var(--violet); border-color: rgb(196 181 253 / 26%); background: rgb(196 181 253 / 9%); }
+.pill.emerald { color: var(--emerald); border-color: rgb(110 231 183 / 26%); background: rgb(110 231 183 / 9%); }
+.pill.red { color: var(--red); border-color: rgb(252 165 165 / 26%); background: rgb(252 165 165 / 9%); }
+.pill.rose { color: var(--rose); border-color: rgb(251 113 133 / 26%); background: rgb(251 113 133 / 9%); }
+.pill.zinc { color: var(--zinc); border-color: rgb(161 161 170 / 26%); background: rgb(161 161 170 / 9%); }
+
+.mono { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: -0.02em; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* meter — budget bars. Shows REMAINING as the filled portion is spent,
+   because &quot;4 check-ins left&quot; beats &quot;2 of 6&quot; (see FINDINGS C2). */
+.meter {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 8%);
+  overflow: hidden;
+  display: flex;
+}
+.meter i { display: block; height: 100%; border-radius: 999px; }
+.meter i.sky { background: var(--sky); }
+.meter i.amber { background: var(--amber); }
+.meter i.zinc { background: var(--zinc); }
+.meter i.emerald { background: var(--emerald); }
+
+/* segmented budget — one tick per check-in, so the count is countable */
+.ticks { display: flex; gap: 3px; }
+.ticks i {
+  height: 4px; flex: 1; border-radius: 2px;
+  background: rgb(255 255 255 / 9%);
+}
+.ticks i.used { background: var(--sky); }
+.ticks i.used.spent { background: var(--zinc); }
+.ticks i.now { background: var(--sky); animation: status-pulse 2s infinite; }
+
+/* ==========================================================================
+   Loop chrome — the one genuinely new visual vocabulary.
+
+   A loop is marked by an ARC, never by a colour of its own: colour is
+   already spoken for by the status system, and a loop can be in any status.
+   ========================================================================== */
+
+.loop-glyph {
+  width: 13px; height: 13px;
+  flex: 0 0 13px;
+  display: inline-block;
+  color: var(--muted-foreground);
+}
+.loop-glyph svg { display: block; width: 100%; height: 100%; }
+
+/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+.trow.is-loop {
+  padding-left: 12px;
+}
+.trow.is-loop::before {
+  content: &quot;&quot;;
+  position: absolute;
+  left: 3px; top: 9px; bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+}
+.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
+.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
+.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
+.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
+.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+@keyframes orbit { to { transform: rotate(360deg); } }
+.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+
+/* ==========================================================================
+   Chat / transcript
+   ========================================================================== */
+
+.msg { padding: 14px 22px; max-width: 780px; }
+.msg-role {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted-foreground);
+  margin-bottom: 6px;
+}
+.msg-body { font-size: 13.5px; line-height: 1.62; color: #dedede; }
+.msg.user .msg-body {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 13px;
+}
+
+/* activity breadcrumb — the loop's timeline entries */
+.bread {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 7px 22px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  max-width: 780px;
+}
+.bread .bglyph { margin-top: 2px; flex: 0 0 13px; }
+.bread.err { color: var(--rose); }
+
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px 14px;
+  background: var(--background);
+}
+.composer-box {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: rgb(255 255 255 / 3%);
+  padding: 10px 12px;
+}
+
+/* ==========================================================================
+   Tabs
+   ========================================================================== */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+}
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 480;
+  padding: 9px 11px 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--foreground); }
+.tab.on { color: var(--foreground); border-bottom-color: var(--primary); }
+.tab .badge {
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 10%);
+  font-size: 10px; font-weight: 600;
+  display: grid; place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.tab.on .badge { background: var(--primary); color: #fff; }
+.tab .badge.indigo { background: rgb(165 180 252 / 22%); color: var(--indigo); }
+
+/* ==========================================================================
+   Settings shell — mirrors settingsLayout.tsx
+   ========================================================================== */
+
+.set-wrap { max-width: 56rem; margin: 0 auto; padding: 30px 28px 80px; }
+.set-h1 { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
+.set-sub { font-size: 13px; color: var(--muted-foreground); margin: 0 0 26px; }
+.set-section + .set-section { margin-top: 40px; }   /* gap-12 */
+.set-section-h {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted-foreground);
+  margin: 0 0 12px;
+}
+.set-row {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.set-row:last-child { border-bottom: none; }
+.set-row-main { flex: 1; min-width: 0; }
+.set-row-title { font-size: 13.5px; font-weight: 500; margin-bottom: 2px; }
+.set-row-desc { font-size: 12.5px; color: var(--muted-foreground); line-height: 1.5; }
+.set-row-ctl { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+.set-row.is-off .set-row-title,
+.set-row.is-off .set-row-desc { opacity: 0.45; }
+
+/* ==========================================================================
+   Utility
+   ========================================================================== */
+
+.row { display: flex; align-items: center; gap: 8px; }
+.col { display: flex; flex-direction: column; }
+.between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.wrap-tight { min-width: 0; }
+.hr { height: 1px; background: var(--border); border: none; margin: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.s10 { font-size: 10px; } .s11 { font-size: 11px; } .s12 { font-size: 12px; }
+.s13 { font-size: 13px; } .s15 { font-size: 15px; } .s17 { font-size: 17px; }
+.w500 { font-weight: 500; } .w600 { font-weight: 600; }
+.mt2{margin-top:2px}.mt4{margin-top:4px}.mt6{margin-top:6px}.mt8{margin-top:8px}
+.mt10{margin-top:10px}.mt12{margin-top:12px}.mt14{margin-top:14px}.mt16{margin-top:16px}
+.mt20{margin-top:20px}.mt24{margin-top:24px}
+.mb2{margin-bottom:2px}.mb4{margin-bottom:4px}.mb6{margin-bottom:6px}.mb8{margin-bottom:8px}
+.mb10{margin-bottom:10px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
+.lh15 { line-height: 1.5; }
+
+/* focus visibility for keyboard users — the real app relies on --ring */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid rgb(99 132 220 / 70%);
+  outline-offset: 1px;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 8%); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 12%); }
+
+&lt;/style&gt;
+    &lt;style&gt;
+      body { overflow-y: auto; height: auto; }
+      .page { padding: 22px 26px 70px; max-width: 1300px; margin: 0 auto; }
+      h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 5px; }
+      .lede { font-size: 13px; color: var(--muted-foreground); max-width: 74ch; margin: 0 0 24px; line-height: 1.6; }
+
+      .shape { margin-bottom: 34px; }
+      .shape-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+      .shape-tag {
+        font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+        color: var(--muted-foreground);
+      }
+      .shape-t { font-size: 15px; font-weight: 570; letter-spacing: -0.01em; }
+      .shape-d { font-size: 12.5px; color: var(--muted-foreground); max-width: 82ch; line-height: 1.55; margin-bottom: 12px; }
+
+      .mock {
+        border: 1px solid var(--border); border-radius: var(--radius-xl);
+        overflow: hidden; background: var(--background); height: 400px; display: flex;
+      }
+      .mock .sb { width: 178px; flex: 0 0 178px; background: var(--sidebar); border-right: 1px solid var(--border); padding: 8px 6px; }
+      .mock .mn { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .mock .tb {
+        height: 38px; flex: 0 0 38px; border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; gap: 8px; padding: 0 11px; font-size: 12px;
+      }
+      .mock .bd { flex: 1; overflow: hidden; display: flex; min-height: 0; }
+      .mock .rp { width: 300px; flex: 0 0 300px; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+
+      .tbar { display: flex; gap: 1px; border-bottom: 1px solid var(--border); padding: 0 8px; }
+      .tb-item {
+        font-size: 11.5px; padding: 7px 9px 6px; color: var(--muted-foreground);
+        border-bottom: 2px solid transparent; margin-bottom: -1px;
+        display: inline-flex; align-items: center; gap: 5px; cursor: default;
+      }
+      .tb-item.on { color: var(--foreground); border-bottom-color: var(--primary); }
+      .tb-item .bg {
+        min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px;
+        background: rgb(165 180 252 / 22%); color: var(--indigo);
+        font-size: 9px; font-weight: 700; display: grid; place-items: center;
+      }
+
+      .mini-q {
+        border: 1px solid var(--border); border-radius: var(--radius-md);
+        background: var(--card); padding: 8px 10px; margin: 6px 8px;
+        position: relative; overflow: hidden;
+      }
+      .mini-q::before { content: &quot;&quot;; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
+      .mini-q.b::before { background: var(--indigo); }
+      .mini-q.a::before { background: var(--amber); }
+      .mini-q.d::before { background: rgb(255 255 255 / 14%); }
+      .mini-q .lbl { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; }
+      .mini-q .txt { font-size: 11.5px; line-height: 1.4; }
+      .mini-q .opt2 {
+        font-size: 10.5px; border: 1px solid var(--border-strong); border-radius: 5px;
+        padding: 3px 7px; margin-top: 5px; display: inline-block; margin-right: 4px;
+        color: var(--muted-foreground);
+      }
+
+      .msg-mini { padding: 9px 12px; font-size: 11.5px; color: #b4b4b4; line-height: 1.5; }
+      .msg-mini .who { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); margin-bottom: 3px; }
+
+      .cost {
+        display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px;
+        font-size: 12px; color: var(--muted-foreground);
+      }
+      .cost b { color: var(--foreground); font-weight: 500; }
+      .cost .g { color: var(--emerald); }
+      .cost .r { color: var(--rose); }
+      .cost .y { color: var(--amber); }
+
+      .verdict {
+        margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md);
+        font-size: 12.5px; line-height: 1.55; border: 1px solid var(--border-strong);
+        max-width: 86ch;
+      }
+      .verdict.good { border-color: rgb(110 231 183 / 30%); background: rgb(110 231 183 / 6%); }
+      .verdict.mid { border-color: rgb(252 211 77 / 26%); background: rgb(252 211 77 / 5%); }
+      .verdict.bad { border-color: rgb(251 113 133 / 26%); background: rgb(251 113 133 / 5%); }
+      .verdict b { font-weight: 620; }
+
+      code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
+      .note {
+        margin-top: 24px; border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px; font-size: 12.5px; color: #bdbdbd; line-height: 1.65; max-width: 80ch;
+      }
+      .note b { color: var(--foreground); }
+      .trow.mini { padding: 6px 8px; margin-bottom: 2px; }
+      .trow.mini .trow-title { font-size: 11.5px; }
+      .trow.mini .trow-meta { font-size: 10px; }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div class=&quot;page&quot;&gt;
+      &lt;h1&gt;Three places the console could live&lt;/h1&gt;
+      &lt;p class=&quot;lede&quot;&gt;
+        The console content is settled — blocking items, deferred blockers, loop state. Where it
+        &lt;em&gt;renders&lt;/em&gt; is not, and the three answers have genuinely different consequences. The
+        third one is not a loop feature at all, which is the interesting part.
+      &lt;/p&gt;
+
+      &lt;!-- ============ A ============ --&gt;
+      &lt;section class=&quot;shape&quot;&gt;
+        &lt;div class=&quot;shape-h&quot;&gt;
+          &lt;span class=&quot;shape-tag&quot;&gt;Shape A&lt;/span&gt;
+          &lt;span class=&quot;shape-t&quot;&gt;A tab on the thread, ahead of the transcript&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;p class=&quot;shape-d&quot;&gt;
+          Opening a loop lands on Console. The transcript is one click away. This is the literal
+          reading of &quot;at any time I open the chat there should be a page where I have a questionnaire
+          ready&quot;.
+        &lt;/p&gt;
+
+        &lt;div class=&quot;mock&quot;&gt;
+          &lt;div class=&quot;sb&quot;&gt;
+            &lt;button class=&quot;trow mini is-loop is-blocked is-active&quot;&gt;
+              &lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;auth refactor&lt;/span&gt;&lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;ellip&quot;&gt;3 waiting&lt;/span&gt;&lt;/div&gt;
+            &lt;/button&gt;
+            &lt;button class=&quot;trow mini is-recede&quot;&gt;&lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;clone diagnostics&lt;/span&gt;&lt;/div&gt;&lt;/button&gt;
+            &lt;button class=&quot;trow mini is-recede&quot;&gt;&lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;seam ledger&lt;/span&gt;&lt;/div&gt;&lt;/button&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;mn&quot;&gt;
+            &lt;div class=&quot;tb&quot;&gt;&lt;strong style=&quot;font-size:12.5px&quot;&gt;Overnight: auth refactor&lt;/strong&gt;&lt;span class=&quot;pill indigo&quot; style=&quot;height:18px;font-size:10px&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;Needs you&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;tbar&quot;&gt;
+              &lt;span class=&quot;tb-item on&quot;&gt;Console &lt;span class=&quot;bg&quot;&gt;3&lt;/span&gt;&lt;/span&gt;
+              &lt;span class=&quot;tb-item&quot;&gt;Transcript&lt;/span&gt;
+              &lt;span class=&quot;tb-item&quot;&gt;Runs&lt;/span&gt;
+              &lt;span class=&quot;tb-item&quot;&gt;Diff&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;bd&quot; style=&quot;flex-direction:column;overflow-y:auto&quot;&gt;
+              &lt;div style=&quot;padding:10px 8px 2px;font-size:11px;color:var(--muted-foreground)&quot;&gt;Stopped on these&lt;/div&gt;
+              &lt;div class=&quot;mini-q b&quot;&gt;
+                &lt;div class=&quot;lbl t-indigo&quot;&gt;Question&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Migrate the session table in place, or new table and backfill?&lt;/div&gt;
+                &lt;span class=&quot;opt2&quot;&gt;Migrate in place&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;New table&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;mini-q a&quot;&gt;
+                &lt;div class=&quot;lbl t-amber&quot;&gt;Approval&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Run &lt;code class=&quot;k&quot;&gt;pnpm db:migrate&lt;/code&gt; against dev&lt;/div&gt;
+                &lt;span class=&quot;opt2&quot;&gt;Allow&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;Deny&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div style=&quot;padding:8px 8px 2px;font-size:11px;color:var(--muted-foreground)&quot;&gt;Answer when you can&lt;/div&gt;
+              &lt;div class=&quot;mini-q d&quot;&gt;
+                &lt;div class=&quot;lbl t-muted&quot;&gt;Blocker&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;&lt;code class=&quot;k&quot;&gt;AUTH0_TENANT&lt;/code&gt; missing — provider stubbed&lt;/div&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;cost&quot;&gt;
+          &lt;span&gt;&lt;b&gt;Seam:&lt;/b&gt; &lt;span class=&quot;g&quot;&gt;0 new rows&lt;/span&gt; — lives in the fork-owned overlay&lt;/span&gt;
+          &lt;span&gt;&lt;b&gt;Discoverability:&lt;/b&gt; &lt;span class=&quot;g&quot;&gt;unmissable&lt;/span&gt;&lt;/span&gt;
+          &lt;span&gt;&lt;b&gt;Read along while answering:&lt;/b&gt; &lt;span class=&quot;r&quot;&gt;no&lt;/span&gt;&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;verdict good&quot;&gt;
+          &lt;b&gt;Cheapest and most direct.&lt;/b&gt; The cost is that answering and reading are mutually
+          exclusive — and at 9am, half the time the first thing you want is to skim what it actually
+          did before you decide anything.
+        &lt;/div&gt;
+      &lt;/section&gt;
+
+      &lt;!-- ============ B ============ --&gt;
+      &lt;section class=&quot;shape&quot;&gt;
+        &lt;div class=&quot;shape-h&quot;&gt;
+          &lt;span class=&quot;shape-tag&quot;&gt;Shape B&lt;/span&gt;
+          &lt;span class=&quot;shape-t&quot;&gt;A right-panel tab, beside the transcript&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;p class=&quot;shape-d&quot;&gt;
+          The console sits in the existing right panel next to Diff, Agents and Terminal. You read the
+          transcript on the left and answer on the right, at the same time. The panel already has a
+          &lt;code class=&quot;k&quot;&gt;badgeCount&lt;/code&gt; concept, so the unread count is free.
+        &lt;/p&gt;
+
+        &lt;div class=&quot;mock&quot;&gt;
+          &lt;div class=&quot;sb&quot;&gt;
+            &lt;button class=&quot;trow mini is-loop is-blocked is-active&quot;&gt;
+              &lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;auth refactor&lt;/span&gt;&lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;ellip&quot;&gt;3 waiting&lt;/span&gt;&lt;/div&gt;
+            &lt;/button&gt;
+            &lt;button class=&quot;trow mini is-recede&quot;&gt;&lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;clone diagnostics&lt;/span&gt;&lt;/div&gt;&lt;/button&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;mn&quot;&gt;
+            &lt;div class=&quot;tb&quot;&gt;&lt;strong style=&quot;font-size:12.5px&quot;&gt;Overnight: auth refactor&lt;/strong&gt;&lt;/div&gt;
+            &lt;div class=&quot;bd&quot;&gt;
+              &lt;div style=&quot;flex:1;min-width:0;overflow-y:auto&quot;&gt;
+                &lt;div class=&quot;msg-mini&quot;&gt;&lt;div class=&quot;who&quot;&gt;Assistant · 05:04&lt;/div&gt;Wrote the rotation tests. 14 pass, 1 skipped — the Auth0 integration test needs a tenant I don't have.&lt;/div&gt;
+                &lt;div class=&quot;msg-mini&quot;&gt;&lt;div class=&quot;who&quot;&gt;Assistant · 06:12&lt;/div&gt;I need to run the migration to continue. Requesting permission.&lt;/div&gt;
+                &lt;div class=&quot;msg-mini&quot; style=&quot;color:var(--muted-foreground);font-style:italic&quot;&gt;Loop check-in 4 of 6 — paused, waiting on approval.&lt;/div&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;rp&quot;&gt;
+                &lt;div class=&quot;tbar&quot; style=&quot;padding:0 6px&quot;&gt;
+                  &lt;span class=&quot;tb-item&quot;&gt;Diff&lt;/span&gt;
+                  &lt;span class=&quot;tb-item&quot;&gt;Agents&lt;/span&gt;
+                  &lt;span class=&quot;tb-item on&quot;&gt;Loop &lt;span class=&quot;bg&quot;&gt;3&lt;/span&gt;&lt;/span&gt;
+                &lt;/div&gt;
+                &lt;div style=&quot;overflow-y:auto&quot;&gt;
+                  &lt;div class=&quot;mini-q b&quot;&gt;
+                    &lt;div class=&quot;lbl t-indigo&quot;&gt;Question&lt;/div&gt;
+                    &lt;div class=&quot;txt&quot;&gt;Migrate in place, or new table and backfill?&lt;/div&gt;
+                    &lt;span class=&quot;opt2&quot;&gt;Migrate&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;New table&lt;/span&gt;
+                  &lt;/div&gt;
+                  &lt;div class=&quot;mini-q a&quot;&gt;
+                    &lt;div class=&quot;lbl t-amber&quot;&gt;Approval&lt;/div&gt;
+                    &lt;div class=&quot;txt&quot;&gt;Run &lt;code class=&quot;k&quot;&gt;pnpm db:migrate&lt;/code&gt;&lt;/div&gt;
+                    &lt;span class=&quot;opt2&quot;&gt;Allow&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;Deny&lt;/span&gt;
+                  &lt;/div&gt;
+                  &lt;div class=&quot;mini-q d&quot;&gt;
+                    &lt;div class=&quot;lbl t-muted&quot;&gt;Blocker&lt;/div&gt;
+                    &lt;div class=&quot;txt&quot;&gt;&lt;code class=&quot;k&quot;&gt;AUTH0_TENANT&lt;/code&gt; missing&lt;/div&gt;
+                  &lt;/div&gt;
+                &lt;/div&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;cost&quot;&gt;
+          &lt;span&gt;&lt;b&gt;Seam:&lt;/b&gt; &lt;span class=&quot;r&quot;&gt;2 new rows&lt;/span&gt; — &lt;code class=&quot;k&quot;&gt;rightPanelStore.ts&lt;/code&gt; + &lt;code class=&quot;k&quot;&gt;RightPanelTabs.tsx&lt;/code&gt;&lt;/span&gt;
+          &lt;span&gt;&lt;b&gt;Discoverability:&lt;/b&gt; &lt;span class=&quot;y&quot;&gt;needs opening&lt;/span&gt;&lt;/span&gt;
+          &lt;span&gt;&lt;b&gt;Read along while answering:&lt;/b&gt; &lt;span class=&quot;g&quot;&gt;yes&lt;/span&gt;&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;verdict mid&quot;&gt;
+          &lt;b&gt;The best ergonomics, at a real price.&lt;/b&gt; Measured: the kind union and its list, the tab
+          factory, the actions array and two switch cases — across two upstream-owned files the fork
+          does not touch today. (This also answers wayfinder issue #112, &quot;what does registering a
+          right-panel tab actually cost&quot;, as a side effect: &lt;b&gt;two rows&lt;/b&gt;.)
+        &lt;/div&gt;
+      &lt;/section&gt;
+
+      &lt;!-- ============ C ============ --&gt;
+      &lt;section class=&quot;shape&quot;&gt;
+        &lt;div class=&quot;shape-h&quot;&gt;
+          &lt;span class=&quot;shape-tag&quot;&gt;Shape C&lt;/span&gt;
+          &lt;span class=&quot;shape-t&quot;&gt;A global inbox — not a loop feature at all&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;p class=&quot;shape-d&quot;&gt;
+          Every thread that wants something from you, loop or not, in one list. Loops become the
+          heaviest &lt;em&gt;contributor&lt;/em&gt; to an inbox rather than the reason it exists — and threads you
+          started by hand get the same treatment.
+        &lt;/p&gt;
+
+        &lt;div class=&quot;mock&quot;&gt;
+          &lt;div class=&quot;sb&quot;&gt;
+            &lt;button class=&quot;trow mini is-active&quot; style=&quot;padding-left:8px&quot;&gt;
+              &lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;Needs you&lt;/span&gt;&lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-indigo&quot; style=&quot;font-size:10px&quot;&gt;5&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+            &lt;/button&gt;
+            &lt;button class=&quot;trow mini is-recede&quot; style=&quot;padding-left:8px&quot;&gt;&lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;All threads&lt;/span&gt;&lt;/div&gt;&lt;/button&gt;
+            &lt;div class=&quot;side-group-label&quot; style=&quot;padding:10px 8px 4px;font-size:10px&quot;&gt;Loops&lt;/div&gt;
+            &lt;button class=&quot;trow mini is-loop is-blocked is-recede&quot;&gt;&lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;auth refactor&lt;/span&gt;&lt;/div&gt;&lt;/button&gt;
+            &lt;button class=&quot;trow mini is-loop is-recede&quot;&gt;&lt;div class=&quot;trow-top&quot;&gt;&lt;span class=&quot;trow-title&quot;&gt;issue queue&lt;/span&gt;&lt;/div&gt;&lt;/button&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;mn&quot;&gt;
+            &lt;div class=&quot;tb&quot;&gt;&lt;strong style=&quot;font-size:12.5px&quot;&gt;Needs you&lt;/strong&gt;&lt;span class=&quot;pill&quot; style=&quot;height:18px;font-size:10px&quot;&gt;5 items · 4 threads&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;bd&quot; style=&quot;flex-direction:column;overflow-y:auto&quot;&gt;
+              &lt;div class=&quot;mini-q b&quot;&gt;
+                &lt;div class=&quot;lbl t-indigo&quot;&gt;Question · &lt;span class=&quot;t-muted&quot;&gt;auth refactor &lt;span style=&quot;opacity:.6&quot;&gt;· loop&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Migrate the session table in place, or new table and backfill?&lt;/div&gt;
+                &lt;span class=&quot;opt2&quot;&gt;Migrate in place&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;New table&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;mini-q a&quot;&gt;
+                &lt;div class=&quot;lbl t-amber&quot;&gt;Approval · &lt;span class=&quot;t-muted&quot;&gt;auth refactor &lt;span style=&quot;opacity:.6&quot;&gt;· loop&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Run &lt;code class=&quot;k&quot;&gt;pnpm db:migrate&lt;/code&gt; against dev&lt;/div&gt;
+                &lt;span class=&quot;opt2&quot;&gt;Allow&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;Deny&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;mini-q a&quot;&gt;
+                &lt;div class=&quot;lbl t-amber&quot;&gt;Approval · &lt;span class=&quot;t-muted&quot;&gt;Dependabot sweep&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Force-push to &lt;code class=&quot;k&quot;&gt;deps/august&lt;/code&gt;&lt;/div&gt;
+                &lt;span class=&quot;opt2&quot;&gt;Allow&lt;/span&gt;&lt;span class=&quot;opt2&quot;&gt;Deny&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;mini-q b&quot;&gt;
+                &lt;div class=&quot;lbl t-indigo&quot;&gt;Question · &lt;span class=&quot;t-muted&quot;&gt;issue queue &lt;span style=&quot;opacity:.6&quot;&gt;· loop&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Seam ledger or a fresh git walk for the map data?&lt;/div&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;mini-q d&quot;&gt;
+                &lt;div class=&quot;lbl t-muted&quot;&gt;Blocker · &lt;span class=&quot;t-muted&quot;&gt;auth refactor &lt;span style=&quot;opacity:.6&quot;&gt;· loop&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;&lt;code class=&quot;k&quot;&gt;AUTH0_TENANT&lt;/code&gt; missing — provider stubbed&lt;/div&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;div class=&quot;cost&quot;&gt;
+          &lt;span&gt;&lt;b&gt;Seam:&lt;/b&gt; &lt;span class=&quot;y&quot;&gt;1 row&lt;/span&gt; — a route, plus wherever it mounts&lt;/span&gt;
+          &lt;span&gt;&lt;b&gt;Discoverability:&lt;/b&gt; &lt;span class=&quot;g&quot;&gt;one place, always&lt;/span&gt;&lt;/span&gt;
+          &lt;span&gt;&lt;b&gt;Scope:&lt;/b&gt; &lt;span class=&quot;g&quot;&gt;every thread, not just loops&lt;/span&gt;&lt;/span&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;verdict good&quot;&gt;
+          &lt;b&gt;The most useful thing on this page, and the least loop-specific.&lt;/b&gt; Pending approvals and
+          questions already pile up on hand-run threads — this surfaces all of them. It is also the one
+          shape that keeps working if loops are turned off entirely.
+        &lt;/div&gt;
+      &lt;/section&gt;
+
+      &lt;div class=&quot;note&quot;&gt;
+        &lt;b&gt;These are not exclusive, and the sequencing matters.&lt;/b&gt; A and C share their entire data
+        layer — the same three sources, filtered differently — so building A first and C second is
+        nearly free the second time. B is the one to defer: it costs the most, it is the only one that
+        touches upstream files, and its advantage (read while answering) partly disappears once the
+        console summarises what each check-in did. My order: &lt;b&gt;A, then C, then B only if you find
+        yourself flipping tabs.&lt;/b&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+      </div>
+        <p class="proto-cap">
+          <b>What to look at:</b> Shape C. Pending approvals and questions already pile up on threads
+          you run by hand — a global "needs you" inbox surfaces all of them, and it is the only shape
+          that keeps working if loops are switched off entirely. Loops become its heaviest
+          <em>contributor</em> rather than its reason for existing.
+        </p>
+
+        <div class="call good">
+          <div class="ch">A side effect worth banking</div>
+          <p>
+            Pricing shape B answered an open question in your wayfinder queue.
+            <strong>Issue #112 — "what does registering a right-panel tab actually cost?" — the answer
+            is two seam rows</strong>: <code>rightPanelStore.ts</code> (the kind union, its list, and
+            the tab factory) and <code>RightPanelTabs.tsx</code> (the actions array plus two switch
+            cases). Neither file is in the ledger today.
+          </p>
+        </div>
+
+        <p>
+          <strong>My order: A, then C, then B only if you find yourself flipping tabs.</strong> A and C
+          share their whole data layer — the same three sources, filtered differently — so C is nearly
+          free once A exists. B is the only one that touches upstream files, and its advantage (reading
+          while answering) shrinks once the console summarises what each check-in did.
         </p>
       </div>
     </section>
@@ -3869,10 +4828,1019 @@ body {
       </div>
     </section>
 
-    <!-- ==================== 6 · SETTINGS ==================== -->
+    <!-- ==================== 6 · MOBILE ==================== -->
+    <section class="band" id="mobile">
+      <div class="wrap">
+        <div class="secnum"><i>06</i> The third surface</div>
+        <h2 class="sec">Loops on the phone</h2>
+        <p class="lead">
+          <code>AGENTS.md</code> requires a decision for web, desktop and mobile. Here it is not a
+          formality — the phone is where you actually look at 4am, and it has no sidebar to lean on.
+        </p>
+
+        <div class="proto">
+        <div class="proto-bar">
+          <span class="proto-tag">P8</span>
+          <span class="proto-name">Loops on mobile</span>
+          <span class="proto-hint">Thread list, console, and the three things worth a push.</span>
+          <a class="proto-open" href="prototypes/p8-mobile.html" target="_blank" rel="noopener">Open standalone ↗</a>
+        </div>
+        <iframe title="Loops on mobile" height="1020" loading="lazy" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+  &lt;head&gt;
+    &lt;meta charset=&quot;utf-8&quot; /&gt;
+    &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+    &lt;title&gt;P8 · Loops on the phone&lt;/title&gt;
+    &lt;style&gt;
+/* ==========================================================================
+   T3 Coil — prototype design system.
+
+   Values are lifted from apps/web/src/index.css and the real component
+   classes, NOT invented. Where a token is a Tailwind colour the literal
+   oklch/hex is inlined so these files open standalone with no build step.
+
+   Dark theme only: the loops feature is read at 4am and judged at 9am, and
+   dark is what this user runs.
+   ========================================================================== */
+
+:root {
+  /* --- base surfaces (index.css @layer base, .dark) --- */
+  --background: #0a0a0a;              /* neutral-950 */
+  --card: #0f0f0f;                    /* color-mix(background 97%, white) */
+  --surface-raised: #141414;
+  --popover: #121212;
+  --foreground: #f5f5f5;              /* neutral-100 */
+  --muted: #1a1a1a;
+  --muted-foreground: #8f8f8f;        /* neutral-500 lightened 10% */
+  --placeholder: #6b6b6b;
+  --border: rgb(255 255 255 / 6%);
+  --border-strong: rgb(255 255 255 / 11%);
+  --input: rgb(255 255 255 / 8%);
+  --ring: #3b6fd4;
+  --primary: oklch(0.571 0.21 264);
+  --primary-foreground: #ffffff;
+  --accent: rgb(255 255 255 / 6%);
+
+  /* --- sidebar (dark: --sidebar = --card) --- */
+  --sidebar: #0f0f0f;
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-control-surface: #1a1a1a;
+  --sidebar-row-hover: rgb(255 255 255 / 5%);
+  --sidebar-row-active: rgb(255 255 255 / 6%);
+  --sidebar-row-selected: #1a1a1a;
+  --sidebar-border: var(--border);
+
+  /* --- radius scale (--radius: 0.625rem) --- */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* --- status hues. These are the system-wide convention set by
+         Sidebar.logic.ts + mobile Live Activity. Do not invent new ones. --- */
+  --sky: #38bdf8;          /* working            (sky-400)     */
+  --sky-dim: #7dd3fc;
+  --amber: #fcd34d;        /* approval / woke    (amber-300)   */
+  --indigo: #a5b4fc;       /* awaiting input     (indigo-300)  */
+  --violet: #c4b5fd;       /* plan ready         (violet-300)  */
+  --emerald: #6ee7b7;      /* done               (emerald-300) */
+  --red: #fca5a5;          /* failed             (red-300)     */
+  --zinc: #a1a1aa;         /* spent — NEVER emerald            */
+  --rose: #fb7185;         /* stalled                          */
+
+  --font-sans: -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ==========================================================================
+   App shell — sidebar + main, matching AppSidebarLayout
+   ========================================================================== */
+
+.app {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 268px;
+  flex: 0 0 268px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-head {
+  padding: 10px 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;               /* --workspace-topbar-height */
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 12px;            /* --sidebar-content-inset */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 8%) transparent;
+}
+
+.sidebar-foot {
+  padding: 8px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.topbar {
+  height: 52px;
+  flex: 0 0 52px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+}
+
+.main-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 8%) transparent;
+}
+
+/* ==========================================================================
+   Sidebar primitives
+   ========================================================================== */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 560;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.brand-mark {
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(140deg, #4f7cf0, #7c5cf0);
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700; color: #fff;
+  flex: 0 0 20px;
+}
+
+.side-group-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--sidebar-muted-foreground);
+  padding: 14px 8px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.side-group-label .count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* Thread row — .card variant, mirroring SidebarThreadRow */
+.trow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;              /* --sidebar-row-content-inset */
+  margin-bottom: 2px;
+  cursor: pointer;
+  position: relative;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.trow:hover { background: var(--sidebar-row-hover); }
+.trow.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border);
+}
+/* In-flight + read-ready rows recede (inbox-zero). Only the coloured status
+   label stands out. Straight from SidebarThreadRow's shouldRecede. */
+.trow.is-recede .trow-title { opacity: 0.62; }
+.trow.is-recede .trow-meta { opacity: 0.5; }
+
+.trow-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.trow-title {
+  font-size: 13px;
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.trow-status {
+  font-size: 11px;
+  font-weight: 500;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: -0.005em;
+}
+
+.trow-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--sidebar-muted-foreground);
+  min-width: 0;
+}
+.trow-meta .sep { opacity: 0.4; }
+.trow-meta .ellip {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+
+/* status dots */
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px; display: inline-block; }
+.dot.sky { background: var(--sky); }
+.dot.amber { background: var(--amber); }
+.dot.indigo { background: var(--indigo); }
+.dot.violet { background: var(--violet); }
+.dot.emerald { background: var(--emerald); }
+.dot.red { background: var(--red); }
+.dot.zinc { background: var(--zinc); }
+.dot.rose { background: var(--rose); }
+
+/* Stepped pulse — copied from index.css @keyframes status-pulse, which is
+   deliberately stepped so a 120Hz display draws ~6 frames/cycle not 288. */
+@keyframes status-pulse {
+  0%, 40%   { opacity: 1;   animation-timing-function: steps(6); }
+  50%, 90%  { opacity: 0.5; animation-timing-function: steps(6); }
+  100%      { opacity: 1; }
+}
+.pulse { animation: status-pulse 2s infinite; }
+
+.t-sky { color: var(--sky); }
+.t-amber { color: var(--amber); }
+.t-indigo { color: var(--indigo); }
+.t-violet { color: var(--violet); }
+.t-emerald { color: var(--emerald); }
+.t-red { color: var(--red); }
+.t-zinc { color: var(--zinc); }
+.t-rose { color: var(--rose); }
+.t-muted { color: var(--muted-foreground); }
+
+/* ==========================================================================
+   Buttons / controls
+   ========================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--sidebar-control-surface);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 480;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:hover { background: #212121; border-color: rgb(255 255 255 / 16%); }
+.btn.primary {
+  background: var(--primary);
+  border-color: transparent;
+  color: #fff;
+}
+.btn.primary:hover { filter: brightness(1.1); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--accent); }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
+.btn.danger { color: var(--red); border-color: rgb(252 165 165 / 22%); }
+.btn.danger:hover { background: rgb(252 165 165 / 8%); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+.icon-btn {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--accent); color: var(--foreground); }
+
+/* switch — base-ui Switch shape */
+.switch {
+  width: 34px; height: 20px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  border: none;
+  position: relative;
+  cursor: pointer;
+  flex: 0 0 34px;
+  transition: background 160ms ease;
+  padding: 0;
+}
+.switch::after {
+  content: &quot;&quot;;
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.switch.on { background: var(--primary); }
+.switch.on::after { transform: translateX(14px); }
+
+.input, .textarea, .select {
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  width: 100%;
+}
+.input:focus, .textarea:focus, .select:focus {
+  outline: none;
+  border-color: rgb(99 132 220 / 55%);
+  box-shadow: 0 0 0 3px rgb(59 111 212 / 15%);
+}
+.textarea { resize: vertical; min-height: 68px; line-height: 1.55; }
+.input.narrow { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Cards / panels
+   ========================================================================== */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.pill.sky { color: var(--sky); border-color: rgb(56 189 248 / 26%); background: rgb(56 189 248 / 9%); }
+.pill.amber { color: var(--amber); border-color: rgb(252 211 77 / 26%); background: rgb(252 211 77 / 9%); }
+.pill.indigo { color: var(--indigo); border-color: rgb(165 180 252 / 26%); background: rgb(165 180 252 / 9%); }
+.pill.violet { color: var(--violet); border-color: rgb(196 181 253 / 26%); background: rgb(196 181 253 / 9%); }
+.pill.emerald { color: var(--emerald); border-color: rgb(110 231 183 / 26%); background: rgb(110 231 183 / 9%); }
+.pill.red { color: var(--red); border-color: rgb(252 165 165 / 26%); background: rgb(252 165 165 / 9%); }
+.pill.rose { color: var(--rose); border-color: rgb(251 113 133 / 26%); background: rgb(251 113 133 / 9%); }
+.pill.zinc { color: var(--zinc); border-color: rgb(161 161 170 / 26%); background: rgb(161 161 170 / 9%); }
+
+.mono { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: -0.02em; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* meter — budget bars. Shows REMAINING as the filled portion is spent,
+   because &quot;4 check-ins left&quot; beats &quot;2 of 6&quot; (see FINDINGS C2). */
+.meter {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 8%);
+  overflow: hidden;
+  display: flex;
+}
+.meter i { display: block; height: 100%; border-radius: 999px; }
+.meter i.sky { background: var(--sky); }
+.meter i.amber { background: var(--amber); }
+.meter i.zinc { background: var(--zinc); }
+.meter i.emerald { background: var(--emerald); }
+
+/* segmented budget — one tick per check-in, so the count is countable */
+.ticks { display: flex; gap: 3px; }
+.ticks i {
+  height: 4px; flex: 1; border-radius: 2px;
+  background: rgb(255 255 255 / 9%);
+}
+.ticks i.used { background: var(--sky); }
+.ticks i.used.spent { background: var(--zinc); }
+.ticks i.now { background: var(--sky); animation: status-pulse 2s infinite; }
+
+/* ==========================================================================
+   Loop chrome — the one genuinely new visual vocabulary.
+
+   A loop is marked by an ARC, never by a colour of its own: colour is
+   already spoken for by the status system, and a loop can be in any status.
+   ========================================================================== */
+
+.loop-glyph {
+  width: 13px; height: 13px;
+  flex: 0 0 13px;
+  display: inline-block;
+  color: var(--muted-foreground);
+}
+.loop-glyph svg { display: block; width: 100%; height: 100%; }
+
+/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+.trow.is-loop {
+  padding-left: 12px;
+}
+.trow.is-loop::before {
+  content: &quot;&quot;;
+  position: absolute;
+  left: 3px; top: 9px; bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+}
+.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
+.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
+.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
+.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
+.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+@keyframes orbit { to { transform: rotate(360deg); } }
+.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+
+/* ==========================================================================
+   Chat / transcript
+   ========================================================================== */
+
+.msg { padding: 14px 22px; max-width: 780px; }
+.msg-role {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted-foreground);
+  margin-bottom: 6px;
+}
+.msg-body { font-size: 13.5px; line-height: 1.62; color: #dedede; }
+.msg.user .msg-body {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 13px;
+}
+
+/* activity breadcrumb — the loop's timeline entries */
+.bread {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 7px 22px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  max-width: 780px;
+}
+.bread .bglyph { margin-top: 2px; flex: 0 0 13px; }
+.bread.err { color: var(--rose); }
+
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px 14px;
+  background: var(--background);
+}
+.composer-box {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: rgb(255 255 255 / 3%);
+  padding: 10px 12px;
+}
+
+/* ==========================================================================
+   Tabs
+   ========================================================================== */
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+}
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 480;
+  padding: 9px 11px 8px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab:hover { color: var(--foreground); }
+.tab.on { color: var(--foreground); border-bottom-color: var(--primary); }
+.tab .badge {
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 10%);
+  font-size: 10px; font-weight: 600;
+  display: grid; place-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.tab.on .badge { background: var(--primary); color: #fff; }
+.tab .badge.indigo { background: rgb(165 180 252 / 22%); color: var(--indigo); }
+
+/* ==========================================================================
+   Settings shell — mirrors settingsLayout.tsx
+   ========================================================================== */
+
+.set-wrap { max-width: 56rem; margin: 0 auto; padding: 30px 28px 80px; }
+.set-h1 { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
+.set-sub { font-size: 13px; color: var(--muted-foreground); margin: 0 0 26px; }
+.set-section + .set-section { margin-top: 40px; }   /* gap-12 */
+.set-section-h {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted-foreground);
+  margin: 0 0 12px;
+}
+.set-row {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.set-row:last-child { border-bottom: none; }
+.set-row-main { flex: 1; min-width: 0; }
+.set-row-title { font-size: 13.5px; font-weight: 500; margin-bottom: 2px; }
+.set-row-desc { font-size: 12.5px; color: var(--muted-foreground); line-height: 1.5; }
+.set-row-ctl { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding-top: 2px; }
+.set-row.is-off .set-row-title,
+.set-row.is-off .set-row-desc { opacity: 0.45; }
+
+/* ==========================================================================
+   Utility
+   ========================================================================== */
+
+.row { display: flex; align-items: center; gap: 8px; }
+.col { display: flex; flex-direction: column; }
+.between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.wrap-tight { min-width: 0; }
+.hr { height: 1px; background: var(--border); border: none; margin: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.s10 { font-size: 10px; } .s11 { font-size: 11px; } .s12 { font-size: 12px; }
+.s13 { font-size: 13px; } .s15 { font-size: 15px; } .s17 { font-size: 17px; }
+.w500 { font-weight: 500; } .w600 { font-weight: 600; }
+.mt2{margin-top:2px}.mt4{margin-top:4px}.mt6{margin-top:6px}.mt8{margin-top:8px}
+.mt10{margin-top:10px}.mt12{margin-top:12px}.mt14{margin-top:14px}.mt16{margin-top:16px}
+.mt20{margin-top:20px}.mt24{margin-top:24px}
+.mb2{margin-bottom:2px}.mb4{margin-bottom:4px}.mb6{margin-bottom:6px}.mb8{margin-bottom:8px}
+.mb10{margin-bottom:10px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
+.lh15 { line-height: 1.5; }
+
+/* focus visibility for keyboard users — the real app relies on --ring */
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid rgb(99 132 220 / 70%);
+  outline-offset: 1px;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 8%); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 12%); }
+
+&lt;/style&gt;
+    &lt;style&gt;
+      body { overflow-y: auto; height: auto; }
+      .page { padding: 22px 26px 70px; max-width: 1240px; margin: 0 auto; }
+      h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 5px; }
+      .lede { font-size: 13px; color: var(--muted-foreground); max-width: 74ch; margin: 0 0 26px; line-height: 1.6; }
+
+      .row-phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+
+      .phone-wrap { width: 268px; }
+      .phone-cap {
+        font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+        color: var(--muted-foreground); margin-bottom: 8px;
+      }
+      .phone-note { font-size: 12px; color: var(--muted-foreground); margin-top: 10px; line-height: 1.5; }
+      .phone {
+        width: 268px; height: 552px;
+        border: 1px solid var(--border-strong);
+        border-radius: 30px;
+        background: var(--background);
+        overflow: hidden;
+        display: flex; flex-direction: column;
+        position: relative;
+        box-shadow: 0 20px 50px rgb(0 0 0 / 45%);
+      }
+      .notch {
+        position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+        width: 92px; height: 22px; background: #000;
+        border-radius: 0 0 12px 12px; z-index: 4;
+      }
+      .p-status {
+        height: 34px; flex: 0 0 34px;
+        display: flex; align-items: flex-end; justify-content: space-between;
+        padding: 0 18px 3px; font-size: 10.5px; color: var(--muted-foreground);
+        font-variant-numeric: tabular-nums;
+      }
+      .p-bar {
+        height: 44px; flex: 0 0 44px; display: flex; align-items: center; gap: 8px;
+        padding: 0 14px; border-bottom: 1px solid var(--border);
+      }
+      .p-body { flex: 1; overflow-y: auto; }
+      .p-tabbar {
+        height: 50px; flex: 0 0 50px; border-top: 1px solid var(--border);
+        display: flex; align-items: center;
+      }
+      .p-tab {
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+        font-size: 9.5px; color: var(--muted-foreground); position: relative;
+      }
+      .p-tab.on { color: var(--foreground); }
+      .p-tab svg { width: 17px; height: 17px; }
+      .p-tab .nb {
+        position: absolute; top: -2px; right: 50%; margin-right: -18px;
+        min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px;
+        background: var(--indigo); color: #12121a;
+        font-size: 9px; font-weight: 700; display: grid; place-items: center;
+      }
+
+      /* mobile thread card */
+      .m-row {
+        padding: 11px 14px; border-bottom: 1px solid var(--border);
+        position: relative;
+      }
+      .m-row.is-loop { padding-left: 18px; }
+      .m-row.is-loop::before {
+        content: &quot;&quot;; position: absolute; left: 8px; top: 13px; bottom: 13px; width: 2px;
+        border-radius: 2px; background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+      }
+      .m-row.is-loop.blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
+      .m-row.is-loop.spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
+      .m-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+      .m-title { font-size: 13px; font-weight: 480; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .m-meta { font-size: 11px; color: var(--muted-foreground); }
+      .m-prog { margin-top: 7px; }
+
+      /* console on mobile */
+      .m-hero {
+        padding: 14px; border-bottom: 1px solid var(--border);
+        background: radial-gradient(120% 140% at 100% 0%, rgb(165 180 252 / 8%), transparent 58%);
+      }
+      .m-hero-l { font-size: 14.5px; font-weight: 550; line-height: 1.35; letter-spacing: -0.01em; }
+      .m-hero-s { font-size: 11.5px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.45; }
+      .m-facts { display: flex; gap: 14px; margin-top: 11px; font-size: 11px; }
+      .m-facts div span { display: block; color: var(--muted-foreground); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .m-facts div b { font-weight: 500; font-variant-numeric: tabular-nums; }
+
+      .m-q {
+        padding: 12px 14px; border-bottom: 1px solid var(--border); position: relative;
+      }
+      .m-q::before { content: &quot;&quot;; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
+      .m-q.b::before { background: var(--indigo); }
+      .m-q.a::before { background: var(--amber); }
+      .m-q.d::before { background: rgb(255 255 255 / 14%); }
+      .m-q .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 3px; }
+      .m-q .txt { font-size: 12.5px; line-height: 1.45; }
+      .m-q .sub { font-size: 10.5px; color: var(--muted-foreground); margin-top: 3px; }
+      .m-opt {
+        display: block; width: 100%; text-align: left; margin-top: 6px;
+        border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+        background: rgb(255 255 255 / 3%); padding: 8px 10px; font: inherit; color: inherit;
+        font-size: 12px; min-height: 40px;         /* touch target */
+      }
+      .m-sec {
+        padding: 9px 14px 4px; font-size: 10.5px; color: var(--muted-foreground);
+        text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+      }
+
+      /* push notification */
+      .push {
+        width: 268px;
+        border-radius: 18px;
+        background: rgba(38, 38, 42, 0.92);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgb(255 255 255 / 10%);
+        padding: 11px 13px;
+        margin-bottom: 10px;
+        box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+      }
+      .push-h { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+      .push-ic {
+        width: 17px; height: 17px; border-radius: 4px;
+        background: linear-gradient(140deg, #4f7cf0, #7c5cf0);
+        display: grid; place-items: center; font-size: 8px; font-weight: 700; color: #fff;
+      }
+      .push-app { font-size: 10.5px; color: rgb(255 255 255 / 55%); letter-spacing: 0.02em; }
+      .push-t { font-size: 12.5px; font-weight: 600; margin-bottom: 1px; }
+      .push-b { font-size: 12px; color: rgb(255 255 255 / 72%); line-height: 1.4; }
+
+      .note {
+        margin-top: 30px; border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px; font-size: 12.5px; color: #bdbdbd; line-height: 1.65; max-width: 80ch;
+      }
+      .note b { color: var(--foreground); }
+      code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
+      h2.sec { font-size: 13px; font-weight: 600; margin: 34px 0 4px; }
+      .sec-note { font-size: 12.5px; color: var(--muted-foreground); margin: 0 0 15px; max-width: 76ch; line-height: 1.55; }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div class=&quot;page&quot;&gt;
+      &lt;h1&gt;Loops on the phone&lt;/h1&gt;
+      &lt;p class=&quot;lede&quot;&gt;
+        &lt;code class=&quot;k&quot;&gt;AGENTS.md&lt;/code&gt; requires a decision for web, desktop and mobile — and mobile is
+        not a formality here. The phone is where you actually look at 4am, and it is the surface where
+        &quot;is it alive&quot; and &quot;does it need me&quot; have to be answerable in one glance, without a sidebar.
+      &lt;/p&gt;
+
+      &lt;h2 class=&quot;sec&quot;&gt;1 · The list, and the console&lt;/h2&gt;
+      &lt;p class=&quot;sec-note&quot;&gt;
+        Mobile has no persistent sidebar, so a loop cannot be marked by its position — it has to carry
+        its state on the row. The same arc rail works; the progress ticks are what change, because on a
+        phone the budget is the thing you cannot get to any other way.
+      &lt;/p&gt;
+
+      &lt;div class=&quot;row-phones&quot;&gt;
+        &lt;!-- ============ list ============ --&gt;
+        &lt;div class=&quot;phone-wrap&quot;&gt;
+          &lt;div class=&quot;phone-cap&quot;&gt;Thread list&lt;/div&gt;
+          &lt;div class=&quot;phone&quot;&gt;
+            &lt;div class=&quot;notch&quot;&gt;&lt;/div&gt;
+            &lt;div class=&quot;p-status&quot;&gt;&lt;span&gt;4:07&lt;/span&gt;&lt;span&gt;􀙇 􀛨 84%&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;p-bar&quot;&gt;
+              &lt;strong style=&quot;font-size:14px;font-weight:600&quot;&gt;Threads&lt;/strong&gt;
+              &lt;span class=&quot;grow&quot;&gt;&lt;/span&gt;
+              &lt;span class=&quot;pill indigo&quot; style=&quot;height:19px;font-size:10px&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;3&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;p-body&quot;&gt;
+              &lt;div class=&quot;m-row is-loop blocked&quot;&gt;
+                &lt;div class=&quot;m-top&quot;&gt;
+                  &lt;span class=&quot;loop-glyph&quot; style=&quot;width:11px;height:11px;flex:0 0 11px&quot;&gt;
+                    &lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot; stroke-linecap=&quot;round&quot;&gt;&lt;path d=&quot;M21 12a9 9 0 1 1-3.3-6.96&quot;/&gt;&lt;path d=&quot;M21 4v5h-5&quot;/&gt;&lt;/svg&gt;
+                  &lt;/span&gt;
+                  &lt;span class=&quot;m-title&quot;&gt;Overnight: auth refactor&lt;/span&gt;
+                  &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-indigo&quot; style=&quot;font-size:10.5px&quot;&gt;3&lt;/span&gt;&lt;/span&gt;
+                &lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;2 questions · 1 approval · stopped 06:12&lt;/div&gt;
+                &lt;div class=&quot;m-prog&quot;&gt;
+                  &lt;div class=&quot;ticks&quot;&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;/div&gt;
+                &lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;m-row is-loop&quot;&gt;
+                &lt;div class=&quot;m-top&quot;&gt;
+                  &lt;span class=&quot;loop-glyph&quot; style=&quot;width:11px;height:11px;flex:0 0 11px&quot;&gt;
+                    &lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot; stroke-linecap=&quot;round&quot;&gt;&lt;path d=&quot;M21 12a9 9 0 1 1-3.3-6.96&quot;/&gt;&lt;path d=&quot;M21 4v5h-5&quot;/&gt;&lt;/svg&gt;
+                  &lt;/span&gt;
+                  &lt;span class=&quot;m-title&quot;&gt;Maintainer: issue queue&lt;/span&gt;
+                  &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot sky pulse&quot;&gt;&lt;/span&gt;&lt;/span&gt;
+                &lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;on #113 · moved 40s ago&lt;/div&gt;
+                &lt;div class=&quot;m-prog&quot;&gt;
+                  &lt;div class=&quot;ticks&quot;&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;now&quot;&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;/div&gt;
+                &lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;m-row is-loop spent&quot;&gt;
+                &lt;div class=&quot;m-top&quot;&gt;
+                  &lt;span class=&quot;loop-glyph&quot; style=&quot;width:11px;height:11px;flex:0 0 11px&quot;&gt;
+                    &lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot; stroke-linecap=&quot;round&quot;&gt;&lt;path d=&quot;M21 12a9 9 0 1 1-3.3-6.96&quot;/&gt;&lt;path d=&quot;M21 4v5h-5&quot;/&gt;&lt;/svg&gt;
+                  &lt;/span&gt;
+                  &lt;span class=&quot;m-title&quot;&gt;Nightly dep sweep&lt;/span&gt;
+                  &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot zinc&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-zinc&quot; style=&quot;font-size:10.5px&quot;&gt;Spent&lt;/span&gt;&lt;/span&gt;
+                &lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;ran out 07:00 · 4 of 7 done&lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;m-row&quot;&gt;
+                &lt;div class=&quot;m-top&quot;&gt;&lt;span class=&quot;m-title&quot;&gt;Fix clone diagnostics&lt;/span&gt;&lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot emerald&quot;&gt;&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;t3code · 12m ago&lt;/div&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;m-row&quot;&gt;
+                &lt;div class=&quot;m-top&quot;&gt;&lt;span class=&quot;m-title&quot;&gt;Seam ledger re-baseline&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;t3code · 1h ago&lt;/div&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;p-tabbar&quot;&gt;
+              &lt;div class=&quot;p-tab on&quot;&gt;
+                &lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;&gt;&lt;path d=&quot;M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z&quot;/&gt;&lt;/svg&gt;
+                Threads
+              &lt;/div&gt;
+              &lt;div class=&quot;p-tab&quot;&gt;
+                &lt;span class=&quot;nb&quot;&gt;3&lt;/span&gt;
+                &lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot; stroke-linecap=&quot;round&quot;&gt;&lt;path d=&quot;M21 12a9 9 0 1 1-3.3-6.96&quot;/&gt;&lt;path d=&quot;M21 4v5h-5&quot;/&gt;&lt;/svg&gt;
+                Loops
+              &lt;/div&gt;
+              &lt;div class=&quot;p-tab&quot;&gt;
+                &lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;&gt;&lt;circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;3&quot;/&gt;&lt;path d=&quot;M12 2v2m0 16v2M4.9 4.9l1.4 1.4M2 12h2m16 0h2&quot;/&gt;&lt;/svg&gt;
+                Settings
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;phone-note&quot;&gt;
+            The rail plus the tick row answers &lt;em&gt;&quot;how much rope is left&quot;&lt;/em&gt; without opening
+            anything — the one thing you cannot infer on a phone.
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;!-- ============ console ============ --&gt;
+        &lt;div class=&quot;phone-wrap&quot;&gt;
+          &lt;div class=&quot;phone-cap&quot;&gt;Console&lt;/div&gt;
+          &lt;div class=&quot;phone&quot;&gt;
+            &lt;div class=&quot;notch&quot;&gt;&lt;/div&gt;
+            &lt;div class=&quot;p-status&quot;&gt;&lt;span&gt;9:04&lt;/span&gt;&lt;span&gt;􀙇 􀛨 92%&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;p-bar&quot;&gt;
+              &lt;span class=&quot;t-muted&quot; style=&quot;font-size:16px&quot;&gt;‹&lt;/span&gt;
+              &lt;strong style=&quot;font-size:13px;font-weight:600&quot;&gt;auth refactor&lt;/strong&gt;
+              &lt;span class=&quot;grow&quot;&gt;&lt;/span&gt;
+              &lt;span class=&quot;pill indigo&quot; style=&quot;height:19px;font-size:10px&quot;&gt;3&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;p-body&quot;&gt;
+              &lt;div class=&quot;m-hero&quot;&gt;
+                &lt;div class=&quot;m-hero-l&quot;&gt;Three things need you.&lt;/div&gt;
+                &lt;div class=&quot;m-hero-s&quot;&gt;Paused at 06:12. Everything else it could do, it did.&lt;/div&gt;
+                &lt;div class=&quot;m-facts&quot;&gt;
+                  &lt;div&gt;&lt;span&gt;Left&lt;/span&gt;&lt;b&gt;2 of 6&lt;/b&gt;&lt;/div&gt;
+                  &lt;div&gt;&lt;span&gt;Stops&lt;/span&gt;&lt;b&gt;07:00&lt;/b&gt;&lt;/div&gt;
+                  &lt;div&gt;&lt;span&gt;Idle&lt;/span&gt;&lt;b&gt;2h 52m&lt;/b&gt;&lt;/div&gt;
+                &lt;/div&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;m-sec&quot;&gt;Stopped on these&lt;/div&gt;
+              &lt;div class=&quot;m-q b&quot;&gt;
+                &lt;div class=&quot;lbl t-indigo&quot;&gt;Question&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Migrate the session table in place, or new table and backfill?&lt;/div&gt;
+                &lt;div class=&quot;sub&quot;&gt;blocking since 01:48&lt;/div&gt;
+                &lt;button class=&quot;m-opt&quot;&gt;Migrate in place&lt;/button&gt;
+                &lt;button class=&quot;m-opt&quot;&gt;New table + backfill&lt;/button&gt;
+                &lt;button class=&quot;m-opt&quot;&gt;Let me decide at the keyboard&lt;/button&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;m-q a&quot;&gt;
+                &lt;div class=&quot;lbl t-amber&quot;&gt;Approval&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;Run &lt;code class=&quot;k&quot;&gt;pnpm db:migrate&lt;/code&gt; against dev&lt;/div&gt;
+                &lt;div class=&quot;sub&quot;&gt;blocking since 06:12&lt;/div&gt;
+                &lt;button class=&quot;m-opt&quot;&gt;Allow once&lt;/button&gt;
+                &lt;button class=&quot;m-opt&quot;&gt;Deny&lt;/button&gt;
+              &lt;/div&gt;
+
+              &lt;div class=&quot;m-sec&quot;&gt;Answer when you can&lt;/div&gt;
+              &lt;div class=&quot;m-q d&quot;&gt;
+                &lt;div class=&quot;lbl t-muted&quot;&gt;Blocker&lt;/div&gt;
+                &lt;div class=&quot;txt&quot;&gt;&lt;code class=&quot;k&quot;&gt;AUTH0_TENANT&lt;/code&gt; missing — provider stubbed, 1 test skipped&lt;/div&gt;
+                &lt;div class=&quot;sub&quot;&gt;did not stop the loop&lt;/div&gt;
+              &lt;/div&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;phone-note&quot;&gt;
+            Options are full-width 40px rows: at 4am, one-handed, an option list beats a text field.
+            Free-text stays available but is not the primary affordance.
+          &lt;/div&gt;
+        &lt;/div&gt;
+
+        &lt;!-- ============ push ============ --&gt;
+        &lt;div class=&quot;phone-wrap&quot;&gt;
+          &lt;div class=&quot;phone-cap&quot;&gt;What wakes you (and what doesn't)&lt;/div&gt;
+          &lt;div style=&quot;padding-top: 4px&quot;&gt;
+            &lt;div class=&quot;push&quot;&gt;
+              &lt;div class=&quot;push-h&quot;&gt;&lt;span class=&quot;push-ic&quot;&gt;C&lt;/span&gt;&lt;span class=&quot;push-app&quot;&gt;T3 COIL&lt;/span&gt;&lt;span class=&quot;grow&quot;&gt;&lt;/span&gt;&lt;span class=&quot;push-app&quot;&gt;now&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;push-t&quot;&gt;auth refactor needs a decision&lt;/div&gt;
+              &lt;div class=&quot;push-b&quot;&gt;Migrate the session table in place, or new table and backfill? Loop is stopped until you answer.&lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div class=&quot;push&quot;&gt;
+              &lt;div class=&quot;push-h&quot;&gt;&lt;span class=&quot;push-ic&quot;&gt;C&lt;/span&gt;&lt;span class=&quot;push-app&quot;&gt;T3 COIL&lt;/span&gt;&lt;span class=&quot;grow&quot;&gt;&lt;/span&gt;&lt;span class=&quot;push-app&quot;&gt;07:00&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;push-t&quot;&gt;Nightly dep sweep ran out of rope&lt;/div&gt;
+              &lt;div class=&quot;push-b&quot;&gt;6 of 6 check-ins used. 4 of 7 alerts resolved — it did not finish.&lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div class=&quot;push&quot;&gt;
+              &lt;div class=&quot;push-h&quot;&gt;&lt;span class=&quot;push-ic&quot;&gt;C&lt;/span&gt;&lt;span class=&quot;push-app&quot;&gt;T3 COIL&lt;/span&gt;&lt;span class=&quot;grow&quot;&gt;&lt;/span&gt;&lt;span class=&quot;push-app&quot;&gt;04:12&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;push-t&quot;&gt;Docs backfill finished&lt;/div&gt;
+              &lt;div class=&quot;push-b&quot;&gt;9 of 9 pages written. Stopped on its own with 3 check-ins unused.&lt;/div&gt;
+            &lt;/div&gt;
+
+            &lt;div style=&quot;border:1px dashed var(--border-strong);border-radius:var(--radius-lg);padding:12px 13px;margin-top:14px&quot;&gt;
+              &lt;div style=&quot;font-size:11.5px;font-weight:600;margin-bottom:5px;color:var(--muted-foreground);letter-spacing:.04em;text-transform:uppercase&quot;&gt;Never pushed&lt;/div&gt;
+              &lt;ul style=&quot;margin:0;padding-left:16px;font-size:12px;color:var(--muted-foreground);line-height:1.6&quot;&gt;
+                &lt;li&gt;A check-in firing. That is the loop working.&lt;/li&gt;
+                &lt;li&gt;A deferred blocker. It did not stop anything.&lt;/li&gt;
+                &lt;li&gt;Held on a usage limit — it resumes itself.&lt;/li&gt;
+                &lt;li&gt;Skips of any kind.&lt;/li&gt;
+              &lt;/ul&gt;
+            &lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;phone-note&quot;&gt;
+            Three push reasons only: &lt;b&gt;it needs a decision&lt;/b&gt;, &lt;b&gt;it stopped&lt;/b&gt;, &lt;b&gt;it finished&lt;/b&gt;.
+            Everything else is visible when you look, and pushing it would train you to ignore the
+            two that matter.
+          &lt;/div&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;note&quot;&gt;
+        &lt;b&gt;The one thing mobile changes about the design.&lt;/b&gt; On web the sidebar can afford to say very
+        little, because the console is one click away. On a phone the row &lt;em&gt;is&lt;/em&gt; the summary —
+        so the budget has to be on it, and &quot;Spent&quot; has to be legible without colour alone (it carries
+        the word, not just the zinc dot). That is why the tick row exists at all: it started as a
+        mobile requirement and turned out to be the clearest thing on the desktop card too.
+        &lt;br /&gt;&lt;br /&gt;
+        Mobile also settles decision 1 in the report. Direction B — a bespoke &quot;Loops&quot; section in the
+        sidebar — has no mobile equivalent, because mobile has no persistent sidebar to put it in. A
+        loop-as-pinned-thread and a Loops tab both work on all three surfaces. That is not decisive on
+        its own, but it removes B's only real advantage.
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+      </div>
+        <p class="proto-cap">
+          <b>What to look at:</b> the tick row on each list item. On the web the sidebar can afford to
+          say very little because the console is one click away; on a phone the row <em>is</em> the
+          summary, so the budget has to live on it.
+        </p>
+
+        <div class="call good">
+          <div class="ch">Mobile settles decision 1</div>
+          <p>
+            Direction B — a bespoke "Loops" section in the sidebar — <strong>has no mobile
+            equivalent</strong>, because there is no persistent sidebar to put it in. Loop-as-pinned-thread
+            and a Loops tab both work on all three surfaces. That is not decisive on its own, but it
+            removes B's only real advantage over C.
+          </p>
+        </div>
+
+        <h3 class="sub">Three push reasons, and a long list of things that must never push</h3>
+        <p>
+          <strong>It needs a decision · it stopped · it finished.</strong> That is all. A check-in
+          firing is the loop working; a deferred blocker did not stop anything; a usage-limit hold
+          resumes itself. Pushing any of them trains you to swipe away the two that matter — and the
+          whole feature rests on you trusting the notification at 4am.
+        </p>
+        <p>
+          The push copy carries the distinction the whole design turns on: <em>"ran out of rope — 4 of
+          7 alerts resolved, it did not finish"</em> versus <em>"finished, 9 of 9, stopped on its own
+          with 3 check-ins unused"</em>. If you can only read one line on a lock screen, that is the
+          line worth spending.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 7 · SETTINGS ==================== -->
     <section class="band tint" id="settings">
       <div class="wrap">
-        <div class="secnum"><i>06</i> Control</div>
+        <div class="secnum"><i>07</i> Control</div>
         <h2 class="sec">Settings — the on/off switch, and the ones that matter more</h2>
         <p class="lead">
           You asked for a toggle to turn the ability on and off. That is the top row. The rows under it
@@ -4911,7 +6879,7 @@ I am the scheduler for this thread. Do not schedule your own wake-ups.&lt;/texta
     <!-- ==================== 7 · STATES ==================== -->
     <section class="band" id="states">
       <div class="wrap">
-        <div class="secnum"><i>07</i> Vocabulary</div>
+        <div class="secnum"><i>08</i> Vocabulary</div>
         <h2 class="sec">Arming a loop, and every state it can be in</h2>
         <p class="lead">
           The vocabulary <em>is</em> the feature. The thing that failed on the original night was not
@@ -5908,7 +7876,7 @@ body {
     <!-- ==================== 8 · LIMITS ==================== -->
     <section class="band tint" id="limits">
       <div class="wrap">
-        <div class="secnum"><i>08</i> Interaction</div>
+        <div class="secnum"><i>09</i> Interaction</div>
         <h2 class="sec">Loops, auto-resume, and running into limits</h2>
         <p class="lead">
           You flagged this specifically. Two schedulers that can both revive the same thread is a race,
@@ -5955,7 +7923,7 @@ body {
     <!-- ==================== 9 · MAINTAINER ==================== -->
     <section class="band" id="maintainer">
       <div class="wrap">
-        <div class="secnum"><i>09</i> Adjacent</div>
+        <div class="secnum"><i>10</i> Adjacent</div>
         <h2 class="sec">Loops as maintainer bots</h2>
         <p class="lead">
           Issue #44 wants an agent that works a repo's issue queue. The question worth answering before
@@ -6847,7 +8815,7 @@ body {
     <!-- ==================== 10 · BACKEND ==================== -->
     <section class="band tint" id="backend">
       <div class="wrap">
-        <div class="secnum"><i>10</i> Machinery</div>
+        <div class="secnum"><i>11</i> Machinery</div>
         <h2 class="sec">The backend, in one page</h2>
         <p class="lead">
           Full version in <code>docs/coil/loops-v2/BACKEND.md</code>. This is the shape and the three
@@ -6909,7 +8877,7 @@ body {
     <!-- ==================== 11 · REJECTED ==================== -->
     <section class="band" id="rejected">
       <div class="wrap">
-        <div class="secnum"><i>11</i> Negative space</div>
+        <div class="secnum"><i>12</i> Negative space</div>
         <h2 class="sec">Angles I considered and rejected</h2>
         <p class="lead">
           You asked for the ones that do not work and why. These are the ones I spent real time on
@@ -6985,7 +8953,7 @@ body {
     <!-- ==================== 12 · TESTS ==================== -->
     <section class="band tint" id="tests">
       <div class="wrap">
-        <div class="secnum"><i>12</i> Confidence</div>
+        <div class="secnum"><i>13</i> Confidence</div>
         <h2 class="sec">How this gets tested</h2>
         <p class="lead">
           137 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
@@ -7044,7 +9012,7 @@ body {
     <!-- ==================== 13 · DECISIONS ==================== -->
     <section class="band" id="decide">
       <div class="wrap">
-        <div class="secnum"><i>13</i> Over to you</div>
+        <div class="secnum"><i>14</i> Over to you</div>
         <h2 class="sec">What I need from you</h2>
         <p class="lead">Five decisions. I have a recommendation on each; none of them are blocking for starting.</p>
 
@@ -7062,11 +9030,19 @@ body {
         </div>
 
         <div class="dec">
-          <div class="dec-q">2 · Does the console replace the transcript as the default tab?</div>
+          <div class="dec-q">2 · Where does the console live, and does it outrank the transcript?</div>
           <div class="dec-r">
-            Your ask implies yes — you open the chat and get the questionnaire. But it means opening a
-            loop no longer shows you what it said, which is a real loss when you <em>do</em> want to
-            read along.
+            Two halves. <b>Placement</b> — a thread tab (free), a right-panel tab (2 seam rows, but you
+            can read and answer at once), or a global "needs you" inbox across every thread (1 row, and
+            the only one that survives loops being switched off). See
+            <a href="#console">§3</a>. <b>Precedence</b> — your ask implies the console wins by default,
+            but that means opening a loop no longer shows you what it said, which is a real loss when
+            you <em>do</em> want to read along.
+          </div>
+          <div class="dec-opts" style="margin-bottom: 8px">
+            <span class="dec-opt rec">Thread tab now, global inbox next — recommended</span>
+            <span class="dec-opt">Right-panel tab</span>
+            <span class="dec-opt">Global inbox first</span>
           </div>
           <div class="dec-opts">
             <span class="dec-opt rec">Console default only when something is waiting — recommended</span>

@@ -285,7 +285,7 @@
         <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
         <p class="standfirst">
           A consolidated design for running a thread unattended — and, more importantly, for what you
-          see when you come back to it. <b>Six clickable prototypes, one backend recommendation, 137
+          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 137
           test cases</b>, and the three things I found that make the previous design out of date.
         </p>
         <div class="meta-strip">
@@ -344,14 +344,15 @@
           <a href="#console"><i>03</i> The console</a>
           <a href="#where"><i>04</i> Where a loop lives</a>
           <a href="#workspace"><i>05</i> The workspace</a>
-          <a href="#settings"><i>06</i> Settings</a>
-          <a href="#states"><i>07</i> Arming and states</a>
-          <a href="#limits"><i>08</i> Auto-resume and limits</a>
-          <a href="#maintainer"><i>09</i> Maintainer bots</a>
-          <a href="#backend"><i>10</i> The backend</a>
-          <a href="#rejected"><i>11</i> Angles rejected</a>
-          <a href="#tests"><i>12</i> Testing</a>
-          <a href="#decide"><i>13</i> What I need from you</a>
+          <a href="#mobile"><i>06</i> On the phone</a>
+          <a href="#settings"><i>07</i> Settings</a>
+          <a href="#states"><i>08</i> Arming and states</a>
+          <a href="#limits"><i>09</i> Auto-resume and limits</a>
+          <a href="#maintainer"><i>10</i> Maintainer bots</a>
+          <a href="#backend"><i>11</i> The backend</a>
+          <a href="#rejected"><i>12</i> Angles rejected</a>
+          <a href="#tests"><i>13</i> Testing</a>
+          <a href="#decide"><i>14</i> What I need from you</a>
         </div>
       </div>
     </section>
@@ -570,6 +571,38 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           worth knowing, rather than to silence. <strong>That is the acceptance test</strong>, and it is
           why the prototype renders the empty state explicitly (scenario 2).
         </p>
+
+        <h3 class="sub">Where the console renders — you said you were open to other ways</h3>
+        <p>
+          The <em>content</em> is settled. The <em>placement</em> is not, and the three answers have
+          genuinely different consequences. The third one turns out not to be a loop feature at all.
+        </p>
+
+        <!--EMBED:p7-console-shapes.html|1560|P7|Three console placements|Same content, three homes. Costs are measured, not estimated.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> Shape C. Pending approvals and questions already pile up on threads
+          you run by hand — a global "needs you" inbox surfaces all of them, and it is the only shape
+          that keeps working if loops are switched off entirely. Loops become its heaviest
+          <em>contributor</em> rather than its reason for existing.
+        </p>
+
+        <div class="call good">
+          <div class="ch">A side effect worth banking</div>
+          <p>
+            Pricing shape B answered an open question in your wayfinder queue.
+            <strong>Issue #112 — "what does registering a right-panel tab actually cost?" — the answer
+            is two seam rows</strong>: <code>rightPanelStore.ts</code> (the kind union, its list, and
+            the tab factory) and <code>RightPanelTabs.tsx</code> (the actions array plus two switch
+            cases). Neither file is in the ledger today.
+          </p>
+        </div>
+
+        <p>
+          <strong>My order: A, then C, then B only if you find yourself flipping tabs.</strong> A and C
+          share their whole data layer — the same three sources, filtered differently — so C is nearly
+          free once A exists. B is the only one that touches upstream files, and its advantage (reading
+          while answering) shrinks once the console summarises what each check-in did.
+        </p>
       </div>
     </section>
 
@@ -652,10 +685,53 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
       </div>
     </section>
 
-    <!-- ==================== 6 · SETTINGS ==================== -->
+    <!-- ==================== 6 · MOBILE ==================== -->
+    <section class="band" id="mobile">
+      <div class="wrap">
+        <div class="secnum"><i>06</i> The third surface</div>
+        <h2 class="sec">Loops on the phone</h2>
+        <p class="lead">
+          <code>AGENTS.md</code> requires a decision for web, desktop and mobile. Here it is not a
+          formality — the phone is where you actually look at 4am, and it has no sidebar to lean on.
+        </p>
+
+        <!--EMBED:p8-mobile.html|1020|P8|Loops on mobile|Thread list, console, and the three things worth a push.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the tick row on each list item. On the web the sidebar can afford to
+          say very little because the console is one click away; on a phone the row <em>is</em> the
+          summary, so the budget has to live on it.
+        </p>
+
+        <div class="call good">
+          <div class="ch">Mobile settles decision 1</div>
+          <p>
+            Direction B — a bespoke "Loops" section in the sidebar — <strong>has no mobile
+            equivalent</strong>, because there is no persistent sidebar to put it in. Loop-as-pinned-thread
+            and a Loops tab both work on all three surfaces. That is not decisive on its own, but it
+            removes B's only real advantage over C.
+          </p>
+        </div>
+
+        <h3 class="sub">Three push reasons, and a long list of things that must never push</h3>
+        <p>
+          <strong>It needs a decision · it stopped · it finished.</strong> That is all. A check-in
+          firing is the loop working; a deferred blocker did not stop anything; a usage-limit hold
+          resumes itself. Pushing any of them trains you to swipe away the two that matter — and the
+          whole feature rests on you trusting the notification at 4am.
+        </p>
+        <p>
+          The push copy carries the distinction the whole design turns on: <em>"ran out of rope — 4 of
+          7 alerts resolved, it did not finish"</em> versus <em>"finished, 9 of 9, stopped on its own
+          with 3 check-ins unused"</em>. If you can only read one line on a lock screen, that is the
+          line worth spending.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 7 · SETTINGS ==================== -->
     <section class="band tint" id="settings">
       <div class="wrap">
-        <div class="secnum"><i>06</i> Control</div>
+        <div class="secnum"><i>07</i> Control</div>
         <h2 class="sec">Settings — the on/off switch, and the ones that matter more</h2>
         <p class="lead">
           You asked for a toggle to turn the ability on and off. That is the top row. The rows under it
@@ -695,7 +771,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 7 · STATES ==================== -->
     <section class="band" id="states">
       <div class="wrap">
-        <div class="secnum"><i>07</i> Vocabulary</div>
+        <div class="secnum"><i>08</i> Vocabulary</div>
         <h2 class="sec">Arming a loop, and every state it can be in</h2>
         <p class="lead">
           The vocabulary <em>is</em> the feature. The thing that failed on the original night was not
@@ -722,7 +798,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 8 · LIMITS ==================== -->
     <section class="band tint" id="limits">
       <div class="wrap">
-        <div class="secnum"><i>08</i> Interaction</div>
+        <div class="secnum"><i>09</i> Interaction</div>
         <h2 class="sec">Loops, auto-resume, and running into limits</h2>
         <p class="lead">
           You flagged this specifically. Two schedulers that can both revive the same thread is a race,
@@ -769,7 +845,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 9 · MAINTAINER ==================== -->
     <section class="band" id="maintainer">
       <div class="wrap">
-        <div class="secnum"><i>09</i> Adjacent</div>
+        <div class="secnum"><i>10</i> Adjacent</div>
         <h2 class="sec">Loops as maintainer bots</h2>
         <p class="lead">
           Issue #44 wants an agent that works a repo's issue queue. The question worth answering before
@@ -813,7 +889,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 10 · BACKEND ==================== -->
     <section class="band tint" id="backend">
       <div class="wrap">
-        <div class="secnum"><i>10</i> Machinery</div>
+        <div class="secnum"><i>11</i> Machinery</div>
         <h2 class="sec">The backend, in one page</h2>
         <p class="lead">
           Full version in <code>docs/coil/loops-v2/BACKEND.md</code>. This is the shape and the three
@@ -875,7 +951,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 11 · REJECTED ==================== -->
     <section class="band" id="rejected">
       <div class="wrap">
-        <div class="secnum"><i>11</i> Negative space</div>
+        <div class="secnum"><i>12</i> Negative space</div>
         <h2 class="sec">Angles I considered and rejected</h2>
         <p class="lead">
           You asked for the ones that do not work and why. These are the ones I spent real time on
@@ -951,7 +1027,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 12 · TESTS ==================== -->
     <section class="band tint" id="tests">
       <div class="wrap">
-        <div class="secnum"><i>12</i> Confidence</div>
+        <div class="secnum"><i>13</i> Confidence</div>
         <h2 class="sec">How this gets tested</h2>
         <p class="lead">
           137 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
@@ -1010,7 +1086,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
     <!-- ==================== 13 · DECISIONS ==================== -->
     <section class="band" id="decide">
       <div class="wrap">
-        <div class="secnum"><i>13</i> Over to you</div>
+        <div class="secnum"><i>14</i> Over to you</div>
         <h2 class="sec">What I need from you</h2>
         <p class="lead">Five decisions. I have a recommendation on each; none of them are blocking for starting.</p>
 
@@ -1028,11 +1104,19 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         </div>
 
         <div class="dec">
-          <div class="dec-q">2 · Does the console replace the transcript as the default tab?</div>
+          <div class="dec-q">2 · Where does the console live, and does it outrank the transcript?</div>
           <div class="dec-r">
-            Your ask implies yes — you open the chat and get the questionnaire. But it means opening a
-            loop no longer shows you what it said, which is a real loss when you <em>do</em> want to
-            read along.
+            Two halves. <b>Placement</b> — a thread tab (free), a right-panel tab (2 seam rows, but you
+            can read and answer at once), or a global "needs you" inbox across every thread (1 row, and
+            the only one that survives loops being switched off). See
+            <a href="#console">§3</a>. <b>Precedence</b> — your ask implies the console wins by default,
+            but that means opening a loop no longer shows you what it said, which is a real loss when
+            you <em>do</em> want to read along.
+          </div>
+          <div class="dec-opts" style="margin-bottom: 8px">
+            <span class="dec-opt rec">Thread tab now, global inbox next — recommended</span>
+            <span class="dec-opt">Right-panel tab</span>
+            <span class="dec-opt">Global inbox first</span>
           </div>
           <div class="dec-opts">
             <span class="dec-opt rec">Console default only when something is waiting — recommended</span>
