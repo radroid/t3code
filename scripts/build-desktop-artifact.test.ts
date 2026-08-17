@@ -639,7 +639,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/node_modules/.bin/**",
       ]);
       assert.deepStrictEqual(mac.dmg, {
-        title: "T3 Code (Alpha) 1.2.3 Installer",
+        // Upstream #6201 added this block; its title is built from
+        // `resolveDesktopProductName`, which the fork's rename (#71) moved to
+        // "T3 Coil (Alpha)" — the same one-word substitution already made on that
+        // function's own assertion above. Everything else here is upstream's.
+        title: "T3 Coil (Alpha) 1.2.3 Installer",
         background: "dmg/dmg-background-latest.png",
         window: { width: 540, height: 412 },
         contents: [
