@@ -3,10 +3,10 @@
 **The authoritative list of every upstream-owned file this fork edits.**
 
 Measured, not asserted: **53 upstream-owned files, +2590 / -1042 lines**, against merge-base
-`cd096b9ad` (the 2026-08-17 sync). Everything else the fork adds lives in new files upstream has
+`a4cc1367b` (the 2026-08-17 sync). Everything else the fork adds lives in new files upstream has
 never seen and cannot conflict.
 
-> **Re-baselined 2026-08-17** against `cd096b9ad`, after a 113-commit upstream range (three days of
+> **Re-baselined 2026-08-17** against `a4cc1367b`, after a 116-commit upstream range (three days of
 > failed daily syncs, issue #117). The footprint **shrank** — +2622/-1093 → +2590/-1042 — while
 > gaining two rows, and both halves of the movement are worth reading:
 >
