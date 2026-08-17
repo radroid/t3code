@@ -249,7 +249,11 @@ describe("ComposerPrimaryActions", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send message"');
+    // The fork lengthens this one label while a turn is running (#35): on a steer-capable
+    // driver the submit folds into the work in progress rather than starting a new turn,
+    // and that is invisible otherwise. Upstream's intent for this test — that a submit
+    // button renders beside Stop, at the larger size — is unchanged and still pinned below.
+    expect(markup).toContain('aria-label="Send message to the running turn"');
     expect(markup).toContain('type="submit"');
     expect(markup).toContain("size-9 sm:size-8");
   });
