@@ -399,6 +399,29 @@ until 09:00. Guard 8 then refuses to nudge it — also correctly, because pushin
 decision is worse. The loop and the question channel are in direct tension, and no tuning resolves
 it.
 
+### 9.1b And a question can now be *voided* without anyone seeing it
+
+Upstream **#5127** (`3b54a2a57`, 2026-08-15) made session teardown settle every pending
+user-input as an **empty answer** so the thread can settle:
+
+```ts
+for (const pending of [...context.pendingUserInputs.values()]) {
+  yield* pending.cancel;   // Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers)
+}
+```
+
+So a question nobody answered does not merely hang — on a session stop the agent receives `{}`,
+an answer shaped like a real one carrying no decision, and carries on. The human never sees it and
+`hasPendingUserInput` reads false afterwards.
+
+Two design consequences:
+
+- The console **cannot derive its blocking list from `hasPendingUserInput` alone.** The fork must
+  record the `user-input.requested` event when it happens, and mark it `voided` if a
+  `user-input.resolved` arrives with an empty answer during teardown rather than from a human.
+- It is a second, independent argument for `raise_blocker`: a deferred blocker is durable
+  fork-side state and cannot be discarded by a session stop.
+
 ### 9.2 The fix — a second, non-blocking channel
 
 A fork-owned MCP tool, `raise_blocker`, that **records and returns immediately**:

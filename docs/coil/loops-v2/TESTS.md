@@ -253,6 +253,17 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 
 ---
 
+### 7b. Voided questions (upstream #5127)
+
+118b. A `user-input.requested` is recorded fork-side when it fires, independent of
+      `hasPendingUserInput`. ★
+118c. Session stop while a question is pending → the fork marks it **`voided`**, not `answered`. ★
+      The agent gets `{}` from upstream; the console must not report that as a human decision.
+118d. A genuine human answer marks it `answered` and is never confused with a void.
+118e. The console renders a voided question as still needing attention, with the reason. ★
+118f. A voided question does **not** count as a blocking guard hit on the next tick — the block is
+      gone, so the loop may proceed, but the console still shows it. ★
+
 ## 8. Prompt composition — `config.ts`
 
 119. Resolution order: per-thread override → `.coil/loop-prompt.md` → built-in.
