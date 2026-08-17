@@ -2,7 +2,9 @@
 
 **Status:** ready for independent review. Nothing built, nothing merged.
 **Branch:** `t3code/loop-observation-thread-prototypes`
-**Baseline:** verified against `upstream/main` @ `a4cc1367b` (2026-08-17) — see [UPSTREAM-DELTA.md](UPSTREAM-DELTA.md)
+**Baseline:** fork `main` @ `f6355f06f`, on upstream merge-base `a4cc1367b` (2026-08-17), **zero
+commits behind upstream**. Every claim below was verified against that tree — see
+[UPSTREAM-DELTA.md](UPSTREAM-DELTA.md) §7.
 
 | Companion doc | What it holds |
 |---|---|
@@ -55,9 +57,10 @@ Three properties define it:
 ## 1. Context for an independent reviewer
 
 **T3 Coil is a fork of `pingdotgg/t3code`** that rebases onto upstream continuously — 116 upstream
-commits landed in the three days before this plan was written `[V]`. The fork maintains a **seam
-ledger** (`docs/coil/SEAMS.md`) listing every upstream-owned file it edits: currently 51 files,
-+2622/−1093 lines. Each edited file is a permanent, recurring merge cost.
+commits landed in the three days before this plan was written, and the sync carrying them landed on
+`main` the same day `[V]`. The fork maintains a **seam ledger** (`docs/coil/SEAMS.md`) listing every
+upstream-owned file it edits: currently **53 files, +2590/−1042 lines** `[V]`. Each edited file is a
+permanent, recurring merge cost.
 
 This produces three rules that shape everything below and would look strange otherwise:
 
@@ -271,8 +274,11 @@ one upstream edit before anything depends on it. If the hook surface turns out n
 - **Not** `SettingsPanels.tsx` (churn 32, risk 1856), **not** `contracts/settings.ts` (persisted).
 
 **Seam cost:** **2 new rows**, ~+6 lines total, both additive.
-**Sequencing note:** land this *after* the sync that carries upstream #7082, or the
-`settingsSearch.ts` entry conflicts with `integrations` on the way in `[V]`.
+**Sequencing:** no longer a constraint. This originally had to wait for the sync carrying upstream
+#7082, or the `settingsSearch.ts` entry would have conflicted with `integrations` on the way in.
+That sync has landed — `routes/settings.integrations.tsx` is in the tree and `settingsSearch.ts`
+carries 7 `integrations` references `[V]` — so phase 4 now adds its entry beside a row that is
+already there, which was the cheap ordering all along.
 **Acceptance:** master toggle off ⇒ no fiber, nothing armed, existing loops stand down at next tick.
 **Size:** S–M.
 
@@ -320,7 +326,7 @@ The total upstream cost of the whole feature, which is the number that matters f
 | — | `server.ts` | 0 | already has its row |
 
 **Total: 3 new rows for phases 1–4** (~7 lines), all additive, plus one deferred. For comparison,
-the ledger currently carries 51 rows.
+the ledger currently carries 53 rows.
 
 ---
 
@@ -368,7 +374,7 @@ The four to write first:
 | Token burn from a runaway loop | Low | Cost | Mandatory budget, deadline, armed ceiling, reserve-before-dispatch, strike detector |
 | Model never calls `raise_blocker` | **High** | Console thinner | By design: two of three console sources need no model cooperation. This is the acceptance test |
 | `spent` misread as success | Medium | The original problem returns | Distinct colour, distinct word, distinct push copy; asserted in tests |
-| `settingsSearch.ts` conflicts | Medium `[V — 3 commits/3 days]` | Small recurring | Land phase 4 after the #7082 sync |
+| `settingsSearch.ts` conflicts | Medium `[V — 3 commits/3 days]` | Small recurring | Append-ordered array, same add/add shape as #29. The #7082 ordering is already satisfied; the residual risk is ordinary and priced |
 
 ---
 

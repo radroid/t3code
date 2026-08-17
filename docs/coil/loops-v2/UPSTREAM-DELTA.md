@@ -10,6 +10,14 @@ upstream/main a4cc1367b  2026-08-17  fix(web): show all usage breakdown periods 
 origin/main  df027ec08              116 behind upstream — the sync has not landed
 ```
 
+> **Superseded the same day — the sync landed.** While this was being written, the daily sync
+> force-landed onto `main`, which is now `f6355f06f` sitting on merge-base **`a4cc1367b`** — exactly
+> the tree everything below was measured against — and is **0 commits behind upstream**. Every
+> finding therefore describes the fork's *current* `main`, not a future one, and every check below
+> was re-run against that tree and still passes. Two consequences, both good: the sequencing
+> question in §6 is moot, and the seam ledger re-baselined to **53 files, +2590 / −1042**.
+> See §6 for what changed and §7 for the re-verification.
+
 **Verdict: the design holds.** Nothing upstream invalidates it, one change strengthens it, and one
 change turns an open question into a measured answer. Five things need correcting in the docs, all
 minor. Details below, each re-verified by command rather than assumed.
@@ -150,17 +158,40 @@ Small, and none of them change a decision.
 
 ---
 
-## 6. What this means for sequencing
+## 6. What this means for sequencing — resolved
 
-`origin/main` is **116 commits behind** `upstream/main` and the daily sync has not landed. Two
-options, and the plan assumes the first:
+This section originally weighed building on a 116-behind `main` against waiting for the sync, and
+flagged one real interaction: phase 4's `settingsSearch.ts` row had to be written *after* the sync
+carrying #7082, or it would conflict with the `integrations` entry on the way in.
 
-- **Build on the current fork main, land the sync separately.** Nothing in this design touches a
-  file with an in-flight upstream change *except* `settingsSearch.ts` and `SettingsSidebarNav.tsx`,
-  which are phase 4 and trivially re-appliable. Recommended.
-- Wait for the sync. Costs days for no design benefit, and the backlog is what it is —
-  per the fork's own history, a sync landing is not a reliable date.
+**The sync landed the same day.** `origin/main` is `f6355f06f`, on merge-base `a4cc1367b`, zero
+behind upstream. So:
 
-**One real interaction:** phase 4's `settingsSearch.ts` row should be written *after* the sync that
-carries #7082, or it will conflict with the `integrations` entry on the way in. Cheap either way,
-but cheaper in that order.
+- There is nothing to sequence around. Build on `main` as it stands.
+- **The #7082 interaction is already satisfied** — `apps/web/src/routes/settings.integrations.tsx`
+  is in the fork's tree and `settingsSearch.ts` carries 7 `integrations` references. Phase 4 adds
+  its entry *beside* a row that has already landed, which is the cheap ordering, achieved for free.
+- The one thing that did move is the **seam ledger: 51 → 53 files, +2622/−1093 → +2590/−1042**.
+  Two rows added, and the line counts fell — upstream absorbed fork work in this range. Phase costs
+  in PLAN.md are quoted against 53.
+
+---
+
+## 7. Re-verified against the post-sync tree
+
+Everything in §1–§4 was measured against `upstream/main`. Now that the fork sits on that same
+merge-base, each load-bearing claim was re-run against **the fork's own tree** — a stronger check,
+because it is the tree the work would actually be built on.
+
+| Claim | Result on `f6355f06f` |
+|---|---|
+| `session_crons` / `ScheduleWakeup` / `CronCreate` in server + contracts | **0 files** |
+| `options.hooks` set in `ClaudeAdapter` | **0** |
+| `mcp/toolkits/` contents | **`preview` only** |
+| the `mcpServers` spread anchor in `queryOptions` | **present** |
+| `Sidebar.logic.ts` diff vs upstream | **zero** |
+| overlay row `_chat.$environmentId.$threadId.tsx` | **+10 / −6**, as costed |
+| `pinnedAt` in contracts | **present** |
+| two independent scope-auth mirrors (phase 0's debt) | **still two** — `autoResume/http.ts:45`, `webPush/http.ts:49` |
+
+No claim in this document changed on the way across.

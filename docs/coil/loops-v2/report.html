@@ -9481,9 +9481,23 @@ body {
             additive, ~6 lines total. The fork renders its own panel from its own route and keeps
             state in <code>coil-loop.json</code>, so it pays neither of the two expensive rows
             upstream chose — <code>SettingsPanels.tsx</code> or the persisted
-            <code>contracts/settings.ts</code>. One caveat that did not exist when the estimate was
-            made: <code>settingsSearch.ts</code> has taken three commits in three days, so that row
-            should land <em>after</em> the sync carrying #7082.
+            <code>contracts/settings.ts</code>.
+          </p>
+        </div>
+
+        <div class="call good">
+          <div class="ch">And then the sync landed, the same day</div>
+          <p>
+            Everything above was measured against <code>upstream/main</code> while the fork sat 116
+            commits behind it. Before this went out, the daily sync force-landed: <code>main</code> is
+            now <code>f6355f06f</code>, on merge-base <code>a4cc1367b</code> — <b>exactly the tree all
+            of it was measured against</b> — and zero commits behind upstream. So these are findings
+            about the fork's current <code>main</code>, not a future one, and every load-bearing claim
+            was re-run against that tree and still passes: the beachhead is empty, the
+            <code>mcpServers</code> anchor is there, <code>Sidebar.logic.ts</code> is still zero-diff,
+            the overlay row is still +10/−6, and phase 0's debt is still two scope-auth mirrors.
+            The plan's one sequencing constraint — write the settings row <em>after</em> the #7082
+            sync — is satisfied for free. The seam ledger re-baselined to <b>53 files, +2590/−1042</b>.
           </p>
         </div>
 
