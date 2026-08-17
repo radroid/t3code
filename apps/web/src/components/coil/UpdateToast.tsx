@@ -18,6 +18,7 @@ import { ChevronDownIcon, ChevronUpIcon, CircleFadingArrowUpIcon } from "lucide-
 import type { CoilUpdateBridge, CoilUpdateState } from "@t3tools/contracts";
 
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useThreadShells } from "~/state/entities";
 import { usePrimaryEnvironment } from "~/state/environments";
 import {
@@ -214,16 +215,22 @@ function BuiltAgo({
   }
 
   return (
-    <button
-      className={`${className} cursor-pointer underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground`}
-      onClick={() => {
-        onOpen(runUrl);
-      }}
-      title="Open the workflow run that built this"
-      type="button"
-    >
-      built {builtAgo}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            className={`${className} cursor-pointer underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground`}
+            onClick={() => {
+              onOpen(runUrl);
+            }}
+            type="button"
+          >
+            built {builtAgo}
+          </button>
+        }
+      />
+      <TooltipPopup side="top">Open the workflow run that built this</TooltipPopup>
+    </Tooltip>
   );
 }
 
