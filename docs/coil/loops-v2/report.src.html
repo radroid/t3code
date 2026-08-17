@@ -286,13 +286,13 @@
         <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
         <p class="standfirst">
           A consolidated design for running a thread unattended — and, more importantly, for what you
-          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 157
+          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 162
           test cases</b>, and the three things I found that make the previous design out of date.
         </p>
         <div class="meta-strip">
           <span><b>Branch</b> t3code/loop-observation-thread-prototypes</span>
           <span><b>Issues</b> #42 open · #38 closed with residue · #44 adjacent</span>
-          <span><b>Merge-base</b> 196c8ea0d</span>
+          <span><b>Merge-base</b> 196c8ea0d · re-verified against a4cc1367b</span>
           <span><b>Status</b> nothing merged</span>
         </div>
       </div>
@@ -356,6 +356,7 @@
           <a href="#rejected"><i>12</i> Angles rejected</a>
           <a href="#tests"><i>13</i> Testing</a>
           <a href="#decide"><i>14</i> What I need from you</a>
+          <a href="#addendum"><i>15</i> Addendum · 17 Aug</a>
         </div>
       </div>
     </section>
@@ -1268,7 +1269,7 @@ not only when a turn is active.
         <div class="secnum"><i>13</i> Confidence</div>
         <h2 class="sec">How this gets tested</h2>
         <p class="lead">
-          157 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
+          162 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
           in the tree. The starred ones each encode a specific bug this design exists to prevent.
         </p>
 
@@ -1441,12 +1442,75 @@ not only when a turn is active.
       </div>
     </section>
 
+    <!-- ==================== ADDENDUM ==================== -->
+    <section class="band tint" id="addendum">
+      <div class="wrap">
+        <div class="secnum"><i>15</i> Addendum · 17 August</div>
+        <h2 class="sec">Re-verified against three more days of upstream</h2>
+        <p class="lead">
+          This report was written against merge-base <code>196c8ea0d</code>. Before turning it into a
+          plan I re-measured everything load-bearing against <code>upstream/main</code> at
+          <code>a4cc1367b</code> — <b>116 commits, three days</b>. The design holds. Three findings
+          are worth carrying forward.
+        </p>
+
+        <div class="call good">
+          <div class="ch">Still free</div>
+          <p>
+            The beachhead is unclaimed: <code>session_crons</code>, <code>ScheduleWakeup</code> and
+            <code>CronCreate</code> return <b>zero hits</b> across the server and contracts,
+            <code>options.hooks</code> is still set nowhere in <code>ClaudeAdapter</code>,
+            <code>mcp/toolkits/</code> still holds only <code>preview</code>, and not one of the 116
+            commits mentions a loop, cron, schedule or automation. Pinning is fully intact, so
+            Direction A still costs nothing.
+          </p>
+        </div>
+
+        <div class="call hot">
+          <div class="ch">A new failure mode — and it argues for raise_blocker</div>
+          <p>
+            Upstream <b>#5127</b> now settles pending user-inputs when a session stops, by resolving
+            the deferred with an <b>empty answer object</b>. <code>AskUserQuestion</code> still blocks,
+            so §11 stands — but a question nobody answers is no longer merely stranded. The agent
+            receives <code>{}</code>, a thing shaped like a decision that carries none, and proceeds on
+            it. The human never sees the question at all. A deferred blocker is durable fork-side
+            state; a blocking question is in-memory and is now actively discarded. The console
+            therefore cannot derive its list from <code>hasPendingUserInput</code>, which reads false
+            afterwards — it has to record the request when it is made.
+          </p>
+        </div>
+
+        <div class="call">
+          <div class="ch">Decision 3 is now priced, not estimated</div>
+          <p>
+            Upstream shipped <code>/settings/integrations</code> three days ago (<b>#7082</b>) — a
+            worked example of exactly the operation the Loops settings section needs. Reading what it
+            paid: an own settings section costs the fork <b>two new seam rows</b>,
+            <code>settingsSearch.ts</code> (~+4) and <code>SettingsSidebarNav.tsx</code> (+2), both
+            additive, ~6 lines total. The fork renders its own panel from its own route and keeps
+            state in <code>coil-loop.json</code>, so it pays neither of the two expensive rows
+            upstream chose — <code>SettingsPanels.tsx</code> or the persisted
+            <code>contracts/settings.ts</code>. One caveat that did not exist when the estimate was
+            made: <code>settingsSearch.ts</code> has taken three commits in three days, so that row
+            should land <em>after</em> the sync carrying #7082.
+          </p>
+        </div>
+
+        <p class="lead" style="margin-top: 30px">
+          The full accounting is in <code>UPSTREAM-DELTA.md</code>. The implementation plan that came
+          out of it — phases, seam budget, risk register, and the four questions I want an outside
+          opinion on — is in <code>PLAN.md</code>, written to be read without repo access.
+        </p>
+      </div>
+    </section>
+
     <footer class="end">
       <div class="wrap">
         <p style="max-width: 70ch">
           Prototypes are standalone files under <code>docs/coil/loops-v2/prototypes/</code> and open on
           their own. Working notes in <code>FINDINGS.md</code>, the full backend in
-          <code>BACKEND.md</code>, the test list in <code>TESTS.md</code>. The archived 2026-08-02
+          <code>BACKEND.md</code>, the test list in <code>TESTS.md</code>, the upstream
+          re-verification in <code>UPSTREAM-DELTA.md</code>, the plan in <code>PLAN.md</code>. The archived 2026-08-02
           design is still at <code>docs/coil/loop/</code> and is worth reading for the reactor detail I
           reused rather than restated.
         </p>
