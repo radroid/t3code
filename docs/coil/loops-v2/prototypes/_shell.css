@@ -433,8 +433,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -445,23 +446,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says "loop" */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: "";
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */

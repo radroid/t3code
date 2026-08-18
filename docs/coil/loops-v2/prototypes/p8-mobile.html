@@ -67,13 +67,12 @@
         padding: 11px 14px; border-bottom: 1px solid var(--border);
         position: relative;
       }
-      .m-row.is-loop { padding-left: 18px; }
-      .m-row.is-loop::before {
-        content: ""; position: absolute; left: 8px; top: 13px; bottom: 13px; width: 2px;
-        border-radius: 2px; background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+      .m-row.is-loop {
+        margin: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
       }
-      .m-row.is-loop.blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-      .m-row.is-loop.spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
       .m-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
       .m-title { font-size: 13px; font-weight: 480; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .m-meta { font-size: 11px; color: var(--muted-foreground); }
@@ -154,8 +153,8 @@
       <h2 class="sec">1 · The list, and the console</h2>
       <p class="sec-note">
         Mobile has no persistent sidebar, so a loop cannot be marked by its position — it has to carry
-        its state on the row. The same arc rail works; the progress ticks are what change, because on a
-        phone the budget is the thing you cannot get to any other way.
+        its state on the row. The same boxed-card treatment works; the progress ticks are what change,
+        because on a phone the budget is the thing you cannot get to any other way.
       </p>
 
       <div class="row-phones">
@@ -179,7 +178,7 @@
                   <span class="m-title">Overnight: auth refactor</span>
                   <span class="trow-status"><span class="dot indigo"></span><span class="t-indigo" style="font-size:10.5px">3</span></span>
                 </div>
-                <div class="m-meta">2 questions · 1 approval · stopped 06:12</div>
+                <div class="m-meta"><span class="loop-tag">Loop</span> 2 questions · 1 approval · stopped 06:12</div>
                 <div class="m-prog">
                   <div class="ticks"><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i></div>
                 </div>
@@ -193,7 +192,7 @@
                   <span class="m-title">Maintainer: issue queue</span>
                   <span class="trow-status"><span class="dot sky pulse"></span></span>
                 </div>
-                <div class="m-meta">on #113 · moved 40s ago</div>
+                <div class="m-meta"><span class="loop-tag">Loop</span> on #113 · moved 40s ago</div>
                 <div class="m-prog">
                   <div class="ticks"><i class="used"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
                 </div>
@@ -207,7 +206,7 @@
                   <span class="m-title">Nightly dep sweep</span>
                   <span class="trow-status"><span class="dot zinc"></span><span class="t-zinc" style="font-size:10.5px">Spent</span></span>
                 </div>
-                <div class="m-meta">ran out 07:00 · 4 of 7 done</div>
+                <div class="m-meta"><span class="loop-tag">Loop</span> ran out 07:00 · 4 of 7 done</div>
               </div>
 
               <div class="m-row">
@@ -236,7 +235,7 @@
             </div>
           </div>
           <div class="phone-note">
-            The rail plus the tick row answers <em>"how much rope is left"</em> without opening
+            The box plus the tick row answers <em>"how much rope is left"</em> without opening
             anything — the one thing you cannot infer on a phone.
           </div>
         </div>

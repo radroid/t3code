@@ -1008,8 +1008,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -1020,23 +1021,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -1373,7 +1384,7 @@ body {
           &lt;/button&gt;
         &lt;/div&gt;
         &lt;div class=&quot;sidebar-body&quot;&gt;
-          &lt;!-- pinned block renders with NO header upstream; the loop rail is the cue --&gt;
+          &lt;!-- pinned block renders with NO header upstream; the boxed row and its tag are the cue --&gt;
           &lt;button class=&quot;trow is-loop is-active&quot; id=&quot;sbLoop&quot;&gt;
             &lt;div class=&quot;trow-top&quot;&gt;
               &lt;span class=&quot;loop-glyph&quot; id=&quot;sbGlyph&quot;&gt;
@@ -1385,6 +1396,7 @@ body {
               &lt;span class=&quot;trow-status&quot; id=&quot;sbStatus&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-indigo&quot;&gt;Input&lt;/span&gt;&lt;/span&gt;
             &lt;/div&gt;
             &lt;div class=&quot;trow-meta&quot;&gt;
+              &lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt;
               &lt;span class=&quot;ellip&quot; id=&quot;sbMeta&quot;&gt;3 waiting · check-in 4/6&lt;/span&gt;
             &lt;/div&gt;
           &lt;/button&gt;
@@ -1399,7 +1411,7 @@ body {
               &lt;span class=&quot;trow-title&quot;&gt;Maintainer: issue queue&lt;/span&gt;
               &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot sky pulse&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-sky&quot;&gt;Working&lt;/span&gt;&lt;/span&gt;
             &lt;/div&gt;
-            &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;ellip&quot;&gt;on #113 · check-in 2/8&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt;&lt;span class=&quot;ellip&quot;&gt;on #113 · check-in 2/8&lt;/span&gt;&lt;/div&gt;
           &lt;/button&gt;
 
           &lt;div class=&quot;side-group-label&quot;&gt;Threads &lt;span class=&quot;count&quot;&gt;6&lt;/span&gt;&lt;/div&gt;
@@ -1799,7 +1811,6 @@ body {
           sbMeta: &quot;3 waiting · check-in 4/6&quot;,
           show: [&quot;secBlocking&quot;, &quot;secDeferred&quot;],
           badge: 3,
-          rail: &quot;is-blocked&quot;,
         },
         selfpaced: {
           heroCls: &quot;hero&quot;,
@@ -1815,7 +1826,6 @@ body {
           sbMeta: &quot;own wake 02:35 · 0/6 used&quot;,
           show: [&quot;secSelf&quot;],
           badge: 0,
-          rail: &quot;&quot;,
         },
         clear: {
           heroCls: &quot;hero&quot;,
@@ -1831,7 +1841,6 @@ body {
           sbMeta: &quot;running · check-in 1/6&quot;,
           show: [&quot;secClear&quot;],
           badge: 0,
-          rail: &quot;&quot;,
         },
         held: {
           heroCls: &quot;hero held&quot;,
@@ -1847,7 +1856,6 @@ body {
           sbMeta: &quot;usage limit · resumes 08:22&quot;,
           show: [&quot;secHeld&quot;, &quot;secDeferred&quot;],
           badge: 2,
-          rail: &quot;is-held&quot;,
         },
         spent: {
           heroCls: &quot;hero spent&quot;,
@@ -1863,7 +1871,6 @@ body {
           sbMeta: &quot;out of budget · 4/7 done&quot;,
           show: [&quot;secSpent&quot;, &quot;secDeferred&quot;],
           badge: 2,
-          rail: &quot;is-spent&quot;,
         },
       };
 
@@ -1888,9 +1895,6 @@ body {
         document.getElementById(&quot;ticks&quot;).innerHTML = Array.from({ length: 6 }, (_, i) =&gt;
           i &lt; used ? `&lt;i class=&quot;used${key === &quot;spent&quot; ? &quot; spent&quot; : &quot;&quot;}&quot;&gt;&lt;/i&gt;` : &quot;&lt;i&gt;&lt;/i&gt;&quot;,
         ).join(&quot;&quot;);
-
-        const loopRow = document.getElementById(&quot;sbLoop&quot;);
-        loopRow.className = `trow is-loop is-active ${s.rail}`;
 
         [&quot;secBlocking&quot;, &quot;secDeferred&quot;, &quot;secClear&quot;, &quot;secSelf&quot;, &quot;secHeld&quot;, &quot;secSpent&quot;].forEach((id) =&gt; {
           document.getElementById(id).hidden = !s.show.includes(id);
@@ -2437,8 +2441,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -2449,23 +2454,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -3403,8 +3418,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -3415,23 +3431,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -3689,7 +3715,7 @@ body {
             &lt;div class=&quot;col-sub&quot;&gt;
               Arming a loop dispatches &lt;code class=&quot;k&quot;&gt;thread.pin&lt;/code&gt;. Upstream's pinned block
               already floats it above everything and stops it sinking into a shelf. The only loop-ness
-              on the row is the arc glyph, which rides in the title.
+              on the row is its plain boxed card, a small tag, and the arc glyph in the title.
             &lt;/div&gt;
           &lt;/div&gt;
 
@@ -3702,7 +3728,7 @@ body {
                 &lt;span class=&quot;trow-title&quot;&gt;Overnight: auth refactor&lt;/span&gt;
                 &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-indigo&quot;&gt;Input&lt;/span&gt;&lt;/span&gt;
               &lt;/div&gt;
-              &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;ellip&quot;&gt;3 waiting · check-in 4/6&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt;&lt;span class=&quot;ellip&quot;&gt;3 waiting · check-in 4/6&lt;/span&gt;&lt;/div&gt;
             &lt;/button&gt;
 
             &lt;button class=&quot;trow is-loop is-recede&quot;&gt;
@@ -3713,7 +3739,7 @@ body {
                 &lt;span class=&quot;trow-title&quot;&gt;Maintainer: issue queue&lt;/span&gt;
                 &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot sky pulse&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-sky&quot;&gt;Working&lt;/span&gt;&lt;/span&gt;
               &lt;/div&gt;
-              &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;ellip&quot;&gt;on #113 · check-in 2/8&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;trow-meta&quot;&gt;&lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt;&lt;span class=&quot;ellip&quot;&gt;on #113 · check-in 2/8&lt;/span&gt;&lt;/div&gt;
             &lt;/button&gt;
 
             &lt;div class=&quot;side-group-label&quot;&gt;Threads &lt;span class=&quot;count&quot;&gt;4&lt;/span&gt;&lt;/div&gt;
@@ -3744,8 +3770,8 @@ body {
             &lt;div class=&quot;verdict good&quot;&gt;
               &lt;b&gt;Cheapest by a wide margin, and it is not a hack.&lt;/b&gt; A pin is a lifecycle
               transition, which is the one thing the sidebar's static-sort rule explicitly permits.
-              The cost is that a loop is only &lt;em&gt;distinguishable&lt;/em&gt; by a glyph — a stranger
-              could not tell it from a pinned thread.
+              The cost is that a loop is only &lt;em&gt;distinguishable&lt;/em&gt; by its row chrome — the box,
+              the tag, the glyph — not by placement; it still lives among ordinary threads.
             &lt;/div&gt;
           &lt;/div&gt;
         &lt;/section&gt;
@@ -3926,7 +3952,7 @@ body {
             <tr><td class="k">Sidebar.tsx</td><td class="yes">untouched</td><td class="no">new row, 3911 lines</td><td class="yes">untouched</td></tr>
             <tr><td class="k">contracts</td><td class="yes">untouched</td><td class="mid">a loop flag</td><td class="yes">untouched</td></tr>
             <tr><td class="k">New seam rows</td><td class="yes">0</td><td class="no">2–3</td><td class="mid">1</td></tr>
-            <tr><td class="k">Legibility</td><td class="mid">a glyph</td><td class="yes">full</td><td class="yes">full</td></tr>
+            <tr><td class="k">Legibility</td><td class="mid">boxed row + glyph</td><td class="yes">full</td><td class="yes">full</td></tr>
             <tr><td class="k">Scales past ~3 loops</td><td class="no">no</td><td class="mid">somewhat</td><td class="yes">yes</td></tr>
             <tr><td class="k">Risk</td><td class="yes">none</td><td class="no">every sync lands on it</td><td class="mid">a mode you forget to check</td></tr>
           </tbody>
@@ -4409,8 +4435,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -4421,23 +4448,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -5396,8 +5433,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -5408,23 +5446,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -5631,13 +5679,12 @@ body {
         padding: 11px 14px; border-bottom: 1px solid var(--border);
         position: relative;
       }
-      .m-row.is-loop { padding-left: 18px; }
-      .m-row.is-loop::before {
-        content: &quot;&quot;; position: absolute; left: 8px; top: 13px; bottom: 13px; width: 2px;
-        border-radius: 2px; background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+      .m-row.is-loop {
+        margin: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
       }
-      .m-row.is-loop.blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-      .m-row.is-loop.spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
       .m-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
       .m-title { font-size: 13px; font-weight: 480; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .m-meta { font-size: 11px; color: var(--muted-foreground); }
@@ -5718,8 +5765,8 @@ body {
       &lt;h2 class=&quot;sec&quot;&gt;1 · The list, and the console&lt;/h2&gt;
       &lt;p class=&quot;sec-note&quot;&gt;
         Mobile has no persistent sidebar, so a loop cannot be marked by its position — it has to carry
-        its state on the row. The same arc rail works; the progress ticks are what change, because on a
-        phone the budget is the thing you cannot get to any other way.
+        its state on the row. The same boxed-card treatment works; the progress ticks are what change,
+        because on a phone the budget is the thing you cannot get to any other way.
       &lt;/p&gt;
 
       &lt;div class=&quot;row-phones&quot;&gt;
@@ -5743,7 +5790,7 @@ body {
                   &lt;span class=&quot;m-title&quot;&gt;Overnight: auth refactor&lt;/span&gt;
                   &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot indigo&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-indigo&quot; style=&quot;font-size:10.5px&quot;&gt;3&lt;/span&gt;&lt;/span&gt;
                 &lt;/div&gt;
-                &lt;div class=&quot;m-meta&quot;&gt;2 questions · 1 approval · stopped 06:12&lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;&lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt; 2 questions · 1 approval · stopped 06:12&lt;/div&gt;
                 &lt;div class=&quot;m-prog&quot;&gt;
                   &lt;div class=&quot;ticks&quot;&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;/div&gt;
                 &lt;/div&gt;
@@ -5757,7 +5804,7 @@ body {
                   &lt;span class=&quot;m-title&quot;&gt;Maintainer: issue queue&lt;/span&gt;
                   &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot sky pulse&quot;&gt;&lt;/span&gt;&lt;/span&gt;
                 &lt;/div&gt;
-                &lt;div class=&quot;m-meta&quot;&gt;on #113 · moved 40s ago&lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;&lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt; on #113 · moved 40s ago&lt;/div&gt;
                 &lt;div class=&quot;m-prog&quot;&gt;
                   &lt;div class=&quot;ticks&quot;&gt;&lt;i class=&quot;used&quot;&gt;&lt;/i&gt;&lt;i class=&quot;now&quot;&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;i&gt;&lt;/i&gt;&lt;/div&gt;
                 &lt;/div&gt;
@@ -5771,7 +5818,7 @@ body {
                   &lt;span class=&quot;m-title&quot;&gt;Nightly dep sweep&lt;/span&gt;
                   &lt;span class=&quot;trow-status&quot;&gt;&lt;span class=&quot;dot zinc&quot;&gt;&lt;/span&gt;&lt;span class=&quot;t-zinc&quot; style=&quot;font-size:10.5px&quot;&gt;Spent&lt;/span&gt;&lt;/span&gt;
                 &lt;/div&gt;
-                &lt;div class=&quot;m-meta&quot;&gt;ran out 07:00 · 4 of 7 done&lt;/div&gt;
+                &lt;div class=&quot;m-meta&quot;&gt;&lt;span class=&quot;loop-tag&quot;&gt;Loop&lt;/span&gt; ran out 07:00 · 4 of 7 done&lt;/div&gt;
               &lt;/div&gt;
 
               &lt;div class=&quot;m-row&quot;&gt;
@@ -5800,7 +5847,7 @@ body {
             &lt;/div&gt;
           &lt;/div&gt;
           &lt;div class=&quot;phone-note&quot;&gt;
-            The rail plus the tick row answers &lt;em&gt;&quot;how much rope is left&quot;&lt;/em&gt; without opening
+            The box plus the tick row answers &lt;em&gt;&quot;how much rope is left&quot;&lt;/em&gt; without opening
             anything — the one thing you cannot infer on a phone.
           &lt;/div&gt;
         &lt;/div&gt;
@@ -6407,8 +6454,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -6419,23 +6467,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -7469,8 +7527,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -7481,23 +7540,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -8596,8 +8665,9 @@ body {
 /* ==========================================================================
    Loop chrome — the one genuinely new visual vocabulary.
 
-   A loop is marked by an ARC, never by a colour of its own: colour is
-   already spoken for by the status system, and a loop can be in any status.
+   A loop is marked by an ARC and a plainly boxed row, never by a colour of
+   its own: colour is already spoken for by the status system, and a loop can
+   be in any status.
    ========================================================================== */
 
 .loop-glyph {
@@ -8608,23 +8678,33 @@ body {
 }
 .loop-glyph svg { display: block; width: 100%; height: 100%; }
 
-/* the pinned/loop rail: a 2px arc-tinted edge on the row's leading side */
+/* the loop box: a plain bordered card in the sidebar's own language (.card),
+   with a small tag where no group header already says &quot;loop&quot; */
 .trow.is-loop {
-  padding-left: 12px;
+  background: var(--card);
+  border-color: var(--border);
 }
-.trow.is-loop::before {
-  content: &quot;&quot;;
-  position: absolute;
-  left: 3px; top: 9px; bottom: 9px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--sky), rgb(56 189 248 / 15%));
+.trow.is-loop:hover { background: var(--card); border-color: var(--border-strong); }
+.trow.is-loop.is-active {
+  background: var(--sidebar-row-selected);
+  border-color: var(--border-strong);
 }
-.trow.is-loop.is-blocked::before { background: linear-gradient(180deg, var(--indigo), rgb(165 180 252 / 15%)); }
-.trow.is-loop.is-spent::before { background: linear-gradient(180deg, var(--zinc), rgb(161 161 170 / 12%)); }
-.trow.is-loop.is-stalled::before { background: linear-gradient(180deg, var(--rose), rgb(251 113 133 / 15%)); }
-.trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
-.trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
+
+.loop-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: rgb(255 255 255 / 4%);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 /* Stepped for the same reason status-pulse is: 12 paints per cycle,
    not one per frame of a 120Hz display. */
@@ -9342,7 +9422,7 @@ body {
         <div class="dec">
           <div class="dec-q">1 · Sidebar treatment</div>
           <div class="dec-r">
-            A is free and idiomatic but a loop is only marked by a glyph. C is richer and scales, but is
+            A is free and idiomatic but a loop is only marked by its boxed row and glyph. C is richer and scales, but is
             a mode you have to remember to open.
           </div>
           <div class="dec-opts">

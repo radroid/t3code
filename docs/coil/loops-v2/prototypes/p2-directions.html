@@ -118,7 +118,7 @@
             <div class="col-sub">
               Arming a loop dispatches <code class="k">thread.pin</code>. Upstream's pinned block
               already floats it above everything and stops it sinking into a shelf. The only loop-ness
-              on the row is the arc glyph, which rides in the title.
+              on the row is its plain boxed card, a small tag, and the arc glyph in the title.
             </div>
           </div>
 
@@ -131,7 +131,7 @@
                 <span class="trow-title">Overnight: auth refactor</span>
                 <span class="trow-status"><span class="dot indigo"></span><span class="t-indigo">Input</span></span>
               </div>
-              <div class="trow-meta"><span class="ellip">3 waiting · check-in 4/6</span></div>
+              <div class="trow-meta"><span class="loop-tag">Loop</span><span class="ellip">3 waiting · check-in 4/6</span></div>
             </button>
 
             <button class="trow is-loop is-recede">
@@ -142,7 +142,7 @@
                 <span class="trow-title">Maintainer: issue queue</span>
                 <span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span>
               </div>
-              <div class="trow-meta"><span class="ellip">on #113 · check-in 2/8</span></div>
+              <div class="trow-meta"><span class="loop-tag">Loop</span><span class="ellip">on #113 · check-in 2/8</span></div>
             </button>
 
             <div class="side-group-label">Threads <span class="count">4</span></div>
@@ -173,8 +173,8 @@
             <div class="verdict good">
               <b>Cheapest by a wide margin, and it is not a hack.</b> A pin is a lifecycle
               transition, which is the one thing the sidebar's static-sort rule explicitly permits.
-              The cost is that a loop is only <em>distinguishable</em> by a glyph — a stranger
-              could not tell it from a pinned thread.
+              The cost is that a loop is only <em>distinguishable</em> by its row chrome — the box,
+              the tag, the glyph — not by placement; it still lives among ordinary threads.
             </div>
           </div>
         </section>

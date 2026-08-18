@@ -197,7 +197,7 @@
           </button>
         </div>
         <div class="sidebar-body">
-          <!-- pinned block renders with NO header upstream; the loop rail is the cue -->
+          <!-- pinned block renders with NO header upstream; the boxed row and its tag are the cue -->
           <button class="trow is-loop is-active" id="sbLoop">
             <div class="trow-top">
               <span class="loop-glyph" id="sbGlyph">
@@ -209,6 +209,7 @@
               <span class="trow-status" id="sbStatus"><span class="dot indigo"></span><span class="t-indigo">Input</span></span>
             </div>
             <div class="trow-meta">
+              <span class="loop-tag">Loop</span>
               <span class="ellip" id="sbMeta">3 waiting · check-in 4/6</span>
             </div>
           </button>
@@ -223,7 +224,7 @@
               <span class="trow-title">Maintainer: issue queue</span>
               <span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span>
             </div>
-            <div class="trow-meta"><span class="ellip">on #113 · check-in 2/8</span></div>
+            <div class="trow-meta"><span class="loop-tag">Loop</span><span class="ellip">on #113 · check-in 2/8</span></div>
           </button>
 
           <div class="side-group-label">Threads <span class="count">6</span></div>
@@ -623,7 +624,6 @@
           sbMeta: "3 waiting · check-in 4/6",
           show: ["secBlocking", "secDeferred"],
           badge: 3,
-          rail: "is-blocked",
         },
         selfpaced: {
           heroCls: "hero",
@@ -639,7 +639,6 @@
           sbMeta: "own wake 02:35 · 0/6 used",
           show: ["secSelf"],
           badge: 0,
-          rail: "",
         },
         clear: {
           heroCls: "hero",
@@ -655,7 +654,6 @@
           sbMeta: "running · check-in 1/6",
           show: ["secClear"],
           badge: 0,
-          rail: "",
         },
         held: {
           heroCls: "hero held",
@@ -671,7 +669,6 @@
           sbMeta: "usage limit · resumes 08:22",
           show: ["secHeld", "secDeferred"],
           badge: 2,
-          rail: "is-held",
         },
         spent: {
           heroCls: "hero spent",
@@ -687,7 +684,6 @@
           sbMeta: "out of budget · 4/7 done",
           show: ["secSpent", "secDeferred"],
           badge: 2,
-          rail: "is-spent",
         },
       };
 
@@ -712,9 +708,6 @@
         document.getElementById("ticks").innerHTML = Array.from({ length: 6 }, (_, i) =>
           i < used ? `<i class="used${key === "spent" ? " spent" : ""}"></i>` : "<i></i>",
         ).join("");
-
-        const loopRow = document.getElementById("sbLoop");
-        loopRow.className = `trow is-loop is-active ${s.rail}`;
 
         ["secBlocking", "secDeferred", "secClear", "secSelf", "secHeld", "secSpent"].forEach((id) => {
           document.getElementById(id).hidden = !s.show.includes(id);
