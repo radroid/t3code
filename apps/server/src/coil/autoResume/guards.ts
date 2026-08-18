@@ -114,6 +114,62 @@ export function threadIsProgressing(thread: OrchestrationThread): boolean {
   return thread.latestTurn?.state === "running";
 }
 
+/**
+ * The armed resume being re-checked: the baseline, plus the window it is waiting on.
+ *
+ * `PendingResume` (state.ts) already satisfies this structurally, so `Reactor.fireOne`
+ * passes its pending record straight through. Nothing new is persisted, so the on-disk
+ * state schema — and the whole-file-decode hazard documented on `ThreadRecord.enabled` —
+ * is untouched.
+ *
+ * Required, not optional. An optional window would leave a second, weaker meaning of
+ * "advancement" alive for a caller that does not exist (the reactor is the only
+ * production caller), and this guard has now been wrong three times precisely because
+ * one ambiguous fact was allowed to stand in for another.
+ */
+export interface ResumeArm {
+  readonly baseline: GuardBaseline;
+  /**
+   * When the arm is due, i.e. when the blocked window reopens: `resetsAt` + the safety
+   * margin (decide.ts), or `now + backoff` when the provider named no reset time.
+   */
+  readonly resumeAtMs: number;
+}
+
+/** Epoch ms for an ISO timestamp, or null when it is absent or unparseable. */
+function isoMs(value: string | null | undefined): number | null {
+  if (typeof value !== "string") return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Positive evidence that a turn did work the closed window could not have blocked: it
+ * ended at or after the moment that window reopened.
+ *
+ * A turn with no usable `completedAt` returns false — "no proof", not "advancement".
+ * Cancelling is the destructive move, so absent evidence must never cancel; that is the
+ * same rule #6 and #39 bought, applied to timing. In production that branch is
+ * unreachable anyway: a turn that has not completed is `running`, which `threadIsProgressing`
+ * catches before this is ever called, and 0 of 764 settled turns in the live projection
+ * have a null `completed_at`.
+ *
+ * CLOCK PROVENANCE: `resumeAtMs` comes from `Clock.currentTimeMillis` and the turn
+ * timestamps from the projection, which the same process wrote — consistent in
+ * production. NOT consistent under `TestClock`, which starts at epoch 0 while a realistic
+ * ISO timestamp is ~1.79e12, so a fixture that scripts real-world turn times against a
+ * test-clock arm reads every turn as post-window and silently restores the incident.
+ * Script turn times relative to the test clock, or leave them unset.
+ */
+function turnOutlivedClosedWindow(
+  turn: { readonly completedAt?: string | null },
+  reopensAtMs: number,
+): boolean {
+  const completedAtMs = isoMs(turn.completedAt);
+  if (completedAtMs === null) return false;
+  return completedAtMs >= reopensAtMs;
+}
+
 export type CancelReason =
   | "thread-gone"
   | "not-claude"
@@ -125,10 +181,7 @@ export type CancelReason =
  * Re-checked immediately before dispatch against a fresh snapshot. Returns a reason to
  * cancel the pending resume, or null when it is still safe to resume.
  */
-export function cancelReason(
-  thread: OrchestrationThread,
-  baseline: GuardBaseline,
-): CancelReason | null {
+export function cancelReason(thread: OrchestrationThread, arm: ResumeArm): CancelReason | null {
   if (threadIsGone(thread)) return "thread-gone";
   if (!isClaudeThread(thread)) return "not-claude";
   if (threadIsProgressing(thread)) return "progressing";
@@ -150,16 +203,70 @@ export function cancelReason(
   //   * the user wants no resume at all             -> the per-thread switch, honoured
   //                                                    in `Reactor.fireOne`.
   //
-  // Advancement needs POSITIVE evidence: a different, non-null turn id. The snapshot's
-  // `latestTurn` is joined on `projection_threads.latest_turn_id`, which is populated
-  // only while a turn is active — so a usage limit that lands mid-turn captures the
-  // running turn's id in the baseline, and by fire time (turn settled, session idle)
-  // the snapshot reports `latestTurn: null`. That null means "no active turn", not
-  // "the thread moved on"; treating it as advancement cancelled every real resume
-  // (radroid/t3code#6). A genuine user takeover is caught above via the newest user
-  // message; active work is caught by `progressing`.
-  const currentTurnId = thread.latestTurn?.turnId ?? null;
-  if (currentTurnId !== null && currentTurnId !== baseline.latestTurnId) {
+  // Advancement needs POSITIVE evidence that the thread moved on. Two things look like
+  // that evidence and are not. Each cost an incident, and all three incidents in this
+  // feature are the same bug: one ambiguous fact read as "the human took the wheel".
+  //
+  // 1. `latestTurn: null` (radroid/t3code#6). Null means the join found no retained turn
+  //    row — "no turn to report" — not "the thread moved on". Cancelling on it killed
+  //    every real resume, so null still short-circuits first and never cancels.
+  //
+  //    CORRECTION, verified against the live projection on 2026-08-18: the reason this
+  //    comment used to give — that `latest_turn_id` is populated only while a turn is
+  //    active — is FALSE. `ProjectionPipeline` writes `activeTurnId ?? existingRow.latestTurnId`
+  //    ("a terminal session must not erase history") and only recomputes it on
+  //    `thread.reverted`, so a COMPLETED turn stays latest forever. All 63 threads that
+  //    have a `latest_turn_id` point at a turn in state `completed`, including the
+  //    incident thread. #6's rule stands; only its explanation was wrong.
+  //
+  // 2. A different, non-null turn id (2026-08-18). While the window is shut every
+  //    provider request is rejected by construction, so a turn that ended before the
+  //    window reopened cannot be the thread moving on — it IS the blockage, observed
+  //    again. The incident's turn 64f7c4b7 was not even the user's: no user message drove
+  //    it (`pending_message_id` NULL), it ran 508ms (19:34:44.276 -> .784) against a
+  //    five_hour window that did not reopen until 19:50, and its only output was the
+  //    assistant line "You've hit your session limit · resets 3:50pm". Comparing ids
+  //    alone read that as a takeover and destroyed the one arm that would have restarted
+  //    the thread — a whole night's work lost.
+  //
+  //    NEGATIVE RESULTS, so nobody rebuilds a broken signal that still passes the replay
+  //    test: the doomed turn reached `state: "completed"`, DID carry an
+  //    `assistantMessageId`, and DID take a checkpoint (turn_count 2, status ready). Turn
+  //    state, "produced no output", "took no checkpoint", turn counts and message counts
+  //    are all disproven as discriminators.
+  //
+  // This also subsumes #39's follow-on shape. The "keep going" typed at the banner is
+  // rejected by the same limit and settles in half a second; today #39's fix survives
+  // only because that turn usually does not become `latest_turn_id`. Requiring the turn
+  // to outlive the window kills both shapes with one predicate, so #39 stops depending
+  // on luck.
+  //
+  // KNOWN APPROXIMATION. The discriminator that actually names the class is
+  // `projection_turns.pending_message_id IS NULL` ("the user did not start this turn") —
+  // provider-synthesized turns are not rare here, 180 of 764, and 9 of 63 threads
+  // currently point `latest_turn_id` at one. It is unreachable from `OrchestrationThread`
+  // (`OrchestrationLatestTurn` has no `pendingMessageId`, and user messages are stored
+  // with `turn_id = NULL`, so the read model cannot join one either); exposing it means
+  // editing `packages/contracts` + `ProjectionSnapshotQuery`, i.e. permanent rebase tax
+  // for this fork. Timing is the best in-fork proxy, not the right long-term model —
+  // price the contract change before inventing a fourth proxy.
+  //
+  // TWO ACCEPTED COSTS, both chosen rather than overlooked:
+  //   * `resumeAtMs` is `resetsAt + safetyMarginMs`, not the true reopen, and for a
+  //     backoff-derived arm it is `now + ladder`, a guess rather than a known-shut
+  //     interval. So a turn genuinely done in that margin reads as doomed. It errs toward
+  //     firing on an idle thread, which is the cheap direction (#39 already priced a
+  //     redundant nudge against a lost night). Persisting the raw `resetsAtMs` would make
+  //     it exact and is not worth a `PendingResume` schema field.
+  //   * `thread-advanced` now fires only for a post-window turn, so on a `seven_day` arm
+  //     days of genuine user work can pass and we still inject "continue". The remaining
+  //     brakes are `progressing`, `awaiting-input`, the per-thread switch, and the 24h cap.
+  const currentTurn = thread.latestTurn ?? null;
+  if (
+    currentTurn !== null &&
+    currentTurn.turnId !== arm.baseline.latestTurnId &&
+    turnOutlivedClosedWindow(currentTurn, arm.resumeAtMs)
+  ) {
     return "thread-advanced";
   }
   return null;
