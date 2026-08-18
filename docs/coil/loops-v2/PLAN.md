@@ -264,6 +264,8 @@ one upstream edit before anything depends on it. If the hook surface turns out n
 - Arm / disarm / re-arm via `POST /api/coil/loop`, with the 400s from D9.
 - Arming also dispatches `thread.pin`; disarming unpins `[A — verify pin/unpin from a fork reactor]`.
 - Rate-limit tap fiber; `rateLimitedUntilMs` persisted.
+- Terminal states and disarm stop the session when recorded crons are still pending
+  (`providerService.stopSession` — BACKEND §7), so a bound can actually stop a self-paced run.
 - Timeline breadcrumbs via `thread.activity.append` with `coil.loop.*` kinds.
 - **Default off**, behind the master toggle, behind an env kill switch.
 

@@ -51,7 +51,7 @@ resolve.
 
 ### A3. The settings mount in the design no longer exists
 
-`BetaSettingsPanel.tsx` is gone. Today's settings surface is 7 route files
+`BetaSettingsPanel.tsx` is gone. Today's settings surface is 9 route files
 (`settings.{general,appearance,keybindings,providers,source-control,connections,archived}.tsx`)
 plus a closed `SettingsPath` union in `settings/settingsSearch.ts:1-8` that drives both the
 nav (`SettingsSidebarNav.tsx:44-64`) and search.
@@ -223,7 +223,7 @@ Design consequences to work through in the prototypes:
   much they already exist: (a) real pending approvals / pending user input / actionable
   proposed plans — all already SQL-backed columns on `OrchestrationThreadShell`
   (`contracts/orchestration.ts:432-436`); (b) the loop's own skip reasons, which the
-  archived design already surfaces as `coil.loop.skipped` breadcrumbs; (c) **model-authored
+  archived design already surfaces as `t3x.loop.skipped` breadcrumbs; (c) **model-authored
   questions**, which need a channel that does not exist yet.
 - (c) is the interesting one and the risky one. The archived design deliberately **rejected**
   an agent-authored JSON contract (BATON) because "it outsources the hardest judgement to

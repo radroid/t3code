@@ -35,7 +35,8 @@ fires is the measure of a correct implementation, not a sign it is doing nothing
 Total new upstream surface for phases 1–4: **3 new seam rows** — the `hooks` spread into
 `ClaudeAdapter`'s existing `queryOptions` object (+1), `settingsSearch.ts` (~+4) and
 `SettingsSidebarNav.tsx` (+2) — plus one existing seam row rewritten in place at delta zero, and
-one line in an existing fork-owned aggregator. The budget is PLAN §6; §11 below prices each row.
+~6 lines in an existing fork-owned file, which is not upstream surface at all. The budget is
+PLAN §6; §11 below prices each row.
 Everything else is new files upstream has never seen.
 
 ---
@@ -107,8 +108,8 @@ squarely in the working band. **That is why it works in practice, and the design
 | T3 has no write handle on the binary's table                                                                                                                                     | budget, cap, audit — but it can now **read** it via `session_crons`                  |
 
 **So `session_crons` moves from phase 3 to phase 1, and becomes part of the trigger.** If the agent
-has a pending wake inside the loop's idle threshold, the loop stands down. The loop's check-in is
-the fallback for the case the agent structurally cannot handle: it has stopped, or its wake was
+has a pending wake — at any distance — the loop stands down until the wake is overdue by
+`wakeGraceMs`. The loop's check-in is the fallback for the case the agent structurally cannot handle: it has stopped, or its wake was
 lost.
 
 ### 1.2 Rejected — a DB migration for loop state
@@ -463,9 +464,11 @@ for (const pending of [...context.pendingUserInputs.values()]) {
 }
 ```
 
-So a question nobody answered does not merely hang — on a session stop the agent receives `{}`,
-an answer shaped like a real one carrying no decision, and carries on. The human never sees it and
-`hasPendingUserInput` reads false afterwards.
+So a question nobody answered does not merely hang — on a session stop the handler unparks with
+`{}`, the tool call is denied, and the session tears down. What survives is the runtime's
+`user-input.resolved` carrying empty answers: the human never sees the question, and
+`hasPendingUserInput` reads false afterwards, so a voided question is indistinguishable from an
+answered one.
 
 Two design consequences:
 

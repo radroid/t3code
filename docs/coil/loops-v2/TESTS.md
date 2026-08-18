@@ -225,7 +225,9 @@ A fork observability bug must not be able to break a turn.
 96. `settledOverride === "active"` → a `thread.unsettle` follows the turn start.
 97. `settledOverride === null` → **no** `thread.unsettle` is issued (it can never create a pin). ★
 98. A failed pin-repair dispatch logs **and** appends an error-tone breadcrumb — never silent. ★
-99. Budget exhaustion writes `stopped: spent` exactly once, and the next tick is a no-op.
+99. Budget exhaustion writes `stopped: spent` exactly once, the next tick is a no-op, and if
+    crons are still recorded pending the reactor calls `stopSession` (the bound must actually
+    stop a self-paced run — BACKEND §7).
 100.  Rate-limit fiber: an `account.rate-limits.updated` with `status: rejected` writes
       `rateLimitedUntilMs` durably. ★
 101.  A non-rejected verdict does not write.

@@ -857,7 +857,7 @@
 
         <h3 class="sub">3 · The settings mount in the old design no longer exists</h3>
         <p>
-          <code>BetaSettingsPanel.tsx</code> is gone. Today's settings surface is seven route files
+          <code>BetaSettingsPanel.tsx</code> is gone. Today's settings surface is nine route files
           and a <em>closed</em> <code>SettingsPath</code> union in
           <code>settingsSearch.ts</code> that drives both the nav and search. The old design's "+2
           lines, risk 6" costing is void, and re-pricing it is one of the open decisions in
@@ -13142,7 +13142,7 @@ body {
           </p>
         </div>
 
-        <h3 class="sub">Which means observability comes before the kill switch</h3>
+        <h3 class="sub">Which means observability replaces the kill switch</h3>
         <p>
           If the agent is genuinely self-pacing, the worst thing T3 can do is fire its own check-in
           on top — two schedulers, doubled spend, and a confused agent. So the
@@ -13153,9 +13153,9 @@ body {
         <p>
           The rule falls out of that.
           <strong
-            >If the thread has a pending self-paced wake within the loop's idle threshold, the loop
-            does not fire — it waits, spends nothing, and the console says "self-pacing · next wake
-            02:35".</strong
+            >If the thread has a pending self-paced wake at all — any distance — the loop does not
+            fire until the wake is overdue by its grace: it waits, spends nothing, and the console
+            says "self-pacing · next wake 02:35".</strong
           >
           The loop's own check-in becomes the fallback for when the agent has <em>not</em> scheduled
           itself, which is exactly the case the agent cannot handle: it has stopped.
@@ -13197,7 +13197,7 @@ body {
           </thead>
           <tbody>
             <tr>
-              <td><b>Agent scheduled itself, due soon</b></td>
+              <td><b>Agent scheduled itself, wake still pending</b></td>
               <td><b>the agent</b></td>
               <td class="yes">spends nothing</td>
               <td>Self-pacing · next wake 02:35</td>
@@ -15199,8 +15199,8 @@ body {
           <div class="dec-q">3 · Settings placement</div>
           <div class="dec-r">
             Its own section costs the <code>SettingsPath</code> union, the labels and icons records,
-            a new route file and a <code>routeTree.gen.ts</code> regeneration — and that
-            append-ordered search array is the same add/add conflict shape as issue #29.
+            and a new route file — and that append-ordered search array is the same add/add conflict
+            shape as issue #29.
           </div>
           <div class="dec-opts">
             <span class="dec-opt rec"
