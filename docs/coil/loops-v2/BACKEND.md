@@ -7,7 +7,7 @@ scheduler rather than replacing it**. Fork-owned, provider-agnostic.
 > `ScheduleWakeup` as unusable and listed four "fatal" disqualifiers. That was wrong. It inherited
 > issue #42's static analysis from 2026-08-07 without re-measuring, and the ground has moved — see
 > §1.1. The scheduler works within its range; T3's job is the range it cannot cover. The reactor
-> design below is unchanged, but its *role* is now fallback rather than primary, and reading
+> design below is unchanged, but its _role_ is now fallback rather than primary, and reading
 > `session_crons` moves from phase 3 to phase 1.
 
 Line references were measured against merge-base `196c8ea0d` (2026-08-14 sync), not the 2026-08-02
@@ -56,7 +56,7 @@ turn for assistant messages arriving without one).
 
 #42 catalogued the real constraints — the reaper race, the remote gate, and the missing product
 concept — and already proposed composing with the scheduler rather than replacing it (its Guard #15:
-*"a thread with a scheduled wake is not idle; it is waiting"*). The reading that hardened into
+_"a thread with a scheduled wake is not idle; it is waiting"_). The reading that hardened into
 "the scheduler is unusable" was the fork's own 2026-08-07 triage of that issue. Re-measured today,
 **that reading** does not hold, and the composition model #42 proposed is the one this design
 adopts.
@@ -70,11 +70,12 @@ tengu_kairos_loop_prompt   true     <- new since the #42 analysis
 tengu_kairos_cron_durable  false    <- still the real constraint
 ```
 
-**And the reaper has changed.** Upstream `2c7267ad4` — *"stop the reaper from silently killing live
-background subagents"* (#5677) — added a second skip condition to `ProviderSessionReaper`:
+**And the reaper has changed.** Upstream `2c7267ad4` — _"stop the reaper from silently killing live
+background subagents"_ (#5677) — added a second skip condition to `ProviderSessionReaper`:
 
 ```ts
-if (thread?.backgroundLiveness != null) {   // ProviderSessionReaper.ts
+if (thread?.backgroundLiveness != null) {
+  // ProviderSessionReaper.ts
   // provider.session.reaper.skipped-background-work
   continue;
 }
@@ -85,11 +86,11 @@ a 5-minute sweep only bites a genuinely idle binding.
 
 **The practical range:**
 
-| Self-paced delay | Outcome | Why |
-|---|---|---|
-| <= ~30 min | **works** | fires before the reaper's idle threshold is reached |
-| 30-60 min | racy | depends on the sweep and whether background work kept the binding alive |
-| > 60 min | impossible | `ScheduleWakeup` clamps `delaySeconds` to `[60, 3600]` |
+| Self-paced delay | Outcome           | Why                                                                                        |
+| ---------------- | ----------------- | ------------------------------------------------------------------------------------------ |
+| <= ~30 min       | **works**         | fires before the reaper's idle threshold is reached                                        |
+| 30-60 min        | racy              | depends on the sweep and whether background work kept the binding alive                    |
+| > 60 min         | impossible        | `ScheduleWakeup` clamps `delaySeconds` to `[60, 3600]`                                     |
 | across a restart | **lost silently** | `cron_durable` false, so an in-process table, and nothing on disk records the wake existed |
 
 Self-pacing at a 20-30 minute cadence — the normal case, and what the tooling nudges toward — sits
@@ -97,13 +98,13 @@ squarely in the working band. **That is why it works in practice, and the design
 
 **What is genuinely T3's job**, each constraint re-verified today:
 
-| Constraint | T3 owns |
-|---|---|
-| In-process only (`cron_durable` false) | **durability** — a wake lost to a restart leaves no trace; T3's store *is* the trace |
-| Clamped to <= 1 hour | anything longer, plus the wall-clock deadline |
-| Claude-only — nothing under `codex`, `cursor`, `grok`, `opencode` | the other four adapters, which otherwise get nothing |
-| Gate is code-default false, true from a cached remote evaluation; `ClaudeHome.ts` relocates `CLAUDE_CONFIG_DIR` per provider instance, so the cache can differ between instances | a **visible degraded state** rather than a loop that silently stops pacing |
-| T3 has no write handle on the binary's table | budget, cap, audit — but it can now **read** it via `session_crons` |
+| Constraint                                                                                                                                                                       | T3 owns                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| In-process only (`cron_durable` false)                                                                                                                                           | **durability** — a wake lost to a restart leaves no trace; T3's store _is_ the trace |
+| Clamped to <= 1 hour                                                                                                                                                             | anything longer, plus the wall-clock deadline                                        |
+| Claude-only — nothing under `codex`, `cursor`, `grok`, `opencode`                                                                                                                | the other four adapters, which otherwise get nothing                                 |
+| Gate is code-default false, true from a cached remote evaluation; `ClaudeHome.ts` relocates `CLAUDE_CONFIG_DIR` per provider instance, so the cache can differ between instances | a **visible degraded state** rather than a loop that silently stops pacing           |
+| T3 has no write handle on the binary's table                                                                                                                                     | budget, cap, audit — but it can now **read** it via `session_crons`                  |
 
 **So `session_crons` moves from phase 3 to phase 1, and becomes part of the trigger.** If the agent
 has a pending wake inside the loop's idle threshold, the loop stands down. The loop's check-in is
@@ -119,7 +120,7 @@ JSON file does fine. `autoResume/state.ts` says this outright and has been right
 
 `contracts/orchestration.ts` is churn-20 and is upstream #5123's pre-announced landing zone (the
 `ThreadSnoozeCommand` comment). Zero contract edits means when upstream ships its own automations
-concept, this feature becomes a *caller* rather than a migration.
+concept, this feature becomes a _caller_ rather than a migration.
 
 ### 1.4 Rejected — arming on turn boundaries instead of an idle clock
 
@@ -207,13 +208,13 @@ LoopRecord = {
 ```
 
 The `checkIns` array is what makes the console's iteration ledger reconstructable at all: without
-`firedAtMs` and the activity cursor recorded *at nudge time*, the history cannot be rebuilt later.
+`firedAtMs` and the activity cursor recorded _at nudge time_, the history cannot be rebuilt later.
 Ledger rows therefore render **derived facts** — turns, activities, files moved between two cursors
 — never a model-authored summary of its own work. `workSource` (thread vs an issue queue) lands
 with the maintainer loop, **#44**; a decoding default makes adding it then free, which is why it is
 absent here rather than stubbed.
 
-**Every field is `Schema.withDecodingDefaultKey`.** This is not style. A missing *required* key
+**Every field is `Schema.withDecodingDefaultKey`.** This is not style. A missing _required_ key
 fails the whole-file decode, and the boot path turns a decode failure into `EMPTY_STATE` — which
 would silently disarm every loop on the machine. `autoResume/state.ts` carries this warning in a
 comment and it is the highest-severity footgun in the module.
@@ -256,12 +257,12 @@ fire when idleMs >= threshold
 **`shell.backgroundLiveness` is deliberately not in `busyTurn`**, even though it is the exact,
 provider-agnostic liveness signal FINDINGS argues for. It is in-memory and empty after a restart —
 which is precisely the gap this design exists to close, so a trigger that leaned on it would be
-blind in the one case that motivated the feature. It could still be read as a *lengthener* when
+blind in the one case that motivated the feature. It could still be read as a _lengthener_ when
 present (non-null ⇒ use `busyIdleMs`), never as a veto; that is an optional refinement, not a
 dependency.
 
 **The self-paced clause is the deference rule.** While a recorded wake is still pending, T3 does
-nothing — no dispatch, no budget spent, and the console reads *"Self-pacing · next wake 02:35"*.
+nothing — no dispatch, no budget spent, and the console reads _"Self-pacing · next wake 02:35"_.
 It defers for the whole wait, not merely for wakes landing inside the next threshold window: a
 thread waiting on a wake is not idle, it is waiting, and `ScheduleWakeup` clamps a delay to 3600s
 so the exposure is bounded without a second rule. T3 wins the moment the wake is **overdue by
@@ -282,7 +283,7 @@ Degraded states are explicit, never silent: `gate_off` when `ScheduleWakeup` rep
 off, and `wake_lost` when a recorded wake did not land. Both surface on the console.
 
 `gate_off` needs a source, because `session_crons` carries no gate status: a **`PostToolUse` hook on
-`ScheduleWakeup`**, declared in the *same* fork-built hooks object as the `Stop` callbacks, reading
+`ScheduleWakeup`**, declared in the _same_ fork-built hooks object as the `Stop` callbacks, reading
 the tool's own response. That is zero extra seam — the object is fork-side, so the upstream spread
 does not grow — and like every other callback here it only writes to the fork store `[A — the
 response shape is not verified]`. If it turns out not to be readable, the state is dropped rather
@@ -300,7 +301,7 @@ only trigger in the field that survives a mid-loop server restart.
 in the design.** A background subagent's assistant message auto-opens a synthetic turn that pins
 `session.status = "running"`, and nothing closes it. Reusing `autoResume`'s `threadIsProgressing`
 as a veto would deadlock permanently on exactly the threads this feature exists to save. Here
-`running` only *lengthens* the fuse.
+`running` only _lengthens_ the fuse.
 
 **`processStartedAtMs` is a required boot-grace floor.** Without it every armed thread fires
 simultaneously on the first tick after a restart — and this user's machine restarts the app
@@ -330,7 +331,7 @@ engine.dispatch({
 
 Three disciplines, each closing a specific hole:
 
-1. **Reserve before dispatch.** `store.recordCheckIn(...)` persists *before* `engine.dispatch`. This
+1. **Reserve before dispatch.** `store.recordCheckIn(...)` persists _before_ `engine.dispatch`. This
    is the only unbounded path in the design: a provider that cannot spawn otherwise tight-loops. It
    burns budget instead — 6 attempts, not 480 a night.
 2. **Re-read the shell immediately before the guard block and again before dispatch.** Freshness
@@ -351,15 +352,15 @@ terminal one, and `--resume` respawn is already handled. **Nothing touches `SDKR
 
 Resolution order: per-thread override → `<cwd>/.coil/loop-prompt.md` → built-in. `<cwd>` is
 `worktreePath ?? workspaceRoot` — **worktree first**, because `resolveThreadWorkspaceCwd` returns it
-first and that is the agent's real cwd. (`autoResume/Reactor.ts` has this precedence *inverted*;
+first and that is the agent's real cwd. (`autoResume/Reactor.ts` has this precedence _inverted_;
 copying it would silently break the stop signal on every worktree-backed thread.)
 
 Restated **in full every time**, because a six-check-in overnight run will compact and a contract
 taught once is gone by check-in four. The prompt carries, verbatim: the check-in number and budget,
 the instruction not to restart from the top, the absolute interpolated path of the done-file, the
 deadline, **any answers banked since the last check-in**, and the deference line, verbatim:
-*"T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3
-stands by while one is pending, covers any that are lost, and enforces the budget and deadline."*
+_"T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3
+stands by while one is pending, covers any that are lost, and enforces the budget and deadline."_
 That line resolves the real collision with the user's own `autonomous-build-loop` skill by
 **composing** with its self-pacing rather than by claiming ownership of the schedule — a prompt that
 claimed ownership would fight the very mechanism §1.1 and §4 defer to.
@@ -383,30 +384,30 @@ Terminal states are **sticky**; only a human re-arm clears them. Each writes a b
    and deliberately stopping a thread must not hand the loop a fresh six.
 
 **A bound that cannot stop the agent is not a bound.** T3 has no write handle on the binary's cron
-table, so on `spent`, deadline or disarm *while recorded crons are still pending* the reactor does
+table, so on `spent`, deadline or disarm _while recorded crons are still pending_ the reactor does
 the honest thing #42 specified: `providerService.stopSession({ threadId })`. The crons live in the
 session, so ending the session ends them. Without this a self-paced run walks straight through its
 own deadline — the bound would be advisory exactly where the spend is unattended.
 
 **Guards, in order.** Non-consuming skips are marked ○ — they keep budget and surface a reason.
 
-| # | Guard | On fail |
-|---|---|---|
-| 1 | `config.enabled` (env kill switch, checked at layer construction) | no fiber forks |
-| 2 | `store.global.enabled` — re-read **every tick and again pre-dispatch** | ○ the settings toggle is a true kill switch, not one-tick-stale |
-| 3 | `record.armed === true` | ○ |
-| 4 | shell is `Some`, not archived, is a supported thread | **disarm** |
-| 5 | `settledOverride !== "settled"` | ○ |
-| 6 | `snoozedUntil == null \|\| <= now` | ○ the only way to honour a snooze |
-| 7 | `settledOverride === "active"` ⇒ nudge **then** repair pin | — |
-| 8 | `!hasPendingApprovals && !hasPendingUserInput && !hasActionableProposedPlan` | ○ |
-| 9 | `autoResumeStore.getThread(threadId).pending === null` | ○ |
-| 10 | `now >= record.rateLimitedUntilMs` | ○ |
-| 10b | **no self-paced wake still pending** — `record.crons.nextFireAtMs == null \|\| now >= nextFireAtMs + config.wakeGraceMs` | ○ the deference rule — while a wake is pending the agent is pacing itself, so T3 stands by, whatever the wake's distance. Console: *"Self-pacing · next wake 02:35"* |
-| 11 | `now - lastCheckIn.firedAtMs >= config.idleMs` | ○ structural floor: a tight loop stays impossible even if `updatedAt` fails to bump |
-| 12 | idle threshold met, on a freshly re-read shell | ○ |
-| 13 | budget, deadline, strikes, sentinel | **stop** |
-| 14 | armed threads `< maxArmedThreads` — enforced in the route **and** re-checked in the tick | ○ not bypassable by hand-editing the state file |
+| #   | Guard                                                                                                                    | On fail                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `config.enabled` (env kill switch, checked at layer construction)                                                        | no fiber forks                                                                                                                                                       |
+| 2   | `store.global.enabled` — re-read **every tick and again pre-dispatch**                                                   | ○ the settings toggle is a true kill switch, not one-tick-stale                                                                                                      |
+| 3   | `record.armed === true`                                                                                                  | ○                                                                                                                                                                    |
+| 4   | shell is `Some`, not archived, is a supported thread                                                                     | **disarm**                                                                                                                                                           |
+| 5   | `settledOverride !== "settled"`                                                                                          | ○                                                                                                                                                                    |
+| 6   | `snoozedUntil == null \|\| <= now`                                                                                       | ○ the only way to honour a snooze                                                                                                                                    |
+| 7   | `settledOverride === "active"` ⇒ nudge **then** repair pin                                                               | —                                                                                                                                                                    |
+| 8   | `!hasPendingApprovals && !hasPendingUserInput && !hasActionableProposedPlan`                                             | ○                                                                                                                                                                    |
+| 9   | `autoResumeStore.getThread(threadId).pending === null`                                                                   | ○                                                                                                                                                                    |
+| 10  | `now >= record.rateLimitedUntilMs`                                                                                       | ○                                                                                                                                                                    |
+| 10b | **no self-paced wake still pending** — `record.crons.nextFireAtMs == null \|\| now >= nextFireAtMs + config.wakeGraceMs` | ○ the deference rule — while a wake is pending the agent is pacing itself, so T3 stands by, whatever the wake's distance. Console: _"Self-pacing · next wake 02:35"_ |
+| 11  | `now - lastCheckIn.firedAtMs >= config.idleMs`                                                                           | ○ structural floor: a tight loop stays impossible even if `updatedAt` fails to bump                                                                                  |
+| 12  | idle threshold met, on a freshly re-read shell                                                                           | ○                                                                                                                                                                    |
+| 13  | budget, deadline, strikes, sentinel                                                                                      | **stop**                                                                                                                                                             |
+| 14  | armed threads `< maxArmedThreads` — enforced in the route **and** re-checked in the tick                                 | ○ not bypassable by hand-editing the state file                                                                                                                      |
 
 Guard 8's third clause is the one every design in the original panel missed. `Sidebar.logic.ts`
 treats plan-ready as **not** pending-input, so a thread parked on an unapproved plan otherwise
@@ -417,7 +418,7 @@ passes every other blocking guard and gets pushed past the human's yes.
 ## 8. Not fighting auto-resume, and surviving limits
 
 Guard 9 is one direction. The other direction needs its own fiber, because `autoResume`'s scheduler
-only arms when *its* per-thread `enabled` is true — so on a thread where the user turned auto-resume
+only arms when _its_ per-thread `enabled` is true — so on a thread where the user turned auto-resume
 off, a rate limit produces no pending, guard 9 passes, and the loop nudges straight into a live
 5-hour limit.
 
@@ -431,7 +432,7 @@ Belt and braces: a nudge rejected by a limit produces no `updatedAt` movement, s
 and stops after two.
 
 **User-visible contract:** while held, the loop spends **nothing**, auto-resume owns the wake, and
-the console says *"Held — usage limit until 08:22"*, which must read differently from *"stalled"*.
+the console says _"Held — usage limit until 08:22"_, which must read differently from _"stalled"_.
 One of the two failures on the original night was a human unable to tell these apart.
 
 ---
@@ -446,19 +447,19 @@ payload, and the projection surfaces it as `hasPendingUserInput`. It renders nat
 
 And it **blocks**: `const answers = yield* Deferred.await(answersDeferred)`.
 
-An agent that hits a genuine fork in the road at 01:00 and asks about it *correctly* stops working
+An agent that hits a genuine fork in the road at 01:00 and asks about it _correctly_ stops working
 until 09:00. Guard 8 then refuses to nudge it — also correctly, because pushing past a pending
 decision is worse. The loop and the question channel are in direct tension, and no tuning resolves
 it.
 
-### 9.1b And a question can now be *voided* without anyone seeing it
+### 9.1b And a question can now be _voided_ without anyone seeing it
 
 Upstream **#5127** (`3b54a2a57`, 2026-08-15) made session teardown settle every pending
 user-input as an **empty answer** so the thread can settle:
 
 ```ts
 for (const pending of [...context.pendingUserInputs.values()]) {
-  yield* pending.cancel;   // Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers)
+  yield * pending.cancel; // Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers)
 }
 ```
 
@@ -482,7 +483,7 @@ A fork-owned MCP tool, `raise_blocker`, that **records and returns immediately**
 raise_blocker({ question, options?, context? }) -> { id, "recorded" }
 ```
 
-The agent parks *that branch of work* and continues with something else. The answer is delivered on
+The agent parks _that branch of work_ and continues with something else. The answer is delivered on
 a later check-in via the prompt, not by unblocking a Deferred.
 
 **Why HTTP MCP and not `createSdkMcpServer`.** `mcpServers` is already wired in **all five**
@@ -498,20 +499,20 @@ The archived design rejected an agent-authored contract because it "outsources t
 to the thing that just failed" and "degrades silently". This does not, for one structural reason:
 **the console has three sources and only one of them needs the model.**
 
-| Source | Needs model cooperation? | Where it comes from |
-|---|---|---|
-| Blocking: approvals, pending input, plan-ready | **no** | SQL columns on the thread shell |
-| Loop-authored: skip reasons, stop reason, budget | **no** | fork-owned store |
-| Deferred blockers | yes | `raise_blocker` |
+| Source                                           | Needs model cooperation? | Where it comes from             |
+| ------------------------------------------------ | ------------------------ | ------------------------------- |
+| Blocking: approvals, pending input, plan-ready   | **no**                   | SQL columns on the thread shell |
+| Loop-authored: skip reasons, stop reason, budget | **no**                   | fork-owned store                |
+| Deferred blockers                                | yes                      | `raise_blocker`                 |
 
 A model that never calls `raise_blocker` still produces a correct console — it just has fewer rows.
-It degrades to *"the loop is spent, and nothing is waiting on you"*, which is true and useful,
+It degrades to _"the loop is spent, and nothing is waiting on you"_, which is true and useful,
 rather than to silence. **That is the acceptance test**, and it is why the prototype renders the
 empty state explicitly.
 
 ### 9.4 Two more tools, both small
 
-- `loop_status()` → the agent's own budget: *"check-in 4 of 6, 51 minutes to deadline"*. Lets a
+- `loop_status()` → the agent's own budget: _"check-in 4 of 6, 51 minutes to deadline"_. Lets a
   well-behaved agent scope its remaining work. Read-only.
 - `loop_done(reason)` → a tool-shaped alternative to writing the sentinel file, for agents in
   environments where writing is awkward. The **file remains the primary contract** because it works
@@ -542,16 +543,16 @@ than becoming a third.
 
 ## 11. Seam cost
 
-| File | Delta | Note |
-|---|---|---|
-| `apps/server/src/coil/index.ts` | +~6 | **fork-owned, churn 0** — store, reactor, routes |
-| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` | **±0** | existing row (+10/−6, churn 4) rewritten in place — **delta 0** (the row already carries risk 64): `<AutoResumeOverlay>` → `<ThreadCoilOverlay>`, which then hosts both. Genuinely delta-zero, and every future per-thread fork surface is free forever. |
-| `apps/server/src/server.ts` | **0** | already has its 3-line row |
-| `packages/contracts` | **0** | activity `kind` is an open `TrimmedNonEmptyString`, payload is `Schema.Unknown` |
-| `Sidebar.tsx` / `Sidebar.logic.ts` | **0** | a loop is a **pinned thread** — `thread.pin` already exists |
-| `apps/server/src/provider/Layers/ClaudeAdapter.ts` | **+1** | **new row.** A single spread into the existing `queryOptions` object: `...(loop ? { hooks: loop.claudeHooks(threadId) } : {})`. `options.hooks` is set nowhere in this repo today, so this is the first subscription to a 30-event surface. |
-| `apps/web/src/components/settings/settingsSearch.ts` | **~+4** | **new row** (phase 4) — the `SettingsPath` union, a `SETTINGS_SECTION_LABELS` entry, and 2–3 `SETTINGS_SEARCH_ITEMS`. Append-ordered arrays, additive. |
-| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | **+2** | **new row** (phase 4) — the icon import and its `SETTINGS_SECTION_ICONS` entry. |
+| File                                                      | Delta   | Note                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/coil/index.ts`                           | +~6     | **fork-owned, churn 0** — store, reactor, routes                                                                                                                                                                                                         |
+| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`  | **±0**  | existing row (+10/−6, churn 4) rewritten in place — **delta 0** (the row already carries risk 64): `<AutoResumeOverlay>` → `<ThreadCoilOverlay>`, which then hosts both. Genuinely delta-zero, and every future per-thread fork surface is free forever. |
+| `apps/server/src/server.ts`                               | **0**   | already has its 3-line row                                                                                                                                                                                                                               |
+| `packages/contracts`                                      | **0**   | activity `kind` is an open `TrimmedNonEmptyString`, payload is `Schema.Unknown`                                                                                                                                                                          |
+| `Sidebar.tsx` / `Sidebar.logic.ts`                        | **0**   | a loop is a **pinned thread** — `thread.pin` already exists                                                                                                                                                                                              |
+| `apps/server/src/provider/Layers/ClaudeAdapter.ts`        | **+1**  | **new row.** A single spread into the existing `queryOptions` object: `...(loop ? { hooks: loop.claudeHooks(threadId) } : {})`. `options.hooks` is set nowhere in this repo today, so this is the first subscription to a 30-event surface.              |
+| `apps/web/src/components/settings/settingsSearch.ts`      | **~+4** | **new row** (phase 4) — the `SettingsPath` union, a `SETTINGS_SECTION_LABELS` entry, and 2–3 `SETTINGS_SEARCH_ITEMS`. Append-ordered arrays, additive.                                                                                                   |
+| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | **+2**  | **new row** (phase 4) — the icon import and its `SETTINGS_SECTION_ICONS` entry.                                                                                                                                                                          |
 
 **The `ClaudeAdapter` row is new since the first draft** and it is the cost of the deference rule.
 It is worth arguing rather than waving through: the file is churn-16 and ~4.6k lines (4,644 at the
@@ -597,8 +598,8 @@ stay armed, and budgets, deadlines, strikes, `armedAtMs` and `rateLimitedUntilMs
 
 This is the property **no event-edge design has**, because both `providerService.streamEvents` and
 `engine.streamDomainEvents` are hot-only. It is also the half of #38 that upstream's
-`ThreadBackgroundLiveness` explicitly does not provide — its own module doc says *"no persistence,
-no migration. After a server restart the registry is empty."*
+`ThreadBackgroundLiveness` explicitly does not provide — its own module doc says _"no persistence,
+no migration. After a server restart the registry is empty."_
 
 ---
 
@@ -621,5 +622,5 @@ no migration. After a server restart the registry is empty."*
   enforced with `providerService.stopSession` (§7). That is honest but blunt: it takes any live
   background work in that session with it. There is no finer instrument until `cron_durable` or a
   cancel API exists.
-- **A derailed agent still burns budget.** Strikes catch the *dead* failure, not the *wrong-work*
+- **A derailed agent still burns budget.** Strikes catch the _dead_ failure, not the _wrong-work_
   failure. Nothing here reads what the agent actually did.

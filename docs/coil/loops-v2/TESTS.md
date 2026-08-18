@@ -51,16 +51,16 @@ decide whether the two schedulers cooperate or fight.
 
 11b. A recorded `nextFireAtMs` inside the threshold window → `skip`, budget untouched. ★
 11c. A recorded `nextFireAtMs` **beyond** the threshold window **still defers**. ★ A thread
-     waiting on a wake is not idle, whatever the wake's distance; the binary clamps a delay to
-     3600s, so the exposure is bounded without a second rule.
+waiting on a wake is not idle, whatever the wake's distance; the binary clamps a delay to
+3600s, so the exposure is bounded without a second rule.
 11d. `nextFireAtMs` in the past **with** `updatedAt` movement after it → the wake landed; clear it
-     and treat the thread as normally active. Detected immediately, without waiting out `graceMs`.
+and treat the thread as normally active. Detected immediately, without waiting out `graceMs`.
 11e. `nextFireAtMs` overdue by more than `graceMs` **without** `updatedAt` movement → `fire`,
-     reason `wake_lost`. ★ Inside `graceMs` (default ~90s, ≥ the binary's cron jitter) T3 still
-     stands down. This is the strongest trigger in the design: an unmet commitment, not an
-     inference.
+reason `wake_lost`. ★ Inside `graceMs` (default ~90s, ≥ the binary's cron jitter) T3 still
+stands down. This is the strongest trigger in the design: an unmet commitment, not an
+inference.
 11f. No cron record at all (non-Claude adapter, or the model never scheduled) → falls back to pure
-     staleness, unchanged. ★ Every non-Claude adapter must behave exactly as before.
+staleness, unchanged. ★ Every non-Claude adapter must behave exactly as before.
 11g. A stale cron record whose session has since been stopped is not treated as a live wake. ★
 11h. `gate_off` reported → recorded as a degraded state and surfaced, never silently ignored. ★
 11i. Two records for the same thread (a re-arm) → newest wins, no duplicate fire.
@@ -92,8 +92,8 @@ decide whether the two schedulers cooperate or fight.
 
 26. `latestUserMessageAt > lastCheckIn.createdAtIso` → `stop("handed-back")`. ★
 27. `latestUserMessageAt` equal to the minted `createdAt` (our own nudge) does **not** trigger
-     handback. ★ — exact string compare; this is the off-by-one that would disarm every loop on
-     its own first check-in.
+    handback. ★ — exact string compare; this is the off-by-one that would disarm every loop on
+    its own first check-in.
 28. Handback does **not** reset budget. ★
 29. Handback with `lastCheckIn === null` (armed, never fired) uses `armedAtMs` as the baseline.
 
@@ -118,10 +118,10 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 41. Auto-resume `pending != null` → skip. ★
 42. `now < rateLimitedUntilMs` → skip, budget intact. ★
 43. `now - lastCheckIn.firedAtMs < idleMs` → skip, **even if the idle threshold appears met**. ★
-     (structural anti-tight-loop floor; must hold even when `updatedAt` never bumps)
+    (structural anti-tight-loop floor; must hold even when `updatedAt` never bumps)
 44. `armedCount >= maxArmedThreads` → skip.
 45. **Guard order is asserted explicitly**: a record that trips several guards reports the
-     *first* one, because that string is what the console renders. ★
+    _first_ one, because that string is what the console renders. ★
 46. A skip never increments `checkInsUsed` — asserted across every ○ guard in one table-driven case. ★
 
 ---
@@ -134,8 +134,8 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 50. **Both present, worktree is newer → worktree wins.** ★
 51. **Both present, workspaceRoot is newer → workspaceRoot wins** (newest mtime, not first found).
 52. **`worktreePath` is checked first** — asserted by call order, not just by outcome. ★
-     (`autoResume/Reactor.ts` has this precedence inverted; copying it silently breaks every
-     worktree-backed thread.)
+    (`autoResume/Reactor.ts` has this precedence inverted; copying it silently breaks every
+    worktree-backed thread.)
 53. `mtime <= armedAtMs` → ignored (a stale file from a previous run cannot end a new one). ★
 54. `mtime > armedAtMs` → honoured.
 55. Stat error (EACCES, ENOENT on the dir, symlink loop) → "no sentinel", never a crash. ★
@@ -150,35 +150,35 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 59. Empty/missing file → `EMPTY_STATE`, no throw.
 60. Round-trip: write a record, re-read, deep-equal.
 61. **A file missing a field added later still decodes**, with the documented default. ★
-     One case per field — this is the highest-severity footgun in the module, because a
-     whole-file decode failure becomes `EMPTY_STATE` and silently disarms every loop.
+    One case per field — this is the highest-severity footgun in the module, because a
+    whole-file decode failure becomes `EMPTY_STATE` and silently disarms every loop.
 62. A corrupt/truncated file → `EMPTY_STATE` and an error log, never a throw at boot.
 63. Unknown extra keys are tolerated (forward compatibility with a newer build).
 64. Concurrent mutations from two fibers serialize through the `SynchronizedRef` with no lost
-     update. ★
+    update. ★
 65. The write is atomic: no partial file is observable mid-write.
 66. Disk and memory stay consistent after a failed write (mutation rolls back or is retried, and
-     the in-memory value never claims a persist that did not happen). ★
+    the in-memory value never claims a persist that did not happen). ★
 67. `recordCheckIn` persists **before** returning, so the reactor cannot dispatch on an
-     unpersisted reservation. ★
+    unpersisted reservation. ★
 68. Record lookup uses `Object.hasOwn`, so a thread literally named `constructor` or
-     `__proto__` does not resolve a prototype member. ★
+    `__proto__` does not resolve a prototype member. ★
 69. Blockers: add, answer, list-unanswered, and `deliveredToAgent` flip are all persisted.
 70. Answering an already-answered blocker is idempotent, not a second append.
 
 ### 4b. `crons.ts` — the Stop-hook record
 
 70b. A `Stop` hook payload with `session_crons` populated is normalised and persisted, with
-     `nextFireAtMs` computed fork-side from each entry's `schedule` — a `recurring: true` 5-field
-     expression yields the next match, and a one-shot (`recurring: false`), whose cron fields
-     encode a single fire time, yields exactly that instant. ★ The SDK delivers no timestamp, so
-     this parse is the whole risk.
+`nextFireAtMs` computed fork-side from each entry's `schedule` — a `recurring: true` 5-field
+expression yields the next match, and a one-shot (`recurring: false`), whose cron fields
+encode a single fire time, yields exactly that instant. ★ The SDK delivers no timestamp, so
+this parse is the whole risk.
 70c. An **empty** `session_crons` array clears the record — the agent stopped self-pacing. ★
 70d. A payload with `session_crons` **absent** (older SDK) leaves the record untouched rather than
-     clearing it. ★ Absent and empty must not mean the same thing.
+clearing it. ★ Absent and empty must not mean the same thing.
 70e. A malformed entry is dropped individually; the rest of the array still records.
 70f. The hook callback never throws into the adapter — any failure logs and returns. ★
-     A fork observability bug must not be able to break a turn.
+A fork observability bug must not be able to break a turn.
 70g. `SubagentStop` is handled identically to `Stop`.
 70h. The record survives a store round-trip (it is the only durable copy of the wake).
 
@@ -191,16 +191,16 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 73. `GET` unknown threadId → a default "off" record, not a 404.
 74. `POST` arm → armed, with defaults filled from config.
 75. `POST` arm with `maxCheckIns > 20` → **400**, not a clamp. ★ (the cap must be
-     non-bypassable; a silent clamp hides a mistake)
+    non-bypassable; a silent clamp hides a mistake)
 76. `POST` arm with `maxCheckIns < 1` → 400.
 77. `POST` arm with a deadline in the past → 400. ★
 78. `POST` arm when already at `maxArmedThreads` → 400, and **the tick re-checks it too**, so a
-     hand-edited state file cannot exceed the ceiling. ★
+    hand-edited state file cannot exceed the ceiling. ★
 79. `POST` disarm on a running loop → disarmed, terminal reason `handed-back`.
 80. `POST` re-arm after `spent` → clears terminal, fresh budget.
 81. `POST answer` on a blocker → recorded, `deliveredToAgent` false.
 82. `POST answer` on a **native** pending input routes to the existing resolve path, not the
-     blocker store. ★ (two different mechanisms behind one console control)
+    blocker store. ★ (two different mechanisms behind one console control)
 83. `POST answer` for an unknown id → 404.
 84. Malformed JSON body → 400, no state mutation.
 85. Every response shape decodes against its schema (guards against drift with the client).
@@ -212,33 +212,33 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 
 87. Layer construction with `enabled=false` forks **no** fiber. ★
 88. Nothing armed → **zero** snapshot queries per tick. ★ (cost guard; also protects the
-     `getSnapshot` OOM lesson)
+    `getSnapshot` OOM lesson)
 89. One armed, idle past threshold → exactly one `thread.turn.start` dispatched.
 90. Two ticks while still idle → **still one** dispatch (guard 11's floor). ★
 91. The dispatched command carries the `coil-loop:` id prefix on both `commandId` and `messageId`.
 92. `runtimeMode` and `interactionMode` are copied from the shell, not defaulted. ★
 93. **Reserve-before-dispatch**: a dispatch that throws still leaves `checkInsUsed` incremented,
-     and the next tick does not immediately retry. ★
+    and the next tick does not immediately retry. ★
 94. A dispatch that throws an arbitrary `Error` does not kill the fiber. ★
 95. The shell is re-read **after** the guard block and before dispatch; a thread that becomes
-     settled in that window is not nudged. ★ (the wake race)
+    settled in that window is not nudged. ★ (the wake race)
 96. `settledOverride === "active"` → a `thread.unsettle` follows the turn start.
 97. `settledOverride === null` → **no** `thread.unsettle` is issued (it can never create a pin). ★
 98. A failed pin-repair dispatch logs **and** appends an error-tone breadcrumb — never silent. ★
 99. Budget exhaustion writes `stopped: spent` exactly once, and the next tick is a no-op.
-100. Rate-limit fiber: an `account.rate-limits.updated` with `status: rejected` writes
-     `rateLimitedUntilMs` durably. ★
-101. A non-rejected verdict does not write.
-102. The rate-limit subscription does **not** consume events auto-resume needs (both subscribers
-     see them — PubSub, not queue). ★
-103. Boot grace: with `processStartedAtMs = now`, a long-idle armed thread does not fire on the
-     first tick. ★
-104. After `processStartedAtMs + idleMs`, it does fire.
-105. Breadcrumbs are **edge-detected**: a loop skipping for the same reason across 10 ticks
-     appends **one** activity, not ten. ★ (otherwise the reactor resets its own idle clock —
-     a self-sustaining loop)
-106. A breadcrumb append failure does not abort the check-in.
-107. Fiber interruption (server shutdown) mid-decision leaves the store consistent.
+100.  Rate-limit fiber: an `account.rate-limits.updated` with `status: rejected` writes
+      `rateLimitedUntilMs` durably. ★
+101.  A non-rejected verdict does not write.
+102.  The rate-limit subscription does **not** consume events auto-resume needs (both subscribers
+      see them — PubSub, not queue). ★
+103.  Boot grace: with `processStartedAtMs = now`, a long-idle armed thread does not fire on the
+      first tick. ★
+104.  After `processStartedAtMs + idleMs`, it does fire.
+105.  Breadcrumbs are **edge-detected**: a loop skipping for the same reason across 10 ticks
+      appends **one** activity, not ten. ★ (otherwise the reactor resets its own idle clock —
+      a self-sustaining loop)
+106.  A breadcrumb append failure does not abort the check-in.
+107.  Fiber interruption (server shutdown) mid-decision leaves the store consistent.
 
 ---
 
@@ -264,13 +264,13 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 ### 7b. Voided questions (upstream #5127)
 
 118b. A `user-input.requested` is recorded fork-side when it fires, independent of
-      `hasPendingUserInput`. ★
+`hasPendingUserInput`. ★
 118c. Session stop while a question is pending → the fork marks it **`voided`**, not `answered`. ★
-      The agent gets `{}` from upstream; the console must not report that as a human decision.
+The agent gets `{}` from upstream; the console must not report that as a human decision.
 118d. A genuine human answer marks it `answered` and is never confused with a void.
 118e. The console renders a voided question as still needing attention, with the reason. ★
 118f. A voided question does **not** count as a blocking guard hit on the next tick — the block is
-      gone, so the loop may proceed, but the console still shows it. ★
+gone, so the loop may proceed, but the console still shows it. ★
 
 ---
 
@@ -280,7 +280,7 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 120. The done-file path is interpolated **absolute**, and uses `worktreePath ?? workspaceRoot`. ★
 121. The check-in number and budget are interpolated correctly at every position (1 of 6 … 6 of 6).
 122. **Answered-but-undelivered blockers are included**, then marked delivered. ★
-123. A blocker answered *after* the prompt was composed is not marked delivered (no lost answer). ★
+123. A blocker answered _after_ the prompt was composed is not marked delivered (no lost answer). ★
 124. The prompt never begins with `/` (it would be read as a slash command). ★
 125. The deference line is always present, in every resolution path. ★ — the prompt says T3
      checked in because no wake of the agent's landed, and that the agent should keep scheduling
@@ -317,10 +317,10 @@ Heavier tests; a handful, each replaying a real failure.
      to silence. ★ (§9.3 of BACKEND.md's acceptance test)
 136. **Human takeover at 04:00.** Assert disarm, no budget reset, and one-tap re-arm restores a
      full budget.
-136b. **Self-paced, healthy.** Agent schedules a wake every 20 minutes for three hours. Assert T3
+     136b. **Self-paced, healthy.** Agent schedules a wake every 20 minutes for three hours. Assert T3
      fires **zero** times and spends **zero** budget, while the deadline still applies. ★
      This is the regression test for "T3 does not fight the agent".
-136c. **Self-paced, wake lost to a restart.** Agent schedules a wake for +25 min; the server
+     136c. **Self-paced, wake lost to a restart.** Agent schedules a wake for +25 min; the server
      restarts at +10 min. Assert the record survives, the wake is noticed as unmet, and T3 covers
      it exactly once. ★ This is the durability gap, as a test.
 137. **The done-file.** Agent writes it at check-in 3; assert `done`, three check-ins unused, and
@@ -328,7 +328,7 @@ Heavier tests; a handful, each replaying a real failure.
 
 ---
 
-## 10. What is deliberately *not* tested, and why
+## 10. What is deliberately _not_ tested, and why
 
 - **`raw.method === "claude/synthetic-turn-start"`.** Real on the wire, but
   `RuntimeEventRaw.method` is a free optional string with no literal union and no upstream test,
@@ -339,7 +339,7 @@ Heavier tests; a handful, each replaying a real failure.
   about it would pin behaviour we do not understand.
 - **Claude's cron tools themselves** (`CronCreate` / `ScheduleWakeup` actually firing). That is
   the binary's behaviour, not ours, and a fork test of it would assert someone else's contract.
-  What T3 *does* with the `session_crons` the `Stop` hook hands it **is** tested — §1.1b for the
+  What T3 _does_ with the `session_crons` the `Stop` hook hands it **is** tested — §1.1b for the
   decision and §4b for the record — because that ships in Phase 1 and the trigger depends on it.
 
 ---

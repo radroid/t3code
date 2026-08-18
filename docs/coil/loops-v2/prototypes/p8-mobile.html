@@ -6,65 +6,145 @@
     <title>P8 · Loops on the phone</title>
     <link rel="stylesheet" href="_shell.css" />
     <style>
-      body { overflow-y: auto; height: auto; }
-      .page { padding: 22px 26px 70px; max-width: 1240px; margin: 0 auto; }
-      h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 5px; }
-      .lede { font-size: 13px; color: var(--muted-foreground); max-width: 74ch; margin: 0 0 26px; line-height: 1.6; }
-
-      .row-phones { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
-
-      .phone-wrap { width: 268px; }
-      .phone-cap {
-        font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
-        color: var(--muted-foreground); margin-bottom: 8px;
+      body {
+        overflow-y: auto;
+        height: auto;
       }
-      .phone-note { font-size: 12px; color: var(--muted-foreground); margin-top: 10px; line-height: 1.5; }
+      .page {
+        padding: 22px 26px 70px;
+        max-width: 1240px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0 0 5px;
+      }
+      .lede {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        max-width: 74ch;
+        margin: 0 0 26px;
+        line-height: 1.6;
+      }
+
+      .row-phones {
+        display: flex;
+        gap: 22px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+
+      .phone-wrap {
+        width: 268px;
+      }
+      .phone-cap {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        margin-bottom: 8px;
+      }
+      .phone-note {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin-top: 10px;
+        line-height: 1.5;
+      }
       .phone {
-        width: 268px; height: 552px;
+        width: 268px;
+        height: 552px;
         border: 1px solid var(--border-strong);
         border-radius: 30px;
         background: var(--background);
         overflow: hidden;
-        display: flex; flex-direction: column;
+        display: flex;
+        flex-direction: column;
         position: relative;
         box-shadow: 0 20px 50px rgb(0 0 0 / 45%);
       }
       .notch {
-        position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-        width: 92px; height: 22px; background: #000;
-        border-radius: 0 0 12px 12px; z-index: 4;
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 92px;
+        height: 22px;
+        background: #000;
+        border-radius: 0 0 12px 12px;
+        z-index: 4;
       }
       .p-status {
-        height: 34px; flex: 0 0 34px;
-        display: flex; align-items: flex-end; justify-content: space-between;
-        padding: 0 18px 3px; font-size: 10.5px; color: var(--muted-foreground);
+        height: 34px;
+        flex: 0 0 34px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        padding: 0 18px 3px;
+        font-size: 10.5px;
+        color: var(--muted-foreground);
         font-variant-numeric: tabular-nums;
       }
       .p-bar {
-        height: 44px; flex: 0 0 44px; display: flex; align-items: center; gap: 8px;
-        padding: 0 14px; border-bottom: 1px solid var(--border);
+        height: 44px;
+        flex: 0 0 44px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--border);
       }
-      .p-body { flex: 1; overflow-y: auto; }
+      .p-body {
+        flex: 1;
+        overflow-y: auto;
+      }
       .p-tabbar {
-        height: 50px; flex: 0 0 50px; border-top: 1px solid var(--border);
-        display: flex; align-items: center;
+        height: 50px;
+        flex: 0 0 50px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
       }
       .p-tab {
-        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
-        font-size: 9.5px; color: var(--muted-foreground); position: relative;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        font-size: 9.5px;
+        color: var(--muted-foreground);
+        position: relative;
       }
-      .p-tab.on { color: var(--foreground); }
-      .p-tab svg { width: 17px; height: 17px; }
+      .p-tab.on {
+        color: var(--foreground);
+      }
+      .p-tab svg {
+        width: 17px;
+        height: 17px;
+      }
       .p-tab .nb {
-        position: absolute; top: -2px; right: 50%; margin-right: -18px;
-        min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px;
-        background: var(--indigo); color: #12121a;
-        font-size: 9px; font-weight: 700; display: grid; place-items: center;
+        position: absolute;
+        top: -2px;
+        right: 50%;
+        margin-right: -18px;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        border-radius: 999px;
+        background: var(--indigo);
+        color: #12121a;
+        font-size: 9px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
       }
 
       /* mobile thread card */
       .m-row {
-        padding: 11px 14px; border-bottom: 1px solid var(--border);
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border);
         position: relative;
       }
       .m-row.is-loop {
@@ -73,41 +153,124 @@
         border-radius: var(--radius-md);
         background: var(--card);
       }
-      .m-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-      .m-title { font-size: 13px; font-weight: 480; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .m-meta { font-size: 11px; color: var(--muted-foreground); }
-      .m-prog { margin-top: 7px; }
+      .m-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 3px;
+      }
+      .m-title {
+        font-size: 13px;
+        font-weight: 480;
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .m-meta {
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+      .m-prog {
+        margin-top: 7px;
+      }
 
       /* console on mobile */
       .m-hero {
-        padding: 14px; border-bottom: 1px solid var(--border);
+        padding: 14px;
+        border-bottom: 1px solid var(--border);
         background: radial-gradient(120% 140% at 100% 0%, rgb(165 180 252 / 8%), transparent 58%);
       }
-      .m-hero-l { font-size: 14.5px; font-weight: 550; line-height: 1.35; letter-spacing: -0.01em; }
-      .m-hero-s { font-size: 11.5px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.45; }
-      .m-facts { display: flex; gap: 14px; margin-top: 11px; font-size: 11px; }
-      .m-facts div span { display: block; color: var(--muted-foreground); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
-      .m-facts div b { font-weight: 500; font-variant-numeric: tabular-nums; }
+      .m-hero-l {
+        font-size: 14.5px;
+        font-weight: 550;
+        line-height: 1.35;
+        letter-spacing: -0.01em;
+      }
+      .m-hero-s {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        margin-top: 4px;
+        line-height: 1.45;
+      }
+      .m-facts {
+        display: flex;
+        gap: 14px;
+        margin-top: 11px;
+        font-size: 11px;
+      }
+      .m-facts div span {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 9.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .m-facts div b {
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
 
       .m-q {
-        padding: 12px 14px; border-bottom: 1px solid var(--border); position: relative;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        position: relative;
       }
-      .m-q::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
-      .m-q.b::before { background: var(--indigo); }
-      .m-q.a::before { background: var(--amber); }
-      .m-q.d::before { background: rgb(255 255 255 / 14%); }
-      .m-q .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 3px; }
-      .m-q .txt { font-size: 12.5px; line-height: 1.45; }
-      .m-q .sub { font-size: 10.5px; color: var(--muted-foreground); margin-top: 3px; }
+      .m-q::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+      }
+      .m-q.b::before {
+        background: var(--indigo);
+      }
+      .m-q.a::before {
+        background: var(--amber);
+      }
+      .m-q.d::before {
+        background: rgb(255 255 255 / 14%);
+      }
+      .m-q .lbl {
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+      }
+      .m-q .txt {
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      .m-q .sub {
+        font-size: 10.5px;
+        color: var(--muted-foreground);
+        margin-top: 3px;
+      }
       .m-opt {
-        display: block; width: 100%; text-align: left; margin-top: 6px;
-        border: 1px solid var(--border-strong); border-radius: var(--radius-md);
-        background: rgb(255 255 255 / 3%); padding: 8px 10px; font: inherit; color: inherit;
-        font-size: 12px; min-height: 40px;         /* touch target */
+        display: block;
+        width: 100%;
+        text-align: left;
+        margin-top: 6px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: rgb(255 255 255 / 3%);
+        padding: 8px 10px;
+        font: inherit;
+        color: inherit;
+        font-size: 12px;
+        min-height: 40px; /* touch target */
       }
       .m-sec {
-        padding: 9px 14px 4px; font-size: 10.5px; color: var(--muted-foreground);
-        text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+        padding: 9px 14px 4px;
+        font-size: 10.5px;
+        color: var(--muted-foreground);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
       }
 
       /* push notification */
@@ -121,40 +284,85 @@
         margin-bottom: 10px;
         box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
       }
-      .push-h { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
-      .push-ic {
-        width: 17px; height: 17px; border-radius: 4px;
-        background: linear-gradient(140deg, #4f7cf0, #7c5cf0);
-        display: grid; place-items: center; font-size: 8px; font-weight: 700; color: #fff;
+      .push-h {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 5px;
       }
-      .push-app { font-size: 10.5px; color: rgb(255 255 255 / 55%); letter-spacing: 0.02em; }
-      .push-t { font-size: 12.5px; font-weight: 600; margin-bottom: 1px; }
-      .push-b { font-size: 12px; color: rgb(255 255 255 / 72%); line-height: 1.4; }
+      .push-ic {
+        width: 17px;
+        height: 17px;
+        border-radius: 4px;
+        background: linear-gradient(140deg, #4f7cf0, #7c5cf0);
+        display: grid;
+        place-items: center;
+        font-size: 8px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .push-app {
+        font-size: 10.5px;
+        color: rgb(255 255 255 / 55%);
+        letter-spacing: 0.02em;
+      }
+      .push-t {
+        font-size: 12.5px;
+        font-weight: 600;
+        margin-bottom: 1px;
+      }
+      .push-b {
+        font-size: 12px;
+        color: rgb(255 255 255 / 72%);
+        line-height: 1.4;
+      }
 
       .note {
-        margin-top: 30px; border-left: 2px solid var(--border-strong);
-        padding: 2px 0 2px 14px; font-size: 12.5px; color: #bdbdbd; line-height: 1.65; max-width: 80ch;
+        margin-top: 30px;
+        border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px;
+        font-size: 12.5px;
+        color: #bdbdbd;
+        line-height: 1.65;
+        max-width: 80ch;
       }
-      .note b { color: var(--foreground); }
-      code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
-      h2.sec { font-size: 13px; font-weight: 600; margin: 34px 0 4px; }
-      .sec-note { font-size: 12.5px; color: var(--muted-foreground); margin: 0 0 15px; max-width: 76ch; line-height: 1.55; }
+      .note b {
+        color: var(--foreground);
+      }
+      code.k {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--sky);
+      }
+      h2.sec {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 34px 0 4px;
+      }
+      .sec-note {
+        font-size: 12.5px;
+        color: var(--muted-foreground);
+        margin: 0 0 15px;
+        max-width: 76ch;
+        line-height: 1.55;
+      }
     </style>
   </head>
   <body>
     <div class="page">
       <h1>Loops on the phone</h1>
       <p class="lede">
-        <code class="k">AGENTS.md</code> requires a decision for web, desktop and mobile — and mobile is
-        not a formality here. The phone is where you actually look at 4am, and it is the surface where
-        "is it alive" and "does it need me" have to be answerable in one glance, without a sidebar.
+        <code class="k">AGENTS.md</code> requires a decision for web, desktop and mobile — and
+        mobile is not a formality here. The phone is where you actually look at 4am, and it is the
+        surface where "is it alive" and "does it need me" have to be answerable in one glance,
+        without a sidebar.
       </p>
 
       <h2 class="sec">1 · The list, and the console</h2>
       <p class="sec-note">
-        Mobile has no persistent sidebar, so a loop cannot be marked by its position — it has to carry
-        its state on the row. The same boxed-card treatment works; the progress ticks are what change,
-        because on a phone the budget is the thing you cannot get to any other way.
+        Mobile has no persistent sidebar, so a loop cannot be marked by its position — it has to
+        carry its state on the row. The same boxed-card treatment works; the progress ticks are what
+        change, because on a phone the budget is the thing you cannot get to any other way.
       </p>
 
       <div class="row-phones">
@@ -165,52 +373,100 @@
             <div class="notch"></div>
             <div class="p-status"><span>4:07</span><span>􀙇 􀛨 84%</span></div>
             <div class="p-bar">
-              <strong style="font-size:14px;font-weight:600">Threads</strong>
+              <strong style="font-size: 14px; font-weight: 600">Threads</strong>
               <span class="grow"></span>
-              <span class="pill indigo" style="height:19px;font-size:10px"><span class="dot indigo"></span>3</span>
+              <span class="pill indigo" style="height: 19px; font-size: 10px"
+                ><span class="dot indigo"></span>3</span
+              >
             </div>
             <div class="p-body">
               <div class="m-row is-loop">
                 <div class="m-top">
-                  <span class="loop-glyph" style="width:11px;height:11px;flex:0 0 11px">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+                  <span class="loop-glyph" style="width: 11px; height: 11px; flex: 0 0 11px">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                      <path d="M21 4v5h-5" />
+                    </svg>
                   </span>
                   <span class="m-title">Overnight: auth refactor</span>
-                  <span class="trow-status"><span class="dot indigo"></span><span class="t-indigo" style="font-size:10.5px">3</span></span>
+                  <span class="trow-status"
+                    ><span class="dot indigo"></span
+                    ><span class="t-indigo" style="font-size: 10.5px">3</span></span
+                  >
                 </div>
-                <div class="m-meta"><span class="loop-tag">Loop</span> 2 questions · 1 approval · stopped 06:12</div>
+                <div class="m-meta">
+                  <span class="loop-tag">Loop</span> 2 questions · 1 approval · stopped 06:12
+                </div>
                 <div class="m-prog">
-                  <div class="ticks"><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i></div>
+                  <div class="ticks">
+                    <i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i
+                    ><i></i><i></i>
+                  </div>
                 </div>
               </div>
 
               <div class="m-row is-loop">
                 <div class="m-top">
-                  <span class="loop-glyph" style="width:11px;height:11px;flex:0 0 11px">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+                  <span class="loop-glyph" style="width: 11px; height: 11px; flex: 0 0 11px">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                      <path d="M21 4v5h-5" />
+                    </svg>
                   </span>
                   <span class="m-title">Maintainer: issue queue</span>
                   <span class="trow-status"><span class="dot sky pulse"></span></span>
                 </div>
                 <div class="m-meta"><span class="loop-tag">Loop</span> on #113 · moved 40s ago</div>
                 <div class="m-prog">
-                  <div class="ticks"><i class="used"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                  <div class="ticks">
+                    <i class="used"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i
+                    ><i></i>
+                  </div>
                 </div>
               </div>
 
               <div class="m-row is-loop">
                 <div class="m-top">
-                  <span class="loop-glyph" style="width:11px;height:11px;flex:0 0 11px">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+                  <span class="loop-glyph" style="width: 11px; height: 11px; flex: 0 0 11px">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                      <path d="M21 4v5h-5" />
+                    </svg>
                   </span>
                   <span class="m-title">Nightly dep sweep</span>
-                  <span class="trow-status"><span class="dot zinc"></span><span class="t-zinc" style="font-size:10.5px">Spent</span></span>
+                  <span class="trow-status"
+                    ><span class="dot zinc"></span
+                    ><span class="t-zinc" style="font-size: 10.5px">Spent</span></span
+                  >
                 </div>
-                <div class="m-meta"><span class="loop-tag">Loop</span> ran out 07:00 · 4 of 7 done</div>
+                <div class="m-meta">
+                  <span class="loop-tag">Loop</span> ran out 07:00 · 4 of 7 done
+                </div>
               </div>
 
               <div class="m-row">
-                <div class="m-top"><span class="m-title">Fix clone diagnostics</span><span class="trow-status"><span class="dot emerald"></span></span></div>
+                <div class="m-top">
+                  <span class="m-title">Fix clone diagnostics</span
+                  ><span class="trow-status"><span class="dot emerald"></span></span>
+                </div>
                 <div class="m-meta">t3code · 12m ago</div>
               </div>
               <div class="m-row">
@@ -220,16 +476,30 @@
             </div>
             <div class="p-tabbar">
               <div class="p-tab on">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
                 Threads
               </div>
               <div class="p-tab">
                 <span class="nb">3</span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                  <path d="M21 4v5h-5" />
+                </svg>
                 Loops
               </div>
               <div class="p-tab">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4M2 12h2m16 0h2"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4M2 12h2m16 0h2" />
+                </svg>
                 Settings
               </div>
             </div>
@@ -247,10 +517,10 @@
             <div class="notch"></div>
             <div class="p-status"><span>9:04</span><span>􀙇 􀛨 92%</span></div>
             <div class="p-bar">
-              <span class="t-muted" style="font-size:16px">‹</span>
-              <strong style="font-size:13px;font-weight:600">auth refactor</strong>
+              <span class="t-muted" style="font-size: 16px">‹</span>
+              <strong style="font-size: 13px; font-weight: 600">auth refactor</strong>
               <span class="grow"></span>
-              <span class="pill indigo" style="height:19px;font-size:10px">3</span>
+              <span class="pill indigo" style="height: 19px; font-size: 10px">3</span>
             </div>
             <div class="p-body">
               <div class="m-hero">
@@ -266,7 +536,9 @@
               <div class="m-sec">Stopped on these</div>
               <div class="m-q b">
                 <div class="lbl t-indigo">Question</div>
-                <div class="txt">Migrate the session table in place, or new table and backfill?</div>
+                <div class="txt">
+                  Migrate the session table in place, or new table and backfill?
+                </div>
                 <div class="sub">blocking since 01:48</div>
                 <button class="m-opt">Migrate in place</button>
                 <button class="m-opt">New table + backfill</button>
@@ -283,7 +555,9 @@
               <div class="m-sec">Answer when you can</div>
               <div class="m-q d">
                 <div class="lbl t-muted">Blocker</div>
-                <div class="txt"><code class="k">AUTH0_TENANT</code> missing — provider stubbed, 1 test skipped</div>
+                <div class="txt">
+                  <code class="k">AUTH0_TENANT</code> missing — provider stubbed, 1 test skipped
+                </div>
                 <div class="sub">did not stop the loop</div>
               </div>
             </div>
@@ -299,26 +573,68 @@
           <div class="phone-cap">What wakes you (and what doesn't)</div>
           <div style="padding-top: 4px">
             <div class="push">
-              <div class="push-h"><span class="push-ic">C</span><span class="push-app">T3 COIL</span><span class="grow"></span><span class="push-app">now</span></div>
+              <div class="push-h">
+                <span class="push-ic">C</span><span class="push-app">T3 COIL</span
+                ><span class="grow"></span><span class="push-app">now</span>
+              </div>
               <div class="push-t">auth refactor needs a decision</div>
-              <div class="push-b">Migrate the session table in place, or new table and backfill? Loop is stopped until you answer.</div>
+              <div class="push-b">
+                Migrate the session table in place, or new table and backfill? Loop is stopped until
+                you answer.
+              </div>
             </div>
 
             <div class="push">
-              <div class="push-h"><span class="push-ic">C</span><span class="push-app">T3 COIL</span><span class="grow"></span><span class="push-app">07:00</span></div>
+              <div class="push-h">
+                <span class="push-ic">C</span><span class="push-app">T3 COIL</span
+                ><span class="grow"></span><span class="push-app">07:00</span>
+              </div>
               <div class="push-t">Nightly dep sweep ran out of rope</div>
-              <div class="push-b">6 of 6 check-ins used. 4 of 7 alerts resolved — it did not finish.</div>
+              <div class="push-b">
+                6 of 6 check-ins used. 4 of 7 alerts resolved — it did not finish.
+              </div>
             </div>
 
             <div class="push">
-              <div class="push-h"><span class="push-ic">C</span><span class="push-app">T3 COIL</span><span class="grow"></span><span class="push-app">04:12</span></div>
+              <div class="push-h">
+                <span class="push-ic">C</span><span class="push-app">T3 COIL</span
+                ><span class="grow"></span><span class="push-app">04:12</span>
+              </div>
               <div class="push-t">Docs backfill finished</div>
-              <div class="push-b">9 of 9 pages written. Stopped on its own with 3 check-ins unused.</div>
+              <div class="push-b">
+                9 of 9 pages written. Stopped on its own with 3 check-ins unused.
+              </div>
             </div>
 
-            <div style="border:1px dashed var(--border-strong);border-radius:var(--radius-lg);padding:12px 13px;margin-top:14px">
-              <div style="font-size:11.5px;font-weight:600;margin-bottom:5px;color:var(--muted-foreground);letter-spacing:.04em;text-transform:uppercase">Never pushed</div>
-              <ul style="margin:0;padding-left:16px;font-size:12px;color:var(--muted-foreground);line-height:1.6">
+            <div
+              style="
+                border: 1px dashed var(--border-strong);
+                border-radius: var(--radius-lg);
+                padding: 12px 13px;
+                margin-top: 14px;
+              "
+            >
+              <div
+                style="
+                  font-size: 11.5px;
+                  font-weight: 600;
+                  margin-bottom: 5px;
+                  color: var(--muted-foreground);
+                  letter-spacing: 0.04em;
+                  text-transform: uppercase;
+                "
+              >
+                Never pushed
+              </div>
+              <ul
+                style="
+                  margin: 0;
+                  padding-left: 16px;
+                  font-size: 12px;
+                  color: var(--muted-foreground);
+                  line-height: 1.6;
+                "
+              >
                 <li>A check-in firing. That is the loop working.</li>
                 <li>A deferred blocker. It did not stop anything.</li>
                 <li>Held on a usage limit — it resumes itself.</li>
@@ -327,24 +643,24 @@
             </div>
           </div>
           <div class="phone-note">
-            Three push reasons only: <b>it needs a decision</b>, <b>it stopped</b>, <b>it finished</b>.
-            Everything else is visible when you look, and pushing it would train you to ignore the
-            two that matter.
+            Three push reasons only: <b>it needs a decision</b>, <b>it stopped</b>,
+            <b>it finished</b>. Everything else is visible when you look, and pushing it would train
+            you to ignore the two that matter.
           </div>
         </div>
       </div>
 
       <div class="note">
-        <b>The one thing mobile changes about the design.</b> On web the sidebar can afford to say very
-        little, because the console is one click away. On a phone the row <em>is</em> the summary —
-        so the budget has to be on it, and "Spent" has to be legible without colour alone (it carries
-        the word, not just the zinc dot). That is why the tick row exists at all: it started as a
-        mobile requirement and turned out to be the clearest thing on the desktop card too.
-        <br /><br />
+        <b>The one thing mobile changes about the design.</b> On web the sidebar can afford to say
+        very little, because the console is one click away. On a phone the row <em>is</em> the
+        summary — so the budget has to be on it, and "Spent" has to be legible without colour alone
+        (it carries the word, not just the zinc dot). That is why the tick row exists at all: it
+        started as a mobile requirement and turned out to be the clearest thing on the desktop card
+        too. <br /><br />
         Mobile also settles decision 1 in the report. Direction B — a bespoke "Loops" section in the
         sidebar — has no mobile equivalent, because mobile has no persistent sidebar to put it in. A
-        loop-as-pinned-thread and a Loops tab both work on all three surfaces. That is not decisive on
-        its own, but it removes B's only real advantage.
+        loop-as-pinned-thread and a Loops tab both work on all three surfaces. That is not decisive
+        on its own, but it removes B's only real advantage.
       </div>
     </div>
   </body>

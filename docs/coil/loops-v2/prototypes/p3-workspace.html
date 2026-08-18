@@ -7,49 +7,125 @@
     <link rel="stylesheet" href="_shell.css" />
     <style>
       .mode-switch {
-        display: flex; gap: 2px; padding: 3px;
+        display: flex;
+        gap: 2px;
+        padding: 3px;
         background: rgb(255 255 255 / 5%);
         border-radius: var(--radius-md);
         margin: 0 0 10px;
       }
       .mode-switch button {
-        flex: 1; font: inherit; font-size: 11.5px; font-weight: 500;
-        border: none; background: transparent; color: var(--sidebar-muted-foreground);
-        border-radius: calc(var(--radius-md) - 2px); padding: 5px 6px; cursor: pointer;
-        display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+        flex: 1;
+        font: inherit;
+        font-size: 11.5px;
+        font-weight: 500;
+        border: none;
+        background: transparent;
+        color: var(--sidebar-muted-foreground);
+        border-radius: calc(var(--radius-md) - 2px);
+        padding: 5px 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
       }
-      .mode-switch button.on { background: var(--sidebar-control-surface); color: var(--foreground); }
-      .mode-switch button:hover:not(.on) { color: var(--foreground); }
-      .mode-switch .loop-glyph { width: 11px; height: 11px; flex: 0 0 11px; }
+      .mode-switch button.on {
+        background: var(--sidebar-control-surface);
+        color: var(--foreground);
+      }
+      .mode-switch button:hover:not(.on) {
+        color: var(--foreground);
+      }
+      .mode-switch .loop-glyph {
+        width: 11px;
+        height: 11px;
+        flex: 0 0 11px;
+      }
       .mini-badge {
-        min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px;
-        background: rgb(165 180 252 / 22%); color: var(--indigo);
-        font-size: 9.5px; font-weight: 700; display: grid; place-items: center;
+        min-width: 15px;
+        height: 15px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: rgb(165 180 252 / 22%);
+        color: var(--indigo);
+        font-size: 9.5px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
         font-variant-numeric: tabular-nums;
       }
 
-      .ws { padding: 20px 24px 60px; max-width: 1080px; }
-      .ws-h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 3px; }
-      .ws-sub { font-size: 13px; color: var(--muted-foreground); margin: 0 0 20px; }
+      .ws {
+        padding: 20px 24px 60px;
+        max-width: 1080px;
+      }
+      .ws-h1 {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0 0 3px;
+      }
+      .ws-sub {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        margin: 0 0 20px;
+      }
 
       /* overview strip — Attio's shape, T3's tokens */
       .ov {
-        display: grid; grid-template-columns: repeat(4, 1fr);
-        gap: 1px; background: var(--border);
-        border: 1px solid var(--border); border-radius: var(--radius-lg);
-        overflow: hidden; margin-bottom: 24px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--border);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        margin-bottom: 24px;
       }
-      .ov-c { background: var(--card); padding: 12px 14px; }
-      .ov-c dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground); }
-      .ov-c dd { margin: 5px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-      .ov-c dd small { font-size: 12px; font-weight: 450; color: var(--muted-foreground); margin-left: 4px; letter-spacing: 0; }
+      .ov-c {
+        background: var(--card);
+        padding: 12px 14px;
+      }
+      .ov-c dt {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+      }
+      .ov-c dd {
+        margin: 5px 0 0;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .ov-c dd small {
+        font-size: 12px;
+        font-weight: 450;
+        color: var(--muted-foreground);
+        margin-left: 4px;
+        letter-spacing: 0;
+      }
 
       .sec-h {
-        display: flex; align-items: baseline; gap: 9px; margin: 0 0 9px;
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        margin: 0 0 9px;
       }
-      .sec-h h2 { font-size: 13px; font-weight: 600; margin: 0; }
-      .sec-h .why { font-size: 12px; color: var(--muted-foreground); }
-      .sec + .sec { margin-top: 30px; }
+      .sec-h h2 {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .sec-h .why {
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+      .sec + .sec {
+        margin-top: 30px;
+      }
 
       /* loop cards */
       .lcard {
@@ -65,46 +141,126 @@
         cursor: pointer;
         position: relative;
         overflow: hidden;
-        transition: border-color 120ms ease, background 120ms ease;
+        transition:
+          border-color 120ms ease,
+          background 120ms ease;
       }
-      .lcard:hover { border-color: var(--border-strong); background: #131313; }
-      .lcard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; }
-      .lcard.blocked::before { background: var(--indigo); }
-      .lcard.working::before { background: var(--sky); }
-      .lcard.held::before { background: var(--amber); }
-      .lcard.spent::before { background: var(--zinc); }
-      .lcard.done::before { background: var(--emerald); }
+      .lcard:hover {
+        border-color: var(--border-strong);
+        background: #131313;
+      }
+      .lcard::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+      }
+      .lcard.blocked::before {
+        background: var(--indigo);
+      }
+      .lcard.working::before {
+        background: var(--sky);
+      }
+      .lcard.held::before {
+        background: var(--amber);
+      }
+      .lcard.spent::before {
+        background: var(--zinc);
+      }
+      .lcard.done::before {
+        background: var(--emerald);
+      }
 
-      .lc-title { font-size: 14px; font-weight: 530; letter-spacing: -0.01em; display: flex; align-items: center; gap: 7px; }
-      .lc-sub { font-size: 12px; color: var(--muted-foreground); margin-top: 3px; }
-      .lc-goal {
-        font-size: 12px; color: #b8b8b8; margin-top: 6px;
-        display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+      .lc-title {
+        font-size: 14px;
+        font-weight: 530;
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 7px;
       }
-      .lc-mid .cap { font-size: 10.5px; color: var(--muted-foreground); margin-bottom: 5px; display: flex; justify-content: space-between; }
-      .lc-right { text-align: right; }
-      .lc-right .big { font-size: 13px; font-weight: 500; }
-      .lc-right .small { font-size: 11.5px; color: var(--muted-foreground); margin-top: 2px; }
+      .lc-sub {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        margin-top: 3px;
+      }
+      .lc-goal {
+        font-size: 12px;
+        color: #b8b8b8;
+        margin-top: 6px;
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .lc-mid .cap {
+        font-size: 10.5px;
+        color: var(--muted-foreground);
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+      }
+      .lc-right {
+        text-align: right;
+      }
+      .lc-right .big {
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .lc-right .small {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        margin-top: 2px;
+      }
 
       /* cross-loop inbox */
       .inbox-item {
-        display: flex; gap: 11px; align-items: flex-start;
-        border: 1px solid var(--border); border-radius: var(--radius-md);
-        background: var(--card); padding: 11px 13px; margin-bottom: 7px;
+        display: flex;
+        gap: 11px;
+        align-items: flex-start;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
+        padding: 11px 13px;
+        margin-bottom: 7px;
       }
       .inbox-item .src {
-        font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-        color: var(--muted-foreground); white-space: nowrap;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        white-space: nowrap;
       }
-      .inbox-q { font-size: 13px; line-height: 1.5; }
-      .inbox-m { font-size: 11.5px; color: var(--muted-foreground); margin-top: 3px; }
+      .inbox-q {
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .inbox-m {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        margin-top: 3px;
+      }
 
-      code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
-      .note {
-        margin-top: 32px; border-left: 2px solid var(--border-strong);
-        padding: 2px 0 2px 14px; font-size: 12.5px; color: #bdbdbd; line-height: 1.65; max-width: 76ch;
+      code.k {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--sky);
       }
-      .note b { color: var(--foreground); }
+      .note {
+        margin-top: 32px;
+        border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px;
+        font-size: 12.5px;
+        color: #bdbdbd;
+        line-height: 1.65;
+        max-width: 76ch;
+      }
+      .note b {
+        color: var(--foreground);
+      }
     </style>
   </head>
   <body>
@@ -117,54 +273,104 @@
           <div class="mode-switch">
             <button onclick="alert('Returns to the chat shell, unchanged.')">Chat</button>
             <button class="on">
-              <span class="loop-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+              <span class="loop-glyph"
+                ><svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                  <path d="M21 4v5h-5" /></svg
+              ></span>
               Loops <span class="mini-badge">3</span>
             </button>
           </div>
 
-          <button class="trow is-active" style="padding-left:10px">
-            <div class="trow-top"><span class="trow-title">All loops</span><span class="trow-status t-muted s11">5</span></div>
+          <button class="trow is-active" style="padding-left: 10px">
+            <div class="trow-top">
+              <span class="trow-title">All loops</span
+              ><span class="trow-status t-muted s11">5</span>
+            </div>
           </button>
-          <button class="trow" style="padding-left:10px">
-            <div class="trow-top"><span class="trow-title">Needs you</span><span class="trow-status"><span class="dot indigo"></span><span class="t-indigo s11">3</span></span></div>
+          <button class="trow" style="padding-left: 10px">
+            <div class="trow-top">
+              <span class="trow-title">Needs you</span
+              ><span class="trow-status"
+                ><span class="dot indigo"></span><span class="t-indigo s11">3</span></span
+              >
+            </div>
           </button>
-          <button class="trow" style="padding-left:10px">
-            <div class="trow-top"><span class="trow-title">Running</span><span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky s11">1</span></span></div>
+          <button class="trow" style="padding-left: 10px">
+            <div class="trow-top">
+              <span class="trow-title">Running</span
+              ><span class="trow-status"
+                ><span class="dot sky pulse"></span><span class="t-sky s11">1</span></span
+              >
+            </div>
           </button>
-          <button class="trow" style="padding-left:10px">
-            <div class="trow-top"><span class="trow-title">Finished</span><span class="trow-status t-muted s11">2</span></div>
+          <button class="trow" style="padding-left: 10px">
+            <div class="trow-top">
+              <span class="trow-title">Finished</span><span class="trow-status t-muted s11">2</span>
+            </div>
           </button>
 
           <div class="side-group-label">Loops</div>
           <button class="trow is-loop">
-            <div class="trow-top"><span class="trow-title">Overnight: auth refactor</span><span class="trow-status"><span class="dot indigo"></span><span class="t-indigo">3</span></span></div>
+            <div class="trow-top">
+              <span class="trow-title">Overnight: auth refactor</span
+              ><span class="trow-status"
+                ><span class="dot indigo"></span><span class="t-indigo">3</span></span
+              >
+            </div>
             <div class="trow-meta"><span class="ellip">4 of 6 · stops 07:00</span></div>
           </button>
           <button class="trow is-loop is-recede">
-            <div class="trow-top"><span class="trow-title">Maintainer: issue queue</span><span class="trow-status"><span class="dot sky pulse"></span><span class="t-sky">Working</span></span></div>
+            <div class="trow-top">
+              <span class="trow-title">Maintainer: issue queue</span
+              ><span class="trow-status"
+                ><span class="dot sky pulse"></span><span class="t-sky">Working</span></span
+              >
+            </div>
             <div class="trow-meta"><span class="ellip">on #113 · 4 left</span></div>
           </button>
           <button class="trow is-loop is-recede">
-            <div class="trow-top"><span class="trow-title">Flaky-test hunt</span><span class="trow-status"><span class="dot amber"></span><span class="t-amber">Held</span></span></div>
+            <div class="trow-top">
+              <span class="trow-title">Flaky-test hunt</span
+              ><span class="trow-status"
+                ><span class="dot amber"></span><span class="t-amber">Held</span></span
+              >
+            </div>
             <div class="trow-meta"><span class="ellip">usage limit · 08:22</span></div>
           </button>
           <button class="trow is-loop is-recede">
-            <div class="trow-top"><span class="trow-title">Nightly dep sweep</span><span class="trow-status"><span class="dot zinc"></span><span class="t-zinc">Spent</span></span></div>
+            <div class="trow-top">
+              <span class="trow-title">Nightly dep sweep</span
+              ><span class="trow-status"
+                ><span class="dot zinc"></span><span class="t-zinc">Spent</span></span
+              >
+            </div>
             <div class="trow-meta"><span class="ellip">4/7 done</span></div>
           </button>
           <button class="trow is-loop is-recede">
-            <div class="trow-top"><span class="trow-title">Docs backfill</span><span class="trow-status"><span class="dot emerald"></span><span class="t-emerald">Done</span></span></div>
+            <div class="trow-top">
+              <span class="trow-title">Docs backfill</span
+              ><span class="trow-status"
+                ><span class="dot emerald"></span><span class="t-emerald">Done</span></span
+              >
+            </div>
             <div class="trow-meta"><span class="ellip">9/9 · 04:12</span></div>
           </button>
         </div>
         <div class="sidebar-foot">
-          <button class="btn sm" style="width:100%">＋ New loop</button>
+          <button class="btn sm" style="width: 100%">＋ New loop</button>
         </div>
       </aside>
 
       <main class="main">
         <div class="topbar">
-          <strong style="font-size:13.5px;font-weight:540">Loops</strong>
+          <strong style="font-size: 13.5px; font-weight: 540">Loops</strong>
           <span class="pill">5 total</span>
           <span class="grow"></span>
           <button class="btn sm ghost">Settings</button>
@@ -174,13 +380,27 @@
         <div class="main-body">
           <div class="ws">
             <h1 class="ws-h1">Last night</h1>
-            <p class="ws-sub">Five loops ran while you were asleep. Three want something from you.</p>
+            <p class="ws-sub">
+              Five loops ran while you were asleep. Three want something from you.
+            </p>
 
             <dl class="ov">
-              <div class="ov-c"><dt>Needs you</dt><dd class="t-indigo">3</dd></div>
-              <div class="ov-c"><dt>Still running</dt><dd class="t-sky">1</dd></div>
-              <div class="ov-c"><dt>Check-ins spent</dt><dd>19 <small>of 34</small></dd></div>
-              <div class="ov-c"><dt>Longest unattended</dt><dd>8h 12m</dd></div>
+              <div class="ov-c">
+                <dt>Needs you</dt>
+                <dd class="t-indigo">3</dd>
+              </div>
+              <div class="ov-c">
+                <dt>Still running</dt>
+                <dd class="t-sky">1</dd>
+              </div>
+              <div class="ov-c">
+                <dt>Check-ins spent</dt>
+                <dd>19 <small>of 34</small></dd>
+              </div>
+              <div class="ov-c">
+                <dt>Longest unattended</dt>
+                <dd>8h 12m</dd>
+              </div>
             </dl>
 
             <!-- ---------- cross-loop inbox ---------- -->
@@ -193,8 +413,13 @@
               <div class="inbox-item">
                 <span class="src t-indigo">Question</span>
                 <div class="grow">
-                  <div class="inbox-q">Migrate the session table in place, or new table and backfill?</div>
-                  <div class="inbox-m">Overnight: auth refactor · blocking since 01:48 · <b class="t-indigo">the loop is stopped on this</b></div>
+                  <div class="inbox-q">
+                    Migrate the session table in place, or new table and backfill?
+                  </div>
+                  <div class="inbox-m">
+                    Overnight: auth refactor · blocking since 01:48 ·
+                    <b class="t-indigo">the loop is stopped on this</b>
+                  </div>
                 </div>
                 <button class="btn sm">Answer</button>
               </div>
@@ -202,8 +427,13 @@
               <div class="inbox-item">
                 <span class="src t-amber">Approval</span>
                 <div class="grow">
-                  <div class="inbox-q">Run <code class="k">pnpm db:migrate</code> against the dev database</div>
-                  <div class="inbox-m">Overnight: auth refactor · blocking since 06:12 · <b class="t-amber">the loop is stopped on this</b></div>
+                  <div class="inbox-q">
+                    Run <code class="k">pnpm db:migrate</code> against the dev database
+                  </div>
+                  <div class="inbox-m">
+                    Overnight: auth refactor · blocking since 06:12 ·
+                    <b class="t-amber">the loop is stopped on this</b>
+                  </div>
                 </div>
                 <button class="btn sm">Review</button>
               </div>
@@ -211,8 +441,13 @@
               <div class="inbox-item">
                 <span class="src t-muted">Blocker</span>
                 <div class="grow">
-                  <div class="inbox-q"><code class="k">AUTH0_TENANT</code> missing from dev env — provider stubbed, 1 test skipped</div>
-                  <div class="inbox-m">Overnight: auth refactor · raised 04:33 · loop kept going</div>
+                  <div class="inbox-q">
+                    <code class="k">AUTH0_TENANT</code> missing from dev env — provider stubbed, 1
+                    test skipped
+                  </div>
+                  <div class="inbox-m">
+                    Overnight: auth refactor · raised 04:33 · loop kept going
+                  </div>
                 </div>
                 <button class="btn sm ghost">Answer</button>
               </div>
@@ -220,21 +455,39 @@
 
             <!-- ---------- the loops ---------- -->
             <section class="sec">
-              <div class="sec-h"><h2>Loops</h2><span class="why">what each one was told to do, and how far it got</span></div>
+              <div class="sec-h">
+                <h2>Loops</h2>
+                <span class="why">what each one was told to do, and how far it got</span>
+              </div>
 
               <article class="lcard blocked">
                 <div>
                   <div class="lc-title">
-                    <span class="loop-glyph t-indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+                    <span class="loop-glyph t-indigo"
+                      ><svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      >
+                        <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                        <path d="M21 4v5h-5" /></svg
+                    ></span>
                     Overnight: auth refactor
                     <span class="pill indigo">3 waiting</span>
                   </div>
                   <div class="lc-sub">t3code · worktree <code class="k">auth-rotation</code></div>
-                  <div class="lc-goal">Finish refresh-token rotation, keep the suite green, open a PR.</div>
+                  <div class="lc-goal">
+                    Finish refresh-token rotation, keep the suite green, open a PR.
+                  </div>
                 </div>
                 <div class="lc-mid">
                   <div class="cap"><span>check-ins</span><span class="tnum">4 of 6</span></div>
-                  <div class="ticks"><i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i></div>
+                  <div class="ticks">
+                    <i class="used"></i><i class="used"></i><i class="used"></i><i class="used"></i
+                    ><i></i><i></i>
+                  </div>
                   <div class="cap mt6"><span>backlog</span><span class="tnum">4 of 7</span></div>
                 </div>
                 <div class="lc-right">
@@ -246,15 +499,31 @@
               <article class="lcard working">
                 <div>
                   <div class="lc-title">
-                    <span class="loop-glyph t-sky pulse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+                    <span class="loop-glyph t-sky pulse"
+                      ><svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      >
+                        <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                        <path d="M21 4v5h-5" /></svg
+                    ></span>
                     Maintainer: issue queue
                   </div>
                   <div class="lc-sub">t3code · one worktree per issue</div>
-                  <div class="lc-goal">Work <code class="k">ready-for-agent</code> issues oldest-first; plans and comments in v1; never pushes, never merges.</div>
+                  <div class="lc-goal">
+                    Work <code class="k">ready-for-agent</code> issues oldest-first; plans and
+                    comments in v1; never pushes, never merges.
+                  </div>
                 </div>
                 <div class="lc-mid">
                   <div class="cap"><span>check-ins</span><span class="tnum">2 of 8</span></div>
-                  <div class="ticks"><i class="used"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                  <div class="ticks">
+                    <i class="used"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i
+                    ><i></i>
+                  </div>
                   <div class="cap mt6"><span>issues</span><span class="tnum">2 of 6</span></div>
                 </div>
                 <div class="lc-right">
@@ -266,15 +535,29 @@
               <article class="lcard held">
                 <div>
                   <div class="lc-title">
-                    <span class="loop-glyph t-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+                    <span class="loop-glyph t-amber"
+                      ><svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      >
+                        <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                        <path d="M21 4v5h-5" /></svg
+                    ></span>
                     Flaky-test hunt
                   </div>
                   <div class="lc-sub">t3code · local</div>
-                  <div class="lc-goal">Re-run the suite until a flake reproduces, then bisect it.</div>
+                  <div class="lc-goal">
+                    Re-run the suite until a flake reproduces, then bisect it.
+                  </div>
                 </div>
                 <div class="lc-mid">
                   <div class="cap"><span>check-ins</span><span class="tnum">2 of 6</span></div>
-                  <div class="ticks"><i class="used"></i><i class="used"></i><i></i><i></i><i></i><i></i></div>
+                  <div class="ticks">
+                    <i class="used"></i><i class="used"></i><i></i><i></i><i></i><i></i>
+                  </div>
                   <div class="cap mt6"><span>none spent while held</span></div>
                 </div>
                 <div class="lc-right">
@@ -286,15 +569,31 @@
               <article class="lcard spent">
                 <div>
                   <div class="lc-title">
-                    <span class="loop-glyph t-zinc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+                    <span class="loop-glyph t-zinc"
+                      ><svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      >
+                        <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                        <path d="M21 4v5h-5" /></svg
+                    ></span>
                     Nightly dep sweep
                   </div>
                   <div class="lc-sub">t3code · local</div>
-                  <div class="lc-goal">Resolve open Dependabot alerts without floating unrelated pins.</div>
+                  <div class="lc-goal">
+                    Resolve open Dependabot alerts without floating unrelated pins.
+                  </div>
                 </div>
                 <div class="lc-mid">
                   <div class="cap"><span>check-ins</span><span class="tnum">7 of 7</span></div>
-                  <div class="ticks"><i class="used spent"></i><i class="used spent"></i><i class="used spent"></i><i class="used spent"></i><i class="used spent"></i><i class="used spent"></i><i class="used spent"></i></div>
+                  <div class="ticks">
+                    <i class="used spent"></i><i class="used spent"></i><i class="used spent"></i
+                    ><i class="used spent"></i><i class="used spent"></i><i class="used spent"></i
+                    ><i class="used spent"></i>
+                  </div>
                   <div class="cap mt6"><span>alerts</span><span class="tnum">4 of 7</span></div>
                 </div>
                 <div class="lc-right">
@@ -306,7 +605,17 @@
               <article class="lcard done">
                 <div>
                   <div class="lc-title">
-                    <span class="loop-glyph t-emerald"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+                    <span class="loop-glyph t-emerald"
+                      ><svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      >
+                        <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                        <path d="M21 4v5h-5" /></svg
+                    ></span>
                     Docs backfill
                   </div>
                   <div class="lc-sub">coil-home · local</div>
@@ -314,7 +623,10 @@
                 </div>
                 <div class="lc-mid">
                   <div class="cap"><span>check-ins</span><span class="tnum">3 of 6</span></div>
-                  <div class="ticks"><i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i><i></i></div>
+                  <div class="ticks">
+                    <i class="used"></i><i class="used"></i><i class="used"></i><i></i><i></i
+                    ><i></i>
+                  </div>
                   <div class="cap mt6"><span>pages</span><span class="tnum">9 of 9</span></div>
                 </div>
                 <div class="lc-right">

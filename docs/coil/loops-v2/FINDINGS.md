@@ -9,7 +9,7 @@ archived design used.
 ## A. What changed under the archived design
 
 `docs/coil/loop/DESIGN.md` is a 4-design / 12-judgement panel result from 2026-08-02. It is
-still the best thinking available on the *reactor*, and most of it survives. Three of its
+still the best thinking available on the _reactor_, and most of it survives. Three of its
 load-bearing premises have moved.
 
 ### A1. Upstream shipped pinning — two days after the design froze
@@ -29,8 +29,8 @@ produce them are `thread.pin` / `thread.unpin`), a fractional
 (`SortablePinnedThreadRow`, `planPinnedReorder`), and the pinned block deliberately renders
 with **no header** (`Sidebar.tsx:674`).
 
-**Consequence.** #38's proposal 2 — *"a distinct thread type that pins to the top of the
-sidebar"* — is now mostly an upstream feature. The archived design rejected a sidebar rail
+**Consequence.** #38's proposal 2 — _"a distinct thread type that pins to the top of the
+sidebar"_ — is now mostly an upstream feature. The archived design rejected a sidebar rail
 at length (§8 "No sidebar section", and the "Ideas deliberately rejected" entry on the
 `document.querySelector` portal). Both rejections were correct **and are now moot**: the
 thing they were trying to avoid building already exists, and it is reachable through a
@@ -42,7 +42,7 @@ Verified against `docs/coil/SEAMS.md`: neither file appears. The fork does not t
 sidebar at all today. That cuts both ways —
 
 - Modelling a Loop as **a pinned thread** costs **zero** upstream lines.
-- Giving a Loop **distinct rendering** in the sidebar opens a *new* row in a 3808-line hot
+- Giving a Loop **distinct rendering** in the sidebar opens a _new_ row in a 3808-line hot
   file (research-tree measurement; 3911 on the post-sync tree), which is the most expensive kind
   of row this fork can take.
 
@@ -67,16 +67,16 @@ materially different bill and it is one of the things the prototypes have to pri
 
 Measured in the current tree.
 
-| Capability | Where | Use for Loops |
-|---|---|---|
-| Pinning, pin ordering, pin overrides lifecycle | `contracts/orchestration.ts:389-393,1056-1057`; `Sidebar.tsx` | A Loop pins and never sinks — zero seam |
-| Background liveness (`working` / `monitoring`) | `orchestration/ThreadBackgroundLiveness.ts`; `Sidebar.logic.ts:492-497` | The "is it actually alive" signal, provider-agnostic, exact rather than inferred |
-| Snooze + wake, with a `Woke` pill | `Sidebar.tsx` (`snoozeWakeLabelText`, `wokeAt`, `isWoke`) | Vocabulary and colour precedent for a scheduled future event |
-| Settle / unsettle, `settledOverride` | `contracts`, `decider.ts` | Terminal-state precedent |
-| Status hues, fixed system-wide | `Sidebar.logic.ts:640-725` | Loops must reuse, not invent |
-| Activity append with open `kind` + `Schema.Unknown` payload | `contracts/orchestration.ts:315-325` | Timeline breadcrumbs at zero contract cost |
-| Fork HTTP routes without touching contracts/ws | `coil/webPush/http.ts` pattern | The Loops API |
-| Durable fork store + reactor | `coil/autoResume/*` (15 files) | The Loops reactor, verbatim shape |
+| Capability                                                  | Where                                                                   | Use for Loops                                                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Pinning, pin ordering, pin overrides lifecycle              | `contracts/orchestration.ts:389-393,1056-1057`; `Sidebar.tsx`           | A Loop pins and never sinks — zero seam                                          |
+| Background liveness (`working` / `monitoring`)              | `orchestration/ThreadBackgroundLiveness.ts`; `Sidebar.logic.ts:492-497` | The "is it actually alive" signal, provider-agnostic, exact rather than inferred |
+| Snooze + wake, with a `Woke` pill                           | `Sidebar.tsx` (`snoozeWakeLabelText`, `wokeAt`, `isWoke`)               | Vocabulary and colour precedent for a scheduled future event                     |
+| Settle / unsettle, `settledOverride`                        | `contracts`, `decider.ts`                                               | Terminal-state precedent                                                         |
+| Status hues, fixed system-wide                              | `Sidebar.logic.ts:640-725`                                              | Loops must reuse, not invent                                                     |
+| Activity append with open `kind` + `Schema.Unknown` payload | `contracts/orchestration.ts:315-325`                                    | Timeline breadcrumbs at zero contract cost                                       |
+| Fork HTTP routes without touching contracts/ws              | `coil/webPush/http.ts` pattern                                          | The Loops API                                                                    |
+| Durable fork store + reactor                                | `coil/autoResume/*` (15 files)                                          | The Loops reactor, verbatim shape                                                |
 
 **The status vocabulary the fork must not fight** (`Sidebar.logic.ts`):
 `approval` amber · `input` indigo · `working` sky (pulse) · `monitoring` sky (no pulse) ·
@@ -89,7 +89,7 @@ Measured in the current tree.
 > lifecycle transitions.
 
 A Loop that floats to the top on activity would break this. A Loop that pins does not —
-pinning is a *lifecycle transition*, which the rule explicitly allows. That is the seam
+pinning is a _lifecycle transition_, which the rule explicitly allows. That is the seam
 that makes "loops as special threads" idiomatic rather than a violation.
 
 ---
@@ -99,16 +99,16 @@ that makes "loops as special threads" idiomatic rather than a violation.
 ### C1. The dominant shape: **config tab + run-history tab**
 
 - **Cursor Automations** — `pr-review-automation`, an `Active` toggle at the top, tabs
-  `Settings | Run History`, a trigger block (schedule *and* events), an Instructions
+  `Settings | Run History`, a trigger block (schedule _and_ events), an Instructions
   textarea, a model picker, and a Tools section.
   [screen](https://mobbin.com/screens/cccf8d2f-4e03-4018-8404-fcdd21949f70)
 - **Attio Automations** — tabs `Editor | Runs (61)`, a `Live` toggle, an Overview rail with
-  *credits consumed / in progress / avg runtime / completed / failed*, and a `Run history`
+  _credits consumed / in progress / avg runtime / completed / failed_, and a `Run history`
   list of `Run #61 … #49` each with status dot, credit count and relative time. Hovering a
   run gives status, runtime, triggered-at, completed-at, credits used.
   [screen](https://mobbin.com/screens/d8d6c229-4909-490c-83a1-a84958f82b83)
-- **Manus Scheduled tasks** — `Scheduled | Completed` tabs, rows of *title · schedule-at ·
-  status toggle*, overflow menu with **Run now / Edit / Delete**.
+- **Manus Scheduled tasks** — `Scheduled | Completed` tabs, rows of _title · schedule-at ·
+  status toggle_, overflow menu with **Run now / Edit / Delete**.
   [screen](https://mobbin.com/screens/abb206db-33ee-4f1a-ad2e-1e55b4312151)
 - **n8n Executions** — flat table: workflow, status (Success/Error/Canceled), started, run
   time, exec id. Error rows tinted rose across the whole row.
@@ -117,30 +117,30 @@ that makes "loops as special threads" idiomatic rather than a violation.
   and `Done` as distinct terminal states.
   [screen](https://mobbin.com/screens/f9956089-a89e-4875-ae9b-5c649a902161)
 
-**Read-across:** every mature recurring-automation product separates *the definition* from
-*the runs*. T3 has no run concept — a Loop's check-ins are just more turns in one
+**Read-across:** every mature recurring-automation product separates _the definition_ from
+_the runs_. T3 has no run concept — a Loop's check-ins are just more turns in one
 transcript. This is the strongest new idea the research produced: **an iteration ledger**.
 
 ### C2. Bounding is always visible, and always has a reset horizon
 
-- **OpenAI Platform** — `$0.09 / $5.00` with a bar and *"Resets in 29 days"*, plus a
+- **OpenAI Platform** — `$0.09 / $5.00` with a bar and _"Resets in 29 days"_, plus a
   separate **usage alert** row at 100%. [screen](https://mobbin.com/screens/8cf8d3eb-515b-4ff9-b14c-dddcfb207adf)
-- **Wise card limits** — `Daily limit — 10 SGD` / *"Refreshes in 6 hours"* / `10 SGD
-  remaining`, with `Edit` and `Remove limit`. [screen](https://mobbin.com/screens/63f79444-67f7-4c71-a964-cfee71cad090)
+- **Wise card limits** — `Daily limit — 10 SGD` / _"Refreshes in 6 hours"_ / `10 SGD
+remaining`, with `Edit` and `Remove limit`. [screen](https://mobbin.com/screens/63f79444-67f7-4c71-a964-cfee71cad090)
 - **GitHub spending limits** — an explicit `Limit spending` vs `Unlimited spending` radio,
   and threshold alerts at 75/90/100%. [screen](https://mobbin.com/screens/51315de0-aa8d-431b-883b-5a1e38561ef9)
 - **Coda rule builder** — `When` time-based, Hour/Day/Week/Month, repeat-on day chips, time
-  + timezone, and an **`EXPIRATION: Never ends`** field.
-  [screen](https://mobbin.com/screens/91c18f06-72a8-4440-81f7-d4ace2d322be)
+  - timezone, and an **`EXPIRATION: Never ends`** field.
+    [screen](https://mobbin.com/screens/91c18f06-72a8-4440-81f7-d4ace2d322be)
 
-**Read-across:** the archived design's insistence on a *mandatory, non-bypassable* budget
+**Read-across:** the archived design's insistence on a _mandatory, non-bypassable_ budget
 (grafted from RUNWAY) matches every product here except that they all also show
 **remaining**, not just spent. "2 of 6" is worse than "4 check-ins left, ends 07:00".
 
 ### C3. Agent products converge on the same three affordances
 
 From the web sweep — Cursor background agents monitor from a status-bar icon, an Agents
-sidebar panel, and a web dashboard; Cursor Automations run on triggers *or* schedules;
+sidebar panel, and a web dashboard; Cursor Automations run on triggers _or_ schedules;
 Devin pauses sessions when the budget is reached rather than charging on; Temporal's
 long-running answer is **continue-as-new** (same workflow id, new run id, fresh event
 history) precisely because unbounded history is the failure mode.
@@ -204,11 +204,11 @@ where they conflict.
 
 ### F1. The headline ask — a standing answer to "what do you need from me?"
 
-> *"at any time I open the chat there should be a page where I have a questionnaire ready to
-> be answered by the human or the things that are a blocker and the human is needed for"*
+> _"at any time I open the chat there should be a page where I have a questionnaire ready to
+> be answered by the human or the things that are a blocker and the human is needed for"_
 
 This is the centrepiece, and it is **not** what the archived design built. The archived
-design's user-facing surface is a *pill* that reports loop state (`Loop watching · 12m`,
+design's user-facing surface is a _pill_ that reports loop state (`Loop watching · 12m`,
 `Loop 2/6 · ends 07:00`). That answers "is it alive". It does not answer **"what is it
 stuck on and what do you want from me"**.
 
@@ -236,8 +236,8 @@ Design consequences to work through in the prototypes:
 
 ### F2. Loops as a separate workspace
 
-> *"maybe can be a completely different workspace, which the users can toggle to and back
-> into this current view"*
+> _"maybe can be a completely different workspace, which the users can toggle to and back
+> into this current view"_
 
 A third structural direction beyond "pinned thread" and "distinct row type": a **mode
 switch** where the whole shell becomes loop-oriented — loops list, run ledgers, blocker
@@ -245,30 +245,30 @@ queue — and toggles back. Precedent in the product: the settings shell already
 this (its own sidebar nav via `SettingsSidebarNav`, its own routes, a back affordance).
 Precedent outside: Cursor's sidebar splits `New Agent / Automations / Dashboard`.
 
-Must be priced like the others. First read: a new top-level route tree is *cheaper* in seam
+Must be priced like the others. First read: a new top-level route tree is _cheaper_ in seam
 terms than decorating `Sidebar.tsx`, because new route files are fork-owned and conflict
 with nothing — the cost is `routeTree.gen.ts` regeneration plus whatever entry point flips
 the mode.
 
 ### F3. Loops × auto-resume × limits
 
-> *"managing and maintaining the loops - working with it and the auto-resume feature.
-> Working with loops and running into limits."*
+> _"managing and maintaining the loops - working with it and the auto-resume feature.
+> Working with loops and running into limits."_
 
 The archived design's §6 is the spine here and it is still right, with the #39 update
-applied. What is **not** yet designed is the *user-facing* half: what the console shows at
+applied. What is **not** yet designed is the _user-facing_ half: what the console shows at
 2am when the loop is parked inside a 5-hour usage limit, and how that reads differently
 from "dead". Two schedulers must never race, and the user must be able to tell "waiting on
 Anthropic" from "waiting on you" from "gave up" at a glance.
 
 ### F4. Loops as maintainer bots
 
-> *"Working with loops as maintainer bots."*
+> _"Working with loops as maintainer bots."_
 
 Ties to open issue #44 (maintainer agent — work a repo's issue queue automatically). The
 question for the report is whether a maintainer bot is **the same primitive with a
 different prompt and trigger**, or a genuinely different thing. First read: same reactor,
-different *stop condition* and different *source of work* — a maintainer loop is
+different _stop condition_ and different _source of work_ — a maintainer loop is
 goal-sourced from an issue queue rather than from a single thread's unfinished work.
 
 ### F5. Deliverable shape
@@ -318,7 +318,7 @@ no contract change, on every adapter that implements the path.
 
 That is precisely the overnight failure mode the user is trying to escape. An agent that
 hits a genuine fork in the road at 01:00 and asks about it correctly **stops working until
-09:00** — and it stops for a *good* reason, which makes it worse: nothing is broken, so no
+09:00** — and it stops for a _good_ reason, which makes it worse: nothing is broken, so no
 stall detector should fire, and the archived design's guard #8
 (`!hasPendingUserInput` ⇒ skip, keep budget) deliberately refuses to nudge it.
 
@@ -327,19 +327,19 @@ The loop reactor and the question channel are therefore in direct tension:
 - Nudge a thread parked on a real question ⇒ you push past the human's decision.
 - Don't nudge it ⇒ the night is lost to one question.
 
-### G3. Which means the console needs a *second*, non-blocking channel
+### G3. Which means the console needs a _second_, non-blocking channel
 
 The resolution is to stop treating "I need a human" as one thing. It is two:
 
-| | **Blocking question** | **Deferred blocker** |
-|---|---|---|
-| Raised by | `AskUserQuestion` (native) | *does not exist yet* |
-| Turn behaviour | parks until answered | returns immediately, agent carries on |
-| Correct when | the next step genuinely cannot be chosen | the work can be re-ordered around it |
-| Cost of waiting | the whole night | one item on a list |
+|                 | **Blocking question**                    | **Deferred blocker**                  |
+| --------------- | ---------------------------------------- | ------------------------------------- |
+| Raised by       | `AskUserQuestion` (native)               | _does not exist yet_                  |
+| Turn behaviour  | parks until answered                     | returns immediately, agent carries on |
+| Correct when    | the next step genuinely cannot be chosen | the work can be re-ordered around it  |
+| Cost of waiting | the whole night                          | one item on a list                    |
 
 The missing half is a fork-owned tool — call it `raise_blocker` — that records a question
-**and returns immediately**, so the agent parks *that thread of work* and continues with
+**and returns immediately**, so the agent parks _that thread of work_ and continues with
 something else. #42's Phase 2 already sketched exactly the right home for it: a fork-owned
 HTTP MCP toolkit, which is provider-agnostic (all five adapters already wire `mcpServers`
 with a per-thread bearer credential) rather than Claude-only.
@@ -347,10 +347,10 @@ with a per-thread bearer credential) rather than Claude-only.
 The console then aggregates three sources, and the distinction is the product:
 
 1. **Blocking** — real `hasPendingUserInput` / `hasPendingApprovals` /
-   `hasActionableProposedPlan`. *The loop is stopped on these.*
-2. **Deferred** — `raise_blocker` items. *The loop kept going; answer at leisure.*
+   `hasActionableProposedPlan`. _The loop is stopped on these._
+2. **Deferred** — `raise_blocker` items. _The loop kept going; answer at leisure._
 3. **Loop-authored** — skip reasons and stop reasons (`spent`, `stalled`, rate-limited).
-   *Why the loop is not running right now.*
+   _Why the loop is not running right now._
 
 ### G4. The degradation question, answered
 

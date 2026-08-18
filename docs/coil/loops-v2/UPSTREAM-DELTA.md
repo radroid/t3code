@@ -14,7 +14,7 @@ origin/main  df027ec08              116 behind upstream — the sync has not lan
 > force-landed onto `main`, putting the fork on merge-base **`a4cc1367b`** — exactly the tree
 > everything below was measured against — **0 commits behind upstream**. The merge-base is cited
 > throughout rather than a fork `main` SHA, because every sync rewrites `main`. Every
-> finding therefore describes the fork's *current* `main`, not a future one, and every check below
+> finding therefore describes the fork's _current_ `main`, not a future one, and every check below
 > was re-run against that tree and still passes. Two consequences, both good: the sequencing
 > question in §6 is moot, and the seam ledger re-baselined to **53 files, +2590 / −1042**.
 > See §6 for what changed and §7 for the re-verification.
@@ -29,24 +29,24 @@ minor. Details below, each re-verified by command rather than assumed.
 
 The whole design rests on these being fork-territory. All re-checked against `upstream/main`:
 
-| Claim | Check | Result |
-|---|---|---|
-| `session_crons` / `ScheduleWakeup` / `CronCreate` absent from server + contracts | `git grep -l` over `apps/server/src`, `packages/contracts/src` | **zero hits** |
-| `options.hooks` set nowhere in `ClaudeAdapter` | `git grep -n "hooks:"` | **zero hits** |
-| `mcp/toolkits/` has only `preview` | `git ls-tree` | **still only `preview`** |
-| No upstream loop/cron/schedule/automation feature landed | `git log --oneline` filtered on those words over 116 commits | **zero matches** |
-| Upstream **#3638** (`schedule_task` / `delegate_task` MCP tools) has not landed | `git log --grep=3638` and `git grep schedule_task` at `a4cc1367b` | **both empty** — still not on `upstream/main` |
+| Claim                                                                            | Check                                                             | Result                                        |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------- |
+| `session_crons` / `ScheduleWakeup` / `CronCreate` absent from server + contracts | `git grep -l` over `apps/server/src`, `packages/contracts/src`    | **zero hits**                                 |
+| `options.hooks` set nowhere in `ClaudeAdapter`                                   | `git grep -n "hooks:"`                                            | **zero hits**                                 |
+| `mcp/toolkits/` has only `preview`                                               | `git ls-tree`                                                     | **still only `preview`**                      |
+| No upstream loop/cron/schedule/automation feature landed                         | `git log --oneline` filtered on those words over 116 commits      | **zero matches**                              |
+| Upstream **#3638** (`schedule_task` / `delegate_task` MCP tools) has not landed  | `git log --grep=3638` and `git grep schedule_task` at `a4cc1367b` | **both empty** — still not on `upstream/main` |
 
 ## 2. Unchanged — the load-bearing files
 
-| File | Status | Why it matters |
-|---|---|---|
-| `ProviderSessionReaper.ts` | **unchanged** | the `backgroundLiveness != null` skip from #5677 is still the current behaviour |
-| `ThreadBackgroundLiveness.ts` (upstream **#5219**, `a2ca89aa1`) | **unchanged** | still in-memory, still presentation-only — the residue argument stands |
-| `Sidebar.logic.ts` | **unchanged**, zero diff | the static-sort rule is verbatim intact at `:534-537` |
-| `rightPanelStore.ts` | **unchanged** | the #112 costing survives |
-| `_chat.$environmentId.$threadId.tsx` | **unchanged** | the delta-zero overlay row is still delta-zero |
-| `coil/**` | untouched | upstream cannot touch fork-owned files |
+| File                                                            | Status                   | Why it matters                                                                  |
+| --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------- |
+| `ProviderSessionReaper.ts`                                      | **unchanged**            | the `backgroundLiveness != null` skip from #5677 is still the current behaviour |
+| `ThreadBackgroundLiveness.ts` (upstream **#5219**, `a2ca89aa1`) | **unchanged**            | still in-memory, still presentation-only — the residue argument stands          |
+| `Sidebar.logic.ts`                                              | **unchanged**, zero diff | the static-sort rule is verbatim intact at `:534-537`                           |
+| `rightPanelStore.ts`                                            | **unchanged**            | the #112 costing survives                                                       |
+| `_chat.$environmentId.$threadId.tsx`                            | **unchanged**            | the delta-zero overlay row is still delta-zero                                  |
+| `coil/**`                                                       | untouched                | upstream cannot touch fork-owned files                                          |
 
 Thread pinning survives in full: `pinningSupported`, `isPinned`, `sortable`,
 `SortablePinnedRowBag` all present in `upstream/main`'s `Sidebar.tsx` (`:707-712`), and
@@ -63,7 +63,7 @@ Thread pinning survives in full: `pinningSupported`, `isPinned`, `sortable`,
 ```ts
 // stopSessionInternal, ClaudeAdapter.ts
 for (const pending of [...context.pendingUserInputs.values()]) {
-  yield* pending.cancel;      // -> Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers)
+  yield * pending.cancel; // -> Deferred.succeed(answersDeferred, {} as ProviderUserInputAnswers)
 }
 ```
 
@@ -104,7 +104,7 @@ Two readings, both useful:
 
 - **Confirms user hooks run in normal sessions.** The commit's own reason is that
   `SessionStart` hooks would otherwise fire on every health check — which only matters because
-  hooks *do* run the rest of the time. That validates the BACKEND §5 claim that a user's
+  hooks _do_ run the rest of the time. That validates the BACKEND §5 claim that a user's
   `~/.claude` hooks apply to a loop turn exactly as to a terminal one.
 - **The neighbourhood is now occupied.** `options.hooks` is still unset, but upstream has started
   touching hook-adjacent config. The one-line spread is still available; it is no longer in a part
@@ -122,14 +122,14 @@ section needs, and it **landed the same day (2026-08-17)** as this re-verificati
 
 What upstream paid, and what the fork would pay:
 
-| File | Upstream's delta | Fork's equivalent | Seam cost |
-|---|---|---|---|
-| `settingsSearch.ts` | +26 | union entry + label + 2-3 search items | **NEW row** (~+4) |
-| `SettingsSidebarNav.tsx` | +2 | icon import + record entry | **NEW row** (+2) |
-| `routes/settings.<name>.tsx` | +11 | new fork-owned file | **0** — conflicts with nothing |
-| `routeTree.gen.ts` | +21 | regenerates | **0** — generated, not merged |
-| `SettingsPanels.tsx` | +10 | **avoid** — churn 36, risk 2088 | **0** |
-| `contracts/settings.ts` | +39 | **avoid** — persisted schema, churn 26, the #29 anchor | **0** |
+| File                         | Upstream's delta | Fork's equivalent                                      | Seam cost                      |
+| ---------------------------- | ---------------- | ------------------------------------------------------ | ------------------------------ |
+| `settingsSearch.ts`          | +26              | union entry + label + 2-3 search items                 | **NEW row** (~+4)              |
+| `SettingsSidebarNav.tsx`     | +2               | icon import + record entry                             | **NEW row** (+2)               |
+| `routes/settings.<name>.tsx` | +11              | new fork-owned file                                    | **0** — conflicts with nothing |
+| `routeTree.gen.ts`           | +21              | regenerates                                            | **0** — generated, not merged  |
+| `SettingsPanels.tsx`         | +10              | **avoid** — churn 36, risk 2088                        | **0**                          |
+| `contracts/settings.ts`      | +39              | **avoid** — persisted schema, churn 26, the #29 anchor | **0**                          |
 
 **Answer to decision 3: an own settings section costs 2 new seam rows, both small and additive**
 (~6 lines total). The fork renders its own panel from its own route and keeps its state in
@@ -146,8 +146,8 @@ is still worth taking, but it will conflict occasionally and the plan should say
 
 Small, and none of them change a decision.
 
-1. **`ClaudeAdapter.ts` line numbers are stale by ~600 lines.** *Partially applied.* The
-   *structure* is unchanged — `canUseTool`, `env`, `additionalDirectories`, the `extraArgs` spread,
+1. **`ClaudeAdapter.ts` line numbers are stale by ~600 lines.** _Partially applied._ The
+   _structure_ is unchanged — `canUseTool`, `env`, `additionalDirectories`, the `extraArgs` spread,
    then the `mcpServers` spread — so the one-line hooks spread lands the same way, and the
    `AskUserQuestion` interception is still inside `canUseTool` with its `Deferred.await` below it.
    **Fix: cite the structural anchor — the `queryOptions` object and its `mcpServers` spread — and
@@ -156,8 +156,8 @@ Small, and none of them change a decision.
 2. **`Sidebar.tsx` is hotter than recorded** — 7 commits in 3 days, **+184/−81 (265 lines
    touched**: tooltips, PR badges, provider accent badges, an archive-menu restore, a styling
    refactor, and one landed-then-reverted layout change). None touch pinning or partitioning. This
-   *reinforces* rejecting Direction B: a new row there would have collided with something in the
-   last 72 hours. *Recorded here; nothing to change elsewhere.*
+   _reinforces_ rejecting Direction B: a new row there would have collided with something in the
+   last 72 hours. _Recorded here; nothing to change elsewhere._
 3. **`RightPanelTabs.tsx` moved** (+13, styling only — a `Button` render prop). The #112 answer
    (**2 seam rows**: `rightPanelStore.ts` + `RightPanelTabs.tsx`) is unaffected because
    `rightPanelStore.ts` did not move at all. The measurements #112 asked for, over the 60 days
@@ -168,14 +168,14 @@ Small, and none of them change a decision.
 4. **Add the voided-question failure mode** (§3.1) to the console design and the test list.
    **Done** — BACKEND §9.1b and TESTS §7b.
 5. **Re-baseline the docs' merge-base line** from `196c8ea0d` to whatever the next sync lands on,
-   at implementation time. *Deferred to implementation, by design.*
+   at implementation time. _Deferred to implementation, by design._
 
 ---
 
 ## 6. What this means for sequencing — resolved
 
 This section originally weighed building on a 116-behind `main` against waiting for the sync, and
-flagged one real interaction: phase 4's `settingsSearch.ts` row had to be written *after* the sync
+flagged one real interaction: phase 4's `settingsSearch.ts` row had to be written _after_ the sync
 carrying #7082, or it would conflict with the `integrations` entry on the way in.
 
 **The sync landed the same day**, putting `origin/main` on merge-base `a4cc1367b`, zero behind
@@ -184,7 +184,7 @@ upstream. So:
 - There is nothing to sequence around. Build on `main` as it stands.
 - **The #7082 interaction is already satisfied** — `apps/web/src/routes/settings.integrations.tsx`
   is in the fork's tree and `settingsSearch.ts` carries 7 `integrations` references. Phase 4 adds
-  its entry *beside* a row that has already landed, which is the cheap ordering, achieved for free.
+  its entry _beside_ a row that has already landed, which is the cheap ordering, achieved for free.
 - The one thing that did move is the **seam ledger: 51 → 53 files, +2622/−1093 → +2590/−1042**.
   Two rows added, and the line counts fell — upstream absorbed fork work in this range. Phase costs
   in PLAN.md are quoted against 53.
@@ -197,21 +197,21 @@ Everything in §1–§4 was measured against `upstream/main`. Now that the fork 
 merge-base, each load-bearing claim was re-run against **the fork's own tree** — a stronger check,
 because it is the tree the work would actually be built on.
 
-| Claim | Result on the post-sync tree |
-|---|---|
-| `session_crons` / `ScheduleWakeup` / `CronCreate` in server + contracts | **0 files** |
-| `options.hooks` set in `ClaudeAdapter` | **0** |
-| `mcp/toolkits/` contents | **`preview` only** |
-| the `mcpServers` spread anchor in `queryOptions` | **present** |
-| `Sidebar.logic.ts` diff vs upstream | **zero** |
-| overlay row `_chat.$environmentId.$threadId.tsx` | **+10 / −6**, as costed |
-| `pinnedAt` in contracts | **present** |
-| two independent scope-auth mirrors (phase 0's debt) | **still two** — `autoResume/http.ts:45`, `webPush/http.ts:49` |
+| Claim                                                                   | Result on the post-sync tree                                  |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `session_crons` / `ScheduleWakeup` / `CronCreate` in server + contracts | **0 files**                                                   |
+| `options.hooks` set in `ClaudeAdapter`                                  | **0**                                                         |
+| `mcp/toolkits/` contents                                                | **`preview` only**                                            |
+| the `mcpServers` spread anchor in `queryOptions`                        | **present**                                                   |
+| `Sidebar.logic.ts` diff vs upstream                                     | **zero**                                                      |
+| overlay row `_chat.$environmentId.$threadId.tsx`                        | **+10 / −6**, as costed                                       |
+| `pinnedAt` in contracts                                                 | **present**                                                   |
+| two independent scope-auth mirrors (phase 0's debt)                     | **still two** — `autoResume/http.ts:45`, `webPush/http.ts:49` |
 
 No claim in this document changed on the way across.
 
 `origin/main` was **`f6355f06f`** when this table was run. The next daily sync force-rewrote it to
-**`94c6328ef`** on 2026-08-18, on the *same* merge-base `a4cc1367b`; the two extra upstream commits
+**`94c6328ef`** on 2026-08-18, on the _same_ merge-base `a4cc1367b`; the two extra upstream commits
 it carries touch `PendingUserInputCard.tsx` and a web test, so no row above moves. Fork `main` SHAs
 are rewritten by every sync — which is exactly why the merge-base is the anchor this package
 cites.

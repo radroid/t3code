@@ -50,11 +50,13 @@ function escapeHtml(text) {
 const src = readFileSync(join(here, "report.src.html"), "utf8");
 
 let embedded = 0;
-const out = src.replace(/<!--EMBED:([^|]+)\|(\d+)\|([^|]*)\|([^|]*)\|([^>]*?)-->/g, (_m, file, height, tag, name, hint) => {
-  const raw = readFileSync(join(protoDir, file.trim()), "utf8");
-  const doc = escapeHtml(inlineCss(raw));
-  embedded += 1;
-  return `<div class="proto">
+const out = src.replace(
+  /<!--EMBED:([^|]+)\|(\d+)\|([^|]*)\|([^|]*)\|([^>]*?)-->/g,
+  (_m, file, height, tag, name, hint) => {
+    const raw = readFileSync(join(protoDir, file.trim()), "utf8");
+    const doc = escapeHtml(inlineCss(raw));
+    embedded += 1;
+    return `<div class="proto">
         <div class="proto-bar">
           <span class="proto-tag">${escapeHtml(tag)}</span>
           <span class="proto-name">${escapeHtml(name)}</span>
@@ -63,7 +65,8 @@ const out = src.replace(/<!--EMBED:([^|]+)\|(\d+)\|([^|]*)\|([^|]*)\|([^>]*?)-->
         </div>
         <iframe title="${escapeHtml(name)}" height="${height}" loading="lazy" srcdoc="${doc}"></iframe>
       </div>`;
-});
+  },
+);
 
 if (embedded === 0) throw new Error("no EMBED markers matched — the marker syntax has drifted");
 
