@@ -1,0 +1,12 @@
+# Captured episodes are committed ONLY when a test replays them.
+#
+# A capture is a redacted slice of a real provider log, and a busy session runs to hundreds
+# of KiB — macos-hard-block-b.json alone was 14,172 lines, 69% of the pull request that
+# introduced this harness, and no test referenced it. An unused fixture is not free: it is
+# reviewed by nobody, diffed by everybody, and grows the clone for everyone forever.
+#
+# Keep local captures here (the recorder writes them here by default) and commit one only
+# when it is load-bearing. `record.ts` can regenerate a fixture from a provider log at any
+# time — but note the source logs rotate, so a capture worth keeping should be kept locally
+# until the test that uses it exists.
+macos-hard-block-b.json

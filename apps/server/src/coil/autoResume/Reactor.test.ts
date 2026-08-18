@@ -35,8 +35,10 @@ const readModel = (o: {
   status?: string;
   latestTurnId?: string;
   /** Explicit latestTurn override; pass null to model an idle thread whose
-   * projection row has no latest_turn_id (see radroid/t3code#6). */
-  latestTurn?: { turnId: string; state: string } | null;
+   * projection row has no latest_turn_id (see radroid/t3code#6). `completedAt` is when
+   * the turn ended — the guard uses it to tell a turn that outlived the closed window
+   * from one that died inside it. TestClock starts at 0, so script it in test-clock ms. */
+  latestTurn?: { turnId: string; state: string; completedAt?: string } | null;
 }): OrchestrationReadModel =>
   ({
     snapshotSequence: 1,
@@ -293,7 +295,13 @@ describe("AutoResumeReactor (integration)", () => {
         // projection's latest_turn_id empties out, so the snapshot's latestTurn is null.
         yield* Ref.set(modelRef, readModel({ status: "stopped", latestTurn: null }));
 
-        yield* advancePastResume;
+        // Waiting for something to APPEAR, so it must be condition-based — see the note
+        // on `settleUntil`. The fixed spin this replaces was the file's last "expect a
+        // resume, then look" site and went red under load.
+        yield* advanceUntil(
+          dispatchedIncludes(dispatched, "thread.turn.start"),
+          "the settled-away thread to resume",
+        );
 
         const commands = yield* Ref.get(dispatched);
         const turnStarts = commands.filter((c) => c.type === "thread.turn.start");
@@ -304,6 +312,155 @@ describe("AutoResumeReactor (integration)", () => {
         assert.isFalse(
           summaries.some((s) => s.includes("thread-advanced")),
           "no thread-advanced cancellation may be posted",
+        );
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  // --- the 2026-08-18 doomed-turn rule, end to end ------------------------------------
+  // These two are a matched pair, and the pair is the point: the ONLY difference between
+  // them is which side of the reopen the new turn's `completedAt` falls on. That proves
+  // the window comparison is load-bearing rather than dead code, and — unlike any unit
+  // test of `cancelReason` — that the reactor really hands the guard `pending.resumeAtMs`.
+  //
+  // Timing: resetsAt 100s + 60s margin ⇒ the arm is due at 160_000 on the TestClock.
+
+  it.effect("resumes when the new turn died inside the still-closed window", () =>
+    Effect.gen(function* () {
+      const { dispatched, modelRef, deps, store } = yield* harness(
+        readModel({ latestTurn: { turnId: "turn-old", state: "completed" } }),
+        [rejectedEvent(100)],
+      );
+
+      yield* Effect.gen(function* () {
+        yield* settleUntil(scheduledOne(store), "detection to schedule"); // baseline: "turn-old"
+
+        // A turn is requested and dies half a second later, at t=150s — ten seconds
+        // before the window reopens. It produced nothing; it only became the latest turn.
+        yield* Ref.set(
+          modelRef,
+          readModel({
+            latestTurn: {
+              turnId: "turn-doomed",
+              state: "completed",
+              completedAt: "1970-01-01T00:02:30.000Z", // 150_000ms < 160_000ms
+            },
+          }),
+        );
+
+        yield* advanceUntil(
+          dispatchedIncludes(dispatched, "thread.turn.start"),
+          "the doomed turn to be ignored and the resume to fire",
+        );
+
+        const commands = yield* Ref.get(dispatched);
+        assert.strictEqual(
+          commands.filter((c) => c.type === "thread.turn.start").length,
+          1,
+          "a turn rejected by the same limit is the blockage, not advancement",
+        );
+        const summaries = commands
+          .filter((c) => c.type === "thread.activity.append")
+          .map((c) => (c as unknown as { activity: { summary: string } }).activity.summary);
+        assert.isFalse(
+          summaries.some((s) => s.includes("thread-advanced")),
+          "no thread-advanced cancellation may be posted",
+        );
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  it.effect("still cancels when the new turn outlived the window (genuine advancement)", () =>
+    Effect.gen(function* () {
+      const { dispatched, modelRef, deps, store } = yield* harness(
+        readModel({ latestTurn: { turnId: "turn-old", state: "completed" } }),
+        [rejectedEvent(100)],
+      );
+
+      yield* Effect.gen(function* () {
+        yield* settleUntil(scheduledOne(store), "detection to schedule"); // baseline: "turn-old"
+
+        // Same fixture, one field moved across the boundary: this turn finished at t=170s,
+        // after the window reopened at 160s. The thread really did move on.
+        yield* Ref.set(
+          modelRef,
+          readModel({
+            latestTurn: {
+              turnId: "turn-real",
+              state: "completed",
+              completedAt: "1970-01-01T00:02:50.000Z", // 170_000ms >= 160_000ms
+            },
+          }),
+        );
+
+        // The verdict has landed once the arm is gone, so this waits for something to
+        // APPEAR rather than spinning a fixed number of turns and looking.
+        yield* advanceUntil(
+          store.listPending.pipe(Effect.map((pending) => pending.length === 0)),
+          "the wake tick to reach a verdict on the arm",
+        );
+
+        const commands = yield* Ref.get(dispatched);
+        assert.notInclude(types(commands), "thread.turn.start");
+        const activities = commands
+          .filter((c) => c.type === "thread.activity.append")
+          .map(
+            (c) =>
+              (
+                c as unknown as {
+                  activity: { summary: string; kind: string; payload: Record<string, unknown> };
+                }
+              ).activity,
+          );
+        assert.include(
+          activities.map((a) => a.summary),
+          "Auto-resume cancelled: thread-advanced.",
+        );
+
+        // The cancel must also be machine-readable. Every silent failure in this feature
+        // so far was diagnosed by hand from SQL because the reason lived only in prose.
+        const cancelled = activities.find((a) => a.kind === "coil.auto-resume.cancelled");
+        assert.isDefined(cancelled, "a cancellation activity must be posted");
+        assert.deepStrictEqual(cancelled?.payload, {
+          reason: "thread-advanced",
+          resumeAtMs: 160_000,
+          baselineTurnId: "turn-old",
+          observedTurnId: "turn-real",
+          observedTurnCompletedAt: "1970-01-01T00:02:50.000Z",
+        });
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  // The wake loop sleeps until the earliest arm is due (capped at pollMs) instead of on a
+  // fixed pollMs cadence, so fire time tracks armed time. Measured on 2026-08-18: arms due
+  // at 19:51:00 fired at 19:51:42 and 19:51:47, and up to 30s of that was pure poll
+  // misalignment. 160_000 is deliberately NOT a multiple of the 30s poll: under the old
+  // fixed cadence the ticks landed on 150_000 then 180_000, so nothing fired at 160_000.
+  it.effect("fires at the armed time, not at the next poll boundary", () =>
+    Effect.gen(function* () {
+      const { dispatched, deps, store } = yield* harness(readModel({}), [rejectedEvent(100)]);
+
+      yield* Effect.gen(function* () {
+        yield* settleUntil(scheduledOne(store), "detection to schedule"); // due at 160_000
+
+        // t = 150_000: still ten seconds short of the window reopening.
+        for (let i = 0; i < 5; i++) {
+          yield* TestClock.adjust(Duration.millis(30_000));
+          yield* settleQuiet;
+        }
+        assert.notInclude(
+          types(yield* Ref.get(dispatched)),
+          "thread.turn.start",
+          "must not fire before the window reopens",
+        );
+
+        // t = 160_000 exactly: the armed moment, and a moment the old fixed cadence
+        // never visited.
+        yield* TestClock.adjust(Duration.millis(10_000));
+        yield* settleUntil(
+          dispatchedIncludes(dispatched, "thread.turn.start"),
+          "the resume to fire at the armed time rather than the next poll",
         );
       }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),

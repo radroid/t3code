@@ -7,8 +7,9 @@
  *   1. Detection: subscribes once to `providerService.streamEvents` and, on a Claude
  *      `account.rate-limits.updated` event with `status:"rejected"`, schedules a resume
  *      at the structured `resetsAt` (+ margin), or on a backoff ladder when absent.
- *   2. Wake: every `pollMs`, fires any due resume — re-reading a fresh snapshot to
- *      re-check every guard immediately before dispatch (closing the wake race).
+ *   2. Wake: sleeps until the earliest armed resume comes due (capped at `pollMs`) and
+ *      fires it — re-reading a fresh snapshot to re-check every guard immediately before
+ *      dispatch (closing the wake race).
  *
  * Detection reads the structured rate-limit signal, NOT projection error state: a usage
  * limit does not produce a failed turn (the SDK has no rate-limit result subtype).
@@ -50,6 +51,8 @@ import { AutoResumeStore, type PendingResume } from "./state.ts";
 const HOUR_MS = 60 * 60_000;
 const BACKOFF_LOOKBACK_MS = 6 * HOUR_MS;
 const CAP_WINDOW_MS = 24 * HOUR_MS;
+/** Floor on the wake sleep, so an arm due in a millisecond cannot spin the fiber. */
+const MIN_WAKE_MS = 250;
 
 const makeSupervisor = Effect.gen(function* () {
   const engine = yield* OrchestrationEngineService;
@@ -61,11 +64,18 @@ const makeSupervisor = Effect.gen(function* () {
 
   const isoNow = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
+  /**
+   * `payload` is free-form on the contract and is the only machine-readable trace this
+   * feature leaves. All three silent failures (#6, #39, 2026-08-18) had to be diagnosed
+   * by hand from SQL because the reason lived only in prose inside `summary`; anything
+   * that wants to aggregate or alert on cancellations needs it as a field.
+   */
   const appendActivity = (
     threadId: ThreadId,
     tone: OrchestrationThreadActivityTone,
     kind: string,
     summary: string,
+    payload: Record<string, unknown> = {},
   ) =>
     Effect.gen(function* () {
       const commandUuid = yield* crypto.randomUUIDv4;
@@ -80,7 +90,7 @@ const makeSupervisor = Effect.gen(function* () {
           tone,
           kind,
           summary,
-          payload: {},
+          payload,
           turnId: null,
           createdAt,
         },
@@ -209,7 +219,10 @@ const makeSupervisor = Effect.gen(function* () {
         return;
       }
 
-      const reason = cancelReason(thread, pending.baseline);
+      // `pending` structurally satisfies `ResumeArm` (baseline + resumeAtMs). The guard
+      // needs to know WHICH window it was waiting on: a turn that ended before that
+      // window reopened was rejected by the same limit and is not advancement.
+      const reason = cancelReason(thread, pending);
       if (reason) {
         yield* store.clearPending(pending.threadId);
         yield* appendActivity(
@@ -217,6 +230,15 @@ const makeSupervisor = Effect.gen(function* () {
           "info",
           "coil.auto-resume.cancelled",
           `Auto-resume cancelled: ${reason}.`,
+          // Enough to re-diagnose a lost arm without opening the projection: which rule
+          // fired, which window it was waiting on, and which turn it was comparing.
+          {
+            reason,
+            resumeAtMs: pending.resumeAtMs,
+            baselineTurnId: pending.baseline.latestTurnId,
+            observedTurnId: thread.latestTurn?.turnId ?? null,
+            observedTurnCompletedAt: thread.latestTurn?.completedAt ?? null,
+          },
         );
         return;
       }
@@ -266,6 +288,31 @@ const makeSupervisor = Effect.gen(function* () {
     yield* Effect.forEach(due, (p) => fireOne(p, nowMs), { discard: true });
   });
 
+  /**
+   * How long to sleep before looking again: until the earliest armed resume comes due,
+   * capped at `pollMs` so a resume armed *during* the sleep is still picked up within one
+   * poll, and floored so a near-instant due time cannot spin the fiber.
+   *
+   * A fixed `pollMs` cadence is unaligned to the due time, which cost the observed 0-30s
+   * of lateness (an arm due at 19:51:00 fired at 19:51:42). Sleeping to the due time makes
+   * fire time track armed time instead. This changes only WHEN the loop looks, never what
+   * it checks once awake — `fireOne` still takes its own fresh snapshot per item, which is
+   * what closes the wake race.
+   *
+   * Arms that are already due are excluded (`delta > 0`), so a due-but-unfired arm cannot
+   * compute a zero sleep and busy-loop a full `getSnapshot()` per iteration. That is the
+   * reachable failure mode here: if `processDue` dies (a snapshot read that throws), the
+   * arm stays pending and stays due, and the caller above only logs.
+   */
+  const nextWakeMs = Effect.gen(function* () {
+    const nowMs = yield* Clock.currentTimeMillis;
+    const upcoming = (yield* store.listPending)
+      .map((p) => p.resumeAtMs - nowMs)
+      .filter((delta) => delta > 0);
+    if (upcoming.length === 0) return config.pollMs;
+    return Math.max(MIN_WAKE_MS, Math.min(config.pollMs, ...upcoming));
+  });
+
   if (!config.enabled) {
     yield* Effect.logInfo("coil auto-resume: disabled via T3X_AUTO_RESUME_ENABLED");
     return;
@@ -284,14 +331,37 @@ const makeSupervisor = Effect.gen(function* () {
     ),
   );
 
+  // Process THEN sleep, deliberately: a server that restarts holding an overdue arm fires
+  // it immediately rather than up to one poll interval later.
   yield* Effect.forkScoped(
-    processDue.pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("coil auto-resume: wake tick failed", { cause: Cause.pretty(cause) }),
-      ),
-      Effect.delay(Duration.millis(config.pollMs)),
-      Effect.forever,
-    ),
+    Effect.gen(function* () {
+      // Boot grace, BEFORE the first pass.
+      //
+      // This fiber is forked during layer construction, but crashed turns are settled later,
+      // in the `reconcile.interrupted-turns` startup phase (serverRuntimeStartup.ts:359).
+      // A server killed mid-turn therefore comes back with the projection still showing that
+      // turn as running. If the wake fiber looks first, an arm that fell due while the machine
+      // was down reads as `progressing` and `fireOne` CLEARS it — permanently, with no retry.
+      // That is the same silent-arm-loss this module exists to prevent.
+      //
+      // The previous `processDue.pipe(delay(pollMs), forever)` shape got this for free, because
+      // `Effect.delay` ran before every pass. Sleeping until the earliest due time is a strict
+      // improvement afterwards, so the grace is stated explicitly rather than re-derived from
+      // the poll cadence.
+      yield* Effect.sleep(Duration.millis(config.pollMs));
+      return yield* Effect.gen(function* () {
+        yield* processDue;
+        // Sleeping until the earliest due arm (rather than a fixed cadence) is what makes the
+        // fire time track the armed time; `nextWakeMs` is inside the catch so a defect here
+        // cannot kill the only wake fiber and silently retire the feature.
+        yield* Effect.sleep(Duration.millis(yield* nextWakeMs));
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("coil auto-resume: wake tick failed", { cause: Cause.pretty(cause) }),
+        ),
+        Effect.forever,
+      );
+    }),
   );
 
   yield* Effect.logInfo("coil auto-resume: supervisor started", {

@@ -22,6 +22,8 @@ const makeThread = (o: {
   providerName?: string | null;
   latestTurnState?: string | null;
   latestTurnId?: string | null;
+  /** ISO time the latest turn ended; drives the "did it outlive the closed window?" rule. */
+  latestTurnCompletedAt?: string | null;
   deletedAt?: string | null;
   archivedAt?: string | null;
   settledOverride?: string | null;
@@ -36,7 +38,11 @@ const makeThread = (o: {
     settledOverride: o.settledOverride ?? null,
     latestTurn:
       o.latestTurnId || o.latestTurnState
-        ? { turnId: o.latestTurnId ?? "turn-1", state: o.latestTurnState ?? "completed" }
+        ? {
+            turnId: o.latestTurnId ?? "turn-1",
+            state: o.latestTurnState ?? "completed",
+            completedAt: o.latestTurnCompletedAt ?? null,
+          }
         : null,
     session: {
       status: o.status ?? "ready",
@@ -156,8 +162,17 @@ describe("cancelReason", () => {
     });
   const baseline = () => captureBaseline(base());
 
+  // The arm the guard re-checks: the baseline PLUS the window it is waiting on. Written
+  // at test-clock scale (epoch ms, not wall-clock 2026 dates) on purpose — `resumeAtMs`
+  // comes from `Clock.currentTimeMillis`, which is 0-based under TestClock, so a fixture
+  // that mixes real ISO turn times with a test-clock arm reads every turn as post-window.
+  const REOPENS_AT_MS = 1_000;
+  const AFTER_REOPEN_ISO = "1970-01-01T00:00:06.000Z"; // 6_000ms — after the window opened
+  const BEFORE_REOPEN_ISO = "1970-01-01T00:00:00.500Z"; // 500ms — inside the shut window
+  const arm = () => ({ baseline: baseline(), resumeAtMs: REOPENS_AT_MS });
+
   it("returns null when nothing changed and thread is idle Claude", () => {
-    expect(cancelReason(base(), baseline())).toBeNull();
+    expect(cancelReason(base(), arm())).toBeNull();
   });
 
   // Regression for radroid/t3code#39. The removed `user-took-over` branch cancelled on
@@ -172,7 +187,7 @@ describe("cancelReason", () => {
       ],
       latestTurnId: "turn-1",
     });
-    expect(cancelReason(thread, baseline())).toBeNull();
+    expect(cancelReason(thread, arm())).toBeNull();
   });
 
   // The baseline still records it — it is persisted with the pending resume and is what
@@ -191,31 +206,103 @@ describe("cancelReason", () => {
       ],
       status: "running",
     });
-    expect(cancelReason(thread, baseline())).toBe("progressing");
+    expect(cancelReason(thread, arm())).toBe("progressing");
   });
 
+  // Still advancement — but it now needs the turn to have OUTLIVED the closed window.
+  // A turn that lived entirely inside it is the doomed-turn case, covered below.
   it("detects a new turn since scheduling", () => {
-    const thread = makeThread({ messages: [{ id: "u1", role: "user" }], latestTurnId: "turn-2" });
-    expect(cancelReason(thread, baseline())).toBe("thread-advanced");
+    const thread = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-2",
+      latestTurnCompletedAt: AFTER_REOPEN_ISO,
+    });
+    expect(cancelReason(thread, arm())).toBe("thread-advanced");
   });
 
-  // Regression for radroid/t3code#6: the projection populates latest_turn_id only while
-  // a turn is active, so a limit captured mid-turn (baseline has the running turn's id)
-  // always sees latestTurn: null once that turn settles. Null is "no active turn", not
-  // advancement — cancelling here killed every real-world resume.
+  // Regression for radroid/t3code#6: a limit captured mid-turn pins the running turn's id
+  // in the baseline, and the snapshot can report `latestTurn: null` at fire time when the
+  // join finds no retained turn row. Null is "no turn to report", not advancement —
+  // cancelling here killed every real-world resume.
   it("does NOT treat a settled-away turn (latestTurn null at fire) as advancement", () => {
     const thread = makeThread({
       messages: [{ id: "u1", role: "user" }],
       status: "stopped",
     });
     expect(thread.latestTurn).toBeNull();
-    expect(cancelReason(thread, baseline())).toBeNull();
+    expect(cancelReason(thread, arm())).toBeNull();
   });
 
   it("still detects advancement when a turn exists but the baseline had none", () => {
-    const noTurnBaseline = captureBaseline(makeThread({ messages: [{ id: "u1", role: "user" }] }));
-    const thread = makeThread({ messages: [{ id: "u1", role: "user" }], latestTurnId: "turn-9" });
-    expect(cancelReason(thread, noTurnBaseline)).toBe("thread-advanced");
+    const noTurnArm = {
+      baseline: captureBaseline(makeThread({ messages: [{ id: "u1", role: "user" }] })),
+      resumeAtMs: REOPENS_AT_MS,
+    };
+    const thread = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-9",
+      latestTurnCompletedAt: AFTER_REOPEN_ISO,
+    });
+    expect(cancelReason(thread, noTurnArm)).toBe("thread-advanced");
+  });
+
+  // --- the 2026-08-18 doomed-turn rule -------------------------------------------------
+  // These three drive the real timestamp arithmetic. They are not optional garnish: the
+  // locked replay fixture leaves `completedAt` unset, so it reaches the right verdict via
+  // the no-evidence fallback and would stay green even if this comparison were inverted.
+  // In production `completed_at` is always present (0 of 764 settled turns are null), so
+  // the comparison below is the only thing standing between us and a fourth incident.
+
+  it("does NOT treat a turn that lived inside the shut window as advancement", () => {
+    const thread = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-doomed",
+      latestTurnCompletedAt: BEFORE_REOPEN_ISO,
+    });
+    expect(cancelReason(thread, arm())).toBeNull();
+  });
+
+  // The incident's own arithmetic, at wall-clock scale: turn 64f7c4b7 ran 19:34:44.276 ->
+  // 19:34:44.784 against a five_hour window whose arm was due at 19:51:00. The sibling
+  // threads that DID resume started their next turns at 19:51:42 — after the reopen.
+  it("separates the incident's doomed turn from the siblings' real ones", () => {
+    const incidentArm = {
+      baseline: captureBaseline(
+        makeThread({ messages: [{ id: "u1", role: "user" }], latestTurnId: "turn-f0d77468" }),
+      ),
+      resumeAtMs: Date.parse("2026-08-18T19:51:00.000Z"),
+    };
+    const doomed = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-64f7c4b7",
+      latestTurnCompletedAt: "2026-08-18T19:34:44.784Z",
+    });
+    expect(cancelReason(doomed, incidentArm)).toBeNull();
+
+    const genuine = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-after-reopen",
+      latestTurnCompletedAt: "2026-08-18T19:52:10.000Z",
+    });
+    expect(cancelReason(genuine, incidentArm)).toBe("thread-advanced");
+  });
+
+  // Absent timing evidence is NOT evidence of advancement — cancelling is the destructive
+  // move, so "no proof" must never cancel. Stated as an invariant rather than left as an
+  // accident of a null check.
+  it("does NOT cancel for a turn it cannot place in time", () => {
+    const noTimestamp = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-unknown",
+    });
+    expect(cancelReason(noTimestamp, arm())).toBeNull();
+
+    const unparseable = makeThread({
+      messages: [{ id: "u1", role: "user" }],
+      latestTurnId: "turn-unknown",
+      latestTurnCompletedAt: "not-a-timestamp",
+    });
+    expect(cancelReason(unparseable, arm())).toBeNull();
   });
 
   it("blocks when awaiting input", () => {
@@ -224,12 +311,12 @@ describe("cancelReason", () => {
       latestTurnId: "turn-1",
       activities: [{ kind: "approval.requested", payload: { requestId: "r1" } }],
     });
-    expect(cancelReason(thread, baseline())).toBe("awaiting-input");
+    expect(cancelReason(thread, arm())).toBe("awaiting-input");
   });
 
   it("prioritizes thread-gone and non-claude and progressing", () => {
-    expect(cancelReason(makeThread({ deletedAt: "x" }), baseline())).toBe("thread-gone");
-    expect(cancelReason(makeThread({ providerName: "codex" }), baseline())).toBe("not-claude");
-    expect(cancelReason(makeThread({ status: "running" }), baseline())).toBe("progressing");
+    expect(cancelReason(makeThread({ deletedAt: "x" }), arm())).toBe("thread-gone");
+    expect(cancelReason(makeThread({ providerName: "codex" }), arm())).toBe("not-claude");
+    expect(cancelReason(makeThread({ status: "running" }), arm())).toBe("progressing");
   });
 });
