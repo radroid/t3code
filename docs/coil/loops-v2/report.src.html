@@ -320,8 +320,8 @@
           </p>
           <p>
             Ship a loop as <b>a pinned thread</b> (Direction A) — upstream already built pinning, so
-            the sidebar costs nothing. Keep the Loops workspace (Direction C) as the phase-2 upgrade
-            once there is more than one loop to look at.
+            the sidebar costs nothing. Keep the Loops workspace (Direction C) as the upgrade for a later
+            phase (PLAN Phase 6), once there is more than one loop to look at.
           </p>
         </div>
 
@@ -538,7 +538,7 @@
           <code>BetaSettingsPanel.tsx</code> is gone. Today's settings surface is seven route files and
           a <em>closed</em> <code>SettingsPath</code> union in <code>settingsSearch.ts</code> that
           drives both the nav and search. The old design's "+2 lines, risk 6" costing is void, and
-          re-pricing it is one of the open decisions in <a href="#decide">§13</a>.
+          re-pricing it is one of the open decisions in <a href="#decide">§14</a>.
         </p>
       </div>
     </section>
@@ -559,9 +559,9 @@
           stuck on and what do you want from me", which is the question you actually have at 9am.
         </p>
 
-        <!--EMBED:p1-console.html|840|P1|Loop Console|Click the four scenarios along the top, and answer a question to watch the loop resume.-->
+        <!--EMBED:p1-console.html|840|P1|Loop Console|Click the five scenarios along the top, and answer a question to watch the loop resume.-->
         <p class="proto-cap">
-          <b>What to look at:</b> the four scenarios along the top are the four ways a morning can go.
+          <b>What to look at:</b> the five scenarios along the top are the five ways a morning can go.
           Answering an option marks it resolved and — once the blocking ones are cleared — flips the
           loop back to Working, because <em>answering is the resume</em>. Note that "Stopped on these"
           and "Answer when you can" are visually distinct sections: that split is the whole design.
@@ -581,7 +581,7 @@ UserInputQuestion = { id, header, question, options: [{ label, description }], m
 </div>
         <p>And then, in the adapter:</p>
         <div class="eb">
-<span class="c">// ClaudeAdapter.ts:3852</span>
+<span class="c">// ClaudeAdapter.ts — AskUserQuestion interception in canUseTool</span>
 const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>;   <span class="c">// blocks until a human answers</span>
 </div>
 
@@ -622,7 +622,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           <code>raise_blocker</code> still produces a correct console — it just has fewer rows. It
           degrades to <em>"the loop is spent, and nothing is waiting on you"</em>, which is true and
           worth knowing, rather than to silence. <strong>That is the acceptance test</strong>, and it is
-          why the prototype renders the empty state explicitly (scenario 2).
+          why the prototype renders the empty state explicitly — the "running, nothing needed" scenario.
         </p>
 
         <h3 class="sub">Where the console renders — you said you were open to other ways</h3>
@@ -683,7 +683,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
             <tr><td class="k">Sidebar.tsx</td><td class="yes">untouched</td><td class="no">new row, 3911 lines</td><td class="yes">untouched</td></tr>
             <tr><td class="k">contracts</td><td class="yes">untouched</td><td class="mid">a loop flag</td><td class="yes">untouched</td></tr>
             <tr><td class="k">New seam rows</td><td class="yes">0</td><td class="no">2–3</td><td class="mid">1</td></tr>
-            <tr><td class="k">Legibility</td><td class="mid">boxed row + glyph</td><td class="yes">full</td><td class="yes">full</td></tr>
+            <tr><td class="k">Legibility</td><td class="mid">the pin itself; row chrome is deferred</td><td class="yes">full</td><td class="yes">full</td></tr>
             <tr><td class="k">Scales past ~3 loops</td><td class="no">no</td><td class="mid">somewhat</td><td class="yes">yes</td></tr>
             <tr><td class="k">Risk</td><td class="yes">none</td><td class="no">every sync lands on it</td><td class="mid">a mode you forget to check</td></tr>
           </tbody>
@@ -794,12 +794,13 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         <!--EMBED:p4-settings.html|900|P4|Settings → Loops|Toggle the master switch at the top to see the disabled state.-->
         <p class="proto-cap">
           <b>What to look at:</b> "What a loop may do unattended". The first row — <em>let the model
-          schedule its own wake-ups</em> — is not a new capability being added. It is a hole that is
-          <strong>open right now</strong>.
+          pace itself</em> — is not a new capability being added, and it is not one being taken away.
+          It is on today, you rely on it, and it stays on. What is new is that T3 can finally
+          <strong>see</strong> what the model scheduled.
         </p>
 
         <div class="call hot">
-          <div class="ch">Default it ON, and make it visible</div>
+          <div class="ch">It is already on — the job is to see it</div>
           <p>
             A <code>full-access</code> Claude thread today can arm up to <strong>50 recurring jobs,
             re-firing for seven days</strong>, with no human in the path — <code>canUseTool</code>
@@ -810,11 +811,12 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           </p>
           <p>
             So the fix is <strong>observability first</strong>: read <code>session_crons</code>, show
-            pending wakes on the console, and let the loop stand down when the agent has already
-            scheduled itself. The switch stays, defaulted <b>on</b>, as an escape hatch for a thread
-            where you want T3 to be the only scheduler —
+            pending wakes on the console, and let the loop stand down for as long as the agent has a
+            wake pending. The per-thread kill switch an earlier draft proposed —
             <code>CLAUDE_CODE_DISABLE_CRON=1</code> through the environment the adapter already
-            passes, at zero upstream cost.
+            passes, to make T3 the only scheduler — is <strong>dropped</strong> (PLAN §3). Self-pacing
+            is always on; T3 reads what the agent scheduled, stands by while it is pending, and covers
+            it when it does not land.
           </p>
         </div>
 
@@ -828,7 +830,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
       </div>
     </section>
 
-    <!-- ==================== 7 · STATES ==================== -->
+    <!-- ==================== 8 · STATES ==================== -->
     <section class="band" id="states">
       <div class="wrap">
         <div class="secnum"><i>08</i> Vocabulary</div>
@@ -839,9 +841,9 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
           same, because distinguishing them is most of what you actually do at 9am.
         </p>
 
-        <!--EMBED:p5-lifecycle.html|1720|P5|Arming + 13 states|Composer before/after at the top; the full state machine below.-->
+        <!--EMBED:p5-lifecycle.html|1720|P5|Arming + 15 states|Composer before/after at the top; the full state machine below.-->
         <p class="proto-cap">
-          <b>What to look at:</b> the tags under each state. Eight of thirteen states spend
+          <b>What to look at:</b> the tags under each state. Nine of fifteen states spend
           <em>nothing</em>. That is deliberate — almost everything that stops a loop firing is a
           <em>good</em> reason, and a design that burned a check-in on each would exhaust a six-check-in
           night without ever restarting the thread once.
@@ -855,7 +857,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
       </div>
     </section>
 
-    <!-- ==================== 8 · LIMITS ==================== -->
+    <!-- ==================== 9 · LIMITS ==================== -->
     <section class="band tint" id="limits">
       <div class="wrap">
         <div class="secnum"><i>09</i> Interaction</div>
@@ -984,7 +986,7 @@ not only when a turn is active.
       </div>
     </section>
 
-    <!-- ==================== 9 · MAINTAINER ==================== -->
+    <!-- ==================== 10 · MAINTAINER ==================== -->
     <section class="band" id="maintainer">
       <div class="wrap">
         <div class="secnum"><i>10</i> Adjacent</div>
@@ -997,7 +999,7 @@ not only when a turn is active.
         <!--EMBED:p6-maintainer.html|1180|P6|Maintainer loop|The comparison table at the top is the argument; the running view is below.-->
         <p class="proto-cap">
           <b>What to look at:</b> the green rows in the comparison are everything that stays identical —
-          trigger, reactor, budget, all fourteen guards, and the console. Only two things differ, and
+          trigger, reactor, budget, all fifteen guards, and the console. Only two things differ, and
           both are configuration.
         </p>
 
@@ -1017,10 +1019,12 @@ not only when a turn is active.
         <div class="call warn">
           <div class="ch">The rule that makes it safe</div>
           <p>
-            A maintainer loop <strong>never merges and never closes an issue</strong>. Every output
-            lands as a draft PR or a comment, and a human promotes it. Without that, the failure mode is
-            a bot that quietly closes the issues it could not solve — and you would not find out for
-            weeks.
+            A maintainer loop <strong>never merges and never closes an issue</strong>, and #44's v1
+            contract is tighter still: never <code>full-access</code>, always its own worktree and
+            branch, and in v1 it <strong>never pushes and never opens a PR</strong> — every output
+            lands as a plan or a comment, with draft PRs a later opt-in. A human promotes all of it.
+            Without that, the failure mode is a bot that quietly closes the issues it could not
+            solve — and you would not find out for weeks.
           </p>
         </div>
 
@@ -1028,7 +1032,7 @@ not only when a turn is active.
       </div>
     </section>
 
-    <!-- ==================== 10 · BACKEND ==================== -->
+    <!-- ==================== 11 · BACKEND ==================== -->
     <section class="band tint" id="backend">
       <div class="wrap">
         <div class="secnum"><i>11</i> Machinery</div>
@@ -1042,7 +1046,7 @@ not only when a turn is active.
         <p>
           A fork-owned reactor ticks once a minute. For each armed thread it reads one SQL projection
           column — <code>updatedAt</code> — and if the thread has been silent past its threshold and all
-          fourteen guards pass, it dispatches an ordinary <code>thread.turn.start</code>, exactly as
+          fifteen guards pass, it dispatches an ordinary <code>thread.turn.start</code>, exactly as
           auto-resume already does in production. It mirrors
           <code>apps/server/src/coil/autoResume/</code> file-for-file, because that module is proven and
           already reviewed.
@@ -1084,13 +1088,14 @@ not only when a turn is active.
             <tr><td class="k">packages/contracts</td><td class="yes">0</td><td>activity <code>kind</code> is open, payload is <code>Unknown</code></td></tr>
             <tr><td class="k">Sidebar.tsx</td><td class="yes">0</td><td>a loop is a pinned thread</td></tr>
             <tr><td class="k">ClaudeAdapter.ts</td><td class="no">+1</td><td><b>new row</b> — one spread of <code>hooks</code> to read <code>session_crons</code>. Additive, read-only, and it fails to a type error rather than silent drift. This is the price of not fighting the agent's own scheduler.</td></tr>
-            <tr><td class="k">settingsSearch.ts + a route</td><td class="mid">open</td><td>the one real bill — see §13</td></tr>
+            <tr><td class="k">settingsSearch.ts</td><td class="no">~+4</td><td><b>new row</b> — the <code>SettingsPath</code> union, its label, and the search items. Additive.</td></tr>
+            <tr><td class="k">SettingsSidebarNav.tsx</td><td class="no">+2</td><td><b>new row</b> — the section icon import and its record entry. Additive. Both settings rows are priced against upstream's own <code>/settings/integrations</code> — see <a href="#addendum">§15</a>.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- ==================== 11 · REJECTED ==================== -->
+    <!-- ==================== 12 · REJECTED ==================== -->
     <section class="band" id="rejected">
       <div class="wrap">
         <div class="secnum"><i>12</i> Negative space</div>
@@ -1161,11 +1166,13 @@ not only when a turn is active.
 
         <h3 class="sub">Arm on turn boundaries instead of an idle clock</h3>
         <p>
-          Kills itself twice. Stopping a session emits a real <code>turn.completed</code> — so arming on
-          it restarts exactly the work you just hit Stop on. And there is a branch that emits
-          <code>turn.completed</code> with <em>no</em> turnId while still carrying cost, so any
-          turnId-keyed denylist arms falsely. The denylist would also be hot-stream-only and therefore
-          empty after every restart: it fails <strong>open</strong>.
+          Stopping a session emits a real <code>turn.completed</code> — so arming on it restarts
+          exactly the work you just hit Stop on. A turnId-keyed denylist is the obvious patch and it
+          does not hold: it is hot-stream-only and therefore empty after every restart, so it fails
+          <strong>open</strong>. (An earlier draft cited a second kill — a result branch emitting
+          <code>turn.completed</code> with no turnId. Upstream #5710 removed that emission on
+          2026-08-08; the branch now emits only <code>thread.token-usage</code> plus a log line, so
+          the argument rests on the two reasons above.)
         </p>
 
         <h3 class="sub">An agent-authored JSON state contract</h3>
@@ -1178,16 +1185,18 @@ not only when a turn is active.
 
         <h3 class="sub">Dollar-cost budgets</h3>
         <p>
-          Tempting, and wrong for now. <code>total_cost_usd</code> is a field nothing in this repo has
-          ever read, and the SDK's own documentation describes it as accumulated <em>by the session</em>
-          — so summing it per turn would inflate quadratically and a "$25 cap" would trip around
-          iteration 6 of a $4 run. A ledger whose entire selling point is trust cannot rest on an
-          unverified number. Budget is check-ins and wall-clock until someone measures it.
+          Tempting, and wrong for now. The adapter stamps <code>total_cost_usd</code> onto
+          <code>turn.completed.totalCostUsd</code> and nothing downstream aggregates it, while the
+          SDK's own documentation describes the number as accumulated <em>by the session</em> — so
+          summing it per turn could inflate quadratically and a "$25 cap" would trip around
+          iteration 6 of a $4 run. Those semantics are unmeasured, and a ledger whose entire selling
+          point is trust cannot rest on an unverified number. Budget is check-ins and wall-clock
+          until someone measures it.
         </p>
 
         <h3 class="sub">A new command in packages/contracts</h3>
         <p>
-          <code>orchestration.ts</code> is churn-12 and is upstream's pre-announced landing zone for its
+          <code>orchestration.ts</code> is churn-20 and is upstream's pre-announced landing zone for its
           own scheduling concept. Zero contract edits means that when upstream ships automations, this
           feature becomes a <em>caller</em> rather than a migration.
         </p>
@@ -1225,15 +1234,6 @@ not only when a turn is active.
               </td>
             </tr>
             <tr>
-              <td><b>Reading Claude's <code>session_crons</code></b> via the <code>Stop</code> hook</td>
-              <td>
-                Genuinely useful — it is the only way to know a thread will wake <em>itself</em>, which
-                would let the console warn that a second scheduler is competing with ours. But it needs
-                the first hook subscription in <code>ClaudeAdapter</code>, a churn-12 hot file, for
-                observability rather than function. Phase 3, gated on it actually happening.
-              </td>
-            </tr>
-            <tr>
               <td><b>A loop that spans threads</b> — one loop driving several worktrees at once</td>
               <td>
                 This is what the maintainer loop looks like if you squint, and the work-source
@@ -1263,7 +1263,7 @@ not only when a turn is active.
       </div>
     </section>
 
-    <!-- ==================== 12 · TESTS ==================== -->
+    <!-- ==================== 13 · TESTS ==================== -->
     <section class="band tint" id="tests">
       <div class="wrap">
         <div class="secnum"><i>13</i> Confidence</div>
@@ -1276,15 +1276,17 @@ not only when a turn is active.
         <table class="tbl compact">
           <thead><tr><th>Area</th><th>Cases</th><th>Style</th></tr></thead>
           <tbody>
-            <tr><td>decide.ts — the decision table</td><td>29</td><td class="k">pure · vite-plus/test</td></tr>
+            <tr><td>decide.ts — the decision table</td><td>37</td><td class="k">pure · vite-plus/test</td></tr>
             <tr><td>guards.ts — ordering and effect</td><td>17</td><td class="k">pure</td></tr>
             <tr><td>sentinel.ts — the done-file</td><td>12</td><td class="k">pure + fs</td></tr>
             <tr><td>state.ts — durable store</td><td>12</td><td class="k">real fs, temp dir</td></tr>
+            <tr><td>crons.ts — the Stop-hook record</td><td>7</td><td class="k">pure + store</td></tr>
             <tr><td>http.ts — routes</td><td>16</td><td class="k">route harness</td></tr>
             <tr><td>Reactor.ts — the fibers</td><td>21</td><td class="k">@effect/vitest + TestClock</td></tr>
             <tr><td>MCP toolkit — the question channel</td><td>11</td><td class="k">handler tests</td></tr>
+            <tr><td>Voided questions (#5127)</td><td>5</td><td class="k">handler + projection</td></tr>
             <tr><td>Prompt composition</td><td>9</td><td class="k">pure</td></tr>
-            <tr><td>Integration scenarios</td><td>10</td><td class="k">layered</td></tr>
+            <tr><td>Integration scenarios</td><td>12</td><td class="k">layered</td></tr>
           </tbody>
         </table>
 
@@ -1303,16 +1305,16 @@ not only when a turn is active.
             the case that justifies the whole feature existing alongside a working scheduler.
           </li>
           <li>
-            <strong>The two question channels, side by side.</strong> One test where the agent calls
-            <code>AskUserQuestion</code> at 01:00 (loop skips, spends nothing, console shows blocking)
-            and one where it calls <code>raise_blocker</code> (turn continues, loop keeps firing, answer
-            reaches the agent next check-in). Together they are the proof the split works.
-          </li>
-          <li>
             <strong>The empty console.</strong> A loop that ends <code>spent</code> with a model that
             never called <code>raise_blocker</code>. Assert the console still renders the stop reason
-            and budget. This is the degradation test, and it is the one that stops this feature from
-            repeating BATON's failure.
+            and budget. This is the degradation property, and it is the one that stops this feature
+            from repeating BATON's failure.
+          </li>
+          <li>
+            <strong><code>spent</code> is never reported as <code>done</code>.</strong> Budget or
+            deadline exhausted with work left over must render as <em>ran out of rope</em>, never as
+            success — the done-file is the only thing that says finished. This is failure mode 1
+            written as a test.
           </li>
         </ol>
 
@@ -1320,7 +1322,7 @@ not only when a turn is active.
           <div class="ch">Deliberately not tested</div>
           <p>
             The synthetic-turn-start marker on the wire. It is real, but it is a free-form optional
-            string in a hot 3950-line file with no upstream test — a fork test asserting a fork-defined
+            string in a hot ~4.6k-line file with no upstream test — a fork test asserting a fork-defined
             constant cannot detect upstream drift, so it would pass green while the feature silently
             broke. The design avoids depending on it at all; testing it would create the illusion of
             coverage.
@@ -1329,7 +1331,7 @@ not only when a turn is active.
       </div>
     </section>
 
-    <!-- ==================== 13 · DECISIONS ==================== -->
+    <!-- ==================== 14 · DECISIONS ==================== -->
     <section class="band" id="decide">
       <div class="wrap">
         <div class="secnum"><i>14</i> Over to you</div>
@@ -1339,11 +1341,12 @@ not only when a turn is active.
         <div class="dec">
           <div class="dec-q">1 · Sidebar treatment</div>
           <div class="dec-r">
-            A is free and idiomatic but a loop is only marked by its boxed row and glyph. C is richer and scales, but is
-            a mode you have to remember to open.
+            A is free and idiomatic, but in v1 a loop is marked only by being pinned — the row chrome
+            in the prototype would itself be a <code>Sidebar.tsx</code> row. C is richer and scales,
+            but is a mode you have to remember to open.
           </div>
           <div class="dec-opts">
-            <span class="dec-opt rec">A now, C in phase 2 — recommended</span>
+            <span class="dec-opt rec">A now, C in a later phase — recommended</span>
             <span class="dec-opt">A only</span>
             <span class="dec-opt">Go straight to C</span>
           </div>
@@ -1392,22 +1395,19 @@ not only when a turn is active.
             budget as an outer bound, or ignore it and pace on its own clock. Standing down needs the
             <code>session_crons</code> read to be in phase 1 rather than phase 3.
           </div>
-          <div class="dec-opts" style="margin-bottom: 8px">
+          <div class="dec-opts">
             <span class="dec-opt rec">Defer, but keep budget + deadline as the outer bound — recommended</span>
             <span class="dec-opt">Defer completely while a wake is pending</span>
             <span class="dec-opt">T3 paces regardless</span>
-          </div>
-          <div class="dec-opts">
-            <span class="dec-opt rec">Yes, separate PR this week — recommended</span>
-            <span class="dec-opt">Bundle it with the loop</span>
           </div>
         </div>
 
         <div class="dec">
           <div class="dec-q">5 · Reopen #38, or open a fresh consolidated issue?</div>
           <div class="dec-r">
-            #38 is closed with an explicit "surviving residue" note; #42 is open but scoped to Claude's
-            crons, which this design deliberately does not build on.
+            #38 is closed with an explicit "surviving residue" note; #42 is open but framed as building
+            on Claude's crons alone; this design composes with them instead — its Phase 1a/1b
+            observation is absorbed, its Phase 2 <code>wake_me</code> is dropped.
           </div>
           <div class="dec-opts">
             <span class="dec-opt rec">Fresh issue, close #42 pointing at it — recommended</span>
@@ -1421,7 +1421,6 @@ not only when a turn is active.
           The order I would build in, each step shippable alone:
         </p>
         <ol>
-          <li><strong>The cron kill switch.</strong> Zero seam, closes a live hole, one afternoon.</li>
           <li><strong>Read <code>session_crons</code> + the durable store</strong>, no UI. Behind the master toggle, default off. Recording what the agent scheduled — and noticing when a wake does not land — is the smallest thing that is useful on its own.</li>
           <li><strong>The reactor</strong>, as the fallback for when nothing was scheduled or the wake was lost.</li>
           <li><strong>The console</strong>, reading only the two sources that need no model cooperation. Useful immediately.</li>
@@ -1432,17 +1431,19 @@ not only when a turn is active.
         <div class="call good">
           <div class="ch">What I did not do</div>
           <p>
-            I did not run the Phase 0 experiments from #42 (does a cron-fired turn reach T3, does the
-            reaper win the race). They were designed to decide whether to build on Claude's crons —
-            and since the recommendation is not to, they no longer gate anything. The static evidence
-            against that path is strong enough on its own, and it is laid out in §11 so you can
-            disagree with it. If you want them run anyway, say so and I will.
+            <strong>None</strong> of #42's Phase 0 experiments were run — not A (does a cron-fired
+            turn reach T3), not B, not C (does the reaper win the race), not D. What stands in their
+            place is static evidence: the gate cache, the reaper change, and the clamp, laid out in
+            <a href="#limits">§9</a> so you can disagree with it. A and C are cheap and fold into
+            phase 1's observation checklist — the first thing the <code>session_crons</code> record
+            does is answer both from real traffic. If you want them run ahead of that, say so and I
+            will.
           </p>
         </div>
       </div>
     </section>
 
-    <!-- ==================== ADDENDUM ==================== -->
+    <!-- ==================== 15 · ADDENDUM ==================== -->
     <section class="band tint" id="addendum">
       <div class="wrap">
         <div class="secnum"><i>15</i> Addendum · 17 August</div>
@@ -1471,12 +1472,15 @@ not only when a turn is active.
           <p>
             Upstream <b>#5127</b> now settles pending user-inputs when a session stops, by resolving
             the deferred with an <b>empty answer object</b>. <code>AskUserQuestion</code> still blocks,
-            so §11 stands — but a question nobody answers is no longer merely stranded. The agent
-            receives <code>{}</code>, a thing shaped like a decision that carries none, and proceeds on
-            it. The human never sees the question at all. A deferred blocker is durable fork-side
-            state; a blocking question is in-memory and is now actively discarded. The console
-            therefore cannot derive its list from <code>hasPendingUserInput</code>, which reads false
-            afterwards — it has to record the request when it is made.
+            so <a href="#console">§3</a> stands. The agent does not carry on with a null decision: the
+            handler unparks, the tool call is then <em>denied</em> — "User cancelled tool execution." —
+            and the session is going away regardless. What survives is on the projection side. The
+            runtime emits <code>user-input.resolved</code> carrying <code>answers: {}</code>, so
+            <code>hasPendingUserInput</code> reads false afterwards and <b>a voided question is
+            indistinguishable from an answered one</b>. A deferred blocker is durable fork-side state;
+            a blocking question is in-memory. So the console cannot derive its list from
+            <code>hasPendingUserInput</code> — it has to record the request when it is made, and mark
+            it voided rather than answered.
           </p>
         </div>
 
@@ -1498,9 +1502,10 @@ not only when a turn is active.
           <div class="ch">And then the sync landed, the same day</div>
           <p>
             Everything above was measured against <code>upstream/main</code> while the fork sat 116
-            commits behind it. Before this went out, the daily sync force-landed: <code>main</code> is
-            now <code>f6355f06f</code>, on merge-base <code>a4cc1367b</code> — <b>exactly the tree all
-            of it was measured against</b> — and zero commits behind upstream. So these are findings
+            commits behind it. Before this went out, the daily sync force-landed <code>main</code>
+            onto merge-base <code>a4cc1367b</code> — <b>exactly the tree all of it was measured
+            against</b> — and zero commits behind upstream. (Every sync rewrites the fork-main SHA;
+            the merge-base is the stable anchor.) So these are findings
             about the fork's current <code>main</code>, not a future one, and every load-bearing claim
             was re-run against that tree and still passes: the beachhead is empty, the
             <code>mcpServers</code> anchor is there, <code>Sidebar.logic.ts</code> is still zero-diff,

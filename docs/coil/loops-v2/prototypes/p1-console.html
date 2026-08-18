@@ -13,7 +13,7 @@
         border: 1px solid var(--border);
         border-radius: var(--radius-xl);
         background:
-          radial-gradient(120% 140% at 100% 0%, rgb(56 189 248 / 7%), transparent 58%),
+          radial-gradient(120% 140% at 100% 0%, rgb(125 211 252 / 7%), transparent 58%),
           var(--card);
         padding: 16px 18px;
       }
@@ -87,7 +87,6 @@
       .qitem.blocking::before { background: var(--indigo); }
       .qitem.deferred::before { background: rgb(255 255 255 / 14%); }
       .qitem.approval::before { background: var(--amber); }
-      .qitem.plan::before { background: var(--violet); }
       .qitem.answered { opacity: 0.5; }
       .qitem.answered::before { background: var(--emerald); }
 
@@ -149,7 +148,7 @@
       }
       .lrow .what { color: #cfcfcf; min-width: 0; }
       .lrow .when { font-size: 11.5px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
-      .lrow.is-now { background: rgb(56 189 248 / 5%); }
+      .lrow.is-now { background: rgb(125 211 252 / 5%); }
 
       /* ---- scenario switcher (prototype affordance, not product) ---- */
       .scen {
@@ -444,7 +443,7 @@
                 <h2>Who's driving</h2>
                 <span class="why">the agent is pacing itself — T3 is not firing on top of it</span>
               </div>
-              <div class="qitem" style="border-color: rgb(56 189 248 / 26%)">
+              <div class="qitem" style="border-color: rgb(125 211 252 / 26%)">
                 <div class="qhead">
                   <span class="qh-label t-sky">Self-paced</span>
                   <span class="grow"></span>
@@ -535,17 +534,17 @@
               </div>
               <div class="lrow">
                 <span class="n">#3</span>
-                <span class="what">Wrote rotation tests, 14 pass / 1 skipped · raised 1 blocker</span>
+                <span class="what">Turn completed · 41 activities · raised 1 blocker</span>
                 <span class="when">05:04</span>
               </div>
               <div class="lrow">
                 <span class="n">#2</span>
-                <span class="what">Stood down — usage limit until 04:12 · no check-in spent</span>
+                <span class="what">Stood down — usage limit · no check-in spent</span>
                 <span class="when">03:41</span>
               </div>
               <div class="lrow">
                 <span class="n">#1</span>
-                <span class="what">Resumed after 51m quiet · finished the token-store extraction</span>
+                <span class="what">Fired after 51m quiet · turn completed · 63 activities</span>
                 <span class="when">01:22</span>
               </div>
               <div class="lrow">

@@ -23,7 +23,8 @@ da6e1a967 2026-08-04 feat(sidebar-v2): thread pinning for sidebar v2 (#5312)
 > A pin overrides the settled/snoozed lifecycle: while `pinnedAt` is set the thread renders
 > in the pinned block and never classifies into a shelf.
 
-Also real today: `thread.pinned` / `thread.unpinned` commands (`:1056-1057`), a fractional
+Also real today: `thread.pinned` / `thread.unpinned` **events** (`:1056-1057`; the commands that
+produce them are `thread.pin` / `thread.unpin`), a fractional
 `pinOrderKey` for user-arranged order, a drag-reorderable pinned block in `Sidebar.tsx`
 (`SortablePinnedThreadRow`, `planPinnedReorder`), and the pinned block deliberately renders
 with **no header** (`Sidebar.tsx:674`).
@@ -222,7 +223,7 @@ Design consequences to work through in the prototypes:
   much they already exist: (a) real pending approvals / pending user input / actionable
   proposed plans — all already SQL-backed columns on `OrchestrationThreadShell`
   (`contracts/orchestration.ts:432-436`); (b) the loop's own skip reasons, which the
-  archived design already surfaces as `t3x.loop.skipped` breadcrumbs; (c) **model-authored
+  archived design already surfaces as `coil.loop.skipped` breadcrumbs; (c) **model-authored
   questions**, which need a channel that does not exist yet.
 - (c) is the interesting one and the risky one. The archived design deliberately **rejected**
   an agent-authored JSON contract (BATON) because "it outsources the hardest judgement to
@@ -269,6 +270,13 @@ question for the report is whether a maintainer bot is **the same primitive with
 different prompt and trigger**, or a genuinely different thing. First read: same reactor,
 different *stop condition* and different *source of work* — a maintainer loop is
 goal-sourced from an issue queue rather than from a single thread's unfinished work.
+
+### F5. Deliverable shape
+
+- An explanation for the **backend**.
+- A **visual** for the frontend — HTML prototypes, embedded in the report.
+- **All angles considered**, with explicit reasoning for why the rejected ones fail.
+- If time allows: **the full backend test-case list**.
 
 ---
 
@@ -359,10 +367,3 @@ useful, rather than to silence.
 
 That is the test the prototypes must visibly pass: **show the empty state**, and make sure
 it is still worth opening.
-
-### F5. Deliverable shape
-
-- An explanation for the **backend**.
-- A **visual** for the frontend — HTML prototypes, embedded in the report.
-- **All angles considered**, with explicit reasoning for why the rejected ones fail.
-- If time allows: **the full backend test-case list**.

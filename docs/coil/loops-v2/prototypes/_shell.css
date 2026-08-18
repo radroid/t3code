@@ -7,35 +7,37 @@
 
    Dark theme only: the loops feature is read at 4am and judged at 9am, and
    dark is what this user runs.
+
+   The utility classes below are a shared palette: it is deliberately wider
+   than any single prototype uses, so a new prototype can be written against
+   it without touching this file.
    ========================================================================== */
 
 :root {
   /* --- base surfaces (index.css @layer base, .dark) --- */
   --background: #0a0a0a;              /* neutral-950 */
-  --card: #0f0f0f;                    /* color-mix(background 97%, white) */
-  --surface-raised: #141414;
-  --popover: #121212;
+  --card: #111111;                    /* color-mix(background 97%, white) */
+  --popover: #191919;                 /* color-mix(background 94%, white) */
   --foreground: #f5f5f5;              /* neutral-100 */
-  --muted: #1a1a1a;
-  --muted-foreground: #8f8f8f;        /* neutral-500 lightened 10% */
-  --placeholder: #6b6b6b;
+  --muted: rgb(255 255 255 / 4%);     /* --alpha(white / 4%) */
+  --muted-foreground: #818181;        /* color-mix(neutral-500 90%, white) */
   --border: rgb(255 255 255 / 6%);
   --border-strong: rgb(255 255 255 / 11%);
   --input: rgb(255 255 255 / 8%);
-  --ring: #3b6fd4;
   --primary: oklch(0.571 0.21 264);
-  --primary-foreground: #ffffff;
-  --accent: rgb(255 255 255 / 6%);
+  --accent: rgb(255 255 255 / 4%);    /* --alpha(white / 4%) */
 
-  /* --- sidebar (dark: --sidebar = --card) --- */
-  --sidebar: #0f0f0f;
-  --sidebar-foreground: var(--foreground);
-  --sidebar-muted-foreground: var(--muted-foreground);
-  --sidebar-control-surface: #1a1a1a;
-  --sidebar-row-hover: rgb(255 255 255 / 5%);
-  --sidebar-row-active: rgb(255 255 255 / 6%);
-  --sidebar-row-selected: #1a1a1a;
-  --sidebar-border: var(--border);
+  /* --- sidebar. The app overrides the whole token set under
+         [data-app-sidebar] (index.css), so these are lifted from there,
+         not from the generic dark root: black surface, its own foreground,
+         and foreground-alpha rows. --- */
+  --sidebar: #000;
+  --sidebar-foreground: #f1f3f7;
+  --sidebar-muted-foreground: #a3a3a3;
+  --sidebar-control-surface: #0a0a0a;
+  --sidebar-row-hover: rgb(241 243 247 / 8%);
+  --sidebar-row-selected: rgb(241 243 247 / 7%);
+  --sidebar-border: rgb(255 255 255 / 8%);
 
   /* --- radius scale (--radius: 0.625rem) --- */
   --radius: 0.625rem;
@@ -46,8 +48,7 @@
 
   /* --- status hues. These are the system-wide convention set by
          Sidebar.logic.ts + mobile Live Activity. Do not invent new ones. --- */
-  --sky: #38bdf8;          /* working            (sky-400)     */
-  --sky-dim: #7dd3fc;
+  --sky: #7dd3fc;          /* working            (sky-300, dark: sky-300/80) */
   --amber: #fcd34d;        /* approval / woke    (amber-300)   */
   --indigo: #a5b4fc;       /* awaiting input     (indigo-300)  */
   --violet: #c4b5fd;       /* plan ready         (violet-300)  */
@@ -393,7 +394,7 @@ body {
   color: var(--muted-foreground);
   white-space: nowrap;
 }
-.pill.sky { color: var(--sky); border-color: rgb(56 189 248 / 26%); background: rgb(56 189 248 / 9%); }
+.pill.sky { color: var(--sky); border-color: rgb(125 211 252 / 26%); background: rgb(125 211 252 / 9%); }
 .pill.amber { color: var(--amber); border-color: rgb(252 211 77 / 26%); background: rgb(252 211 77 / 9%); }
 .pill.indigo { color: var(--indigo); border-color: rgb(165 180 252 / 26%); background: rgb(165 180 252 / 9%); }
 .pill.violet { color: var(--violet); border-color: rgb(196 181 253 / 26%); background: rgb(196 181 253 / 9%); }
@@ -473,11 +474,6 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-
-/* Stepped for the same reason status-pulse is: 12 paints per cycle,
-   not one per frame of a 120Hz display. */
-@keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript

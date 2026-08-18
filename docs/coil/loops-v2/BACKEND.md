@@ -10,8 +10,9 @@ scheduler rather than replacing it**. Fork-owned, provider-agnostic.
 > design below is unchanged, but its *role* is now fallback rather than primary, and reading
 > `session_crons` moves from phase 3 to phase 1.
 
-Line references are against the current tree (merge-base `196c8ea0d`, 2026-08-14 sync), not the
-2026-08-02 base the archived design used.
+Line references were measured against merge-base `196c8ea0d` (2026-08-14 sync), not the 2026-08-02
+base the archived design used; UPSTREAM-DELTA §5 lists the ones that have since moved. Churn and
+file-size figures are re-measured against the current merge-base `a4cc1367b` (2026-08-17).
 
 ---
 
@@ -31,9 +32,11 @@ model never cooperates.
 **On a healthy self-pacing Claude thread this reactor should almost never fire.** How rarely it
 fires is the measure of a correct implementation, not a sign it is doing nothing.
 
-Total new upstream surface: **one line** in an existing fork-owned aggregator, **one** existing seam
-row rewritten in place, and **one spread** of `hooks` into `ClaudeAdapter`'s existing `queryOptions`
-object. Everything else is new files upstream has never seen.
+Total new upstream surface for phases 1–4: **3 new seam rows** — the `hooks` spread into
+`ClaudeAdapter`'s existing `queryOptions` object (+1), `settingsSearch.ts` (~+4) and
+`SettingsSidebarNav.tsx` (+2) — plus one existing seam row rewritten in place at delta zero, and
+one line in an existing fork-owned aggregator. The budget is PLAN §6; §11 below prices each row.
+Everything else is new files upstream has never seen.
 
 ---
 
@@ -51,7 +54,12 @@ entrypoint — the same one the SDK uses. On fire it injects a synthetic prompt 
 drain loop, and T3 already handles the resulting turn (`ClaudeAdapter.ts` auto-starts a synthetic
 turn for assistant messages arriving without one).
 
-#42 then concluded it was unusable. Re-measured today, that conclusion does not hold.
+#42 catalogued the real constraints — the reaper race, the remote gate, and the missing product
+concept — and already proposed composing with the scheduler rather than replacing it (its Guard #15:
+*"a thread with a scheduled wake is not idle; it is waiting"*). The reading that hardened into
+"the scheduler is unusable" was the fork's own 2026-08-07 triage of that issue. Re-measured today,
+**that reading** does not hold, and the composition model #42 proposed is the one this design
+adopts.
 
 **Gate cache, re-read from `~/.claude.json`:**
 
@@ -109,18 +117,20 @@ JSON file does fine. `autoResume/state.ts` says this outright and has been right
 
 ### 1.3 Rejected — a `thread.loop.*` command in `packages/contracts`
 
-`contracts/orchestration.ts` is churn-12 and is upstream #5123's pre-announced landing zone (the
+`contracts/orchestration.ts` is churn-20 and is upstream #5123's pre-announced landing zone (the
 `ThreadSnoozeCommand` comment). Zero contract edits means when upstream ships its own automations
 concept, this feature becomes a *caller* rather than a migration.
 
 ### 1.4 Rejected — arming on turn boundaries instead of an idle clock
 
-The archived design killed this twice over and both kills re-verify. `stopSessionInternal` calls
-`completeTurn(context, "interrupted", …)`, emitting a real-turnId `turn.completed` when the **user
-hits Stop** — arming on that restarts exactly the work they just killed. And the `if (!turnState)`
-branch emits `turn.completed` with **no** `turnId` while still carrying `totalCostUsd`, so any
-turnId-keyed denylist arms falsely. A denylist is also hot-stream-only and therefore empty after
-every restart: it fails **open**.
+The archived design killed this twice over. Re-measured, one kill stands and upstream has closed
+the other. The one that stands: `stopSessionInternal` calls `completeTurn(context, "interrupted", …)`,
+emitting a real-turnId `turn.completed` when the **user hits Stop** — arming on that restarts
+exactly the work they just killed. The one that has gone: since upstream `e70cdb478` (2026-08-08,
+#5710) the `if (!turnState)` result path emits only `thread.token-usage` plus a
+`claude.turn.result-without-active-turn` log — no lifecycle event at all — so a turnId-keyed
+denylist can no longer arm falsely from it. What remains, and is sufficient, is that a denylist is
+hot-stream-only and therefore empty after every restart: it fails **open**.
 
 ---
 
@@ -149,8 +159,8 @@ apps/server/src/mcp/toolkits/loop/
 ```
 
 `decide.ts` being **pure** is the single most important structural choice: it makes the entire
-decision table testable without a server, a clock, or a provider. Every row in §9's test list that
-says "pure" runs in microseconds.
+decision table testable without a server, a clock, or a provider. Every case in
+[TESTS.md](TESTS.md) marked pure runs in microseconds.
 
 ---
 
@@ -163,7 +173,6 @@ LoopRecord = {
   armed: boolean                    // default FALSE. Nothing is supervised implicitly.
   armedAtMs: number
   goal: string | null               // what the user said they wanted, for the console header
-  workSource: "thread" | { kind: "issues"; repo: string; label: string }
 
   // budget — mandatory, no unlimited mode
   maxCheckIns: number               // <= 20, enforced in the route with a 400
@@ -176,6 +185,13 @@ LoopRecord = {
 
   // liveness bookkeeping
   lastCheckIn: { firedAtMs: number; createdAtIso: string } | null
+  checkIns: Array<{                 // the iteration ledger, bounded by maxCheckIns (so <= 20)
+    n: number
+    firedAtMs: number
+    createdAtIso: string
+    activityCursor: string          // where the thread's activity stream stood at nudge time
+    outcome: "productive" | "unproductive" | "unknown"
+  }>
   strikes: number
   rateLimitedUntilMs: number
 
@@ -189,6 +205,13 @@ LoopRecord = {
   overridePrompt: string | null
 }
 ```
+
+The `checkIns` array is what makes the console's iteration ledger reconstructable at all: without
+`firedAtMs` and the activity cursor recorded *at nudge time*, the history cannot be rebuilt later.
+Ledger rows therefore render **derived facts** — turns, activities, files moved between two cursors
+— never a model-authored summary of its own work. `workSource` (thread vs an issue queue) lands
+with the maintainer loop, **#44**; a decoding default makes adding it then free, which is why it is
+absent here rather than stubbed.
 
 **Every field is `Schema.withDecodingDefaultKey`.** This is not style. A missing *required* key
 fails the whole-file decode, and the boot path turns a decode failure into `EMPTY_STATE` — which
@@ -222,21 +245,34 @@ idleMs    = now - max(Date.parse(shell.updatedAt), processStartedAtMs)
 threshold = busyTurn ? config.busyIdleMs : config.idleMs
 
 selfPacedWakeMs = record.crons.nextFireAtMs        // from the Stop hook, persisted
+graceMs         = config.wakeGraceMs               // default ~90s, >= the binary's cron jitter
 
 fire when idleMs >= threshold
-       && !(selfPacedWakeMs != null && selfPacedWakeMs <= now + threshold)
+       && !(selfPacedWakeMs != null && now < selfPacedWakeMs + graceMs)
 ```
 
 `busyTurn` is `shell.session?.status ∈ {running, starting} || shell.latestTurn?.state === "running"`.
 
-**The self-paced clause is the deference rule.** If the agent has already scheduled a wake that
-will land inside the next threshold window, T3 does nothing — no dispatch, no budget spent, and the
-console reads *"Self-pacing · next wake 02:35"*. The loop only acts when the agent has **not**
-scheduled itself, or when a scheduled wake **passed with no activity** — which is precisely the
-case an in-process scheduler cannot cover, because a lost wake leaves no trace of itself.
+**`shell.backgroundLiveness` is deliberately not in `busyTurn`**, even though it is the exact,
+provider-agnostic liveness signal FINDINGS argues for. It is in-memory and empty after a restart —
+which is precisely the gap this design exists to close, so a trigger that leaned on it would be
+blind in the one case that motivated the feature. It could still be read as a *lengthener* when
+present (non-null ⇒ use `busyIdleMs`), never as a veto; that is an optional refinement, not a
+dependency.
 
-`record.crons` is written by the `Stop` / `SubagentStop` hook callbacks (see §2's `crons.ts`),
-normalised to `{ id, kind, nextFireAtMs, prompt }` and persisted. Persisting is the whole point:
+**The self-paced clause is the deference rule.** While a recorded wake is still pending, T3 does
+nothing — no dispatch, no budget spent, and the console reads *"Self-pacing · next wake 02:35"*.
+It defers for the whole wait, not merely for wakes landing inside the next threshold window: a
+thread waiting on a wake is not idle, it is waiting, and `ScheduleWakeup` clamps a delay to 3600s
+so the exposure is bounded without a second rule. T3 wins the moment the wake is **overdue by
+`graceMs`** with no `updatedAt` movement. So the loop only acts when the agent has **not** scheduled
+itself, or when a scheduled wake **passed with no activity** — which is precisely the case an
+in-process scheduler cannot cover, because a lost wake leaves no trace of itself.
+
+`record.crons` is written by the `Stop` / `SubagentStop` hook callbacks (see §2's `crons.ts`):
+read `input.session_crons` (`{ id, schedule, recurring, prompt }` — a cron expression, not a
+timestamp), compute `nextFireAtMs` fork-side from `schedule` (one-shot = single fire time encoded in
+the fields; server-local tz) `[A — the parse is ours]`, persist per thread. Persisting is the whole point:
 the binary's table is in-process, so **T3's copy is the only durable record that a wake was ever
 armed.** A `nextFireAtMs` in the past with no subsequent `updatedAt` movement is the signal that a
 wake was lost, and it is the strongest trigger in this design — stronger than staleness, because it
@@ -244,6 +280,13 @@ is an unmet commitment rather than an inference.
 
 Degraded states are explicit, never silent: `gate_off` when `ScheduleWakeup` reports the gate is
 off, and `wake_lost` when a recorded wake did not land. Both surface on the console.
+
+`gate_off` needs a source, because `session_crons` carries no gate status: a **`PostToolUse` hook on
+`ScheduleWakeup`**, declared in the *same* fork-built hooks object as the `Stop` callbacks, reading
+the tool's own response. That is zero extra seam — the object is fork-side, so the upstream spread
+does not grow — and like every other callback here it only writes to the fork store `[A — the
+response shape is not verified]`. If it turns out not to be readable, the state is dropped rather
+than guessed at.
 
 **Why `updatedAt` and nothing else.** `thread.activity-appended` is grouped with
 `thread.message-sent` in the projection pipeline and rewrites the row with
@@ -314,9 +357,12 @@ copying it would silently break the stop signal on every worktree-backed thread.
 Restated **in full every time**, because a six-check-in overnight run will compact and a contract
 taught once is gone by check-in four. The prompt carries, verbatim: the check-in number and budget,
 the instruction not to restart from the top, the absolute interpolated path of the done-file, the
-deadline, **any answers banked since the last check-in**, and the line
-*"I am the scheduler for this thread. Do not schedule your own wake-ups."* — which resolves the
-real collision with the user's own `autonomous-build-loop` skill in one sentence.
+deadline, **any answers banked since the last check-in**, and the deference line, verbatim:
+*"T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3
+stands by while one is pending, covers any that are lost, and enforces the budget and deadline."*
+That line resolves the real collision with the user's own `autonomous-build-loop` skill by
+**composing** with its self-pacing rather than by claiming ownership of the schedule — a prompt that
+claimed ownership would fight the very mechanism §1.1 and §4 defer to.
 
 ---
 
@@ -336,6 +382,12 @@ Terminal states are **sticky**; only a human re-arm clears them. Each writes a b
    it is not a budget reset. Reading output for twenty minutes must not get you nudged mid-thought,
    and deliberately stopping a thread must not hand the loop a fresh six.
 
+**A bound that cannot stop the agent is not a bound.** T3 has no write handle on the binary's cron
+table, so on `spent`, deadline or disarm *while recorded crons are still pending* the reactor does
+the honest thing #42 specified: `providerService.stopSession({ threadId })`. The crons live in the
+session, so ending the session ends them. Without this a self-paced run walks straight through its
+own deadline — the bound would be advisory exactly where the spend is unattended.
+
 **Guards, in order.** Non-consuming skips are marked ○ — they keep budget and surface a reason.
 
 | # | Guard | On fail |
@@ -350,7 +402,7 @@ Terminal states are **sticky**; only a human re-arm clears them. Each writes a b
 | 8 | `!hasPendingApprovals && !hasPendingUserInput && !hasActionableProposedPlan` | ○ |
 | 9 | `autoResumeStore.getThread(threadId).pending === null` | ○ |
 | 10 | `now >= record.rateLimitedUntilMs` | ○ |
-| 10b | **no self-paced wake due inside the threshold window** (`record.crons.nextFireAtMs`) | ○ the deference rule — the agent is pacing itself, so T3 stands by. Console: *"Self-pacing · next wake 02:35"* |
+| 10b | **no self-paced wake still pending** — `record.crons.nextFireAtMs == null \|\| now >= nextFireAtMs + config.wakeGraceMs` | ○ the deference rule — while a wake is pending the agent is pacing itself, so T3 stands by, whatever the wake's distance. Console: *"Self-pacing · next wake 02:35"* |
 | 11 | `now - lastCheckIn.firedAtMs >= config.idleMs` | ○ structural floor: a tight loop stays impossible even if `updatedAt` fails to bump |
 | 12 | idle threshold met, on a freshly re-read shell | ○ |
 | 13 | budget, deadline, strikes, sentinel | **stop** |
@@ -480,9 +532,11 @@ POST /api/coil/loop/answer          -> answer a blocker or a native pending inpu
 GET  /api/coil/loops                -> all loops (the workspace view)
 ```
 
-Operate scope, not read — these mutate scheduling. `authenticateWithOperateScope` currently exists
-as **two independent pastes** (`autoResume/http.ts`, `webPush/http.ts`) and only one is in the
-ledger; this feature moves it to a shared `coil/http/auth.ts` rather than becoming a third.
+Operate scope, not read — these mutate scheduling. Upstream's private scope-auth path currently
+exists as **two independent fork mirrors** — `authenticateWithOperateScope` in `autoResume/http.ts`
+(scope hardcoded) and `authenticateWithScope(scope)` in `webPush/http.ts` (parameterised) — and only
+one is in the ledger; this feature moves the general form to a shared `coil/http/auth.ts` rather
+than becoming a third.
 
 ---
 
@@ -491,15 +545,17 @@ ledger; this feature moves it to a shared `coil/http/auth.ts` rather than becomi
 | File | Delta | Note |
 |---|---|---|
 | `apps/server/src/coil/index.ts` | +~6 | **fork-owned, churn 0** — store, reactor, routes |
-| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` | **±0** | existing row (+10/−6, risk **0**) rewritten in place: `<AutoResumeOverlay>` → `<ThreadCoilOverlay>`, which then hosts both. Genuinely delta-zero, and every future per-thread fork surface is free forever. |
+| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx` | **±0** | existing row (+10/−6, churn 4) rewritten in place — **delta 0** (the row already carries risk 64): `<AutoResumeOverlay>` → `<ThreadCoilOverlay>`, which then hosts both. Genuinely delta-zero, and every future per-thread fork surface is free forever. |
 | `apps/server/src/server.ts` | **0** | already has its 3-line row |
 | `packages/contracts` | **0** | activity `kind` is an open `TrimmedNonEmptyString`, payload is `Schema.Unknown` |
 | `Sidebar.tsx` / `Sidebar.logic.ts` | **0** | a loop is a **pinned thread** — `thread.pin` already exists |
 | `apps/server/src/provider/Layers/ClaudeAdapter.ts` | **+1** | **new row.** A single spread into the existing `queryOptions` object: `...(loop ? { hooks: loop.claudeHooks(threadId) } : {})`. `options.hooks` is set nowhere in this repo today, so this is the first subscription to a 30-event surface. |
+| `apps/web/src/components/settings/settingsSearch.ts` | **~+4** | **new row** (phase 4) — the `SettingsPath` union, a `SETTINGS_SECTION_LABELS` entry, and 2–3 `SETTINGS_SEARCH_ITEMS`. Append-ordered arrays, additive. |
+| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | **+2** | **new row** (phase 4) — the icon import and its `SETTINGS_SECTION_ICONS` entry. |
 
 **The `ClaudeAdapter` row is new since the first draft** and it is the cost of the deference rule.
-It is worth arguing rather than waving through: the file is churn-12 and ~3950 lines, which is the
-most expensive kind of row this fork can take. Three things keep it cheap:
+It is worth arguing rather than waving through: the file is churn-16 and ~4.6k lines (4,644 at the
+merge-base), which is the most expensive kind of row this fork can take. Three things keep it cheap:
 
 1. **It is one line, and it is additive.** A spread into an object literal alongside the existing
    `mcpServers` spread. Every line of logic lives fork-side in `coil/loop/crons.ts`.
@@ -512,23 +568,24 @@ most expensive kind of row this fork can take. Three things keep it cheap:
 
 If that row is unacceptable, the fallback is the pure-staleness trigger with a longer `idleMs` to
 reduce double-firing. It is strictly worse — it cannot tell "the agent is pacing itself" from "the
-agent has stopped" — but it costs zero upstream lines, so it is a legitimate phase-0.
+agent has stopped" — but it costs zero upstream lines, so it is a legitimate zero-seam fallback.
 
-The settings surface is the one open bill, and it is a genuine choice:
+The settings surface was the one open bill. It is now **decided — see PLAN §6 and UPSTREAM-DELTA
+§4.1** — and priced as the two rows in the table above:
 
-- **Own section** (`/settings/loops`) — costs the `SettingsPath` union + `SETTINGS_SECTION_LABELS`
-  + `SETTINGS_SECTION_ICONS` in `settingsSearch.ts`, a new route file, and a `routeTree.gen.ts`
-  regeneration. `settingsSearch.ts`'s single append-ordered array is structurally the same add/add
-  conflict shape as issue #29.
+- **Own section** (`/settings/loops`) — the `SettingsPath` union + `SETTINGS_SECTION_LABELS` +
+  2–3 `SETTINGS_SEARCH_ITEMS` in `settingsSearch.ts` (churn 14), the `SETTINGS_SECTION_ICONS` entry
+  in `SettingsSidebarNav.tsx`, and a new fork-owned route file. The generated `routeTree.gen.ts` is
+  not part of the cost: it is regenerated, not merged. `settingsSearch.ts`'s append-ordered arrays
+  are structurally the same add/add conflict shape as issue #29.
 - **Ride inside General** — cheaper, but buries a feature that owns unattended spend.
 
-Recommendation: **own section.** A feature that can spend money while you sleep should be findable
-by name, and `settingsSearch.ts` is a young file whose "churn 1" is a measurement artifact rather
-than a stability signal — it will move regardless.
+Recommendation, and the decision taken: **own section.** A feature that can spend money while you
+sleep should be findable by name.
 
-`searchableSetting()` registration is skipped (its id union is closed to the upstream catalog),
-making this the fork's second search-invisible surface. That must be noted under the ledger table,
-not left implicit.
+`searchableSetting()` registration is **not** skipped: `SettingsSearchItemId` is derived from
+`SETTINGS_SEARCH_ITEMS`, so the fork's own rows become searchable the moment the items are added —
+which is part of what the `settingsSearch.ts` row buys.
 
 ---
 
@@ -554,9 +611,15 @@ no migration. After a server restart the registry is empty."*
   the path is interpolated absolute, the contract restated every check-in, and `spent` visually
   distinct.
 - **Cost is not metered in dollars.** Budget is check-ins and wall-clock. `total_cost_usd` flows
-  from `SDKResultSuccess`, nothing in this repo has ever read it, and the SDK's own documented use
-  describes it as accumulated **by the session** — so summing per turn would inflate quadratically
-  and a "$25 cap" would trip around iteration 6 of a $4 run. A ledger whose selling point is trust
+  from `SDKResultSuccess`, and the adapter does stamp it onto `turn.completed.totalCostUsd` — but
+  nothing downstream aggregates it, and its per-turn vs session-accumulated semantics are unmeasured
+  `[A]`. The SDK's documented use describes it as accumulated **by the session**, so summing per
+  turn would inflate quadratically and a "$25 cap" would trip around iteration 6 of a $4 run. A ledger whose selling point is trust
   cannot rest on an unverified number. Revisit only after measuring it.
+- **Bounding a self-paced run means ending its session.** T3 cannot delete an entry from the
+  binary's in-process cron table, so a `spent`, deadline or disarm on a thread with pending wakes is
+  enforced with `providerService.stopSession` (§7). That is honest but blunt: it takes any live
+  background work in that session with it. There is no finer instrument until `cron_durable` or a
+  cancel API exists.
 - **A derailed agent still burns budget.** Strikes catch the *dead* failure, not the *wrong-work*
   failure. Nothing here reads what the agent actually did.

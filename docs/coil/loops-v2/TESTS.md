@@ -11,11 +11,14 @@ Written against the conventions already in the tree, not invented:
 - **Store** — real `FileSystem` against a temp dir (`NodeServices`), same as
   `autoResume/state.test.ts`.
 - **Routes** — `http.test.ts` shape from `autoResume/http.test.ts`.
-- Full suite: `vp run test --testTimeout=120000 --hookTimeout=120000`. Per-package runs are the
-  trustworthy signal locally; full-suite flakes here are contention.
+- Run the touched files: `vp test run apps/server/src/coil/loop/*.test.ts` — CI owns the full suite.
 
 Counts below are cases, not files. **★** marks a case that encodes a bug this design exists to
 prevent — if you cut scope, do not cut these.
+
+**The total is 159.** Cases inserted into an existing sequence carry a letter suffix rather than
+renumbering everything after them (`11b`–`11i`, `70b`–`70h`, `118b`–`118f`, `136b`–`136c`), so a
+case number cited elsewhere keeps meaning the same case.
 
 ---
 
@@ -47,11 +50,15 @@ The rule that stops T3 firing on top of a healthy self-paced thread. These are t
 decide whether the two schedulers cooperate or fight.
 
 11b. A recorded `nextFireAtMs` inside the threshold window → `skip`, budget untouched. ★
-11c. A recorded `nextFireAtMs` **beyond** the threshold window → normal staleness rules apply.
+11c. A recorded `nextFireAtMs` **beyond** the threshold window **still defers**. ★ A thread
+     waiting on a wake is not idle, whatever the wake's distance; the binary clamps a delay to
+     3600s, so the exposure is bounded without a second rule.
 11d. `nextFireAtMs` in the past **with** `updatedAt` movement after it → the wake landed; clear it
-     and treat the thread as normally active.
-11e. `nextFireAtMs` in the past **without** `updatedAt` movement → `fire`, reason `wake_lost`. ★
-     This is the strongest trigger in the design: an unmet commitment, not an inference.
+     and treat the thread as normally active. Detected immediately, without waiting out `graceMs`.
+11e. `nextFireAtMs` overdue by more than `graceMs` **without** `updatedAt` movement → `fire`,
+     reason `wake_lost`. ★ Inside `graceMs` (default ~90s, ≥ the binary's cron jitter) T3 still
+     stands down. This is the strongest trigger in the design: an unmet commitment, not an
+     inference.
 11f. No cron record at all (non-Claude adapter, or the model never scheduled) → falls back to pure
      staleness, unchanged. ★ Every non-Claude adapter must behave exactly as before.
 11g. A stale cron record whose session has since been stopped is not treated as a live wake. ★
@@ -159,12 +166,13 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 69. Blockers: add, answer, list-unanswered, and `deliveredToAgent` flip are all persisted.
 70. Answering an already-answered blocker is idempotent, not a second append.
 
----
-
 ### 4b. `crons.ts` — the Stop-hook record
 
-70b. A `Stop` hook payload with `session_crons` populated is normalised to
-     `{ id, kind, nextFireAtMs, prompt }` and persisted.
+70b. A `Stop` hook payload with `session_crons` populated is normalised and persisted, with
+     `nextFireAtMs` computed fork-side from each entry's `schedule` — a `recurring: true` 5-field
+     expression yields the next match, and a one-shot (`recurring: false`), whose cron fields
+     encode a single fire time, yields exactly that instant. ★ The SDK delivers no timestamp, so
+     this parse is the whole risk.
 70c. An **empty** `session_crons` array clears the record — the agent stopped self-pacing. ★
 70d. A payload with `session_crons` **absent** (older SDK) leaves the record untouched rather than
      clearing it. ★ Absent and empty must not mean the same thing.
@@ -173,6 +181,8 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
      A fork observability bug must not be able to break a turn.
 70g. `SubagentStop` is handled identically to `Stop`.
 70h. The record survives a store round-trip (it is the only durable copy of the wake).
+
+---
 
 ## 5. `http.ts` — the routes
 
@@ -251,8 +261,6 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 117. `loop_done` from a thread with no loop is a no-op, not a crash.
 118. All three tools are unavailable when the global toggle is off. ★
 
----
-
 ### 7b. Voided questions (upstream #5127)
 
 118b. A `user-input.requested` is recorded fork-side when it fires, independent of
@@ -264,6 +272,8 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 118f. A voided question does **not** count as a blocking guard hit on the next tick — the block is
       gone, so the loop may proceed, but the console still shows it. ★
 
+---
+
 ## 8. Prompt composition — `config.ts`
 
 119. Resolution order: per-thread override → `.coil/loop-prompt.md` → built-in.
@@ -272,7 +282,10 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 122. **Answered-but-undelivered blockers are included**, then marked delivered. ★
 123. A blocker answered *after* the prompt was composed is not marked delivered (no lost answer). ★
 124. The prompt never begins with `/` (it would be read as a slash command). ★
-125. The scheduler-ownership line is always present, in every resolution path. ★
+125. The deference line is always present, in every resolution path. ★ — the prompt says T3
+     checked in because no wake of the agent's landed, and that the agent should keep scheduling
+     its own as normal; a prompt claiming the schedule for T3 would fight the very self-pacing the
+     design defers to.
 126. A `.coil/loop-prompt.md` that is empty or whitespace falls through to the built-in.
 127. An unreadable `.coil/loop-prompt.md` falls through and logs, rather than failing the check-in.
 
@@ -319,13 +332,15 @@ Heavier tests; a handful, each replaying a real failure.
 
 - **`raw.method === "claude/synthetic-turn-start"`.** Real on the wire, but
   `RuntimeEventRaw.method` is a free optional string with no literal union and no upstream test,
-  in a churn-12 hot file. A fork test asserting a fork-defined constant cannot detect upstream
+  in a churn-16 hot file. A fork test asserting a fork-defined constant cannot detect upstream
   drift — it would pass green while the feature silently broke. The design avoids depending on it
   at all; testing it would create the illusion of coverage.
 - **Dollar cost.** `total_cost_usd` is unverified per-turn-vs-per-session. Asserting anything
   about it would pin behaviour we do not understand.
-- **Claude's cron tools.** Not the mechanism, so not on the critical path. If `session_crons`
-  observation ships in Phase 3, it gets its own cases then.
+- **Claude's cron tools themselves** (`CronCreate` / `ScheduleWakeup` actually firing). That is
+  the binary's behaviour, not ours, and a fork test of it would assert someone else's contract.
+  What T3 *does* with the `session_crons` the `Stop` hook hands it **is** tested — §1.1b for the
+  decision and §4b for the record — because that ships in Phase 1 and the trigger depends on it.
 
 ---
 

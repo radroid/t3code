@@ -24,15 +24,15 @@
       .snav-item.on svg { color: var(--foreground); opacity: 1; }
       .snav-item .new {
         margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em;
-        color: var(--sky); border: 1px solid rgb(56 189 248 / 30%);
-        background: rgb(56 189 248 / 10%); border-radius: 4px; padding: 1px 4px;
+        color: var(--sky); border: 1px solid rgb(125 211 252 / 30%);
+        background: rgb(125 211 252 / 10%); border-radius: 4px; padding: 1px 4px;
       }
 
       .gate {
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         background:
-          radial-gradient(130% 150% at 100% 0%, rgb(56 189 248 / 6%), transparent 60%),
+          radial-gradient(130% 150% at 100% 0%, rgb(125 211 252 / 6%), transparent 60%),
           var(--card);
         padding: 15px 16px;
         margin-bottom: 32px;
@@ -41,8 +41,8 @@
       .gate-t { font-size: 14.5px; font-weight: 560; letter-spacing: -0.01em; }
       .gate-d { font-size: 12.5px; color: var(--muted-foreground); margin-top: 4px; line-height: 1.55; max-width: 62ch; }
 
-      .sub { margin-left: 0; }
-      .set-section.disabled { opacity: 0.4; pointer-events: none; }
+      #body.disabled { opacity: 0.4; pointer-events: none; }
+      .switch[disabled] { cursor: default; }
 
       .roster { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
       .rrow {
@@ -125,7 +125,7 @@
                     supervisor never starts. Existing loops stop at their next check-in.
                   </div>
                 </div>
-                <button class="switch on" id="master" aria-label="Enable loops"></button>
+                <button class="switch on" id="master" role="switch" aria-checked="true" aria-label="Enable loops"></button>
               </div>
             </div>
 
@@ -208,11 +208,12 @@
                     <div class="set-row-title">Let the model pace itself</div>
                     <div class="set-row-desc">
                       Claude schedules its own wake-ups and is good at it within about half an hour.
-                      Leave this on — T3 reads what it scheduled and stays out of the way. Turn it off
-                      only if you want T3 to be the sole scheduler on this machine.
+                      T3 reads what it scheduled and stands by while a wake is pending.
+                      <b>Always on in phase 1</b> — the per-thread kill switch an earlier draft
+                      proposed was dropped (PLAN §3), so the row is shown fixed rather than live.
                     </div>
                   </div>
-                  <div class="set-row-ctl"><button class="switch on" aria-label="Model self-scheduling"></button></div>
+                  <div class="set-row-ctl"><button class="switch on" role="switch" aria-checked="true" aria-label="Model self-scheduling — always on in phase 1" disabled aria-disabled="true"></button></div>
                 </div>
 
                 <div class="set-row">
@@ -224,18 +225,7 @@
                       scheduled and covers it if nothing happens.
                     </div>
                   </div>
-                  <div class="set-row-ctl"><button class="switch on" aria-label="Backstop"></button></div>
-                </div>
-
-                <div class="set-row">
-                  <div class="set-row-main">
-                    <div class="set-row-title">Answer its own approval prompts</div>
-                    <div class="set-row-desc">
-                      Off means a loop that hits a permission prompt stops and puts it on your console
-                      instead of pushing past it.
-                    </div>
-                  </div>
-                  <div class="set-row-ctl"><button class="switch" aria-label="Auto approvals"></button></div>
+                  <div class="set-row-ctl"><button class="switch on" role="switch" aria-checked="true" aria-label="Backstop"></button></div>
                 </div>
 
                 <div class="set-row">
@@ -246,7 +236,7 @@
                       off ends the loop at the limit instead.
                     </div>
                   </div>
-                  <div class="set-row-ctl"><button class="switch on" aria-label="Survive limits"></button></div>
+                  <div class="set-row-ctl"><button class="switch on" role="switch" aria-checked="true" aria-label="Survive limits"></button></div>
                 </div>
 
                 <div class="warn">
@@ -272,7 +262,7 @@
                     <div class="set-row-title">Push when a loop needs you</div>
                     <div class="set-row-desc">A question or approval it cannot get past. Uses the notifications you already set up.</div>
                   </div>
-                  <div class="set-row-ctl"><button class="switch on"></button></div>
+                  <div class="set-row-ctl"><button class="switch on" role="switch" aria-checked="true" aria-label="Push when a loop needs you"></button></div>
                 </div>
 
                 <div class="set-row">
@@ -280,7 +270,7 @@
                     <div class="set-row-title">Push when a loop stops</div>
                     <div class="set-row-desc">Finished, out of budget, or gave up. Says which — they are not the same thing.</div>
                   </div>
-                  <div class="set-row-ctl"><button class="switch on"></button></div>
+                  <div class="set-row-ctl"><button class="switch on" role="switch" aria-checked="true" aria-label="Push when a loop stops"></button></div>
                 </div>
 
                 <div class="set-row">
@@ -355,7 +345,7 @@ When the work is finished, or you are blocked and need a human, write:
 with one line saying why you stopped. That file is the only way to end early.
 Otherwise this ends after {max} check-ins, or at {deadline}, whichever is first.
 
-I am the scheduler for this thread. Do not schedule your own wake-ups.</textarea>
+T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3 stands by while one is pending, covers any that are lost, and enforces the budget and deadline.</textarea>
                   <div class="hint">
                     A per-repo override can live at <code class="k">.coil/loop-prompt.md</code> so it can be
                     committed with the project.
@@ -377,15 +367,17 @@ I am the scheduler for this thread. Do not schedule your own wake-ups.</textarea
       master.addEventListener("click", () => {
         on = !on;
         master.classList.toggle("on", on);
+        master.setAttribute("aria-checked", String(on));
         gate.classList.toggle("off", !on);
-        body.style.opacity = on ? "1" : "0.35";
-        body.style.pointerEvents = on ? "auto" : "none";
+        body.classList.toggle("disabled", !on);
         gateDesc.textContent = on
           ? "When this is off, no thread can be armed, nothing is scheduled, and the loop supervisor never starts. Existing loops stop at their next check-in."
           : "Loops are off. Nothing is armed, nothing is scheduled, and the supervisor is not running. Three armed loops were stood down.";
       });
-      document.querySelectorAll(".switch:not(#master)").forEach((s) =>
-        s.addEventListener("click", () => s.classList.toggle("on")),
+      document.querySelectorAll(".switch:not(#master):not([disabled])").forEach((s) =>
+        s.addEventListener("click", () => {
+          s.setAttribute("aria-checked", String(s.classList.toggle("on")));
+        }),
       );
       document.querySelectorAll(".seg button").forEach((b) =>
         b.addEventListener("click", () => {

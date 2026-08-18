@@ -14,7 +14,7 @@
       .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 30px; }
       @media (max-width: 900px) { .cmp { grid-template-columns: 1fr; } }
       .cmp-c { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); padding: 13px 14px; }
-      .cmp-c h3 { font-size: 12.5px; font-weight: 600; margin: 0 0 8px; }
+      .cmp-c h2 { font-size: 12.5px; font-weight: 600; margin: 0 0 8px; }
       .kv { display: grid; grid-template-columns: 116px 1fr; gap: 5px 10px; font-size: 12px; line-height: 1.5; }
       .kv dt { color: var(--muted-foreground); }
       .kv dd { margin: 0; }
@@ -47,7 +47,7 @@
       .iq-row .num { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); }
       .iq-row .ttl { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .iq-row .out { font-size: 11.5px; color: var(--muted-foreground); }
-      .iq-row.doing { background: rgb(56 189 248 / 5%); }
+      .iq-row.doing { background: rgb(125 211 252 / 5%); }
 
       .gate {
         border: 1px solid rgb(252 211 77 / 26%);
@@ -80,24 +80,24 @@
 
       <div class="cmp">
         <div class="cmp-c">
-          <h3>Overnight loop</h3>
+          <h2>Overnight loop</h2>
           <dl class="kv">
             <dt>Trigger</dt><dd class="same">thread went quiet</dd>
             <dt>Reactor</dt><dd class="same">idle-clock tick</dd>
             <dt>Budget</dt><dd class="same">check-ins + deadline</dd>
-            <dt>Guards</dt><dd class="same">all 14, unchanged</dd>
+            <dt>Guards</dt><dd class="same">all 15, unchanged</dd>
             <dt>Console</dt><dd class="same">blockers + questions</dd>
             <dt class="diff">Work comes from</dt><dd class="diff">this thread's unfinished work</dd>
             <dt class="diff">Ends when</dt><dd class="diff">the agent writes the done-file</dd>
           </dl>
         </div>
         <div class="cmp-c">
-          <h3>Maintainer loop</h3>
+          <h2>Maintainer loop</h2>
           <dl class="kv">
             <dt>Trigger</dt><dd class="same">thread went quiet</dd>
             <dt>Reactor</dt><dd class="same">idle-clock tick</dd>
             <dt>Budget</dt><dd class="same">check-ins + deadline</dd>
-            <dt>Guards</dt><dd class="same">all 14, unchanged</dd>
+            <dt>Guards</dt><dd class="same">all 15, unchanged</dd>
             <dt>Console</dt><dd class="same">blockers + questions</dd>
             <dt class="diff">Work comes from</dt><dd class="diff">a label query on the issue tracker</dd>
             <dt class="diff">Ends when</dt><dd class="diff">the query returns nothing</dd>
@@ -114,7 +114,7 @@
 
       <div class="frame">
         <div class="fbar">
-          <span class="loop-glyph t-sky spin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
+          <span class="loop-glyph t-sky pulse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
           <strong style="font-size:13.5px;font-weight:540">Maintainer: issue queue</strong>
           <span class="pill sky"><span class="dot sky pulse"></span>Working</span>
           <span class="grow"></span>
@@ -125,7 +125,8 @@
             <div>
               <div class="s15 w500">Working <code class="k">radroid/t3code</code> · label <code class="k">ready-for-agent</code></div>
               <div class="s12 t-muted mt4">
-                Oldest first · one worktree per issue · draft PR each · never merges, never closes.
+                Oldest first · one worktree per issue · plans and comments in v1, draft PRs opt-in
+                later · never pushes, never merges, never closes.
               </div>
             </div>
             <button class="btn sm">Pause queue</button>

@@ -41,7 +41,7 @@
       }
       .chip:hover { color: var(--foreground); border-color: rgb(255 255 255 / 20%); }
       .chip.on {
-        color: var(--sky); border-color: rgb(56 189 248 / 40%); background: rgb(56 189 248 / 10%);
+        color: var(--sky); border-color: rgb(125 211 252 / 40%); background: rgb(125 211 252 / 10%);
       }
       .chip .loop-glyph { width: 11px; height: 11px; flex: 0 0 11px; }
       .send {
@@ -81,6 +81,8 @@
       .st.armed::before   { background: rgb(255 255 255 / 18%); }
       .st.working::before { background: var(--sky); }
       .st.checking::before{ background: var(--sky); }
+      .st.selfpaced::before{ background: var(--sky); }
+      .st.wakelost::before{ background: var(--amber); }
       .st.blocked::before { background: var(--indigo); }
       .st.approval::before{ background: var(--amber); }
       .st.plan::before    { background: var(--violet); }
@@ -149,7 +151,7 @@
                 <button class="chip">＠ Context</button>
                 <button class="chip">Opus 5</button>
                 <button class="chip">full-access</button>
-                <button class="send">
+                <button class="send" aria-label="Send">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
                 </button>
               </div>
@@ -176,7 +178,7 @@
                   <span class="loop-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3.3-6.96"/><path d="M21 4v5h-5"/></svg></span>
                   Loop · 6 · 07:00
                 </button>
-                <button class="send">
+                <button class="send" aria-label="Send">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
                 </button>
               </div>
@@ -245,6 +247,17 @@
           <span class="st-tag consumes">spends a check-in</span>
         </div>
 
+        <div class="st wakelost">
+          <div class="st-top"><span class="st-name">Wake lost — covering</span><span class="pill amber st-pill"><span class="dot amber"></span>3 of 6</span></div>
+          <div class="st-face">Its wake didn't land · check-in 3 of 6</div>
+          <div class="st-why">
+            A wake the agent scheduled came and went with nothing following it — the session was
+            stopped, the app restarted, or the gate flipped. Nothing on the provider's side records
+            that it ever existed, so T3's copy is the only trace, and it covers the gap exactly once.
+          </div>
+          <span class="st-tag consumes">spends a check-in</span>
+        </div>
+
         <!-- waiting on you -->
         <div class="st blocked">
           <div class="st-top"><span class="st-name">Needs you</span><span class="pill indigo st-pill"><span class="dot indigo"></span>3</span></div>
@@ -274,6 +287,17 @@
         </div>
 
         <!-- waiting on something else -->
+        <div class="st selfpaced">
+          <div class="st-top"><span class="st-name">Self-pacing — standing by</span><span class="pill sky st-pill"><span class="dot sky"></span>02:35</span></div>
+          <div class="st-face">Self-pacing · next wake 02:35</div>
+          <div class="st-why">
+            The agent scheduled its own wake and T3 can see it. The loop stands down for as long as
+            that wake is pending: two schedulers firing on one thread is doubled spend and a confused
+            agent.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
         <div class="st held">
           <div class="st-top"><span class="st-name">Held — limit</span><span class="pill amber st-pill"><span class="dot amber"></span>08:22</span></div>
           <div class="st-face">Loop held — usage limit until 08:22</div>
@@ -345,11 +369,11 @@
       </div>
 
       <div class="note">
-        <b>Read the "spends nothing" tags together.</b> Eight of the thirteen states cost no budget,
+        <b>Read the "spends nothing" tags together.</b> Nine of the fifteen states cost no budget,
         and that is deliberate: almost everything that stops a loop from firing is a <em>good</em>
         reason, and a design that burned a check-in on each of them would exhaust a six-check-in night
-        without ever restarting the thread once. The only state that spends is the one that actually
-        restarts work.
+        without ever restarting the thread once. The only two states that spend are the two that
+        actually restart work.
       </div>
     </div>
   </body>

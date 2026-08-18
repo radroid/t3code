@@ -11,8 +11,9 @@ origin/main  df027ec08              116 behind upstream — the sync has not lan
 ```
 
 > **Superseded the same day — the sync landed.** While this was being written, the daily sync
-> force-landed onto `main`, which is now `f6355f06f` sitting on merge-base **`a4cc1367b`** — exactly
-> the tree everything below was measured against — and is **0 commits behind upstream**. Every
+> force-landed onto `main`, putting the fork on merge-base **`a4cc1367b`** — exactly the tree
+> everything below was measured against — **0 commits behind upstream**. The merge-base is cited
+> throughout rather than a fork `main` SHA, because every sync rewrites `main`. Every
 > finding therefore describes the fork's *current* `main`, not a future one, and every check below
 > was re-run against that tree and still passes. Two consequences, both good: the sequencing
 > question in §6 is moot, and the seam ledger re-baselined to **53 files, +2590 / −1042**.
@@ -34,13 +35,14 @@ The whole design rests on these being fork-territory. All re-checked against `up
 | `options.hooks` set nowhere in `ClaudeAdapter` | `git grep -n "hooks:"` | **zero hits** |
 | `mcp/toolkits/` has only `preview` | `git ls-tree` | **still only `preview`** |
 | No upstream loop/cron/schedule/automation feature landed | `git log --oneline` filtered on those words over 116 commits | **zero matches** |
+| Upstream **#3638** (`schedule_task` / `delegate_task` MCP tools) has not landed | `git log --grep=3638` and `git grep schedule_task` at `a4cc1367b` | **both empty** — still not on `upstream/main` |
 
 ## 2. Unchanged — the load-bearing files
 
 | File | Status | Why it matters |
 |---|---|---|
 | `ProviderSessionReaper.ts` | **unchanged** | the `backgroundLiveness != null` skip from #5677 is still the current behaviour |
-| `ThreadBackgroundLiveness.ts` | **unchanged** | still in-memory, still presentation-only — the residue argument stands |
+| `ThreadBackgroundLiveness.ts` (upstream **#5219**, `a2ca89aa1`) | **unchanged** | still in-memory, still presentation-only — the residue argument stands |
 | `Sidebar.logic.ts` | **unchanged**, zero diff | the static-sort rule is verbatim intact at `:534-537` |
 | `rightPanelStore.ts` | **unchanged** | the #112 costing survives |
 | `_chat.$environmentId.$threadId.tsx` | **unchanged** | the delta-zero overlay row is still delta-zero |
@@ -65,23 +67,29 @@ for (const pending of [...context.pendingUserInputs.values()]) {
 }
 ```
 
-`AskUserQuestion` **still blocks** (`Deferred.await(answersDeferred)` at `upstream/main:3903`), so
-the core finding is unchanged. What is new is the teardown path: a question that nobody answers is
+`AskUserQuestion` **still blocks** — `Deferred.await(answersDeferred)` inside the `canUseTool`
+interception, per §5 item 1 the anchor rather than a line number — so the core finding is
+unchanged. What is new is the teardown path: a question that nobody answers is
 now resolved with an **empty answer object** when the session stops, so the thread can settle.
 
-**This is a new failure mode for overnight blocking questions, and it is worse than parking.**
-Previously a stopped session left the question hanging. Now the agent receives `{}` — an answer
-shaped like a real one, carrying no decision — and continues on it. The human never sees the
-question, and the run proceeds on a null choice.
+**The agent does not act on the empty answer** — an earlier reading of this commit said it did, and
+that was wrong. `settleAsAborted` sets `aborted = true` before succeeding the Deferred with `{}`, so
+the handler unparks and then returns `{ behavior: "deny", message: "User cancelled tool execution." }`
+to the SDK; the session is being torn down anyway. Nothing continues on a null choice.
+
+**What survives is a projection problem, and it is enough.** The runtime still emits
+`user-input.resolved` carrying empty answers, so `hasPendingUserInput` reads false afterwards and a
+question that was **voided** is indistinguishable, in the projection, from one a human answered.
 
 Consequences for the plan:
 
 - It **strengthens the case for `raise_blocker`.** A deferred blocker is durable fork-side state; a
-  blocking question is in-memory and is now actively discarded on teardown.
-- The console must be able to show a question that was **asked and then silently voided** — it
-  cannot rely on `hasPendingUserInput`, which will read false afterwards.
+  blocking question is in-memory and is discarded on teardown.
+- The console **cannot derive its blocking list from `hasPendingUserInput`** — the fork needs its
+  own durable record of `user-input.requested`, marked `voided` when the resolution arrives empty
+  during teardown rather than from a human.
 - Add a test: session stop while a question is pending ⇒ the fork records it as `voided`, not as
-  answered. (New case, added to TESTS.md §7.)
+  answered. (New cases, added to TESTS.md §7b.)
 
 ### 3.2 `#4466` — upstream now disables hooks on capability probes
 
@@ -96,8 +104,8 @@ Two readings, both useful:
 
 - **Confirms user hooks run in normal sessions.** The commit's own reason is that
   `SessionStart` hooks would otherwise fire on every health check — which only matters because
-  hooks *do* run the rest of the time. That validates the §11 claim that a user's `~/.claude`
-  hooks apply to a loop turn exactly as to a terminal one.
+  hooks *do* run the rest of the time. That validates the BACKEND §5 claim that a user's
+  `~/.claude` hooks apply to a loop turn exactly as to a terminal one.
 - **The neighbourhood is now occupied.** `options.hooks` is still unset, but upstream has started
   touching hook-adjacent config. The one-line spread is still available; it is no longer in a part
   of the file nobody visits. Worth re-checking at implementation time, not before.
@@ -109,8 +117,8 @@ Two readings, both useful:
 ### 4.1 A new settings section landed, so decision 3 is now priced, not estimated
 
 `949feb61e feat(web): configurable browser defaults in Settings → Integrations (#7082)` added
-`/settings/integrations` — a complete, three-day-old worked example of the exact operation the
-Loops settings section needs.
+`/settings/integrations` — a complete worked example of the exact operation the Loops settings
+section needs, and it **landed the same day (2026-08-17)** as this re-verification.
 
 What upstream paid, and what the fork would pay:
 
@@ -120,8 +128,8 @@ What upstream paid, and what the fork would pay:
 | `SettingsSidebarNav.tsx` | +2 | icon import + record entry | **NEW row** (+2) |
 | `routes/settings.<name>.tsx` | +11 | new fork-owned file | **0** — conflicts with nothing |
 | `routeTree.gen.ts` | +21 | regenerates | **0** — generated, not merged |
-| `SettingsPanels.tsx` | +10 | **avoid** — churn 32, risk 1856 | **0** |
-| `contracts/settings.ts` | +39 | **avoid** — persisted schema, churn 24, the #29 anchor | **0** |
+| `SettingsPanels.tsx` | +10 | **avoid** — churn 36, risk 2088 | **0** |
+| `contracts/settings.ts` | +39 | **avoid** — persisted schema, churn 26, the #29 anchor | **0** |
 
 **Answer to decision 3: an own settings section costs 2 new seam rows, both small and additive**
 (~6 lines total). The fork renders its own panel from its own route and keeps its state in
@@ -138,23 +146,29 @@ is still worth taking, but it will conflict occasionally and the plan should say
 
 Small, and none of them change a decision.
 
-1. **`ClaudeAdapter.ts` line numbers are stale by ~600 lines.** The `queryOptions` object is now at
-   `:4175-4184` (was ~`:3549-3561`); `Deferred.await(answersDeferred)` is at `:3903` (was `:3852`);
-   the `AskUserQuestion` interception around `:3845`. The *structure* is unchanged — `canUseTool`,
-   `env`, `additionalDirectories`, the `extraArgs` spread, then the `mcpServers` spread — so the
-   one-line hooks spread lands the same way. **Fix: stop citing line numbers in this file and cite
-   the anchor (`the mcpServers spread inside queryOptions`) instead.** Line numbers in a churn-12
-   file are a liability in a document meant to outlive a sync.
-2. **`Sidebar.tsx` is hotter than recorded** — 7 commits in 3 days (+265/-93: tooltips, PR badges,
-   provider accent badges, an archive-menu restore, a styling refactor, and one landed-then-reverted
-   layout change). None touch pinning or partitioning. This *reinforces* rejecting Direction B: a
-   new row there would have collided with something in the last 72 hours.
+1. **`ClaudeAdapter.ts` line numbers are stale by ~600 lines.** *Partially applied.* The
+   *structure* is unchanged — `canUseTool`, `env`, `additionalDirectories`, the `extraArgs` spread,
+   then the `mcpServers` spread — so the one-line hooks spread lands the same way, and the
+   `AskUserQuestion` interception is still inside `canUseTool` with its `Deferred.await` below it.
+   **Fix: cite the structural anchor — the `queryOptions` object and its `mcpServers` spread — and
+   stop citing line numbers in this file at all.** Numbers in a churn-16 file are a liability in a
+   document meant to outlive a sync. Some cites elsewhere in the package still carry them.
+2. **`Sidebar.tsx` is hotter than recorded** — 7 commits in 3 days, **+184/−81 (265 lines
+   touched**: tooltips, PR badges, provider accent badges, an archive-menu restore, a styling
+   refactor, and one landed-then-reverted layout change). None touch pinning or partitioning. This
+   *reinforces* rejecting Direction B: a new row there would have collided with something in the
+   last 72 hours. *Recorded here; nothing to change elsewhere.*
 3. **`RightPanelTabs.tsx` moved** (+13, styling only — a `Button` render prop). The #112 answer
    (**2 seam rows**: `rightPanelStore.ts` + `RightPanelTabs.tsx`) is unaffected because
-   `rightPanelStore.ts` did not move at all.
+   `rightPanelStore.ts` did not move at all. The measurements #112 asked for, over the 60 days
+   before `a4cc1367b`: **`RightPanelTabs.tsx` churn 14, `rightPanelStore.ts` churn 7**, and **there
+   is no extension point** — the tab switch is the only way in, so a console tab cannot be mounted
+   without editing both. Each row's risk is its projected fork lines × that churn, which is what
+   makes a small tab cheap and a large one not.
 4. **Add the voided-question failure mode** (§3.1) to the console design and the test list.
+   **Done** — BACKEND §9.1b and TESTS §7b.
 5. **Re-baseline the docs' merge-base line** from `196c8ea0d` to whatever the next sync lands on,
-   at implementation time.
+   at implementation time. *Deferred to implementation, by design.*
 
 ---
 
@@ -164,8 +178,8 @@ This section originally weighed building on a 116-behind `main` against waiting 
 flagged one real interaction: phase 4's `settingsSearch.ts` row had to be written *after* the sync
 carrying #7082, or it would conflict with the `integrations` entry on the way in.
 
-**The sync landed the same day.** `origin/main` is `f6355f06f`, on merge-base `a4cc1367b`, zero
-behind upstream. So:
+**The sync landed the same day**, putting `origin/main` on merge-base `a4cc1367b`, zero behind
+upstream. So:
 
 - There is nothing to sequence around. Build on `main` as it stands.
 - **The #7082 interaction is already satisfied** — `apps/web/src/routes/settings.integrations.tsx`
@@ -183,7 +197,7 @@ Everything in §1–§4 was measured against `upstream/main`. Now that the fork 
 merge-base, each load-bearing claim was re-run against **the fork's own tree** — a stronger check,
 because it is the tree the work would actually be built on.
 
-| Claim | Result on `f6355f06f` |
+| Claim | Result on the post-sync tree |
 |---|---|
 | `session_crons` / `ScheduleWakeup` / `CronCreate` in server + contracts | **0 files** |
 | `options.hooks` set in `ClaudeAdapter` | **0** |
@@ -195,3 +209,9 @@ because it is the tree the work would actually be built on.
 | two independent scope-auth mirrors (phase 0's debt) | **still two** — `autoResume/http.ts:45`, `webPush/http.ts:49` |
 
 No claim in this document changed on the way across.
+
+`origin/main` was **`f6355f06f`** when this table was run. The next daily sync force-rewrote it to
+**`94c6328ef`** on 2026-08-18, on the *same* merge-base `a4cc1367b`; the two extra upstream commits
+it carries touch `PendingUserInputCard.tsx` and a web test, so no row above moves. Fork `main` SHAs
+are rewritten by every sync — which is exactly why the merge-base is the anchor this package
+cites.

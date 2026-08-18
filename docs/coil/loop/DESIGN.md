@@ -1,8 +1,9 @@
 # Loop Watch — design (radroid/t3code#38)
 
 > **Superseded by [`docs/coil/loops-v2/`](../loops-v2/PLAN.md) (2026-08-17).** The re-checks the
-> paragraph below asks for were done there — see
-> [`loops-v2/UPSTREAM-DELTA.md`](../loops-v2/UPSTREAM-DELTA.md) — and three of this design's
+> second paragraph below asks for are covered in
+> [`loops-v2/UPSTREAM-DELTA.md`](../loops-v2/UPSTREAM-DELTA.md): #5219 as `ThreadBackgroundLiveness`
+> in its §2, and #3638 confirmed still not on `upstream/main` in its §1. Three of this design's
 > premises did not survive them.
 >
 > **Status: designed, not built.** No `apps/server/src/coil/loop/` exists — every path this

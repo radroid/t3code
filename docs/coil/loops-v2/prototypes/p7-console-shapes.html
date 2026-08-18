@@ -82,7 +82,6 @@
       }
       .verdict.good { border-color: rgb(110 231 183 / 30%); background: rgb(110 231 183 / 6%); }
       .verdict.mid { border-color: rgb(252 211 77 / 26%); background: rgb(252 211 77 / 5%); }
-      .verdict.bad { border-color: rgb(251 113 133 / 26%); background: rgb(251 113 133 / 5%); }
       .verdict b { font-weight: 620; }
 
       code.k { font-family: var(--font-mono); font-size: 11.5px; color: var(--sky); }
@@ -223,15 +222,19 @@
         </div>
 
         <div class="cost">
-          <span><b>Seam:</b> <span class="r">2 new rows</span> — <code class="k">rightPanelStore.ts</code> + <code class="k">RightPanelTabs.tsx</code></span>
+          <span><b>Seam:</b> <span class="r">2 new rows</span> — <code class="k">RightPanelTabs.tsx</code> (churn 14) + <code class="k">rightPanelStore.ts</code> (churn 7)</span>
           <span><b>Discoverability:</b> <span class="y">needs opening</span></span>
           <span><b>Read along while answering:</b> <span class="g">yes</span></span>
         </div>
         <div class="verdict mid">
           <b>The best ergonomics, at a real price.</b> Measured: the kind union and its list, the tab
           factory, the actions array and two switch cases — across two upstream-owned files the fork
-          does not touch today. (This also answers wayfinder issue #112, "what does registering a
-          right-panel tab actually cost", as a side effect: <b>two rows</b>.)
+          does not touch today. Churn measured over the 60 days before merge-base
+          <code class="k">a4cc1367b</code>, the ledger's own method: <b>14</b> upstream commits on
+          <code class="k">RightPanelTabs.tsx</code>, <b>7</b> on <code class="k">rightPanelStore.ts</code>,
+          and there is no extension point — registering through the tab switch is the only way in.
+          (This also answers wayfinder issue #112, "what does registering a right-panel tab actually
+          cost", as a side effect: <b>two rows, on files churning 14 and 7</b>.)
         </div>
       </section>
 

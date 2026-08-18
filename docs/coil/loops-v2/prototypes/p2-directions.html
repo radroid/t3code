@@ -117,8 +117,12 @@
             <div class="col-title">A loop is a pinned thread</div>
             <div class="col-sub">
               Arming a loop dispatches <code class="k">thread.pin</code>. Upstream's pinned block
-              already floats it above everything and stops it sinking into a shelf. The only loop-ness
-              on the row is its plain boxed card, a small tag, and the arc glyph in the title.
+              already floats it above everything and stops it sinking into a shelf. Drawn here with the
+              loop-ness turned up — a boxed card, a "Loop" tag, a meta line and the arc glyph.
+              <b>That decoration is <code class="k">Sidebar.tsx</code> work.</b> v1 ships the plain
+              pinned row and keeps every loop state in the console and the thread overlay; the chrome
+              below is the deferred upgrade, and it is what would buy the fork its first row in that
+              file.
             </div>
           </div>
 
@@ -166,15 +170,17 @@
 
           <div class="cost">
             <div class="cost-h">Seam cost</div>
-            <div class="cost-row"><span class="k">Sidebar.tsx</span><span class="v t-emerald">untouched</span></div>
+            <div class="cost-row"><span class="k">Sidebar.tsx</span><span class="v t-emerald">untouched — v1 is a plain pinned row</span></div>
+            <div class="cost-row"><span class="k">Row decoration</span><span class="v t-amber">deferred — the box, tag and meta line would be a NEW <code class="k">Sidebar.tsx</code> row</span></div>
             <div class="cost-row"><span class="k">contracts</span><span class="v t-emerald">untouched — <code class="k">thread.pin</code> already exists</span></div>
             <div class="cost-row"><span class="k">New rows</span><span class="v">0</span></div>
-            <div class="cost-row"><span class="k">Where loop UI lives</span><span class="v">the existing <code class="k">ThreadCoilOverlay</code> row (+10/−6, risk 0)</span></div>
+            <div class="cost-row"><span class="k">Where loop UI lives</span><span class="v">the existing <code class="k">ThreadCoilOverlay</code> row (+10/−6, delta 0 — the row already carries risk 64)</span></div>
             <div class="verdict good">
               <b>Cheapest by a wide margin, and it is not a hack.</b> A pin is a lifecycle
               transition, which is the one thing the sidebar's static-sort rule explicitly permits.
-              The cost is that a loop is only <em>distinguishable</em> by its row chrome — the box,
-              the tag, the glyph — not by placement; it still lives among ordinary threads.
+              The cost is that in v1 a loop is distinguishable only by <em>being pinned</em>: no box,
+              no tag, no budget on the row. It still lives among ordinary threads, and what it needs
+              from you is one click away rather than on the row itself.
             </div>
           </div>
         </section>
