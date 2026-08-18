@@ -42,7 +42,8 @@ sidebar at all today. That cuts both ways —
 
 - Modelling a Loop as **a pinned thread** costs **zero** upstream lines.
 - Giving a Loop **distinct rendering** in the sidebar opens a *new* row in a 3808-line hot
-  file, which is the most expensive kind of row this fork can take.
+  file (research-tree measurement; 3911 on the post-sync tree), which is the most expensive kind
+  of row this fork can take.
 
 This is the single biggest fork in the design space and it is what the prototypes exist to
 resolve.
@@ -185,7 +186,7 @@ backend and the prototypes assume them.
 ## E. Open questions the prototypes must answer
 
 1. Is a Loop **a pinned thread with decoration** (zero sidebar seam) or **its own row type**
-   (new seam row in a 3808-line hot file)?
+   (new seam row in a 3808-line — post-sync 3911 — hot file)?
 2. Does the loop get **its own surface** (a Loops route listing all loops and their runs) or
    live entirely inside the thread it supervises?
 3. Where does the **iteration ledger** render — inline in the transcript as breadcrumbs, in
@@ -279,7 +280,7 @@ decides the shape of the console.
 ### G1. Structured questions are a first-class, native concept
 
 `ClaudeAdapter.ts:3758-3860` (as measured on the research tree — line numbers in this file drift;
-cite the `mcpServers`-spread anchor instead, per UPSTREAM-DELTA §5.1) — when the model calls its
+cite the `mcpServers`-spread anchor instead, per UPSTREAM-DELTA §5 item 1) — when the model calls its
 **`AskUserQuestion`** tool, T3:
 
 1. intercepts it in `canUseTool` (`raw.method: "canUseTool/AskUserQuestion"`),

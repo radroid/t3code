@@ -135,7 +135,7 @@ Each with the reasoning, so a reviewer can attack the reasoning rather than gues
   one env line in the same `ClaudeAdapter` row this plan already takes.
 - **#42's Experiments B and D were not run.** B (does a cron-fired turn render in the transcript as
   if the human typed it?) needs a real `session_crons` fire to answer — it moves into Phase 1's
-  observation checklist rather than blocking the design. D (gate stability across SDK updates) is
+  observation checklist rather than blocking the design. D (gate stability under the `sdk-ts` entrypoint) is
   absorbed by designing for the `gate_off` degraded state (BACKEND §4; TESTS case 11h): nothing here
   depends on the gates staying on.
 - **#42 Phase 2's `wake_me` tool is not carried over.** The agent already has native long-horizon
@@ -351,7 +351,7 @@ the ledger currently carries 53 rows.
 
 ## 7. Test strategy
 
-159 cases in TESTS.md, plus the three coverage gates in its �11. Structure:
+159 cases in TESTS.md, plus the three coverage gates in its §11. Structure:
 
 - **Pure and fast** — `decide.ts` and `guards.ts` are pure so the entire decision table tests
   without a server or clock. Target **100% branch coverage** on both.
