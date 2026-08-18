@@ -278,7 +278,9 @@ decides the shape of the console.
 
 ### G1. Structured questions are a first-class, native concept
 
-`ClaudeAdapter.ts:3758-3860` — when the model calls its **`AskUserQuestion`** tool, T3:
+`ClaudeAdapter.ts:3758-3860` (as measured on the research tree — line numbers in this file drift;
+cite the `mcpServers`-spread anchor instead, per UPSTREAM-DELTA §5.1) — when the model calls its
+**`AskUserQuestion`** tool, T3:
 
 1. intercepts it in `canUseTool` (`raw.method: "canUseTool/AskUserQuestion"`),
 2. emits a `user-input.requested` runtime event carrying `payload: { questions }`,

@@ -286,7 +286,7 @@
         <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
         <p class="standfirst">
           A consolidated design for running a thread unattended — and, more importantly, for what you
-          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 162
+          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 159
           test cases</b>, and the three things I found that make the previous design out of date.
         </p>
         <div class="meta-strip">
@@ -512,7 +512,7 @@
 
         <h3 class="sub">2 · The sidebar is not a seam row, and that cuts both ways</h3>
         <p>
-          <code>Sidebar.tsx</code> (3808 lines) and <code>Sidebar.logic.ts</code> appear nowhere in
+          <code>Sidebar.tsx</code> (3911 lines) and <code>Sidebar.logic.ts</code> appear nowhere in
           <code>SEAMS.md</code>. The fork does not touch the sidebar at all today. So modelling a loop
           as a pinned thread costs <strong>zero</strong> — and giving it bespoke rendering opens a
           <em>new</em> row in one of the hottest files upstream owns.
@@ -1038,8 +1038,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -1772,11 +1774,7 @@ body {
             opt.classList.add(&quot;picked&quot;);
             item.classList.add(&quot;answered&quot;);
             const label = item.querySelector(&quot;.qh-label&quot;);
-            if (item.classList.contains(&quot;blocking&quot;) || item.classList.contains(&quot;approval&quot;)) {
-              outstanding = Math.max(0, outstanding - 1);
-            } else {
-              outstanding = Math.max(0, outstanding - 1);
-            }
+            outstanding = Math.max(0, outstanding - 1);
             label.textContent = &quot;Answered&quot;;
             label.className = &quot;qh-label t-emerald&quot;;
             refreshCount();
@@ -2469,8 +2467,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -3433,8 +3433,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -3674,7 +3676,7 @@ body {
       &lt;p class=&quot;lede&quot;&gt;
         Same four threads, same two loops, three structural answers. The difference that matters is
         not how they look — it is what each one costs against upstream, because
-        &lt;code class=&quot;k&quot;&gt;Sidebar.tsx&lt;/code&gt; is 3808 lines, is churned constantly, and the fork does
+        &lt;code class=&quot;k&quot;&gt;Sidebar.tsx&lt;/code&gt; is 3911 lines, is churned constantly, and the fork does
         not touch it today.
       &lt;/p&gt;
 
@@ -3814,7 +3816,7 @@ body {
 
           &lt;div class=&quot;cost&quot;&gt;
             &lt;div class=&quot;cost-h&quot;&gt;Seam cost&lt;/div&gt;
-            &lt;div class=&quot;cost-row&quot;&gt;&lt;span class=&quot;k&quot;&gt;Sidebar.tsx&lt;/span&gt;&lt;span class=&quot;v t-rose&quot;&gt;NEW row · 3808 lines · hot&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;cost-row&quot;&gt;&lt;span class=&quot;k&quot;&gt;Sidebar.tsx&lt;/span&gt;&lt;span class=&quot;v t-rose&quot;&gt;NEW row · 3911 lines · hot&lt;/span&gt;&lt;/div&gt;
             &lt;div class=&quot;cost-row&quot;&gt;&lt;span class=&quot;k&quot;&gt;Sidebar.logic.ts&lt;/span&gt;&lt;span class=&quot;v t-rose&quot;&gt;NEW row — partitioning + a status&lt;/span&gt;&lt;/div&gt;
             &lt;div class=&quot;cost-row&quot;&gt;&lt;span class=&quot;k&quot;&gt;contracts&lt;/span&gt;&lt;span class=&quot;v t-amber&quot;&gt;a loop flag on the thread shell&lt;/span&gt;&lt;/div&gt;
             &lt;div class=&quot;cost-row&quot;&gt;&lt;span class=&quot;k&quot;&gt;New rows&lt;/span&gt;&lt;span class=&quot;v&quot;&gt;2–3&lt;/span&gt;&lt;/div&gt;
@@ -3921,7 +3923,7 @@ body {
         <table class="tbl">
           <thead><tr><th></th><th>A · pinned thread</th><th>B · own section</th><th>C · own workspace</th></tr></thead>
           <tbody>
-            <tr><td class="k">Sidebar.tsx</td><td class="yes">untouched</td><td class="no">new row, 3808 lines</td><td class="yes">untouched</td></tr>
+            <tr><td class="k">Sidebar.tsx</td><td class="yes">untouched</td><td class="no">new row, 3911 lines</td><td class="yes">untouched</td></tr>
             <tr><td class="k">contracts</td><td class="yes">untouched</td><td class="mid">a loop flag</td><td class="yes">untouched</td></tr>
             <tr><td class="k">New seam rows</td><td class="yes">0</td><td class="no">2–3</td><td class="mid">1</td></tr>
             <tr><td class="k">Legibility</td><td class="mid">a glyph</td><td class="yes">full</td><td class="yes">full</td></tr>
@@ -4437,8 +4439,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -5422,8 +5426,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -6431,8 +6437,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -7491,8 +7499,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -8616,8 +8626,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript
@@ -9260,7 +9272,7 @@ body {
         <div class="secnum"><i>13</i> Confidence</div>
         <h2 class="sec">How this gets tested</h2>
         <p class="lead">
-          162 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
+          159 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
           in the tree. The starred ones each encode a specific bug this design exists to prevent.
         </p>
 

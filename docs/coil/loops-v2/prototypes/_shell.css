@@ -463,8 +463,10 @@ body {
 .trow.is-loop.is-done::before { background: linear-gradient(180deg, var(--emerald), rgb(110 231 183 / 15%)); }
 .trow.is-loop.is-held::before { background: linear-gradient(180deg, var(--amber), rgb(252 211 77 / 15%)); }
 
+/* Stepped for the same reason status-pulse is: 12 paints per cycle,
+   not one per frame of a 120Hz display. */
 @keyframes orbit { to { transform: rotate(360deg); } }
-.spin { animation: orbit 3.6s linear infinite; transform-origin: 50% 50%; }
+.spin { animation: orbit 3.6s steps(12) infinite; transform-origin: 50% 50%; }
 
 /* ==========================================================================
    Chat / transcript

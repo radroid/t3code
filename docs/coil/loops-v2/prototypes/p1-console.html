@@ -598,11 +598,7 @@
             opt.classList.add("picked");
             item.classList.add("answered");
             const label = item.querySelector(".qh-label");
-            if (item.classList.contains("blocking") || item.classList.contains("approval")) {
-              outstanding = Math.max(0, outstanding - 1);
-            } else {
-              outstanding = Math.max(0, outstanding - 1);
-            }
+            outstanding = Math.max(0, outstanding - 1);
             label.textContent = "Answered";
             label.className = "qh-label t-emerald";
             refreshCount();

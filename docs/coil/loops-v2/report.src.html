@@ -286,7 +286,7 @@
         <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
         <p class="standfirst">
           A consolidated design for running a thread unattended — and, more importantly, for what you
-          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 162
+          see when you come back to it. <b>Eight clickable prototypes, one backend recommendation, 159
           test cases</b>, and the three things I found that make the previous design out of date.
         </p>
         <div class="meta-strip">
@@ -512,7 +512,7 @@
 
         <h3 class="sub">2 · The sidebar is not a seam row, and that cuts both ways</h3>
         <p>
-          <code>Sidebar.tsx</code> (3808 lines) and <code>Sidebar.logic.ts</code> appear nowhere in
+          <code>Sidebar.tsx</code> (3911 lines) and <code>Sidebar.logic.ts</code> appear nowhere in
           <code>SEAMS.md</code>. The fork does not touch the sidebar at all today. So modelling a loop
           as a pinned thread costs <strong>zero</strong> — and giving it bespoke rendering opens a
           <em>new</em> row in one of the hottest files upstream owns.
@@ -680,7 +680,7 @@ const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>; 
         <table class="tbl">
           <thead><tr><th></th><th>A · pinned thread</th><th>B · own section</th><th>C · own workspace</th></tr></thead>
           <tbody>
-            <tr><td class="k">Sidebar.tsx</td><td class="yes">untouched</td><td class="no">new row, 3808 lines</td><td class="yes">untouched</td></tr>
+            <tr><td class="k">Sidebar.tsx</td><td class="yes">untouched</td><td class="no">new row, 3911 lines</td><td class="yes">untouched</td></tr>
             <tr><td class="k">contracts</td><td class="yes">untouched</td><td class="mid">a loop flag</td><td class="yes">untouched</td></tr>
             <tr><td class="k">New seam rows</td><td class="yes">0</td><td class="no">2–3</td><td class="mid">1</td></tr>
             <tr><td class="k">Legibility</td><td class="mid">a glyph</td><td class="yes">full</td><td class="yes">full</td></tr>
@@ -1269,7 +1269,7 @@ not only when a turn is active.
         <div class="secnum"><i>13</i> Confidence</div>
         <h2 class="sec">How this gets tested</h2>
         <p class="lead">
-          162 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
+          159 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions already
           in the tree. The starred ones each encode a specific bug this design exists to prevent.
         </p>
 

@@ -1,5 +1,10 @@
 # Loop Watch — design (radroid/t3code#38)
 
+> **Superseded by [`docs/coil/loops-v2/`](../loops-v2/PLAN.md) (2026-08-17).** The re-checks the
+> paragraph below asks for were done there — see
+> [`loops-v2/UPSTREAM-DELTA.md`](../loops-v2/UPSTREAM-DELTA.md) — and three of this design's
+> premises did not survive them.
+>
 > **Status: designed, not built.** No `apps/server/src/coil/loop/` exists — every path this
 > document writes in the present tense is a proposal. It is archived here because the research
 > underneath it is reusable, not because the feature shipped.

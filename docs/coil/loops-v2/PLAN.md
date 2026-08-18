@@ -3,14 +3,14 @@
 **Status:** ready for independent review. Nothing built, nothing merged.
 **Branch:** `t3code/loop-observation-thread-prototypes`
 **Baseline:** fork `main` @ `f6355f06f`, on upstream merge-base `a4cc1367b` (2026-08-17), **zero
-commits behind upstream**. Every claim below was verified against that tree — see
+commits behind upstream at verification (2026-08-17)**. Every claim below was verified against that tree — see
 [UPSTREAM-DELTA.md](UPSTREAM-DELTA.md) §7.
 
 | Companion doc | What it holds |
 |---|---|
 | [report.html](report.html) | the design report, 8 clickable prototypes embedded |
 | [BACKEND.md](BACKEND.md) | full backend design + rejected architectures |
-| [TESTS.md](TESTS.md) | 162 test cases |
+| [TESTS.md](TESTS.md) | 159 test cases |
 | [FINDINGS.md](FINDINGS.md) | raw research notes |
 | [UPSTREAM-DELTA.md](UPSTREAM-DELTA.md) | the 2026-08-17 re-verification |
 
@@ -91,7 +91,7 @@ Each with the reasoning, so a reviewer can attack the reasoning rather than gues
 | D2 | **Trigger on `updatedAt` staleness + recorded `session_crons`, never `session.status`** | A background subagent's message auto-opens a synthetic turn that pins `status = running` and nothing closes it — gating on it deadlocks the exact threads this is for `[V]` | High |
 | D3 | **A loop is a pinned thread** (Direction A) | Upstream shipped pinning 2026-08-04; `pinnedAt` overrides the settled/snoozed lifecycle; costs zero sidebar edits `[V]` | High |
 | D4 | **The Loops workspace (Direction C) is phase 2, not phase 1** | User agreed. Lives in fork-owned routes, so cost is low, but it is only worth it once several loops exist | High — user-confirmed |
-| D5 | **Never Direction B** (a bespoke Loops section in the sidebar) | Would open a row in `Sidebar.tsx` (3808 lines, 7 commits in 3 days `[V]`) and `Sidebar.logic.ts`; also has no mobile equivalent | High |
+| D5 | **Never Direction B** (a bespoke Loops section in the sidebar) | Would open a row in `Sidebar.tsx` (3911 lines, 7 commits in 3 days `[V]`) and `Sidebar.logic.ts`; also has no mobile equivalent | High |
 | D6 | **Two question channels: blocking (native) + deferred (`raise_blocker`)** | `AskUserQuestion` blocks on a `Deferred` `[V]`; a loop that waits loses the night, and one that nudges past a pending decision is worse | High |
 | D7 | **Console reads three sources, two needing no model cooperation** | Degradation test: a model that never calls `raise_blocker` must still produce a useful console | High |
 | D8 | **Budget is check-ins + wall-clock, not dollars** | `total_cost_usd` is unread anywhere in the repo and is documented as session-accumulated, so per-turn summing would inflate quadratically `[A - not measured]` | Medium — revisit if metered |
@@ -124,6 +124,25 @@ Each with the reasoning, so a reviewer can attack the reasoning rather than gues
 - **Loops answering their own low-stakes questions** — destroys the console's completeness, which is
   the only reason to trust it.
 - **Maintainer bots (#44)** — the same reactor with a different work source; sequenced after.
+
+### Divergences from #42 (deliberate, and open to challenge)
+
+- **#42 Phase 1d's `CLAUDE_CODE_DISABLE_CRON` per-thread toggle (default off) is dropped.** It was
+  specified when the scheduler looked untrustworthy; the correction in §1 inverted that, and the
+  user now relies on self-paced wakes — a default-off kill switch would disable the very mechanism
+  Phase 1 exists to observe. #42's "50 recurring jobs with no human in the path" concern is real,
+  but it is a full-access policy question, not a loops question. If review disagrees, the switch is
+  one env line in the same `ClaudeAdapter` row this plan already takes.
+- **#42's Experiments B and D were not run.** B (does a cron-fired turn render in the transcript as
+  if the human typed it?) needs a real `session_crons` fire to answer — it moves into Phase 1's
+  observation checklist rather than blocking the design. D (gate stability across SDK updates) is
+  absorbed by designing for the `gate_off` degraded state (BACKEND §4; TESTS case 11h): nothing here
+  depends on the gates staying on.
+- **#42 Phase 2's `wake_me` tool is not carried over.** The agent already has native long-horizon
+  scheduling (`CronCreate` / `ScheduleWakeup`); a fork mirror would be a parallel path to an
+  upstream capability. `raise_blocker` covers the one thing the native tools cannot do — hand a
+  durable, non-blocking question to a human — and a wake armed-then-lost is exactly what the
+  staleness trigger backstops.
 
 ---
 
@@ -332,7 +351,7 @@ the ledger currently carries 53 rows.
 
 ## 7. Test strategy
 
-162 cases in TESTS.md. Structure:
+159 cases in TESTS.md, plus the three coverage gates in its �11. Structure:
 
 - **Pure and fast** — `decide.ts` and `guards.ts` are pure so the entire decision table tests
   without a server or clock. Target **100% branch coverage** on both.
@@ -428,3 +447,6 @@ Stated so a reviewer can aim at evidence rather than opinion.
 3. Open a consolidated issue; close #42 pointing at it; note the residue of #38 is now covered.
 4. Start **Phase 0** — it is pure debt paydown, zero seam, and safe to do before any decision lands.
 5. Start **Phase 1** — it answers the biggest `[A]` in the plan at the cost of one additive line.
+6. When the design is accepted, register its vocabulary (loop, check-in, blocker, deference,
+   held / spent / stalled, iteration ledger) in `docs/coil/CONTEXT.md` — created lazily then, per
+   `docs/coil/agents/domain.md`, not before.
