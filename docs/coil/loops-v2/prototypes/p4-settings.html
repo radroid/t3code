@@ -376,7 +376,8 @@
                     <div class="set-row-title">Let the model pace itself</div>
                     <div class="set-row-desc">
                       Claude schedules its own wake-ups and is good at it within about half an hour.
-                      T3 reads what it scheduled and stands by while a wake is pending.
+                      T3 reads what it scheduled and stands by while a wake is pending inside the
+                      run's deadline.
                       <b>Always on in phase 1</b> — the per-thread kill switch an earlier draft
                       proposed was dropped (PLAN §3), so the row is shown fixed rather than live.
                     </div>
@@ -446,11 +447,13 @@
                   <div>
                     <b>These two rows are the whole relationship between the two schedulers.</b>
                     The model paces itself well inside its range — under about 30 minutes, before
-                    the session reaper's idle threshold, and capped at an hour by
-                    <code class="k">ScheduleWakeup</code> itself. What it cannot do is survive a
-                    restart: the cron table is in-process (<code class="k">cron_durable</code> is
-                    still false), so a lost wake leaves no record it ever existed. T3's job is that
-                    gap, not the pacing.
+                    the session reaper's idle threshold. The hour cap is
+                    <code class="k">ScheduleWakeup</code>'s alone;
+                    <code class="k">CronCreate</code> writes the same table with an unbounded cron
+                    expression, which is why T3 stands down only for a wake inside the run's own
+                    deadline. What the model cannot do is survive a restart: the cron table is
+                    in-process (<code class="k">cron_durable</code> is still false), so a lost wake
+                    leaves no record it ever existed. T3's job is that gap, not the pacing.
                   </div>
                 </div>
               </section>
@@ -597,7 +600,7 @@ When the work is finished, or you are blocked and need a human, write:
 with one line saying why you stopped. That file is the only way to end early.
 Otherwise this ends after {max} check-ins, or at {deadline}, whichever is first.
 
-T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3 stands by while one is pending, covers any that are lost, and enforces the budget and deadline.</textarea
+T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3 stands by while one is pending inside this run's deadline, covers any that are lost, and enforces the budget and deadline.</textarea
                   >
                   <div class="hint">
                     A per-repo override can live at <code class="k">.coil/loop-prompt.md</code> so

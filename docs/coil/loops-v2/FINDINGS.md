@@ -1,8 +1,19 @@
 # Loops — research findings (2026-08-15)
 
 Working notes for the consolidated Loops feature (issue #42 + the residue #38 left behind).
-Everything here is measured against the current tree, not the 2026-08-02 merge-base the
-archived design used.
+Written against merge-base `196c8ea0d` (2026-08-14), not the 2026-08-02 merge-base the archived
+design used.
+
+**Citations re-resolved (review pass, 2026-08-19).** This file said only "the current tree" and
+left the reader to work out which one. Every code citation below has been re-resolved by symbol
+against the package's real merge-base, **`cebac353d`** — the 2026-08-18 sync _moved_ the
+merge-base rather than keeping `a4cc1367b`, and put the fork's `main` on `94c6328ef`. Every file
+cited here is byte-identical between `cebac353d` and that tree, so the numbers below hold on
+both. Cites that drifted are corrected; cites in files that churn fast are replaced by a symbol
+anchor, per UPSTREAM-DELTA §5 item 1 — a line number in a hot file is a liability in a document
+meant to outlive a sync. Where the research-tree number is still worth knowing it is given
+alongside. (`docs/coil/SEAMS.md` records the same superseded merge-base; that is pre-existing on
+`main` and a follow-up, not this package's to fix.)
 
 ---
 
@@ -18,16 +29,25 @@ load-bearing premises have moved.
 da6e1a967 2026-08-04 feat(sidebar-v2): thread pinning for sidebar v2 (#5312)
 ```
 
-`packages/contracts/src/orchestration.ts:389-393`:
+`packages/contracts/src/orchestration.ts:403-406` (the `pinnedAt` field):
 
 > A pin overrides the settled/snoozed lifecycle: while `pinnedAt` is set the thread renders
 > in the pinned block and never classifies into a shelf.
 
-Also real today: `thread.pinned` / `thread.unpinned` **events** (`:1056-1057`; the commands that
-produce them are `thread.pin` / `thread.unpin`), a fractional
+That comment overstates its own rule, and this file repeated the overstatement. What a pin
+actually overrides is **auto-settle**. **Snooze still outranks a pin**, which the sidebar's
+partition loop says outright (`Sidebar.tsx`, the `supportsSnooze` branch): "Snooze outranks
+everything, including a pin: 'hide until Tuesday' temporarily suspends 'keep on top'. The pin
+survives underneath". Read every "a pin overrides the lifecycle" below as _overrides
+auto-settle_ — a snoozed Loop leaves the pinned block until it wakes, and returns to its exact
+slot.
+
+Also real today: `thread.pinned` / `thread.unpinned` **events** (`:1070-1071`; the commands that
+produce them are `thread.pin` / `thread.unpin`, `:739,749`), a fractional
 `pinOrderKey` for user-arranged order, a drag-reorderable pinned block in `Sidebar.tsx`
 (`SortablePinnedThreadRow`, `planPinnedReorder`), and the pinned block deliberately renders
-with **no header** (`Sidebar.tsx:674`).
+with **no header** (`Sidebar.tsx`, the `pinningSupported` prop comment — `:703` today, `:674` on
+the research tree).
 
 **Consequence.** #38's proposal 2 — _"a distinct thread type that pins to the top of the
 sidebar"_ — is now mostly an upstream feature. The archived design rejected a sidebar rail
@@ -51,38 +71,52 @@ resolve.
 
 ### A3. The settings mount in the design no longer exists
 
-`BetaSettingsPanel.tsx` is gone. Today's settings surface is 9 route files
-(`settings.{general,appearance,keybindings,providers,source-control,connections,archived}.tsx`)
-plus a closed `SettingsPath` union in `settings/settingsSearch.ts:1-8` that drives both the
-nav (`SettingsSidebarNav.tsx:44-64`) and search.
+`BetaSettingsPanel.tsx` is gone. Today's settings surface is the `settings.tsx` shell plus
+nine `routes/settings.*.tsx` section files, and a closed `SettingsPath` union in
+`components/settings/settingsSearch.ts:3-12` that drives both the nav
+(`SettingsSidebarNav.tsx`, `SETTINGS_SECTION_ICONS` + `SETTINGS_NAV_ITEMS`, `:46-67`) and
+search. The research tree had eight section files and a 7-member union at `:1-8`; upstream
+**#7082** added `integrations` in between.
 
 So the design's "+2 lines in a churn-3 file, risk 6" costing is void and has to be redone.
 A **new settings section** now costs: the `SettingsPath` union + `SETTINGS_SECTION_LABELS` +
-`SETTINGS_SECTION_ICONS` + a new route file + a `routeTree.gen.ts` regeneration. That is a
-materially different bill and it is one of the things the prototypes have to price.
+`SETTINGS_SEARCH_ITEMS` + `SETTINGS_SECTION_ICONS` + a new route file + a `routeTree.gen.ts`
+regeneration. That is a materially different bill and it is one of the things the prototypes
+have to price.
+
+**Priced since (review pass).** UPSTREAM-DELTA §4.1 read the bill off upstream's own
+`/settings/integrations` (#7082) and PLAN §6 carries the answer: **2 new seam rows** —
+`settingsSearch.ts` (~+13, because each `SETTINGS_SEARCH_ITEMS` entry is a 5–6 line object
+literal) and `SettingsSidebarNav.tsx` (+2). The route file is fork-owned and `routeTree.gen.ts`
+is regenerated rather than merged, so neither is seam.
 
 ---
 
 ## B. What upstream already gives us for free
 
-Measured in the current tree.
+Measured at merge-base `cebac353d`.
 
 | Capability                                                  | Where                                                                   | Use for Loops                                                                    |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Pinning, pin ordering, pin overrides lifecycle              | `contracts/orchestration.ts:389-393,1056-1057`; `Sidebar.tsx`           | A Loop pins and never sinks — zero seam                                          |
+| Pinning, pin ordering, pin overrides auto-settle            | `contracts/orchestration.ts:403-406,1070-1071`; `Sidebar.tsx`           | A Loop pins and never sinks — zero seam                                          |
 | Background liveness (`working` / `monitoring`)              | `orchestration/ThreadBackgroundLiveness.ts`; `Sidebar.logic.ts:492-497` | The "is it actually alive" signal, provider-agnostic, exact rather than inferred |
 | Snooze + wake, with a `Woke` pill                           | `Sidebar.tsx` (`snoozeWakeLabelText`, `wokeAt`, `isWoke`)               | Vocabulary and colour precedent for a scheduled future event                     |
 | Settle / unsettle, `settledOverride`                        | `contracts`, `decider.ts`                                               | Terminal-state precedent                                                         |
-| Status hues, fixed system-wide                              | `Sidebar.logic.ts:640-725`                                              | Loops must reuse, not invent                                                     |
-| Activity append with open `kind` + `Schema.Unknown` payload | `contracts/orchestration.ts:315-325`                                    | Timeline breadcrumbs at zero contract cost                                       |
+| Status hues, fixed system-wide                              | `Sidebar.logic.ts:638-727` (`resolveThreadStatusPill`)                  | Loops must reuse, not invent                                                     |
+| Activity append with open `kind` + `Schema.Unknown` payload | `contracts/orchestration.ts:341-350`                                    | Timeline breadcrumbs at zero contract cost                                       |
 | Fork HTTP routes without touching contracts/ws              | `coil/webPush/http.ts` pattern                                          | The Loops API                                                                    |
 | Durable fork store + reactor                                | `coil/autoResume/*` (15 files)                                          | The Loops reactor, verbatim shape                                                |
 
-**The status vocabulary the fork must not fight** (`Sidebar.logic.ts`):
-`approval` amber · `input` indigo · `working` sky (pulse) · `monitoring` sky (no pulse) ·
-`failed` red · `Woke` amber · `Done` emerald.
+**The status vocabulary the fork must not fight** — the kinds come from
+`resolveSidebarThreadStatus` (`Sidebar.logic.ts:475-497`), the hues from
+`resolveThreadStatusPill` in the same file and the top-status pill in `Sidebar.tsx`:
+`approval` amber (`Pending Approval`) · `input` indigo (`Awaiting Input`) · `working` sky
+(pulse) · `monitoring` sky (no pulse) · `failed` red · `Woke` amber · `Done` emerald.
 
-**A rule the sidebar states outright** (`Sidebar.logic.ts:723-727`):
+**A rule the sidebar states outright** (`Sidebar.logic.ts:534-537`, the comment above
+`sortThreadsForSidebar`; this file previously cited `:723-727`, which is inside
+`resolveThreadStatusPill` — a mis-citation, not drift, since the rule sits at `:534-537` on the
+research tree and today's alike):
 
 > Sidebar sort: static creation order, newest thread on top. Activity NEVER reorders the
 > list — a row holds its position from open until settled, so the screen only moves at
@@ -166,12 +200,32 @@ Sources: [Cursor background agents](https://www.morphllm.com/cursor-background-a
 
 ## D. What carries over from the archived design unchanged
 
-These were verified once and nothing since has touched them. They are the spine of the
-backend and the prototypes assume them.
+These were verified once and, but for the one correction noted under the first bullet, nothing
+since has touched them. They are the spine of the backend and the prototypes assume them.
 
-- **Trigger on `updatedAt` staleness**, not `session.status`. A background subagent's
-  message auto-opens a synthetic turn that pins `session.status = "running"` and nothing
-  closes it, so gating on it deadlocks exactly the issue-38 threads.
+- **Trigger on `updatedAt` staleness**, not `session.status`. A turn whose completion never
+  arrives pins `session.status = "running"` with nothing _automated_ to clear it —
+  `ProviderSessionReaper.ts:65` skips any binding whose thread has `session.activeTurnId != null`
+  — so gating on it deadlocks exactly the issue-38 threads. The `updatedAt` half was verified
+  separately and is unchanged.
+
+  > **Both justifications corrected in review.** This bullet used to read "a background
+  > _subagent's_ message auto-opens a synthetic turn … and **nothing** closes it". Neither half
+  > holds. Subagent snapshots have not opened synthetic turns since upstream **#5219**
+  > (`a2ca89aa1`, 2026-08-06 — nine days before these notes): `handleAssistantMessage` returns
+  > early for any assistant snapshot carrying `parent_tool_use_id`, so what auto-opens a
+  > synthetic turn is a **top-level** assistant message arriving with no active turn. And four
+  > things close one — a later SDK `result` (`handleResultMessage` ends in an unconditional
+  > `completeTurn`), the next `sendTurn` (which auto-closes stale synthetic turns, and says
+  > so), a stream exit, and `stopSession`. The archived design carried the qualifier and these
+  > notes dropped it (`docs/coil/loop/OPTIONS.md:505` — "nothing closes it but a later SDK
+  > `result` or the next `sendTurn`"). The field evidence goes with it: #38's 1,358 orphaned
+  > activities were read as proof of a stuck synthetic turn, but the fork's own capture
+  > (`docs/coil/loop/captures/subagent-backgrounded.ndjson`) shows that post-turn traffic is
+  > `system` messages, which never reach `handleAssistantMessage` at all — so treat that
+  > attribution as unproven. The conclusion — never gate on `session.status` — survives on the
+  > reaper skip alone.
+
 - **Reserve the attempt before dispatch**, so a provider that cannot spawn burns budget
   rather than tight-looping.
 - **Terminal vocabulary must distinguish `done` from `spent`.** "It finished" vs "it ran
@@ -222,9 +276,9 @@ Design consequences to work through in the prototypes:
 - **Where do the items come from?** Three candidate sources, in descending order of how
   much they already exist: (a) real pending approvals / pending user input / actionable
   proposed plans — all already SQL-backed columns on `OrchestrationThreadShell`
-  (`contracts/orchestration.ts:432-436`); (b) the loop's own skip reasons, which the
-  archived design already surfaces as `t3x.loop.skipped` breadcrumbs; (c) **model-authored
-  questions**, which need a channel that does not exist yet.
+  (`contracts/orchestration.ts:474-476`, inside the struct that opens at `:448`); (b) the
+  loop's own skip reasons, which the archived design already surfaces as `t3x.loop.skipped`
+  breadcrumbs; (c) **model-authored questions**, which need a channel that does not exist yet.
 - (c) is the interesting one and the risky one. The archived design deliberately **rejected**
   an agent-authored JSON contract (BATON) because "it outsources the hardest judgement to
   the thing that just failed" and "degrades silently". A questionnaire is that idea
@@ -282,14 +336,15 @@ goal-sourced from an issue queue rather than from a single thread's unfinished w
 
 ## G. The questionnaire already half-exists — and its other half is the whole problem
 
-Verified in the current tree. This is the most consequential finding of the night and it
+Verified at merge-base `cebac353d`. This is the most consequential finding of the night and it
 decides the shape of the console.
 
 ### G1. Structured questions are a first-class, native concept
 
-`ClaudeAdapter.ts:3758-3860` (as measured on the research tree — line numbers in this file drift;
-cite the `mcpServers`-spread anchor instead, per UPSTREAM-DELTA §5 item 1) — when the model calls its
-**`AskUserQuestion`** tool, T3:
+`ClaudeAdapter.ts`, `handleAskUserQuestion`, reached from the `canUseTool` callback — cited by
+symbol, not by line, per UPSTREAM-DELTA §5 item 1. The numbers are why: the original
+`:3758-3860` was a research-tree range around a function that opens at `:3771` there and at
+`:3815` today. When the model calls its **`AskUserQuestion`** tool, T3:
 
 1. intercepts it in `canUseTool` (`raw.method: "canUseTool/AskUserQuestion"`),
 2. emits a `user-input.requested` runtime event carrying `payload: { questions }`,
@@ -297,12 +352,14 @@ cite the `mcpServers`-spread anchor instead, per UPSTREAM-DELTA §5 item 1) — 
 4. **blocks**: `const answers = yield* Deferred.await(answersDeferred)`,
 5. on answer, emits `user-input.resolved` and unblocks.
 
-The projection turns that into `pendingUserInputCount`
-(`ProjectionSnapshotQuery.ts:1927,2072,2351`) → `hasPendingUserInput` on the thread shell →
-the indigo **`Awaiting Input`** status in the sidebar.
+The projection turns that into `pendingUserInputCount` → `hasPendingUserInput` on the thread
+shell → the indigo **`Awaiting Input`** status in the sidebar. Three sites in
+`ProjectionSnapshotQuery.ts` do that mapping (`row.pendingUserInputCount > 0`): `:2054`, `:2199`,
+`:2478` today, `:1927,2072,2351` on the research tree.
 
 The question schema is already exactly what a questionnaire needs
-(`contracts/providerRuntime.ts:444-464`):
+(`contracts/providerRuntime.ts`, `UserInputQuestion` at `:450-459` — this file is unmoved since
+the research tree):
 
 ```ts
 UserInputQuestion = { id, header, question, options: [{ label, description }], multiSelect? }
@@ -341,8 +398,9 @@ The resolution is to stop treating "I need a human" as one thing. It is two:
 The missing half is a fork-owned tool — call it `raise_blocker` — that records a question
 **and returns immediately**, so the agent parks _that thread of work_ and continues with
 something else. #42's Phase 2 already sketched exactly the right home for it: a fork-owned
-HTTP MCP toolkit, which is provider-agnostic (all five adapters already wire `mcpServers`
-with a per-thread bearer credential) rather than Claude-only.
+HTTP MCP toolkit, which is provider-agnostic (all five adapters already wire the per-thread
+MCP session with its bearer credential — four through an `mcpServers` map, OpenCode through
+`client.mcp.add`) rather than Claude-only.
 
 The console then aggregates three sources, and the distinction is the product:
 

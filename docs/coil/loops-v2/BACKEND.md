@@ -12,7 +12,21 @@ scheduler rather than replacing it**. Fork-owned, provider-agnostic.
 
 Line references were measured against merge-base `196c8ea0d` (2026-08-14 sync), not the 2026-08-02
 base the archived design used; UPSTREAM-DELTA §5 lists the ones that have since moved. Churn and
-file-size figures are re-measured against the current merge-base `a4cc1367b` (2026-08-17).
+file-size figures are re-measured against the current merge-base **`cebac353d`**.
+
+> **Corrected 2026-08-19 by review.** An earlier revision named `a4cc1367b` as the current
+> merge-base and said the 2026-08-18 daily sync force-rewrote the fork onto the _same_ base. The
+> base **moved**: two upstream commits (`3723722f7`, `cebac353d`) sit under the replayed fork stack,
+> and `cebac353d` is an upstream ancestor, so `cebac353d` is the merge-base. The distinction is not
+> cosmetic — the package's headline ledger figure is only true against `cebac353d`; measured against
+> `a4cc1367b` two of upstream's own edits get counted as the fork's. `docs/coil/SEAMS.md` still
+> carries the old base; that defect predates this package and is a follow-up, not part of it.
+
+**Marker discipline.** `[A]` is an assumption this design has not verified. `[V]` is verified by
+command against this tree. **`[V - external]`** is verified by command too, but against a shipped
+dependency — the pinned `@anthropic-ai/claude-agent-sdk` types or the Claude binary itself — rather
+than against the repo. A `[V - external]` fact can therefore change under you with **no repo diff**
+to warn you, which is why it is marked apart rather than folded into `[V]`.
 
 ---
 
@@ -20,9 +34,10 @@ file-size figures are re-measured against the current merge-base `a4cc1367b` (20
 
 A fork-owned reactor ticks once a minute. For each **armed** thread it reads one SQL projection
 column — `updatedAt` — plus the thread's last-known `session_crons`. If the agent has already
-scheduled its own wake and that wake is still plausible, **the loop stands down and spends
-nothing**. Otherwise, if the thread has been silent past its threshold and all guards pass, it
-dispatches an ordinary `thread.turn.start`, exactly as auto-resume already does in production.
+scheduled its own wake, and that wake is still pending and lands inside the run's deadline, **the
+loop stands down and spends nothing**. Otherwise, if the thread has been silent past its threshold
+and all guards pass, it dispatches an ordinary `thread.turn.start`, exactly as auto-resume already
+does in production.
 Budget, deadline, strikes and stop reasons live in a durable JSON file so a 3am reboot loses
 nothing. A second, non-blocking question channel (`raise_blocker`, an MCP tool) lets the agent bank
 a human decision without halting, and the console reads blocking pending-inputs, deferred blockers
@@ -32,8 +47,8 @@ model never cooperates.
 **On a healthy self-pacing Claude thread this reactor should almost never fire.** How rarely it
 fires is the measure of a correct implementation, not a sign it is doing nothing.
 
-Total new upstream surface for phases 1–4: **3 new seam rows** — the `hooks` spread into
-`ClaudeAdapter`'s existing `queryOptions` object (+1), `settingsSearch.ts` (~+4) and
+Total new upstream surface for phases 1–4: **3 new seam rows, ~+16 lines** — the `hooks` spread into
+`ClaudeAdapter`'s existing `queryOptions` object (+1), `settingsSearch.ts` (**~+13**) and
 `SettingsSidebarNav.tsx` (+2) — plus one existing seam row rewritten in place at delta zero, and
 ~6 lines in an existing fork-owned file, which is not upstream surface at all. The budget is
 PLAN §6; §11 below prices each row.
@@ -52,8 +67,11 @@ composed with, and getting that wrong was the main error in the first draft.
 `CronList` and `ScheduleWakeup` are compiled into the Claude platform binary, spread unconditionally
 into its tool registry, and the scheduler is constructed inside the **non-interactive** `print.ts`
 entrypoint — the same one the SDK uses. On fire it injects a synthetic prompt and kicks its own
-drain loop, and T3 already handles the resulting turn (`ClaudeAdapter.ts` auto-starts a synthetic
-turn for assistant messages arriving without one).
+drain loop, and T3 already handles the resulting turn end to end: a top-level assistant message
+arriving with no active turn auto-starts a **synthetic** turn in `ClaudeAdapter.ts`, and the wake's
+own SDK `result` closes it through the unconditional `completeTurn` at the tail of
+`handleResultMessage`. A self-paced wake therefore renders as an ordinary turn, open and close —
+which is what makes deference **observable** rather than a silent gap (§4).
 
 #42 catalogued the real constraints — the reaper race, the remote gate, and the missing product
 concept — and already proposed composing with the scheduler rather than replacing it (its Guard #15:
@@ -85,32 +103,51 @@ if (thread?.backgroundLiveness != null) {
 So a session with live background work is no longer reaped at all, and the 30-minute threshold with
 a 5-minute sweep only bites a genuinely idle binding.
 
+**Two tools write `session_crons`, and only one of them is clamped.** `sdk.d.ts` describes the field
+as "Session-scoped cron tasks (**CronCreate**, ScheduleWakeup, /loop) that will wake this session
+later", and the two writers have different reach `[V - external, @anthropic-ai/claude-agent-sdk@0.3.170,
+the version apps/server/package.json pins]`:
+
+- **`ScheduleWakeup`** takes `delaySeconds: number`, documented "Clamped to [60, 3600] by the
+  runtime". One shot, at most an hour out.
+- **`CronCreate`** takes `cron: string`, "Standard 5-field cron expression in local time", plus
+  `recurring?: boolean` — "fire on every cron match until deleted or auto-expired after 7 days".
+  **No upper bound at all.**
+
+An earlier revision of this document treated the `[60, 3600]` clamp as a property of self-pacing as
+such. It is a property of one tool. §4's deference rule was built on the wider claim and has been
+re-bounded accordingly.
+
 **The practical range:**
 
-| Self-paced delay | Outcome           | Why                                                                                        |
-| ---------------- | ----------------- | ------------------------------------------------------------------------------------------ |
-| <= ~30 min       | **works**         | fires before the reaper's idle threshold is reached                                        |
-| 30-60 min        | racy              | depends on the sweep and whether background work kept the binding alive                    |
-| > 60 min         | impossible        | `ScheduleWakeup` clamps `delaySeconds` to `[60, 3600]`                                     |
-| across a restart | **lost silently** | `cron_durable` false, so an in-process table, and nothing on disk records the wake existed |
+| Self-paced delay              | Outcome                 | Why                                                                                        |
+| ----------------------------- | ----------------------- | ------------------------------------------------------------------------------------------ |
+| <= ~30 min                    | **works**               | fires before the reaper's idle threshold is reached                                        |
+| 30-60 min                     | racy                    | depends on the sweep and whether background work kept the binding alive                    |
+| > 60 min via `ScheduleWakeup` | impossible              | `delaySeconds` is clamped to `[60, 3600]` `[V - external]`                                 |
+| > 60 min via `CronCreate`     | possible, **unbounded** | a cron expression, not a delay — `0 9 * * *` is a legal 24-hour wait `[V - external]`      |
+| across a restart              | **lost silently**       | `cron_durable` false, so an in-process table, and nothing on disk records the wake existed |
 
 Self-pacing at a 20-30 minute cadence — the normal case, and what the tooling nudges toward — sits
 squarely in the working band. **That is why it works in practice, and the design must not fight it.**
+The `CronCreate` row is why T3 still needs a cap of its own: deferring to a wake is only safe while
+the wake is close enough to be worth waiting for.
 
 **What is genuinely T3's job**, each constraint re-verified today:
 
-| Constraint                                                                                                                                                                       | T3 owns                                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| In-process only (`cron_durable` false)                                                                                                                                           | **durability** — a wake lost to a restart leaves no trace; T3's store _is_ the trace |
-| Clamped to <= 1 hour                                                                                                                                                             | anything longer, plus the wall-clock deadline                                        |
-| Claude-only — nothing under `codex`, `cursor`, `grok`, `opencode`                                                                                                                | the other four adapters, which otherwise get nothing                                 |
-| Gate is code-default false, true from a cached remote evaluation; `ClaudeHome.ts` relocates `CLAUDE_CONFIG_DIR` per provider instance, so the cache can differ between instances | a **visible degraded state** rather than a loop that silently stops pacing           |
-| T3 has no write handle on the binary's table                                                                                                                                     | budget, cap, audit — but it can now **read** it via `session_crons`                  |
+| Constraint                                                                                                                                                                       | T3 owns                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| In-process only (`cron_durable` false)                                                                                                                                           | **durability** — a wake lost to a restart leaves no trace; T3's store _is_ the trace                                             |
+| `ScheduleWakeup` clamped to <= 1 hour; `CronCreate` not clamped at all                                                                                                           | both ends — anything longer than the clamp allows, **and** a cap on anything the cron expression allows: the wall-clock deadline |
+| Claude-only — nothing under `codex`, `cursor`, `grok`, `opencode`                                                                                                                | the other four adapters, which otherwise get nothing                                                                             |
+| Gate is code-default false, true from a cached remote evaluation; `ClaudeHome.ts` relocates `CLAUDE_CONFIG_DIR` per provider instance, so the cache can differ between instances | a **visible degraded state** rather than a loop that silently stops pacing                                                       |
+| T3 has no write handle on the binary's table                                                                                                                                     | budget, cap, audit — but it can now **read** it via `session_crons`                                                              |
 
 **So `session_crons` moves from phase 3 to phase 1, and becomes part of the trigger.** If the agent
-has a pending wake — at any distance — the loop stands down until the wake is overdue by
-`wakeGraceMs`. The loop's check-in is the fallback for the case the agent structurally cannot handle: it has stopped, or its wake was
-lost.
+has a pending wake landing at or before the loop's own deadline, the loop stands down until that
+wake is overdue by its jitter grace (§4). A wake past the deadline is not deferred to, because past
+the deadline there is nothing left to defer to. The loop's check-in is the fallback for the case the
+agent structurally cannot handle: it has stopped, or its wake was lost.
 
 ### 1.2 Rejected — a DB migration for loop state
 
@@ -247,10 +284,13 @@ idleMs    = now - max(Date.parse(shell.updatedAt), processStartedAtMs)
 threshold = busyTurn ? config.busyIdleMs : config.idleMs
 
 selfPacedWakeMs = record.crons.nextFireAtMs        // from the Stop hook, persisted
-graceMs         = config.wakeGraceMs               // default ~90s, >= the binary's cron jitter
+graceMs         = wakeGrace(record.crons)          // derived per entry, see "the grace" below
+deferrable      = selfPacedWakeMs != null
+               && record.deadlineAtMs != null              // no deadline, no cap to defer to
+               && selfPacedWakeMs <= record.deadlineAtMs   // the loop's own clock is the cap
 
 fire when idleMs >= threshold
-       && !(selfPacedWakeMs != null && now < selfPacedWakeMs + graceMs)
+       && !(deferrable && now < selfPacedWakeMs + graceMs)
 ```
 
 `busyTurn` is `shell.session?.status ∈ {running, starting} || shell.latestTurn?.state === "running"`.
@@ -262,23 +302,77 @@ blind in the one case that motivated the feature. It could still be read as a _l
 present (non-null ⇒ use `busyIdleMs`), never as a veto; that is an optional refinement, not a
 dependency.
 
+**Said plainly, because it is a refusal and not an oversight: this declines #38's proposed Guard
+#15**, _"no open tasks in the roster"_ as a veto on firing (`docs/coil/loop/SUBAGENTS.md`). An
+empty roster is indistinguishable from a lost roster, so after a restart the veto reads "nothing is
+running" on a thread with six live subagents — a veto that fails silent in exactly the window the
+loop exists for is worse than no veto. Hence lengthener, never veto. #38's companion ask — surfacing
+the open-task count in the pill — is not carried either, for the same reason: a count that is
+sometimes zero-because-restarted is a lying label. **PLAN's Divergences section declares both.**
+(Distinct from _#42's_ Guard #15, the scheduled-wake deference rule §1.1 adopts — same number,
+different issue.)
+
 **The self-paced clause is the deference rule.** While a recorded wake is still pending, T3 does
 nothing — no dispatch, no budget spent, and the console reads _"Self-pacing · next wake 02:35"_.
-It defers for the whole wait, not merely for wakes landing inside the next threshold window: a
-thread waiting on a wake is not idle, it is waiting, and `ScheduleWakeup` clamps a delay to 3600s
-so the exposure is bounded without a second rule. T3 wins the moment the wake is **overdue by
-`graceMs`** with no `updatedAt` movement. So the loop only acts when the agent has **not** scheduled
+It defers for the whole wait, not merely for wakes landing inside the next threshold window — a
+thread waiting on a wake is not idle, it is waiting — subject to the deadline bound below. T3 wins
+the moment the wake is **overdue by `graceMs`** with no `updatedAt` movement. So the loop only acts when the agent has **not** scheduled
 itself, or when a scheduled wake **passed with no activity** — which is precisely the case an
 in-process scheduler cannot cover, because a lost wake leaves no trace of itself.
 
+**And the deference is bounded by the loop's own deadline — added by review, and open to
+challenge.** An earlier revision argued the exposure was bounded without a second rule, because
+`ScheduleWakeup` clamps a delay to 3600s. That argument is **retracted**: the clamp belongs to one
+of the two tools that write `session_crons`, and `CronCreate` takes an unbounded cron expression
+(§1.1). Unbounded deference is therefore a hole, not a simplification — a recorded `0 9 * * *`
+stands supervision down for up to 24 hours, and a one-shot pinned to a future date stands it down
+indefinitely, all while the run is nominally armed. The rule is now: **T3 defers only while the
+recorded next fire is at or before the loop's wall-clock deadline.** Past the deadline the run is
+over on T3's clock either way, so the deadline is the natural cap and no new config knob is needed;
+beyond it T3 paces on its own clock and the ordinary staleness trigger applies. Two consequences
+worth arguing with: whether the deadline is the right cap or an explicit `maxDeferMs` would be
+honest — that belongs beside PLAN's Q1 — and that `deadlineAtMs` is nullable today (§3), so a loop
+armed with no deadline has no cap to defer to. The proposal is to **reject arming without a
+deadline** in the route rather than to defer forever; that is a change to §3's contract and is
+flagged, not assumed.
+
 `record.crons` is written by the `Stop` / `SubagentStop` hook callbacks (see §2's `crons.ts`):
-read `input.session_crons` (`{ id, schedule, recurring, prompt }` — a cron expression, not a
-timestamp), compute `nextFireAtMs` fork-side from `schedule` (one-shot = single fire time encoded in
-the fields; server-local tz) `[A — the parse is ours]`, persist per thread. Persisting is the whole point:
-the binary's table is in-process, so **T3's copy is the only durable record that a wake was ever
-armed.** A `nextFireAtMs` in the past with no subsequent `updatedAt` movement is the signal that a
-wake was lost, and it is the strongest trigger in this design — stronger than staleness, because it
-is an unmet commitment rather than an inference.
+read `input.session_crons`, compute `nextFireAtMs` fork-side from `schedule` (one-shot = single fire
+time encoded in the fields; server-local tz) `[A — the parse is ours]`, persist per thread.
+
+**The delivery is no longer an assumption.** This was the package's single largest `[A]` — a design
+whose strongest trigger rode on a hook payload nobody had confirmed. Read out of the shipped binary
+(2.1.236) `[V - external]`: the payload `{ background_tasks, session_crons }` is spread
+**unconditionally** into both the `Stop` and the `SubagentStop` hook input, and each entry is built
+as `{ id, schedule: t.cron, recurring: t.recurring ?? false, prompt }`. With no crons it is `[]`,
+never absent — so "field missing" is not a case the parse has to handle. The shape matches what this
+section already assumed, so nothing downstream moves; only its confidence does.
+
+**One thing the binary does that nothing here documented: `prompt` is truncated to 1000
+characters** `[V - external]`. Anything that treats the recorded prompt as the agent's full
+instruction — a console row, a test fixture, a diff against what was scheduled — is wrong. Treat it
+as a label.
+
+Persisting is the whole point: the binary's table is in-process, so **T3's copy is the only durable
+record that a wake was ever armed.** A `nextFireAtMs` in the past with no subsequent `updatedAt`
+movement is the signal that a wake was lost, and it is the strongest trigger in this design —
+stronger than staleness, because it is an unmet commitment rather than an inference.
+
+**The grace, and why it is derived rather than a constant.** An earlier revision set
+`wakeGraceMs` to a flat ~90s and justified it as ">= the binary's cron jitter". That reads the wrong
+half of the jitter model. The scheduler's own text: _"recurring tasks fire up to 10% of their period
+late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early"_ `[V - external]`.
+The 90s is the **early** direction, which can never make a healthy wake look lost; the direction
+that matters is **late**, and it scales with the period. A 30-minute recurring wake can legitimately
+land 3 minutes late, a 2.5-hour one a full 15. A flat 90s would fire `wake_lost` — the strongest
+trigger in the design — on a thread that is merely jittered, which contradicts the whole claim that
+this reactor should almost never fire on a healthy thread. So the grace comes from the recorded
+entry:
+
+```
+recurring: true   ->  max(90s, min(0.10 * period, 15min))
+recurring: false  ->  90s
+```
 
 Degraded states are explicit, never silent: `gate_off` when `ScheduleWakeup` reports the gate is
 off, and `wake_lost` when a recorded wake did not land. Both surface on the console.
@@ -299,10 +393,32 @@ typing at 04:23. It reads **a SQL projection column, not a hot stream**, which i
 only trigger in the field that survives a mid-loop server restart.
 
 **`session.status` appears nowhere in the guard table, and that is the single most important line
-in the design.** A background subagent's assistant message auto-opens a synthetic turn that pins
-`session.status = "running"`, and nothing closes it. Reusing `autoResume`'s `threadIsProgressing`
-as a veto would deadlock permanently on exactly the threads this feature exists to save. Here
-`running` only _lengthens_ the fuse.
+in the design.** The conclusion stands. The evidence under it did not, and has been re-anchored.
+
+_What an earlier revision claimed:_ a **background subagent's** assistant message auto-opens a
+synthetic turn that pins `session.status = "running"`, and **nothing closes it**. Both halves are
+false. Subagent traffic opens nothing: since upstream #5219 (`a2ca89aa1`, 2026-08-06) the only
+synthetic-turn creation site returns first for any assistant snapshot carrying `parent_tool_use_id`,
+with a comment saying so in as many words. And four closers exist, one unconditional —
+`handleResultMessage` ends in a bare `completeTurn(...)` with no `synthetic` check, which writes
+`status: "ready", activeTurnId: undefined`; `sendTurn` auto-closes a stale synthetic turn on the
+next user message; `handleStreamExit` and `stopSessionInternal` close on teardown. The archived
+design at least carried the qualifier — `docs/coil/loop/OPTIONS.md:505`, _"nothing closes it but a
+later SDK `result` or the next `sendTurn`"_ — and this package dropped it while keeping the
+confidence.
+
+_What is true, and is enough:_ a **top-level** assistant message with no `parent_tool_use_id`,
+arriving with no active turn, still opens a synthetic turn; and `ProviderSessionReaper.ts` skips any
+binding whose thread has `session.activeTurnId != null`. So **any** turn whose completion never
+arrives pins `running` with nothing automated to clear it — only a later `result`, the user's next
+message, or process exit will. That is a permanent-on-a-quiet-thread condition, and reusing
+`autoResume`'s `threadIsProgressing` as a veto would deadlock on exactly the threads this feature
+exists to save. Here `running` only _lengthens_ the fuse.
+
+The #38 field evidence is not on either side of this: the fork's own capture
+(`docs/coil/loop/captures/subagent-backgrounded.ndjson`) shows the post-turn traffic as `system`
+messages, which never reach `handleAssistantMessage` at all `[A]`. It supports the `updatedAt`
+half of the trigger, above, and nothing about turn lifecycle.
 
 **`processStartedAtMs` is a required boot-grace floor.** Without it every armed thread fires
 simultaneously on the first tick after a restart — and this user's machine restarts the app
@@ -344,8 +460,11 @@ Three disciplines, each closing a specific hole:
 
 Because the nudge is an ordinary user turn through the existing streaming-input session, the user's
 `~/.claude` and `.claude/` hooks, skills and slash commands apply to a loop turn exactly as to a
-terminal one, and `--resume` respawn is already handled. **Nothing touches `SDKResultSuccess`,
-`total_cost_usd`, `session_crons` or `raw.method`, so an SDK bump cannot break it.**
+terminal one, and `--resume` respawn is already handled. **The firing path touches
+`SDKResultSuccess`, `total_cost_usd`, `session_crons` and `raw.method` not at all, so an SDK bump
+cannot break the nudge itself.** The `session_crons` read in §4 is the design's one SDK-shaped
+dependency, which is why it is marked `[V - external]`: if it moves, deference degrades to the
+staleness trigger and firing is untouched.
 
 ---
 
@@ -361,7 +480,8 @@ taught once is gone by check-in four. The prompt carries, verbatim: the check-in
 the instruction not to restart from the top, the absolute interpolated path of the done-file, the
 deadline, **any answers banked since the last check-in**, and the deference line, verbatim:
 _"T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups as normal — T3
-stands by while one is pending, covers any that are lost, and enforces the budget and deadline."_
+stands by while one is pending inside this run's deadline, covers any that are lost, and enforces
+the budget and deadline."_
 That line resolves the real collision with the user's own `autonomous-build-loop` skill by
 **composing** with its self-pacing rather than by claiming ownership of the schedule — a prompt that
 claimed ownership would fight the very mechanism §1.1 and §4 defer to.
@@ -388,27 +508,29 @@ Terminal states are **sticky**; only a human re-arm clears them. Each writes a b
 table, so on `spent`, deadline or disarm _while recorded crons are still pending_ the reactor does
 the honest thing #42 specified: `providerService.stopSession({ threadId })`. The crons live in the
 session, so ending the session ends them. Without this a self-paced run walks straight through its
-own deadline — the bound would be advisory exactly where the spend is unattended.
+own deadline — and because `CronCreate` is unbounded and `recurring` entries live seven days
+(§1.1), it can keep walking for days. The bound would be advisory exactly where the spend is
+unattended.
 
 **Guards, in order.** Non-consuming skips are marked ○ — they keep budget and surface a reason.
 
-| #   | Guard                                                                                                                    | On fail                                                                                                                                                              |
-| --- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `config.enabled` (env kill switch, checked at layer construction)                                                        | no fiber forks                                                                                                                                                       |
-| 2   | `store.global.enabled` — re-read **every tick and again pre-dispatch**                                                   | ○ the settings toggle is a true kill switch, not one-tick-stale                                                                                                      |
-| 3   | `record.armed === true`                                                                                                  | ○                                                                                                                                                                    |
-| 4   | shell is `Some`, not archived, is a supported thread                                                                     | **disarm**                                                                                                                                                           |
-| 5   | `settledOverride !== "settled"`                                                                                          | ○                                                                                                                                                                    |
-| 6   | `snoozedUntil == null \|\| <= now`                                                                                       | ○ the only way to honour a snooze                                                                                                                                    |
-| 7   | `settledOverride === "active"` ⇒ nudge **then** repair pin                                                               | —                                                                                                                                                                    |
-| 8   | `!hasPendingApprovals && !hasPendingUserInput && !hasActionableProposedPlan`                                             | ○                                                                                                                                                                    |
-| 9   | `autoResumeStore.getThread(threadId).pending === null`                                                                   | ○                                                                                                                                                                    |
-| 10  | `now >= record.rateLimitedUntilMs`                                                                                       | ○                                                                                                                                                                    |
-| 10b | **no self-paced wake still pending** — `record.crons.nextFireAtMs == null \|\| now >= nextFireAtMs + config.wakeGraceMs` | ○ the deference rule — while a wake is pending the agent is pacing itself, so T3 stands by, whatever the wake's distance. Console: _"Self-pacing · next wake 02:35"_ |
-| 11  | `now - lastCheckIn.firedAtMs >= config.idleMs`                                                                           | ○ structural floor: a tight loop stays impossible even if `updatedAt` fails to bump                                                                                  |
-| 12  | idle threshold met, on a freshly re-read shell                                                                           | ○                                                                                                                                                                    |
-| 13  | budget, deadline, strikes, sentinel                                                                                      | **stop**                                                                                                                                                             |
-| 14  | armed threads `< maxArmedThreads` — enforced in the route **and** re-checked in the tick                                 | ○ not bypassable by hand-editing the state file                                                                                                                      |
+| #   | Guard                                                                                                                                                                              | On fail                                                                                                                                                                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `config.enabled` (env kill switch, checked at layer construction)                                                                                                                  | no fiber forks                                                                                                                                                                                                                                         |
+| 2   | `store.global.enabled` — re-read **every tick and again pre-dispatch**                                                                                                             | ○ the settings toggle is a true kill switch, not one-tick-stale                                                                                                                                                                                        |
+| 3   | `record.armed === true`                                                                                                                                                            | ○                                                                                                                                                                                                                                                      |
+| 4   | shell is `Some`, not archived, is a supported thread                                                                                                                               | **disarm**                                                                                                                                                                                                                                             |
+| 5   | `settledOverride !== "settled"`                                                                                                                                                    | ○                                                                                                                                                                                                                                                      |
+| 6   | `snoozedUntil == null \|\| <= now`                                                                                                                                                 | ○ the only way to honour a snooze                                                                                                                                                                                                                      |
+| 7   | `settledOverride === "active"` ⇒ nudge **then** repair pin                                                                                                                         | —                                                                                                                                                                                                                                                      |
+| 8   | `!hasPendingApprovals && !hasPendingUserInput && !hasActionableProposedPlan`                                                                                                       | ○                                                                                                                                                                                                                                                      |
+| 9   | `autoResumeStore.getThread(threadId).pending === null`                                                                                                                             | ○                                                                                                                                                                                                                                                      |
+| 10  | `now >= record.rateLimitedUntilMs`                                                                                                                                                 | ○                                                                                                                                                                                                                                                      |
+| 10b | **no deferrable wake still pending** — `nextFireAtMs == null \|\| record.deadlineAtMs == null \|\| nextFireAtMs > record.deadlineAtMs \|\| now >= nextFireAtMs + wakeGrace(entry)` | ○ the deference rule — while a wake is pending _inside the loop's deadline_ the agent is pacing itself, so T3 stands by. A wake past the deadline is not deferred to: `CronCreate` is unbounded (§1.1, §4). Console: _"Self-pacing · next wake 02:35"_ |
+| 11  | `now - lastCheckIn.firedAtMs >= config.idleMs`                                                                                                                                     | ○ structural floor: a tight loop stays impossible even if `updatedAt` fails to bump                                                                                                                                                                    |
+| 12  | idle threshold met, on a freshly re-read shell                                                                                                                                     | ○                                                                                                                                                                                                                                                      |
+| 13  | budget, deadline, strikes, sentinel                                                                                                                                                | **stop**                                                                                                                                                                                                                                               |
+| 14  | armed threads `< maxArmedThreads` — enforced in the route **and** re-checked in the tick                                                                                           | ○ not bypassable by hand-editing the state file                                                                                                                                                                                                        |
 
 Guard 8's third clause is the one every design in the original panel missed. `Sidebar.logic.ts`
 treats plan-ready as **not** pending-input, so a thread parked on an unapproved plan otherwise
@@ -546,16 +668,16 @@ than becoming a third.
 
 ## 11. Seam cost
 
-| File                                                      | Delta   | Note                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/coil/index.ts`                           | +~6     | **fork-owned, churn 0** — store, reactor, routes                                                                                                                                                                                                         |
-| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`  | **±0**  | existing row (+10/−6, churn 4) rewritten in place — **delta 0** (the row already carries risk 64): `<AutoResumeOverlay>` → `<ThreadCoilOverlay>`, which then hosts both. Genuinely delta-zero, and every future per-thread fork surface is free forever. |
-| `apps/server/src/server.ts`                               | **0**   | already has its 3-line row                                                                                                                                                                                                                               |
-| `packages/contracts`                                      | **0**   | activity `kind` is an open `TrimmedNonEmptyString`, payload is `Schema.Unknown`                                                                                                                                                                          |
-| `Sidebar.tsx` / `Sidebar.logic.ts`                        | **0**   | a loop is a **pinned thread** — `thread.pin` already exists                                                                                                                                                                                              |
-| `apps/server/src/provider/Layers/ClaudeAdapter.ts`        | **+1**  | **new row.** A single spread into the existing `queryOptions` object: `...(loop ? { hooks: loop.claudeHooks(threadId) } : {})`. `options.hooks` is set nowhere in this repo today, so this is the first subscription to a 30-event surface.              |
-| `apps/web/src/components/settings/settingsSearch.ts`      | **~+4** | **new row** (phase 4) — the `SettingsPath` union, a `SETTINGS_SECTION_LABELS` entry, and 2–3 `SETTINGS_SEARCH_ITEMS`. Append-ordered arrays, additive.                                                                                                   |
-| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | **+2**  | **new row** (phase 4) — the icon import and its `SETTINGS_SECTION_ICONS` entry.                                                                                                                                                                          |
+| File                                                      | Delta    | Note                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/coil/index.ts`                           | +~6      | **fork-owned, churn 0** — store, reactor, routes                                                                                                                                                                                                                                                                                                                                                                                              |
+| `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`  | **±0**   | existing row (+10/−6, churn 4) rewritten in place — **delta 0** (the row already carries risk 64): `<AutoResumeOverlay>` → `<ThreadCoilOverlay>`, which then hosts both. Genuinely delta-zero, and every future per-thread fork surface is free forever.                                                                                                                                                                                      |
+| `apps/server/src/server.ts`                               | **0**    | already has its 3-line row                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `packages/contracts`                                      | **0**    | activity `kind` is an open `TrimmedNonEmptyString`, payload is `Schema.Unknown`                                                                                                                                                                                                                                                                                                                                                               |
+| `Sidebar.tsx` / `Sidebar.logic.ts`                        | **0**    | a loop is a **pinned thread** — `thread.pin` already exists                                                                                                                                                                                                                                                                                                                                                                                   |
+| `apps/server/src/provider/Layers/ClaudeAdapter.ts`        | **+1**   | **new row.** A single spread into the existing `queryOptions` object: `...(loop ? { hooks: loop.claudeHooks(threadId) } : {})`. `options.hooks` is set nowhere in this repo today, so this is the first subscription to a 30-event surface — though the neighbourhood is no longer empty: #4466 sets `settings: { disableAllHooks: true }` on the capability probe, so upstream has begun touching hook-adjacent config.                      |
+| `apps/web/src/components/settings/settingsSearch.ts`      | **~+13** | **new row** (phase 4) — the `SettingsPath` union, a `SETTINGS_SECTION_LABELS` entry, and 2 `SETTINGS_SEARCH_ITEMS`. Measured, not estimated: applying that recipe to the real file and diffing gives **+13**, because each search item is a 5–6 line object literal (37 items span 202 lines); upstream's own +26 on this file decomposes the same way, as 1 union + 1 label + 4 items. Three items is ~+19. Append-ordered arrays, additive. |
+| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | **+2**   | **new row** (phase 4) — the icon import and its `SETTINGS_SECTION_ICONS` entry.                                                                                                                                                                                                                                                                                                                                                               |
 
 **The `ClaudeAdapter` row is new since the first draft** and it is the cost of the deference rule.
 It is worth arguing rather than waving through: the file is churn-16 and ~4.6k lines (4,644 at the
@@ -575,13 +697,15 @@ reduce double-firing. It is strictly worse — it cannot tell "the agent is paci
 agent has stopped" — but it costs zero upstream lines, so it is a legitimate zero-seam fallback.
 
 The settings surface was the one open bill. It is now **decided — see PLAN §6 and UPSTREAM-DELTA
-§4.1** — and priced as the two rows in the table above:
+§4.1** — and priced as the two rows in the table above: **phase 4 is 2 new rows, ~+15 lines.**
+An earlier revision said ~+6, which was about a third of the real figure; the row count was right
+and is unchanged, only the lines move.
 
 - **Own section** (`/settings/loops`) — the `SettingsPath` union + `SETTINGS_SECTION_LABELS` +
-  2–3 `SETTINGS_SEARCH_ITEMS` in `settingsSearch.ts` (churn 14), the `SETTINGS_SECTION_ICONS` entry
-  in `SettingsSidebarNav.tsx`, and a new fork-owned route file. The generated `routeTree.gen.ts` is
-  not part of the cost: it is regenerated, not merged. `settingsSearch.ts`'s append-ordered arrays
-  are structurally the same add/add conflict shape as issue #29.
+  2 `SETTINGS_SEARCH_ITEMS` in `settingsSearch.ts` (churn 14, ~+13), the `SETTINGS_SECTION_ICONS`
+  entry in `SettingsSidebarNav.tsx` (+2), and a new fork-owned route file. The generated
+  `routeTree.gen.ts` is not part of the cost: it is regenerated, not merged. `settingsSearch.ts`'s
+  append-ordered arrays are structurally the same add/add conflict shape as issue #29.
 - **Ride inside General** — cheaper, but buries a feature that owns unattended spend.
 
 Recommendation, and the decision taken: **own section.** A feature that can spend money while you

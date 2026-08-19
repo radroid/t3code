@@ -16,8 +16,8 @@ Written against the conventions already in the tree, not invented:
 Counts below are cases, not files. **★** marks a case that encodes a bug this design exists to
 prevent — if you cut scope, do not cut these.
 
-**The total is 159.** Cases inserted into an existing sequence carry a letter suffix rather than
-renumbering everything after them (`11b`–`11i`, `70b`–`70h`, `118b`–`118f`, `136b`–`136c`), so a
+**The total is 162.** Cases inserted into an existing sequence carry a letter suffix rather than
+renumbering everything after them (`11b`–`11k`, `70b`–`70i`, `118b`–`118f`, `136b`–`136c`), so a
 case number cited elsewhere keeps meaning the same case.
 
 ---
@@ -37,8 +37,10 @@ resolves to one row here.
 6. `session.status === "starting"` counts as busy.
 7. `latestTurn.state === "running"` counts as busy even when `session` is null.
 8. **`session.status === "running"` alone never suppresses a fire — it only lengthens the fuse.** ★
-   (A stale synthetic turn pins `running` forever; gating on it deadlocks the exact threads this
-   feature is for.)
+   (A synthetic turn whose completion never arrives pins `running` until a later SDK `result`, the
+   next `sendTurn`, or the process exits — nothing automated clears it, because the session reaper
+   skips any binding whose thread still has an `activeTurnId`. Gating on it deadlocks the exact
+   threads this feature is for.)
 9. `processStartedAtMs` clamps the idle floor: a thread last updated 6 hours ago, on a server
    started 30 seconds ago, is **not** idle. ★
 10. Unparseable `updatedAt` does not produce `NaN` idle and does not fire.
@@ -50,20 +52,39 @@ The rule that stops T3 firing on top of a healthy self-paced thread. These are t
 decide whether the two schedulers cooperate or fight.
 
 11b. A recorded `nextFireAtMs` inside the threshold window → `skip`, budget untouched. ★
-11c. A recorded `nextFireAtMs` **beyond** the threshold window **still defers**. ★ A thread
-waiting on a wake is not idle, whatever the wake's distance; the binary clamps a delay to
-3600s, so the exposure is bounded without a second rule.
+11c. A recorded `nextFireAtMs` **beyond** the threshold window but still **at or before**
+`deadlineAtMs` → `skip`. ★ A thread waiting on a wake is not idle, whatever the wake's distance
+inside the run.
 11d. `nextFireAtMs` in the past **with** `updatedAt` movement after it → the wake landed; clear it
 and treat the thread as normally active. Detected immediately, without waiting out `graceMs`.
 11e. `nextFireAtMs` overdue by more than `graceMs` **without** `updatedAt` movement → `fire`,
-reason `wake_lost`. ★ Inside `graceMs` (default ~90s, ≥ the binary's cron jitter) T3 still
-stands down. This is the strongest trigger in the design: an unmet commitment, not an
-inference.
+reason `wake_lost`. ★ Inside `graceMs` T3 still stands down. `graceMs` is **derived from the
+recorded entry**, not a constant: `max(90s, min(0.10 × period, 15min))` when `recurring: true`,
+90s for a one-shot. This is the strongest trigger in the design: an unmet commitment, not an
+inference — so the grace has to be wide enough that jitter alone never trips it (11k).
 11f. No cron record at all (non-Claude adapter, or the model never scheduled) → falls back to pure
 staleness, unchanged. ★ Every non-Claude adapter must behave exactly as before.
 11g. A stale cron record whose session has since been stopped is not treated as a live wake. ★
 11h. `gate_off` reported → recorded as a degraded state and surfaced, never silently ignored. ★
 11i. Two records for the same thread (a re-arm) → newest wins, no duplicate fire.
+11j. A recorded `nextFireAtMs` **past `deadlineAtMs`** → **no deference**; T3 paces on its own
+clock from there. ★ Two cases: a recurring `0 9 * * *` recorded at 01:00 against an 06:00
+deadline, and a one-shot cron pinned to a date days out. Added by review — an earlier draft held
+that the exposure was bounded without a second rule because the binary clamps a delay to
+[60, 3600]s. That clamp is real but belongs to one of the two tools that write `session_crons`:
+`ScheduleWakeup` takes `delaySeconds`, clamped; `CronCreate` takes a 5-field expression with no
+hour bound. Unbounded deference therefore stands T3 down for up to 24h on the first, and
+indefinitely on the second. The deadline is the cap because past it there is nothing left to
+defer to; whether that is the right cap, or an explicit `maxDeferMs` is, is open beside Q1.
+11k. A `recurring: true` 30-minute wake that lands **2 minutes late** → **no** `wake_lost` and no
+fire. ★ From the binary's own scheduler text: "recurring tasks fire up to 10% of their period
+late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early." The 90s is the
+_early_ half and can never cause a false `wake_lost`; the late half is what the grace must cover,
+and an earlier draft's fixed ~90s was an order of magnitude short — it would have fired the
+design's strongest trigger on a merely-jittered healthy thread. Assert both ends of the
+derivation too: a 30-minute period tolerates 3 min, a 20-minute period 2 min, and a 4-hour
+period 15 min and not more (the cap binds). The floor is inclusive the same way case 2 is: at
+exactly `graceMs` the wake counts as lost.
 
 ### 1.2 Budget and deadline
 
@@ -168,6 +189,11 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 
 ### 4b. `crons.ts` — the Stop-hook record
 
+Delivery is no longer an assumption: the shipped binary spreads `{background_tasks,
+session_crons}` unconditionally into both the `Stop` and `SubagentStop` hook inputs, mapping each
+entry to `{id, schedule, recurring, prompt}`. What these cases pin down is what the fork does
+with it.
+
 70b. A `Stop` hook payload with `session_crons` populated is normalised and persisted, with
 `nextFireAtMs` computed fork-side from each entry's `schedule` — a `recurring: true` 5-field
 expression yields the next match, and a one-shot (`recurring: false`), whose cron fields
@@ -175,12 +201,19 @@ encode a single fire time, yields exactly that instant. ★ The SDK delivers no 
 this parse is the whole risk.
 70c. An **empty** `session_crons` array clears the record — the agent stopped self-pacing. ★
 70d. A payload with `session_crons` **absent** (older SDK) leaves the record untouched rather than
-clearing it. ★ Absent and empty must not mean the same thing.
+clearing it. ★ Absent and empty must not mean the same thing. The shipped binary always sends
+the key — `[]` when there are no crons — so this case guards an older or future build, not
+today's.
 70e. A malformed entry is dropped individually; the rest of the array still records.
 70f. The hook callback never throws into the adapter — any failure logs and returns. ★
 A fork observability bug must not be able to break a turn.
 70g. `SubagentStop` is handled identically to `Stop`.
 70h. The record survives a store round-trip (it is the only durable copy of the wake).
+70i. The entry's `prompt` arrives **truncated to 1000 characters by the binary**. ★ Assert a
+longer prompt round-trips as the truncation, and that no fork path treats it as the agent's full
+prompt — the trigger reads `schedule` and `recurring`; `prompt` is console display text and
+nothing more. No fixture anywhere in this plan may hand the fork a prompt it would not really
+receive.
 
 ---
 
@@ -341,8 +374,11 @@ Heavier tests; a handful, each replaying a real failure.
   about it would pin behaviour we do not understand.
 - **Claude's cron tools themselves** (`CronCreate` / `ScheduleWakeup` actually firing). That is
   the binary's behaviour, not ours, and a fork test of it would assert someone else's contract.
-  What T3 _does_ with the `session_crons` the `Stop` hook hands it **is** tested — §1.1b for the
-  decision and §4b for the record — because that ships in Phase 1 and the trigger depends on it.
+  The clamp on `ScheduleWakeup` and the scheduler's jitter are the binary's contract too. What T3
+  _does_ with the `session_crons` the `Stop` hook hands it **is** tested — §1.1b for the decision
+  and §4b for the record — because that ships in Phase 1 and the trigger depends on it, including
+  the grace this fork _derives_ from the published jitter (11k) and the deference cap it applies
+  on top of the clamp (11j).
 
 ---
 

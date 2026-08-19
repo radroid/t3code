@@ -454,9 +454,13 @@
           <code class="k">a4cc1367b</code>, the ledger's own method: <b>14</b> upstream commits on
           <code class="k">RightPanelTabs.tsx</code>, <b>7</b> on
           <code class="k">rightPanelStore.ts</code>, and there is no extension point — registering
-          through the tab switch is the only way in. (This also answers wayfinder issue #112, "what
-          does registering a right-panel tab actually cost", as a side effect:
-          <b>two rows, on files churning 14 and 7</b>.)
+          through the tab switch is the only way in. Both switches render the tab
+          <em>chrome</em> only; the body comes from <code class="k">rightPanelContent</code>'s kind
+          ternary in <code class="k">ChatView.tsx</code> — an existing seam row, and a hot one
+          (churn 83, risk 18094) — so two rows holds only if the tab passes its content through
+          <code class="k">children</code>. (This also answers wayfinder issue #112, "what does
+          registering a right-panel tab actually cost", as a side effect:
+          <b>two rows, on files churning 14 and 7</b>, plus that constraint.)
         </div>
       </section>
 

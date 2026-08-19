@@ -577,8 +577,9 @@
           <div class="st-face">Self-pacing · next wake 02:35</div>
           <div class="st-why">
             The agent scheduled its own wake and T3 can see it. The loop stands down for as long as
-            that wake is pending: two schedulers firing on one thread is doubled spend and a
-            confused agent.
+            that wake is pending, up to the run's own deadline: two schedulers firing on one thread
+            is doubled spend and a confused agent, and a wake past the deadline has nothing left to
+            defer to.
           </div>
           <span class="st-tag free">spends nothing</span>
         </div>

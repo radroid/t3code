@@ -1,18 +1,27 @@
 # Loops — implementation plan
 
 **Status:** proposed — nothing built.
-**Baseline:** upstream merge-base `a4cc1367b` (2026-08-17), with the fork **zero commits behind
-upstream at verification (2026-08-17)**. The merge-base is the anchor rather than a fork `main` SHA,
-because every sync rewrites `main`. Every claim below was verified against that tree — see
+**Baseline:** upstream merge-base `cebac353d`, with the fork **zero commits behind upstream at
+verification (2026-08-17)**. The merge-base is the anchor rather than a fork `main` SHA, because
+every sync rewrites `main`. Verification originally quoted `a4cc1367b`; the 2026-08-18 daily sync
+**moved the merge-base** to `cebac353d`, and the seam numbers below are only correct against
+`cebac353d` — measured against `a4cc1367b` the same recipe mis-attributes two of upstream's own
+edits to the fork. Every claim below was verified against that tree — see
 [UPSTREAM-DELTA.md](UPSTREAM-DELTA.md) §7.
 
-| Companion doc                          | What it holds                                      |
-| -------------------------------------- | -------------------------------------------------- |
-| [report.html](report.html)             | the design report, 8 clickable prototypes embedded |
-| [BACKEND.md](BACKEND.md)               | full backend design + rejected architectures       |
-| [TESTS.md](TESTS.md)                   | 159 test cases                                     |
-| [FINDINGS.md](FINDINGS.md)             | raw research notes                                 |
-| [UPSTREAM-DELTA.md](UPSTREAM-DELTA.md) | the 2026-08-17 re-verification                     |
+| Companion doc                          | What it holds                                       |
+| -------------------------------------- | --------------------------------------------------- |
+| [report.html](report.html)             | the design report, 8 clickable prototypes embedded  |
+| [report.src.html](report.src.html)     | the source the report is built from — edit this one |
+| [BACKEND.md](BACKEND.md)               | full backend design + rejected architectures        |
+| [TESTS.md](TESTS.md)                   | 162 test cases                                      |
+| [FINDINGS.md](FINDINGS.md)             | raw research notes                                  |
+| [UPSTREAM-DELTA.md](UPSTREAM-DELTA.md) | the 2026-08-17 re-verification                      |
+
+`report.html` is generated. Edit `report.src.html` (or a prototype under `prototypes/`), then run
+both steps — `node docs/coil/loops-v2/build-report.mjs` and
+`vp fmt docs/coil/loops-v2/report.html` — because the committed file is formatted output and
+building alone rewrites its whitespace.
 
 ---
 
@@ -21,7 +30,10 @@ because every sync rewrites `main`. Every claim below was verified against that 
 The plan is written to be challenged. Three things to know:
 
 1. **Claims are marked.** `[V]` = verified by running a command against the tree, with the command
-   or file cited. `[A]` = assumed, not yet tested. Every `[A]` is a place the plan could be wrong.
+   or file cited. `[V - external]` = verified by command too, but against a shipped dependency —
+   the Claude binary or the agent SDK's type declarations — rather than against this tree, so it
+   can move without any repo diff to warn us. `[A]` = assumed, not yet tested. Every `[A]` is a
+   place the plan could be wrong.
 2. **§11 lists what would falsify each major decision.** If you disagree, the fastest route is to
    attack the evidence there rather than the conclusion.
 3. **§10 has the open questions.** Four of them are genuinely open and are the highest-value place
@@ -42,8 +54,9 @@ from me?" when they come back.**
 Three properties define it:
 
 - **It backstops, it does not replace.** Claude's own scheduler already paces a session well under
-  ~30 minutes `[V]`. T3 defers to it and covers only what an in-process scheduler cannot: wakes over
-  an hour, wakes lost to a restart, non-Claude providers, and any notion of a budget.
+  ~30 minutes `[V]`, and `CronCreate` can arm a wake arbitrarily far out `[V - external]`. T3 defers
+  to it and covers only what an in-process scheduler cannot: wakes lost to a restart, non-Claude
+  providers, and any notion of a budget.
 - **It is durable.** State lives on disk. A restart at 3am loses nothing — which is precisely the
   gap upstream's in-memory liveness tracking leaves open, by its own module doc `[V]`.
 - **It collects questions without stopping.** The native `AskUserQuestion` blocks the turn until a
@@ -85,20 +98,32 @@ has already survived review.
 
 Each with the reasoning, so a reviewer can attack the reasoning rather than guess at it.
 
-| #   | Decision                                                                                | Why                                                                                                                                                                                                                              | Confidence                      |
-| --- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| D1  | **Durable T3-native reactor, backstopping Claude's scheduler**                          | Claude's scheduler works ≤30min but is in-process, clamped to 1h, and Claude-only `[V]`                                                                                                                                          | High — evidence in BACKEND §1.1 |
-| D2  | **Trigger on `updatedAt` staleness + recorded `session_crons`, never `session.status`** | A background subagent's message auto-opens a synthetic turn that pins `status = running` and nothing closes it — gating on it deadlocks the exact threads this is for `[V]`                                                      | High                            |
-| D3  | **A loop is a pinned thread** (Direction A)                                             | Upstream shipped pinning 2026-08-04; `pinnedAt` overrides the settled/snoozed lifecycle; costs zero sidebar edits `[V]`                                                                                                          | High                            |
-| D4  | **The Loops workspace (Direction C) is a later phase (Phase 6), not phase 1**           | User agreed. Lives in fork-owned routes, so cost is low, but it is only worth it once several loops exist                                                                                                                        | High — user-confirmed           |
-| D5  | **Never Direction B** (a bespoke Loops section in the sidebar)                          | Would open a row in `Sidebar.tsx` (3911 lines, 7 commits in 3 days `[V]`) and `Sidebar.logic.ts`; also has no mobile equivalent                                                                                                  | High                            |
-| D6  | **Two question channels: blocking (native) + deferred (`raise_blocker`)**               | `AskUserQuestion` blocks on a `Deferred` `[V]`; a loop that waits loses the night, and one that nudges past a pending decision is worse                                                                                          | High                            |
-| D7  | **Console reads three sources, two needing no model cooperation**                       | Degradation test: a model that never calls `raise_blocker` must still produce a useful console                                                                                                                                   | High                            |
-| D8  | **Budget is check-ins + wall-clock, not dollars**                                       | The adapter stamps `total_cost_usd` onto `turn.completed.totalCostUsd` and nothing downstream aggregates it; its per-turn vs session-accumulated semantics are unmeasured `[A]`, so summing per turn could inflate quadratically | Medium — revisit if metered     |
-| D9  | **Mandatory budget, no unlimited option; route returns 400 rather than clamping**       | A silent clamp hides a mistake in a feature that spends money unattended                                                                                                                                                         | Medium                          |
-| D10 | **Own settings section** (`/settings/loops`)                                            | Now priced at 2 small additive seam rows, with an upstream precedent that landed the same day (2026-08-17) `[V]`                                                                                                                 | High                            |
-| D11 | **Fork-owned durable JSON, not a DB migration**                                         | The migration registry is upstream-owned; `autoResume` set this precedent and it has held                                                                                                                                        | High                            |
-| D12 | **Zero `packages/contracts` edits**                                                     | Activity `kind` is an open string with an `Unknown` payload, so breadcrumbs are free; and upstream has pre-announced this file as its own automations landing zone                                                               | High                            |
+| #   | Decision                                                                                | Why                                                                                                                                                                                                                                                         | Confidence                      |
+| --- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| D1  | **Durable T3-native reactor, backstopping Claude's scheduler**                          | Claude's scheduler works ≤30min but is in-process and Claude-only `[V]`. Only `ScheduleWakeup` is clamped, to [60, 3600]s; `CronCreate` takes an unbounded cron expression and both write `session_crons` `[V - external]`                                  | High — evidence in BACKEND §1.1 |
+| D2  | **Trigger on `updatedAt` staleness + recorded `session_crons`, never `session.status`** | `ProviderSessionReaper` skips any binding whose thread has `session.activeTurnId != null` `[V]`, so a turn whose completion never arrives pins `status = running` with nothing automated to clear it — gating on it deadlocks the exact threads this is for | High                            |
+| D3  | **A loop is a pinned thread** (Direction A)                                             | Upstream shipped pinning 2026-08-04; `pinnedAt` overrides auto-settle — snooze still outranks a pin `[V]`; costs zero sidebar edits `[V]`                                                                                                                   | High                            |
+| D4  | **The Loops workspace (Direction C) is a later phase (Phase 6), not phase 1**           | User agreed. Lives in fork-owned routes, so cost is low, but it is only worth it once several loops exist                                                                                                                                                   | High — user-confirmed           |
+| D5  | **Never Direction B** (a bespoke Loops section in the sidebar)                          | Would open a row in `Sidebar.tsx` (3911 lines, 7 commits in 3 days `[V]`) and `Sidebar.logic.ts`; also has no mobile equivalent                                                                                                                             | High                            |
+| D6  | **Two question channels: blocking (native) + deferred (`raise_blocker`)**               | `AskUserQuestion` blocks on a `Deferred` `[V]`; a loop that waits loses the night, and one that nudges past a pending decision is worse                                                                                                                     | High                            |
+| D7  | **Console reads three sources, two needing no model cooperation**                       | Degradation test: a model that never calls `raise_blocker` must still produce a useful console                                                                                                                                                              | High                            |
+| D8  | **Budget is check-ins + wall-clock, not dollars**                                       | The adapter stamps `total_cost_usd` onto `turn.completed.totalCostUsd` and nothing downstream aggregates it; its per-turn vs session-accumulated semantics are unmeasured `[A]`, so summing per turn could inflate quadratically                            | Medium — revisit if metered     |
+| D9  | **Mandatory budget, no unlimited option; route returns 400 rather than clamping**       | A silent clamp hides a mistake in a feature that spends money unattended                                                                                                                                                                                    | Medium                          |
+| D10 | **Own settings section** (`/settings/loops`)                                            | Now priced at 2 small additive seam rows, with an upstream precedent that landed the same day (2026-08-17) `[V]`                                                                                                                                            | High                            |
+| D11 | **Fork-owned durable JSON, not a DB migration**                                         | The migration registry is upstream-owned; `autoResume` set this precedent and it has held                                                                                                                                                                   | High                            |
+| D12 | **Zero `packages/contracts` edits**                                                     | Activity `kind` is an open string with an `Unknown` payload, so breadcrumbs are free; and upstream has pre-announced this file as its own automations landing zone                                                                                          | High                            |
+
+**Retraction on D2, added by review.** The justification previously read "a background subagent's
+message auto-opens a synthetic turn that pins `status = running` and nothing closes it", marked
+`[V]`. Both halves were wrong. A subagent's message opens nothing: upstream #5219 (`a2ca89aa1`,
+2026-08-06) returns early for any assistant snapshot carrying `parent_tool_use_id`, and that is the
+only site that creates a synthetic turn. And four closers exist, one of them unconditional —
+`handleResultMessage` ends in a bare `completeTurn`, which writes `status: "ready"`. What survives
+is the reaper: it will not reap a binding whose thread has an open turn, so a **top-level** assistant
+message arriving with no active turn opens a synthetic turn that only a later SDK `result`, the
+user's next message, or process exit will close. That is enough to deadlock a `status` gate, and it
+is why deference is observable at all — the wake's own `result` is what closes the turn it opened.
+The `updatedAt` half of the trigger is independently verified and unchanged.
 
 ---
 
@@ -107,7 +132,8 @@ Each with the reasoning, so a reviewer can attack the reasoning rather than gues
 ### In
 
 - A per-thread loop: arm, bound, supervise, stop, re-arm.
-- Deference to the agent's own scheduler, via recorded `session_crons`.
+- Deference to the agent's own scheduler, via recorded `session_crons` — **bounded by the loop's own
+  wall-clock deadline** (see Q1).
 - The console: blocking items, deferred blockers, loop state, iteration ledger.
 - `raise_blocker` / `loop_status` / `loop_done` as a fork MCP toolkit.
 - Settings: master toggle, defaults, armed roster.
@@ -126,7 +152,7 @@ Each with the reasoning, so a reviewer can attack the reasoning rather than gues
   the only reason to trust it.
 - **Maintainer bots (#44)** — the same reactor with a different work source; sequenced after.
 
-### Divergences from #42 (deliberate, and open to challenge)
+### Divergences from #42 and #38 (deliberate, and open to challenge)
 
 - **#42 Phase 1d's `CLAUDE_CODE_DISABLE_CRON` per-thread toggle (default off) is dropped.** It was
   specified when the scheduler looked untrustworthy; the correction in BACKEND §1.1 inverted that, and the
@@ -154,6 +180,26 @@ Each with the reasoning, so a reviewer can attack the reasoning rather than gues
 - **#42's `thread_note` tool is dropped.** Timeline breadcrumbs are reactor-authored
   (`thread.activity.append` with `coil.loop.*` kinds), so the model does not need a tool to write
   them and the console does not depend on the model to have called one.
+- **#38's guard #15 — "no open tasks in the roster" as a veto on firing — is not built.** BACKEND
+  refuses it: `shell.backgroundLiveness` is in-memory, so after a restart the roster is empty and a
+  veto would read "no open tasks" at exactly the moment supervision matters most. Open background
+  work may **lengthen** the wait; it may never veto the fire. #38's companion ask — surfacing an
+  open-task count in the status pill — is not carried either, and for the same reason: a count that
+  is silently zero after a restart is worse than no count at all.
+- **#38's run digest is not built as specified.** #38 asked that opening a supervised thread land on
+  a digest rather than the raw transcript, with a sticky "Open live chat" toggle, a "right now" block
+  naming open subagents, a per-check-in rollup, and the last three assistant messages collapsed. The
+  console covers the parts that need no model cooperation: the per-check-in rollup (the iteration
+  ledger), loop state and bounds, blocking items, deferred blockers. It deliberately does **not**
+  take over the thread route — the transcript stays the default view and the console is an overlay
+  on the same route, so there is nothing to toggle back from. And it deliberately carries no
+  model-authored summary of the run: the ledger renders derived facts, never the model's account of
+  its own night, which is the thing that was untrustworthy to begin with. The "right now" block is
+  the one part worth reconsidering, and it depends on the same in-memory roster that guard #15 does.
+- **`loop_status` is narrower than #38 asked.** #38 wanted the digest available as _data_, so a
+  second thread could ask how a run is going. `loop_status` returns the loop's own budget readout to
+  the agent inside the loop, and nothing else. Cross-thread reads are a Phase 6 concern (the
+  cross-loop inbox); until then the answer to "how is it going" is the console, opened by a human.
 
 ---
 
@@ -227,9 +273,11 @@ reads its state.
 
 - `coil/loop/state.ts` — the durable store (`coil-loop.json`). Every field with a decoding default.
 - `coil/loop/crons.ts` — the `Stop` / `SubagentStop` hook callbacks: read `input.session_crons`
-  (`{ id, schedule, recurring, prompt }` — a cron expression, not a timestamp), compute
-  `nextFireAtMs` fork-side from `schedule` (one-shot = single fire time encoded in the fields;
-  server-local tz) `[A — the parse is ours]`, persist per thread.
+  (`{ id, schedule, recurring, prompt }` — `schedule` is a cron expression, not a timestamp, and
+  `prompt` is **truncated to 1000 characters by the binary** `[V - external]`, so nothing here may
+  assume it holds the agent's full prompt), compute `nextFireAtMs` fork-side from `schedule`
+  (one-shot = single fire time encoded in the fields; server-local tz) `[A — the parse is ours]`,
+  persist per thread.
 - `coil/loop/config.ts` — env-overridable defaults.
 - **The one upstream edit:** a single spread into `ClaudeAdapter`'s existing `queryOptions` object,
   beside the `mcpServers` spread:
@@ -250,8 +298,12 @@ reads its state.
 - Killing and restarting the server preserves the record.
 
 **Why first:** it is the only phase that can be validated purely by observation, and it de-risks the
-one upstream edit before anything depends on it. If the hook surface turns out not to deliver
-`session_crons` as documented, **the plan changes here and nothing has been wasted.**
+one upstream edit before anything depends on it. Delivery is no longer the open question — the
+binary spreads `{ background_tasks, session_crons }` unconditionally into both the `Stop` and
+`SubagentStop` hook inputs, and `session_crons` is `[]` rather than absent when a session has no
+crons `[V - external]`. What Phase 1 still answers is the **parse**: whether our reading of
+`schedule` produces a fire time matching what actually fires. If it does not, **the plan changes
+here and nothing has been wasted.**
 **Size:** M.
 
 ---
@@ -261,6 +313,11 @@ one upstream edit before anything depends on it. If the hook surface turns out n
 **Goal:** restart a silent thread, bounded.
 
 - `coil/loop/decide.ts` (pure), `guards.ts` (pure), `sentinel.ts`, `Reactor.ts`.
+- **Deference is bounded by the loop's own wall-clock deadline** (added by review): T3 stands down
+  only while the recorded next fire is at or before the deadline. `CronCreate` takes an unbounded
+  expression, so an unbounded rule would let a recorded `0 9 * * *` stand T3 down for a day and a
+  one-shot pinned to a future date stand it down indefinitely. Past the deadline there is nothing
+  left to defer _to_, so the deadline is the natural cap and no new knob is needed. See Q1.
 - Arm / disarm / re-arm via `POST /api/coil/loop`, with the 400s from D9.
 - Arming also dispatches `thread.pin`; disarming unpins `[A — verify pin/unpin from a fork reactor]`.
 - Rate-limit tap fiber; `rateLimitedUntilMs` persisted.
@@ -310,11 +367,14 @@ one upstream edit before anything depends on it. If the hook surface turns out n
 **Goal:** the on/off switch and the bounds.
 
 - `apps/web/src/routes/settings.loops.tsx` (new, fork-owned) + a fork-owned panel component.
-- `settingsSearch.ts`: `SettingsPath` union + label + 2–3 search items.
-- `SettingsSidebarNav.tsx`: icon import + record entry.
+- `settingsSearch.ts`: `SettingsPath` union + label + 2 search items — **~+13 lines**, because each
+  `SETTINGS_SEARCH_ITEMS` entry is a 5–6 line object literal in the file's existing style (37 items
+  span 202 lines). A third search item takes it to ~+19. For scale, upstream's own `integrations`
+  addition to this file measured +26.
+- `SettingsSidebarNav.tsx`: icon import + record entry — +2.
 - **Not** `SettingsPanels.tsx` (churn 36, risk 2088), **not** `contracts/settings.ts` (churn 26, persisted).
 
-**Seam cost:** **2 new rows**, ~+6 lines total, both additive.
+**Seam cost:** **2 new rows**, ~+15 lines total, both additive.
 **Sequencing:** no longer a constraint. This originally had to wait for the sync carrying upstream
 #7082, or the `settingsSearch.ts` entry would have conflicted with `integrations` on the way in.
 That sync has landed — `routes/settings.integrations.tsx` is in the tree and `settingsSearch.ts`
@@ -360,21 +420,23 @@ The total upstream cost of the whole feature, which is the number that matters f
 | ----- | ------------------------------------------- | ----- | --------------------------------- |
 | 1     | `provider/Layers/ClaudeAdapter.ts`          | +1    | **new row** — additive, read-only |
 | 3     | `routes/_chat.$environmentId.$threadId.tsx` | ±0    | existing row rewritten in place   |
-| 4     | `settings/settingsSearch.ts`                | ~+4   | **new row** — additive            |
+| 4     | `settings/settingsSearch.ts`                | ~+13  | **new row** — additive            |
 | 4     | `settings/SettingsSidebarNav.tsx`           | +2    | **new row** — additive            |
 | 6     | mode-switch mount                           | ~+2   | **new row** — additive, deferred  |
 | —     | `packages/contracts`                        | 0     | —                                 |
 | —     | `Sidebar.tsx` / `Sidebar.logic.ts`          | 0     | a loop is a pinned thread         |
 | —     | `server.ts`                                 | 0     | already has its row               |
 
-**Total: 3 new rows for phases 1–4** (~7 lines), all additive, plus one deferred. For comparison,
-the ledger currently carries 53 rows.
+**Total: 3 new rows for phases 1–4** (~16 lines), all additive, plus one deferred. For comparison,
+the ledger currently carries 53 rows. The row count is what recurs at every sync; the line count is
+a one-time write, and review corrected it upward from ~7 after measuring `settingsSearch.ts`
+against the real file.
 
 ---
 
 ## 7. Test strategy
 
-159 cases in TESTS.md, plus the three coverage gates in its §11. Structure:
+162 cases in TESTS.md, plus the three coverage gates in its §11. Structure:
 
 - **Pure and fast** — `decide.ts` and `guards.ts` are pure so the entire decision table tests
   without a server or clock. Target **100% branch coverage** on both.
@@ -407,16 +469,16 @@ The four to write first:
 
 ## 9. Risk register
 
-| Risk                                                                                                                  | Likelihood                      | Impact                       | Mitigation                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_crons` arrives as a cron _expression_, not a fire time, so the `nextFireAtMs` parse is ours and can be wrong | Medium `[A]`                    | Deference misfires           | **Phase 1 is designed to find this out cheaply** — it logs the parse beside the raw `schedule`. Fallback is pure staleness with a longer threshold — worse, but zero upstream cost |
-| Upstream ships its own automations feature                                                                            | Medium                          | Duplicated work              | Zero contracts edits means the fork becomes a _caller_, not a migration. Re-check each sync                                                                                        |
-| The `ClaudeAdapter` row conflicts on a sync                                                                           | Low-Medium                      | Recurring cost               | One additive line beside an existing spread; fails to a type error, not silent drift                                                                                               |
-| A loop pushes past a human decision                                                                                   | Low                             | Trust                        | Three separate guards (approvals, pending input, plan-ready), each non-consuming                                                                                                   |
-| Token burn from a runaway loop                                                                                        | Low                             | Cost                         | Mandatory budget, deadline, armed ceiling, reserve-before-dispatch, strike detector                                                                                                |
-| Model never calls `raise_blocker`                                                                                     | **High**                        | Console thinner              | By design: two of three console sources need no model cooperation. This is the acceptance test                                                                                     |
-| `spent` misread as success                                                                                            | Medium                          | The original problem returns | Distinct colour, distinct word, distinct push copy; asserted in tests                                                                                                              |
-| `settingsSearch.ts` conflicts                                                                                         | Medium `[V — 3 commits/3 days]` | Small recurring              | Append-ordered array, same add/add shape as #29. The #7082 ordering is already satisfied; the residual risk is ordinary and priced                                                 |
+| Risk                                                                                                                  | Likelihood                      | Impact                       | Mitigation                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_crons` arrives as a cron _expression_, not a fire time, so the `nextFireAtMs` parse is ours and can be wrong | Medium `[A]`                    | Deference misfires           | Narrowed by review: **delivery of the field is settled** `[V - external]`, only the parse is still `[A]`. **Phase 1 is designed to find this out cheaply** — it logs the parse beside the raw `schedule`. Fallback is pure staleness with a longer threshold — worse, but zero upstream cost |
+| Upstream ships its own automations feature                                                                            | Medium                          | Duplicated work              | Zero contracts edits means the fork becomes a _caller_, not a migration. Re-check each sync                                                                                                                                                                                                  |
+| The `ClaudeAdapter` row conflicts on a sync                                                                           | Low-Medium                      | Recurring cost               | One additive line beside an existing spread; fails to a type error, not silent drift                                                                                                                                                                                                         |
+| A loop pushes past a human decision                                                                                   | Low                             | Trust                        | Three separate guards (approvals, pending input, plan-ready), each non-consuming                                                                                                                                                                                                             |
+| Token burn from a runaway loop                                                                                        | Low                             | Cost                         | Mandatory budget, deadline, armed ceiling, reserve-before-dispatch, strike detector                                                                                                                                                                                                          |
+| Model never calls `raise_blocker`                                                                                     | **High**                        | Console thinner              | By design: two of three console sources need no model cooperation. This is the acceptance test                                                                                                                                                                                               |
+| `spent` misread as success                                                                                            | Medium                          | The original problem returns | Distinct colour, distinct word, distinct push copy; asserted in tests                                                                                                                                                                                                                        |
+| `settingsSearch.ts` conflicts                                                                                         | Medium `[V — 3 commits/3 days]` | Small recurring              | Append-ordered array, same add/add shape as #29. The #7082 ordering is already satisfied; the residual risk is ordinary and priced                                                                                                                                                           |
 
 ---
 
@@ -425,11 +487,24 @@ The four to write first:
 The four places an outside opinion is most valuable.
 
 **Q1 — Is the deference rule right, or too clever?**
-T3 stands down for as long as a recorded wake is still pending — any legal delay, not merely one
-inside the threshold window — and covers it only once it is overdue by `graceMs`. The alternative is
-that T3 always paces on its own clock and simply tolerates occasional double-firing. Deference is more correct and more complex, and
-it makes the feature's behaviour depend on a hook whose delivery is `[A]`. _Is the complexity worth
-it, or should v1 pace unconditionally with a long threshold?_
+T3 stands down while a recorded wake is still pending — any legal delay, not merely one inside the
+threshold window — **up to the loop's own wall-clock deadline**, and covers the wake once it is
+overdue by a grace derived from the recorded entry: `max(90s, min(10% of the period, 15min))` for a
+recurring entry, 90s for a one-shot. Those numbers are the binary's own — its scheduler "adds a
+small deterministic jitter on top of whatever you pick: recurring tasks fire up to 10% of their
+period late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early"
+`[V - external]`. Only the _late_ half can produce a false miss, and covering a merely-jittered wake
+would fire the design's strongest trigger against a perfectly healthy thread.
+
+**The deadline cap was added by review**, and it replaces a retracted argument that the exposure was
+bounded without a second rule because `ScheduleWakeup` clamps a delay to an hour. It is not:
+`CronCreate` writes the same `session_crons` field with an unbounded cron expression, so a recorded
+`0 9 * * *` would stand T3 down for a day. Whether the deadline is the right cap, or whether this
+wants an explicit `maxDeferMs`, is open along with the rest of Q1.
+
+The alternative to all of it is that T3 always paces on its own clock and simply tolerates
+occasional double-firing. Deference is more correct and more complex. _Is the complexity worth it,
+or should v1 pace unconditionally with a long threshold?_
 
 **Q2 — Should the console be loop-only, or a global inbox from day one?**
 Prototype P7 shape C makes it a cross-thread "needs you" surface. It is barely more work, it is
@@ -453,14 +528,21 @@ design?_
 
 Stated so a reviewer can aim at evidence rather than opinion.
 
-| If this turned out to be true                                       | Then                                                                                                                  |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `session_crons` is empty/absent in practice on real Claude sessions | Deference is unbuildable; fall back to pure staleness; the `ClaudeAdapter` row is not worth taking                    |
-| `cron_durable` flips to **true** upstream                           | Claude's crons survive restarts; the durability argument weakens sharply and this feature shrinks to bounds + console |
-| Upstream ships a supervision/automations feature                    | Re-cut against it. The console and the question channel probably survive; the reactor probably does not               |
-| `AskUserQuestion` becomes non-blocking                              | D6 collapses — one channel suffices, and `raise_blocker` is unnecessary                                               |
-| The user's real loops are almost never blocked on questions         | The console is over-built; ship the reactor and the status pill only                                                  |
-| Pinning is removed or reworked upstream                             | D3 collapses back to the Direction A/B/C comparison, and C becomes the answer                                         |
+| If this turned out to be true                               | Then                                                                                                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Our parse of `schedule` disagrees with what actually fires  | Deference degrades to pure staleness with a longer threshold; the `ClaudeAdapter` row still earns its keep on restart coverage alone |
+| `cron_durable` flips to **true** upstream                   | Claude's crons survive restarts; the durability argument weakens sharply and this feature shrinks to bounds + console                |
+| Upstream ships a supervision/automations feature            | Re-cut against it. The console and the question channel probably survive; the reactor probably does not                              |
+| `AskUserQuestion` becomes non-blocking                      | D6 collapses — one channel suffices, and `raise_blocker` is unnecessary                                                              |
+| The user's real loops are almost never blocked on questions | The console is over-built; ship the reactor and the status pill only                                                                 |
+| Pinning is removed or reworked upstream                     | D3 collapses back to the Direction A/B/C comparison, and C becomes the answer                                                        |
+
+**One falsifier has been struck.** The table's top entry used to read "`session_crons` is
+empty/absent in practice on real Claude sessions". It is **refuted**: the binary spreads
+`{ background_tasks, session_crons }` unconditionally into both the `Stop` and `SubagentStop` hook
+inputs and maps each entry to `{ id, schedule, recurring, prompt }`, emitting `[]` rather than
+nothing when a session has no crons `[V - external]`. The narrower successor — that our _parse_ is
+wrong — takes its place, and Phase 1 still answers it.
 
 ---
 
@@ -470,7 +552,8 @@ Stated so a reviewer can aim at evidence rather than opinion.
 2. Decide Q1–Q4.
 3. Open a consolidated issue; close #42 pointing at it; note the residue of #38 is now covered.
 4. Start **Phase 0** — it is pure debt paydown, zero seam, and safe to do before any decision lands.
-5. Start **Phase 1** — it answers the biggest `[A]` in the plan at the cost of one additive line.
+5. Start **Phase 1** — it answers the biggest remaining `[A]` in the plan, the `schedule` parse, at
+   the cost of one additive line.
 6. When the design is accepted, register its vocabulary (loop, check-in, blocker, deference,
    held / spent / stalled, iteration ledger) in `docs/coil/CONTEXT.md` — created lazily then, per
    `docs/coil/agents/domain.md`, not before.
