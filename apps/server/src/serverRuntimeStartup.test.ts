@@ -28,6 +28,8 @@ import { OrchestrationCommandInvariantError } from "./orchestration/Errors.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProviderService from "./provider/Services/ProviderService.ts";
+import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -407,6 +409,17 @@ const driveStartupMake = (dispatchFails: boolean) =>
           // update after `http.wait` and before command readiness. No update in this test.
           Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, {
             prepareTrial: Effect.void,
+          } as never),
+          // Upstream #7719 added an orphaned-provider-session pass to startup. This test is
+          // about crash-recovery ordering, not orphan cleanup, so the provider reports the
+          // seeded thread as live and that pass finds nothing to reconcile — otherwise its
+          // dispatch would append a second "reconcile" to `order`.
+          Effect.provideService(ProviderService.ProviderService, {
+            listSessions: () => Effect.succeed([{ threadId: ThreadId.make("thread-crashed") }]),
+          } as never),
+          Effect.provideService(ProviderSessionDirectory.ProviderSessionDirectory, {
+            getBinding: () => Effect.succeed(Option.none()),
+            upsert: () => Effect.void,
           } as never),
         );
         // `signalCommandReady` now sits behind the `http.wait` gate, so readiness never
