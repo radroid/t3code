@@ -441,6 +441,18 @@ export const make = (options?: StartupOptions) =>
       // a stopped `thread.session.set`, settling the turn to a resumable `interrupted`
       // state. FOLLOW-UP: auto-resume RE-ARMING (a crash marker + boot producer) is a
       // deliberate separate change; this only reconciles to the settled state.
+      // Upstream #7719 reconciles orphaned provider sessions here — it settles the
+      // projection AND repairs the `ProviderSessionDirectory` binding, which the fork's
+      // pass below does not touch. It is hoisted above that pass on purpose: this fork
+      // settles a wider set of threads (no liveness check, because nothing is live at
+      // boot), so running the fork's pass first leaves upstream's filter
+      // (`starting | running | activeTurnId != null`) matching nothing, and the stale
+      // directory binding silently survives. Upstream runs this after `reactors.start`;
+      // the fork cannot, because its own pass must precede any reactor. Keep this
+      // ordering across syncs — `orphanedProviderSessionStartup.integration.test.ts`
+      // is what catches its loss.
+      yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);
+
       yield* Effect.logDebug("startup phase: reconciling interrupted turns from a prior crash");
       yield* runStartupPhase(
         "reconcile.interrupted-turns",
@@ -471,8 +483,6 @@ export const make = (options?: StartupOptions) =>
           yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
         }),
       );
-
-      yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);
 
       const welcomeBase = yield* resolveWelcomeBase;
       const environment = yield* serverEnvironment.getDescriptor;
