@@ -1,0 +1,2265 @@
+<!doctype html>
+<html lang="en" data-report="loops">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Loops in T3 Coil — design report</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ==========================================================================
+         REPORT CHROME — "the night shift".
+
+         Fraunces for display (its WONK/SOFT axes give the headlines a hand-cut
+         feel), Instrument Sans for body, IBM Plex Mono for evidence.
+         Deliberately NOT the product's typeface or palette, so the embedded
+         prototypes read as screens rather than as more of the page.
+         ========================================================================== */
+      :root {
+        --ink: #ece7de;
+        --ink-2: #a8a296;
+        --ink-3: #6f695e;
+        --bg: #0b0c11;
+        --bg-2: #101219;
+        --bg-3: #161922;
+        --rule: #23262f;
+        --rule-2: #1a1d25;
+
+        --coral: #ff7a5c; /* signature */
+        --mint: #6fe3c4; /* secondary / affirmative */
+        --gold: #f2c14e; /* caution */
+        --lilac: #a99bf5; /* structural */
+        --slate: #8b93a7;
+
+        --display: "Fraunces", Georgia, serif;
+        --sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+        --measure: 72ch;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16.5px;
+        line-height: 1.68;
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+        background-image:
+          radial-gradient(110vw 62vh at 88% -14%, rgba(255, 122, 92, 0.07), transparent 60%),
+          radial-gradient(80vw 46vh at 4% 6%, rgba(111, 227, 196, 0.045), transparent 58%);
+        background-attachment: fixed;
+      }
+      /* grain */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 999;
+        opacity: 0.03;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      .wrap {
+        max-width: 1160px;
+        margin: 0 auto;
+        padding: 0 30px;
+      }
+      .narrow {
+        max-width: var(--measure);
+      }
+      a {
+        color: var(--coral);
+        text-decoration-color: rgba(255, 122, 92, 0.35);
+        text-underline-offset: 3px;
+      }
+      a:hover {
+        text-decoration-color: var(--coral);
+      }
+
+      /* ---------------- masthead ---------------- */
+      .topline {
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          var(--coral),
+          var(--gold) 30%,
+          var(--mint) 62%,
+          transparent
+        );
+      }
+      header.mast {
+        padding: 62px 0 40px;
+        border-bottom: 1px solid var(--rule);
+        position: relative;
+        overflow: hidden;
+      }
+      .orbits {
+        position: absolute;
+        right: -140px;
+        top: -110px;
+        width: 460px;
+        height: 460px;
+        opacity: 0.5;
+        pointer-events: none;
+      }
+      .orbits circle {
+        fill: none;
+        stroke: var(--rule);
+      }
+      .orbits .live {
+        stroke: rgba(255, 122, 92, 0.45);
+        stroke-dasharray: 3 9;
+      }
+
+      .kicker {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--coral);
+        margin-bottom: 20px;
+      }
+      h1.title {
+        font-family: var(--display);
+        font-optical-sizing: auto;
+        font-variation-settings:
+          "SOFT" 26,
+          "WONK" 1;
+        font-weight: 500;
+        font-size: clamp(44px, 6.4vw, 82px);
+        line-height: 0.98;
+        letter-spacing: -0.022em;
+        margin: 0 0 20px;
+        max-width: 17ch;
+      }
+      h1.title em {
+        font-style: italic;
+        color: var(--coral);
+        font-variation-settings:
+          "SOFT" 60,
+          "WONK" 1;
+      }
+      .standfirst {
+        font-size: 19px;
+        line-height: 1.6;
+        color: var(--ink-2);
+        max-width: 62ch;
+        margin: 0 0 30px;
+      }
+      .standfirst b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .meta-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 26px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--ink-3);
+        padding-top: 22px;
+        border-top: 1px solid var(--rule-2);
+      }
+      .meta-strip b {
+        color: var(--ink-2);
+        font-weight: 500;
+      }
+
+      /* ---------------- structure ---------------- */
+      section.band {
+        padding: 66px 0;
+        border-bottom: 1px solid var(--rule-2);
+      }
+      section.band.tint {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 60%);
+      }
+
+      .secnum {
+        display: inline-flex;
+        align-items: center;
+        gap: 11px;
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin-bottom: 15px;
+      }
+      .secnum i {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 1px solid var(--rule);
+        display: grid;
+        place-items: center;
+        font-style: normal;
+        font-size: 10.5px;
+        color: var(--coral);
+        border-color: rgba(255, 122, 92, 0.32);
+      }
+      h2.sec {
+        font-family: var(--display);
+        font-weight: 500;
+        font-variation-settings:
+          "SOFT" 20,
+          "WONK" 1;
+        font-size: clamp(29px, 3.5vw, 42px);
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+        margin: 0 0 16px;
+        max-width: 22ch;
+      }
+      h3.sub {
+        font-family: var(--sans);
+        font-weight: 650;
+        font-size: 19px;
+        letter-spacing: -0.012em;
+        margin: 40px 0 10px;
+        color: var(--ink);
+      }
+      h4.sub2 {
+        font-family: var(--mono);
+        font-weight: 600;
+        font-size: 11.5px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin: 30px 0 9px;
+      }
+      p {
+        margin: 0 0 17px;
+        max-width: var(--measure);
+      }
+      p.lead {
+        font-size: 18.5px;
+        color: var(--ink-2);
+        max-width: 64ch;
+      }
+      ul,
+      ol {
+        max-width: var(--measure);
+        padding-left: 20px;
+        margin: 0 0 17px;
+      }
+      li {
+        margin-bottom: 8px;
+      }
+      li::marker {
+        color: var(--ink-3);
+      }
+      strong {
+        font-weight: 650;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.855em;
+        background: rgba(255, 255, 255, 0.055);
+        padding: 1.5px 5px;
+        border-radius: 4px;
+        color: var(--mint);
+      }
+
+      /* ---------------- verdict card ---------------- */
+      .verdict {
+        border: 1px solid rgba(255, 122, 92, 0.3);
+        border-radius: 14px;
+        background: linear-gradient(
+          160deg,
+          rgba(255, 122, 92, 0.075),
+          rgba(255, 122, 92, 0.015) 55%,
+          transparent
+        );
+        padding: 28px 30px;
+        margin: 8px 0 0;
+      }
+      .verdict .vh {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--coral);
+        margin-bottom: 12px;
+      }
+      .verdict p {
+        font-size: 18px;
+        max-width: 66ch;
+        margin-bottom: 12px;
+      }
+      .verdict p:last-child {
+        margin-bottom: 0;
+      }
+
+      /* ---------------- callouts ---------------- */
+      .call {
+        border-left: 2px solid var(--rule);
+        padding: 4px 0 4px 20px;
+        margin: 26px 0;
+        max-width: var(--measure);
+      }
+      .call.hot {
+        border-color: var(--coral);
+      }
+      .call.good {
+        border-color: var(--mint);
+      }
+      .call.warn {
+        border-color: var(--gold);
+      }
+      .call .ch {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        margin-bottom: 7px;
+      }
+      .call.hot .ch {
+        color: var(--coral);
+      }
+      .call.good .ch {
+        color: var(--mint);
+      }
+      .call.warn .ch {
+        color: var(--gold);
+      }
+      .call p:last-child {
+        margin-bottom: 0;
+      }
+
+      /* ---------------- tables ---------------- */
+      .tbl {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 22px 0 26px;
+        font-size: 14.5px;
+      }
+      .tbl th,
+      .tbl td {
+        text-align: left;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--rule-2);
+        vertical-align: top;
+      }
+      .tbl th {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+        font-weight: 500;
+        border-bottom-color: var(--rule);
+      }
+      .tbl td.k {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--ink-2);
+        white-space: nowrap;
+      }
+      .tbl tr:last-child td {
+        border-bottom: none;
+      }
+      .yes {
+        color: var(--mint);
+      }
+      .no {
+        color: var(--coral);
+      }
+      .mid {
+        color: var(--gold);
+      }
+      .tbl.compact td,
+      .tbl.compact th {
+        padding: 8px 12px;
+        font-size: 13.5px;
+      }
+
+      /* ---------------- prototype embeds ---------------- */
+      .proto {
+        margin: 30px 0 10px;
+      }
+      .proto-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 16px;
+        border: 1px solid var(--rule);
+        border-bottom: none;
+        border-radius: 12px 12px 0 0;
+        background: var(--bg-2);
+      }
+      .proto-tag {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--bg);
+        background: var(--coral);
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+      .proto-name {
+        font-weight: 620;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+      .proto-hint {
+        font-size: 13px;
+        color: var(--ink-3);
+      }
+      .proto-open {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 5px 10px;
+        color: var(--ink-2);
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .proto-open:hover {
+        border-color: var(--coral);
+        color: var(--coral);
+      }
+      .proto iframe {
+        display: block;
+        width: 100%;
+        border: 1px solid var(--rule);
+        border-radius: 0 0 12px 12px;
+        background: #0a0a0a;
+      }
+      .proto-cap {
+        font-size: 13.5px;
+        color: var(--ink-3);
+        margin-top: 11px;
+        max-width: 76ch;
+        line-height: 1.6;
+      }
+      .proto-cap b {
+        color: var(--ink-2);
+      }
+
+      /* ---------------- evidence block ---------------- */
+      .eb {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.75;
+        white-space: pre;
+        background: var(--bg-2);
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        padding: 16px 18px;
+        margin: 20px 0 24px;
+        overflow-x: auto;
+        color: var(--ink-2);
+        max-width: 100%;
+      }
+      .eb .c {
+        color: var(--ink-3);
+      }
+      .eb .hl {
+        color: var(--coral);
+      }
+      .eb .ok {
+        color: var(--mint);
+      }
+
+      /* ---------------- decisions ---------------- */
+      .dec {
+        border: 1px solid var(--rule);
+        border-radius: 12px;
+        background: var(--bg-2);
+        padding: 20px 22px;
+        margin-bottom: 14px;
+      }
+      .dec-q {
+        font-weight: 640;
+        font-size: 16.5px;
+        margin-bottom: 6px;
+        letter-spacing: -0.01em;
+      }
+      .dec-r {
+        font-size: 14.5px;
+        color: var(--ink-2);
+        margin-bottom: 12px;
+        max-width: 74ch;
+      }
+      .dec-opts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .dec-opt {
+        font-size: 13px;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 4px 12px;
+        color: var(--ink-2);
+      }
+      .dec-opt.rec {
+        border-color: rgba(111, 227, 196, 0.4);
+        color: var(--mint);
+      }
+
+      /* ---------------- toc ---------------- */
+      .toc {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 2px 26px;
+        margin-top: 8px;
+      }
+      .toc a {
+        display: flex;
+        gap: 11px;
+        align-items: baseline;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--rule-2);
+        text-decoration: none;
+        color: var(--ink-2);
+        font-size: 14.5px;
+      }
+      .toc a:hover {
+        color: var(--coral);
+      }
+      .toc a i {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--ink-3);
+        font-style: normal;
+      }
+
+      footer.end {
+        padding: 50px 0 80px;
+        color: var(--ink-3);
+        font-size: 14px;
+      }
+
+      @media (max-width: 760px) {
+        .wrap {
+          padding: 0 20px;
+        }
+        body {
+          font-size: 16px;
+        }
+        .orbits {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topline"></div>
+
+    <!-- ==================== MASTHEAD ==================== -->
+    <header class="mast">
+      <div class="wrap">
+        <svg class="orbits" viewBox="0 0 460 460" aria-hidden="true">
+          <circle cx="230" cy="230" r="72" />
+          <circle cx="230" cy="230" r="118" class="live" />
+          <circle cx="230" cy="230" r="164" />
+          <circle cx="230" cy="230" r="210" />
+        </svg>
+        <div class="kicker">T3 Coil · design report · 15 August 2026</div>
+        <h1 class="title">Loops, and the <em>question</em> nobody was awake to answer</h1>
+        <p class="standfirst">
+          A consolidated design for running a thread unattended — and, more importantly, for what
+          you see when you come back to it.
+          <b>Eight clickable prototypes, one backend recommendation, 162 test cases</b>, and the
+          three things I found that make the previous design out of date.
+        </p>
+        <div class="meta-strip">
+          <span><b>Branch</b> t3code/loop-observation-thread-prototypes</span>
+          <span><b>Issues</b> #42 open · #38 closed with residue · #44 adjacent</span>
+          <span><b>Merge-base</b> 196c8ea0d · re-verified at a4cc1367b · now cebac353d</span>
+          <span><b>Status</b> nothing merged</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ==================== VERDICT ==================== -->
+    <section class="band tint">
+      <div class="wrap">
+        <div class="secnum"><i>0</i> The short version</div>
+        <h2 class="sec">What I would build, and what I would not</h2>
+
+        <div class="verdict">
+          <div class="vh">Recommendation</div>
+          <p>
+            Build <b>a durable, T3-native loop reactor</b> that
+            <b>backstops the agent's own scheduler rather than replacing it</b> — bounded by a
+            mandatory check-in budget and a wall-clock deadline, with state on disk so a restart
+            loses nothing. On a thread that is self-pacing happily it should fire almost never; how
+            rarely it fires is the measure of a good implementation.
+          </p>
+          <p>
+            Make its user-facing surface <b>a console, not a pill</b>: when you open a loop you get
+            a standing answer to <em>"what do you need from me?"</em>, assembled from three
+            independent sources so it stays useful even if the model never cooperates.
+          </p>
+          <p>
+            Ship a loop as <b>a pinned thread</b> (Direction A) — upstream already built pinning, so
+            the sidebar costs nothing. Keep the Loops workspace (Direction C) as the upgrade for a
+            later phase (PLAN Phase 6), once there is more than one loop to look at.
+          </p>
+        </div>
+
+        <h3 class="sub">The one thing I would push back on</h3>
+        <p>
+          You asked for a questionnaire page. It is the right idea and it is the centrepiece of this
+          report — but the obvious way to build it is a trap, and it is worth knowing before you
+          pick. Claude's <code>AskUserQuestion</code> already produces exactly the structured
+          questions you want, natively, today. It also
+          <strong>blocks the turn until a human answers</strong>. An agent that hits a real fork in
+          the road at 01:00 and asks about it <em>correctly</em> stops working until 09:00 — which
+          is the precise failure you are trying to eliminate.
+        </p>
+        <p>
+          So the console needs two channels, not one: blocking questions (which genuinely stop the
+          run) and <strong>deferred blockers</strong> (which do not). The distinction is not a
+          technicality — it is the product. See <a href="#console">§3</a>.
+        </p>
+
+        <h4 class="sub2">Contents</h4>
+        <div class="toc">
+          <a href="#why"><i>01</i> What unattended work needs</a>
+          <a href="#changed"><i>02</i> Three things that moved</a>
+          <a href="#console"><i>03</i> The console</a>
+          <a href="#where"><i>04</i> Where a loop lives</a>
+          <a href="#workspace"><i>05</i> The workspace</a>
+          <a href="#mobile"><i>06</i> On the phone</a>
+          <a href="#settings"><i>07</i> Settings</a>
+          <a href="#states"><i>08</i> Arming and states</a>
+          <a href="#limits"><i>09</i> Two schedulers</a>
+          <a href="#maintainer"><i>10</i> Maintainer bots</a>
+          <a href="#backend"><i>11</i> The backend</a>
+          <a href="#rejected"><i>12</i> Angles rejected</a>
+          <a href="#tests"><i>13</i> Testing</a>
+          <a href="#decide"><i>14</i> What I need from you</a>
+          <a href="#addendum"><i>15</i> Addendum · 17 Aug</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 1 · THE PROBLEM ==================== -->
+    <section class="band" id="why">
+      <div class="wrap">
+        <div class="secnum"><i>01</i> The problem</div>
+        <h2 class="sec">What unattended work actually needs</h2>
+        <p class="lead">
+          Three things, and they have moved apart. One of them is now largely handled by machinery
+          that already exists — which is what makes the other two worth building rather than
+          re-litigating.
+        </p>
+
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>What it needs</th>
+              <th>State today</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <b>1 · It keeps going</b><br /><span style="color: var(--ink-3); font-size: 13.5px"
+                  >the agent picks work back up without you typing</span
+                >
+              </td>
+              <td class="yes">
+                <b>Largely working.</b> Claude's own scheduler paces a session well within its
+                range, and upstream's liveness tracking means a busy thread is now visible rather
+                than silent. See <a href="#limits">§9</a>.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <b>2 · It stops on purpose, and you can tell why</b><br /><span
+                  style="color: var(--ink-3); font-size: 13.5px"
+                  >finished vs out of budget vs died vs waiting</span
+                >
+              </td>
+              <td class="no">
+                <b>Nothing does this.</b> There is no budget, no deadline, no terminal vocabulary,
+                and nothing that survives a restart to remember any of it.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <b>3 · It collects what it needs from you</b><br /><span
+                  style="color: var(--ink-3); font-size: 13.5px"
+                  >so a night isn't lost to one unanswered question</span
+                >
+              </td>
+              <td class="no">
+                <b>Nothing does this either</b>, and the one native mechanism that comes close
+                (<code>AskUserQuestion</code>) halts the run while it waits. See
+                <a href="#console">§3</a>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>
+          <strong>2 and 3 are the feature.</strong> The framing matters because it changes what gets
+          built: not a replacement scheduler, but the durable state, the bounds, and the collection
+          surface that no scheduler provides.
+        </p>
+
+        <h3 class="sub">The failure modes, in rough order of how often they bite</h3>
+        <ol>
+          <li>
+            <strong>You cannot tell a finished run from an exhausted one.</strong> The most common
+            and the most boring. A run stops; the transcript ends; whether it got there or gave up
+            takes five minutes of reading to establish. This is the one that costs you time every
+            single morning, not once a quarter.
+          </li>
+          <li>
+            <strong>One question eats the remaining hours.</strong> The agent hits a genuine fork,
+            asks correctly, and waits. Nothing is broken, nothing looks broken, and the night is
+            gone.
+          </li>
+          <li>
+            <strong>Nothing bounds the spend.</strong> A loop with no deadline and no cap is a loop
+            you have to be awake to stop.
+          </li>
+          <li>
+            <strong>A restart loses the plot.</strong> Session-scoped state — including a pending
+            self-paced wake — does not survive the app restarting, and leaves no trace that it ever
+            existed.
+          </li>
+          <li>
+            <strong>An outright stall.</strong> Real, and it is what originally motivated the issue,
+            but the rarest of the five and the one most improved since.
+          </li>
+        </ol>
+
+        <div class="call">
+          <div class="ch">The stall, for the record</div>
+          <p>
+            The run behind issue #38 — thread <code>3a85bdd3</code>, 31 turns — closed a turn at
+            00:19 while <b>1,358 background activities</b> kept arriving for another 33 minutes,
+            then went silent for 3h31m. It happened twice in one night, and every one of the
+            eighteen user messages was a human asking whether it was still going.
+          </p>
+          <p>
+            It is a good illustration and a bad axis to design around. Upstream has since shipped
+            <code>ThreadBackgroundLiveness</code>, which makes exactly this case visible in the
+            sidebar, and the scheduler has improved besides.
+            <strong>I over-weighted it in an earlier draft of this report.</strong> It belongs here
+            as one exhibit, not as the reason for everything below.
+          </p>
+        </div>
+
+        <h3 class="sub">What upstream fixed, and the shape of what is left</h3>
+        <p>
+          <code>ThreadBackgroundLiveness</code> maps the whole <code>task.*</code> lifecycle and
+          surfaces it as a sidebar pill and a composer banner, so a busy-but-quiet thread reads as
+          busy. Upstream #5677 went further and taught the session reaper to skip threads with live
+          background work, so those sessions are no longer killed underneath you.
+        </p>
+        <p>
+          Both are <em>presentation and preservation</em>. Neither <em>acts</em>, neither
+          <em>bounds</em>, and the liveness registry is explicitly in-memory — its own module doc
+          says
+          <em>"no persistence, no migration. After a server restart the registry is empty."</em>
+        </p>
+        <p>
+          <strong>So the residue is durability, bounds, and the question channel</strong> — which is
+          a much smaller and much better-defined feature than "build a supervisor".
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 2 · WHAT CHANGED ==================== -->
+    <section class="band tint" id="changed">
+      <div class="wrap">
+        <div class="secnum"><i>02</i> Re-measurement</div>
+        <h2 class="sec">Three things that moved under the old design</h2>
+        <p class="lead">
+          There is a 73k-word design at <code>docs/coil/loop/DESIGN.md</code> from a 4-design,
+          12-judgement panel. Most of it survives and I have reused it. Three of its load-bearing
+          premises have expired.
+        </p>
+
+        <h3 class="sub">1 · Upstream shipped pinning — two days after the design froze</h3>
+        <div class="eb">
+          <span class="ok">da6e1a967</span> 2026-08-04 feat(sidebar-v2): thread pinning for sidebar
+          v2 (#5312)
+          <span class="c">design frozen 2026-08-02 — two days earlier</span>
+        </div>
+        <p>
+          <code>pinnedAt</code> is a real contract field. <code>thread.pin</code> /
+          <code>thread.unpin</code> are dispatchable commands. There is a drag-reorderable pinned
+          block that renders with no header. And the contract says outright:
+          <em
+            >"A pin overrides the settled/snoozed lifecycle: while pinnedAt is set the thread
+            renders in the pinned block and never classifies into a shelf."</em
+          >
+          Read that narrowly: what a pin overrides is <em>auto-settle</em>. Snooze still outranks a
+          pin — the sidebar's own partition loop says so,
+          <em
+            >"'hide until Tuesday' temporarily suspends 'keep on top'. The pin survives
+            underneath"</em
+          >
+          — so a snoozed loop leaves the pinned block until it wakes, and comes back to its exact
+          slot.
+        </p>
+        <p>
+          The old design spent considerable effort <strong>rejecting</strong> a sidebar rail —
+          including a proposed <code>document.querySelector</code> portal it correctly called out as
+          laundering hidden dependencies. That rejection was right, and it is now moot: the thing it
+          was avoiding building already exists, reachable through a command instead of a DOM hack.
+        </p>
+
+        <div class="call good">
+          <div class="ch">Consequence</div>
+          <p>
+            "A distinct thread type that pins to the top of the sidebar" — issue #38's proposal 2 —
+            is now <strong>mostly an upstream feature</strong>. Arming a loop can just dispatch
+            <code>thread.pin</code>.
+          </p>
+        </div>
+
+        <h3 class="sub">2 · The sidebar is not a seam row, and that cuts both ways</h3>
+        <p>
+          <code>Sidebar.tsx</code> (3911 lines) and <code>Sidebar.logic.ts</code> appear nowhere in
+          <code>SEAMS.md</code>. The fork does not touch the sidebar at all today. So modelling a
+          loop as a pinned thread costs <strong>zero</strong> — and giving it bespoke rendering
+          opens a <em>new</em> row in one of the hottest files upstream owns.
+        </p>
+        <p>The sidebar also states a rule that decides this:</p>
+        <div class="call">
+          <div class="ch">Sidebar.logic.ts</div>
+          <p>
+            <em
+              >"Sidebar sort: static creation order, newest thread on top. Activity NEVER reorders
+              the list — a row holds its position from open until settled, so the screen only moves
+              at lifecycle transitions."</em
+            >
+          </p>
+        </div>
+        <p>
+          A loop that floats to the top because it is busy breaks that rule. A loop that
+          <em>pins</em> does not — pinning <strong>is</strong> a lifecycle transition. That single
+          sentence is why Direction A is idiomatic rather than a shortcut, and why any design that
+          sorts loops by activity should be rejected outright.
+        </p>
+
+        <h3 class="sub">3 · The settings mount in the old design no longer exists</h3>
+        <p>
+          <code>BetaSettingsPanel.tsx</code> is gone. Today's settings surface is nine route files
+          and a <em>closed</em> <code>SettingsPath</code> union in
+          <code>settingsSearch.ts</code> that drives both the nav and search. The old design's "+2
+          lines, risk 6" costing is void, and re-pricing it is one of the open decisions in
+          <a href="#decide">§14</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 3 · CONSOLE ==================== -->
+    <section class="band" id="console">
+      <div class="wrap">
+        <div class="secnum"><i>03</i> The centrepiece</div>
+        <h2 class="sec">The console — a standing answer to "what do you need from me?"</h2>
+        <p class="lead">
+          Your ask, restated:
+          <em
+            >at any time I open the chat there should be a page where I have a questionnaire ready
+            to be answered, or the things that are a blocker and the human is needed for.</em
+          >
+          This is that page.
+        </p>
+        <p>
+          The old design's user surface was a <em>pill</em> — <code>Loop watching · 12m</code>,
+          <code>Loop 2/6 · ends 07:00</code>. That answers "is it alive". It does not answer "what
+          is it stuck on and what do you want from me", which is the question you actually have at
+          9am.
+        </p>
+
+        <!--EMBED:p1-console.html|840|P1|Loop Console|Click the five scenarios along the top, and answer a question to watch the loop resume.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the five scenarios along the top are the five ways a morning can
+          go. Answering an option marks it resolved and — once the blocking ones are cleared — flips
+          the loop back to Working, because <em>answering is the resume</em>. Note that "Stopped on
+          these" and "Answer when you can" are visually distinct sections: that split is the whole
+          design.
+        </p>
+
+        <h3 class="sub">Why two channels, not one</h3>
+        <p>
+          <code>AskUserQuestion</code> is already a first-class concept. The Claude adapter
+          intercepts it in <code>canUseTool</code>, emits a <code>user-input.requested</code> event
+          carrying a structured payload, and the projection surfaces it as
+          <code>hasPendingUserInput</code> — the indigo <em>Awaiting Input</em> you already see in
+          the sidebar. The schema is exactly what a questionnaire needs:
+        </p>
+        <div class="eb">
+          UserInputQuestion = { id, header, question, options: [{ label, description }],
+          multiSelect? }
+          <span class="c">packages/contracts/src/providerRuntime.ts:444-464</span>
+        </div>
+        <p>And then, in the adapter:</p>
+        <div class="eb">
+          <span class="c">// ClaudeAdapter.ts — AskUserQuestion interception in canUseTool</span>
+          const answers = yield* <span class="hl">Deferred.await(answersDeferred)</span>;
+          <span class="c">// blocks until a human answers</span>
+        </div>
+
+        <div class="call hot">
+          <div class="ch">The trap</div>
+          <p>
+            A loop and a blocking question are in direct tension, and no tuning resolves it. Nudge a
+            thread parked on a real question and you push past the human's decision. Don't nudge it
+            and one question costs the whole night. The guard table is <em>right</em> to refuse —
+            which means the fix has to be a different channel, not a different threshold.
+          </p>
+        </div>
+
+        <p>
+          So: a fork-owned MCP tool, <code>raise_blocker</code>, that records a question and
+          <strong>returns immediately</strong>. The agent parks that branch of work and carries on
+          with something else; the answer is delivered on a later check-in. Blocking questions still
+          exist and still block — but they become the exception rather than the only option.
+        </p>
+
+        <h3 class="sub">Why this is not the mistake the old design already rejected</h3>
+        <p>
+          The old panel rejected an agent-authored contract (its "BATON" design) because it
+          <em>"outsources the hardest judgement to the thing that just failed"</em> and
+          <em>"degrades silently"</em>. A questionnaire is that idea coming back through a different
+          door, so it has to answer the same objection. It does, for one structural reason:
+        </p>
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Console source</th>
+              <th>Needs the model to cooperate?</th>
+              <th>Comes from</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Approvals, pending input, plan-ready</td>
+              <td class="yes">No</td>
+              <td class="k">SQL columns on the thread shell</td>
+            </tr>
+            <tr>
+              <td>Skip reasons, stop reason, budget</td>
+              <td class="yes">No</td>
+              <td class="k">fork-owned durable store</td>
+            </tr>
+            <tr>
+              <td>Deferred blockers</td>
+              <td class="no">Yes</td>
+              <td class="k">raise_blocker</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Two of the three sources exist whether or not the model plays along. A model that never
+          calls
+          <code>raise_blocker</code> still produces a correct console — it just has fewer rows. It
+          degrades to <em>"the loop is spent, and nothing is waiting on you"</em>, which is true and
+          worth knowing, rather than to silence. <strong>That is the acceptance test</strong>, and
+          it is why the prototype renders the empty state explicitly — the "running, nothing needed"
+          scenario.
+        </p>
+
+        <h3 class="sub">Where the console renders — you said you were open to other ways</h3>
+        <p>
+          The <em>content</em> is settled. The <em>placement</em> is not, and the three answers have
+          genuinely different consequences. The third one turns out not to be a loop feature at all.
+        </p>
+
+        <!--EMBED:p7-console-shapes.html|1560|P7|Three console placements|Same content, three homes. Costs are measured, not estimated.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> Shape C. Pending approvals and questions already pile up on
+          threads you run by hand — a global "needs you" inbox surfaces all of them, and it is the
+          only shape that keeps working if loops are switched off entirely. Loops become its
+          heaviest <em>contributor</em> rather than its reason for existing.
+        </p>
+
+        <div class="call good">
+          <div class="ch">A side effect worth banking</div>
+          <p>
+            Pricing shape B answered an open question in your wayfinder queue.
+            <strong
+              >Issue #112 — "what does registering a right-panel tab actually cost?" — the answer is
+              two seam rows</strong
+            >: <code>rightPanelStore.ts</code> (the kind union, its list, and the tab factory) and
+            <code>RightPanelTabs.tsx</code> (the actions array plus two switch cases). Neither file
+            is in the ledger today. One qualification found on review: those two switches render the
+            tab <em>chrome</em>. The panel's body comes from <code>rightPanelContent</code>'s kind
+            ternary in <code>ChatView.tsx</code> — an existing seam row, and a hot one (churn 83,
+            risk 18094). Two rows holds only if the tab passes its content through
+            <code>children</code> instead of opening a branch there.
+          </p>
+        </div>
+
+        <p>
+          <strong>My order: A, then C, then B only if you find yourself flipping tabs.</strong> A
+          and C share their whole data layer — the same three sources, filtered differently — so C
+          is nearly free once A exists. B is the only one that touches upstream files, and its
+          advantage (reading while answering) shrinks once the console summarises what each check-in
+          did.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 4 · WHERE ==================== -->
+    <section class="band tint" id="where">
+      <div class="wrap">
+        <div class="secnum"><i>04</i> Structure</div>
+        <h2 class="sec">Where a loop lives, and what each answer costs</h2>
+        <p class="lead">
+          Three structural answers, same data. The difference that matters is not how they look — it
+          is what each costs against a fork that has to rebase onto upstream every day.
+        </p>
+
+        <!--EMBED:p2-directions.html|1320|P2|Three directions, priced|Side-by-side, with the seam cost under each.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the "seam cost" block under each column. A is free because
+          upstream already built pinning. B is the most legible and the most expensive — it opens
+          rows in two hot upstream files, one of which is where upstream keeps landing new shelf
+          logic. C is in between, and its real cost is not seam at all.
+        </p>
+
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th></th>
+              <th>A · pinned thread</th>
+              <th>B · own section</th>
+              <th>C · own workspace</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="k">Sidebar.tsx</td>
+              <td class="yes">untouched</td>
+              <td class="no">new row, 3911 lines</td>
+              <td class="yes">untouched</td>
+            </tr>
+            <tr>
+              <td class="k">contracts</td>
+              <td class="yes">untouched</td>
+              <td class="mid">a loop flag</td>
+              <td class="yes">untouched</td>
+            </tr>
+            <tr>
+              <td class="k">New seam rows</td>
+              <td class="yes">0</td>
+              <td class="no">2–3</td>
+              <td class="mid">1</td>
+            </tr>
+            <tr>
+              <td class="k">Legibility</td>
+              <td class="mid">the pin itself; row chrome is deferred</td>
+              <td class="yes">full</td>
+              <td class="yes">full</td>
+            </tr>
+            <tr>
+              <td class="k">Scales past ~3 loops</td>
+              <td class="no">no</td>
+              <td class="mid">somewhat</td>
+              <td class="yes">yes</td>
+            </tr>
+            <tr>
+              <td class="k">Risk</td>
+              <td class="yes">none</td>
+              <td class="no">every sync lands on it</td>
+              <td class="mid">a mode you forget to check</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="call good">
+          <div class="ch">Recommendation</div>
+          <p>
+            <strong>A now, C later.</strong> Ship loops as pinned threads — it is free, it is
+            idiomatic, and with two or three loops it is genuinely enough. Add the workspace when
+            you have enough loops that a list beats a pin. <strong>Do not build B</strong>: it buys
+            legibility you can get from C at a permanently higher rebase cost.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 5 · WORKSPACE ==================== -->
+    <section class="band" id="workspace">
+      <div class="wrap">
+        <div class="secnum"><i>05</i> Direction C, in full</div>
+        <h2 class="sec">The Loops workspace</h2>
+        <p class="lead">
+          You raised this directly —
+          <em
+            >"maybe can be a completely different workspace, which the users can toggle to and back
+            into this current view."</em
+          >
+          Here is what that is actually for.
+        </p>
+        <p>
+          It earns its place on one thing the thread-level console cannot do:
+          <strong>answering across loops</strong>. At 9am with five loops, the question is not "what
+          does <em>this</em> loop need" — it is "what does <em>anything</em> need", and then "which
+          of these actually finished". A cross-loop inbox answers the first; a status list answers
+          the second.
+        </p>
+
+        <!--EMBED:p3-workspace.html|920|P3|Loops workspace|The mode switch is top-left. Note the "Waiting on you" inbox spans every loop.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the "Waiting on you" block aggregates items from every loop and
+          marks which ones are <em>blocking</em> that loop versus merely raised. Below it, the loop
+          rows put <em>Spent</em> and <em>Done</em> in deliberately different colours — see the note
+          at the bottom of the prototype for why that distinction is load-bearing rather than
+          cosmetic.
+        </p>
+
+        <div class="call warn">
+          <div class="ch">The honest risk</div>
+          <p>
+            A mode you switch into is a mode you forget to check. Settings gets away with it because
+            you go there on purpose; loops are the opposite — the whole point is that they happen
+            while you are not thinking about them. The mitigation is that the switch itself carries
+            an unread count, which is why it does in the prototype. If that count is ever wrong or
+            stale, the workspace is worse than the pin.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 6 · MOBILE ==================== -->
+    <section class="band" id="mobile">
+      <div class="wrap">
+        <div class="secnum"><i>06</i> The third surface</div>
+        <h2 class="sec">Loops on the phone</h2>
+        <p class="lead">
+          <code>AGENTS.md</code> requires a decision for web, desktop and mobile. Here it is not a
+          formality — the phone is where you actually look at 4am, and it has no sidebar to lean on.
+        </p>
+
+        <!--EMBED:p8-mobile.html|1020|P8|Loops on mobile|Thread list, console, and the three things worth a push.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the tick row on each list item. On the web the sidebar can afford
+          to say very little because the console is one click away; on a phone the row
+          <em>is</em> the summary, so the budget has to live on it.
+        </p>
+
+        <div class="call good">
+          <div class="ch">Mobile settles decision 1</div>
+          <p>
+            Direction B — a bespoke "Loops" section in the sidebar —
+            <strong>has no mobile equivalent</strong>, because there is no persistent sidebar to put
+            it in. Loop-as-pinned-thread and a Loops tab both work on all three surfaces. That is
+            not decisive on its own, but it removes B's only real advantage over C.
+          </p>
+        </div>
+
+        <h3 class="sub">Three push reasons, and a long list of things that must never push</h3>
+        <p>
+          <strong>It needs a decision · it stopped · it finished.</strong> That is all. A check-in
+          firing is the loop working; a deferred blocker did not stop anything; a usage-limit hold
+          resumes itself. Pushing any of them trains you to swipe away the two that matter — and the
+          whole feature rests on you trusting the notification at 4am.
+        </p>
+        <p>
+          The push copy carries the distinction the whole design turns on:
+          <em>"ran out of rope — 4 of 7 alerts resolved, it did not finish"</em> versus
+          <em>"finished, 9 of 9, stopped on its own with 3 check-ins unused"</em>. If you can only
+          read one line on a lock screen, that is the line worth spending.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 7 · SETTINGS ==================== -->
+    <section class="band tint" id="settings">
+      <div class="wrap">
+        <div class="secnum"><i>07</i> Control</div>
+        <h2 class="sec">Settings — the on/off switch, and the ones that matter more</h2>
+        <p class="lead">
+          You asked for a toggle to turn the ability on and off. That is the top row. The rows under
+          it are the ones I would argue about.
+        </p>
+
+        <!--EMBED:p4-settings.html|900|P4|Settings → Loops|Toggle the master switch at the top to see the disabled state.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> "What a loop may do unattended". The first row —
+          <em>let the model pace itself</em> — is not a new capability being added, and it is not
+          one being taken away. It is on today, you rely on it, and it stays on. What is new is that
+          T3 can finally <strong>see</strong> what the model scheduled.
+        </p>
+
+        <div class="call hot">
+          <div class="ch">It is already on — the job is to see it</div>
+          <p>
+            A <code>full-access</code> Claude thread today can arm up to
+            <strong>50 recurring jobs, re-firing for seven days</strong>, with no human in the path
+            — <code>canUseTool</code> auto-allows in full-access and
+            <code>ScheduleWakeup</code> self-permits. An earlier draft called that a hole to close.
+            That was the wrong instinct: <strong>this capability works and you use it</strong>. The
+            problem is not that the model can schedule — it is that
+            <em>T3 cannot see that it did</em>.
+          </p>
+          <p>
+            So the fix is <strong>observability first</strong>: read <code>session_crons</code>,
+            show pending wakes on the console, and let the loop stand down for as long as the agent
+            has a wake pending inside the run's deadline (<a href="#limits">§9</a>). The per-thread
+            kill switch an earlier draft proposed — <code>CLAUDE_CODE_DISABLE_CRON=1</code> through
+            the environment the adapter already passes, to make T3 the only scheduler — is
+            <strong>dropped</strong> (PLAN §3). Self-pacing is always on; T3 reads what the agent
+            scheduled, stands by while a wake is pending inside the run's own deadline, and covers
+            it when it does not land.
+          </p>
+        </div>
+
+        <p>
+          The other decision on this page is the budget. Following the old design (and Devin, and
+          OpenAI's platform, and GitHub Actions) there is deliberately
+          <strong>no unlimited option</strong> — the route returns 400 rather than clamping, so a
+          mistake is visible instead of silently corrected. And the display shows
+          <em>remaining</em>, not just spent, because "4 check-ins left, ends 07:00" is a decision
+          you can act on and "2 of 6" is trivia.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 8 · STATES ==================== -->
+    <section class="band" id="states">
+      <div class="wrap">
+        <div class="secnum"><i>08</i> Vocabulary</div>
+        <h2 class="sec">Arming a loop, and every state it can be in</h2>
+        <p class="lead">
+          The vocabulary <em>is</em> the feature, and it is the answer to failure mode 1 — the one
+          that costs you time every morning. "It finished", "it ran out of rope" and "it died" must
+          not look the same, because distinguishing them is most of what you actually do at 9am.
+        </p>
+
+        <!--EMBED:p5-lifecycle.html|1720|P5|Arming + 15 states|Composer before/after at the top; the full state machine below.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the tags under each state. Nine of fifteen states spend
+          <em>nothing</em>. That is deliberate — almost everything that stops a loop firing is a
+          <em>good</em> reason, and a design that burned a check-in on each would exhaust a
+          six-check-in night without ever restarting the thread once.
+        </p>
+
+        <p>
+          Two switches stand between a thread and an unattended night, and no thread is ever armed
+          implicitly. Auto-arming any thread with an active turn would have saved the original night
+          with zero clicks — and is exactly how a token-burn incident happens.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 9 · LIMITS ==================== -->
+    <section class="band tint" id="limits">
+      <div class="wrap">
+        <div class="secnum"><i>09</i> Interaction</div>
+        <h2 class="sec">Two schedulers, and where each one belongs</h2>
+        <p class="lead">
+          Claude's own scheduler works, and you have been using it. That is a correction to an
+          earlier draft of this report, which treated it as unusable. The right answer is not to
+          replace it — it is to know where its range ends.
+        </p>
+
+        <h3 class="sub">What I got wrong, and what the numbers actually say</h3>
+        <p>
+          Issue #42's analysis was a static read taken on 2026-08-07, and I carried its conclusion
+          forward without re-measuring. Two things it did not have:
+        </p>
+        <div class="eb">
+          <span class="c">gate cache, re-read today (~/.claude.json)</span>
+          tengu_kairos_cron <span class="ok">true</span> tengu_kairos_loop_dynamic
+          <span class="ok">true</span> tengu_kairos_loop_prompt <span class="ok">true</span>
+          <span class="c">← new since that analysis</span> tengu_kairos_cron_durable
+          <span class="hl">false</span> <span class="c">← still the real constraint</span>
+
+          <span class="c"
+            >upstream 2c7267ad4 — "stop the reaper from silently killing live background subagents"
+            (#5677)</span
+          >
+          ProviderSessionReaper now skips a binding when
+          <span class="ok">backgroundLiveness != null</span>, not only when a turn is active.
+        </div>
+        <p>
+          So the reaper is materially less aggressive than that analysis assumed, and the scheduling
+          gates are on. Put the numbers together and the practical range is clear:
+        </p>
+        <table class="tbl compact">
+          <thead>
+            <tr>
+              <th>Self-paced delay</th>
+              <th>Outcome</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="k">≤ ~30 min</td>
+              <td class="yes">works</td>
+              <td>fires before the reaper's 30-minute idle threshold is even reached</td>
+            </tr>
+            <tr>
+              <td class="k">30–60 min</td>
+              <td class="mid">racy</td>
+              <td>
+                depends on the 5-minute sweep and whether background work kept the binding alive
+              </td>
+            </tr>
+            <tr>
+              <td class="k">&gt; 60 min</td>
+              <td class="mid">only through <code>CronCreate</code></td>
+              <td>
+                <code>ScheduleWakeup</code> clamps <code>delaySeconds</code> to [60, 3600] — but
+                that clamp is its own. <code>CronCreate</code> takes a five-field cron expression in
+                local time, recurring for up to seven days, with no upper bound, and lands in the
+                same <code>session_crons</code> table
+              </td>
+            </tr>
+            <tr>
+              <td class="k">across a restart</td>
+              <td class="no">lost silently</td>
+              <td>
+                <code>cron_durable</code> is false — the table is in-process, and nothing on disk
+                records the wake existed
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>That explains both your experience and the original diagnosis.</strong>
+          Self-pacing at a 20–30 minute cadence — which is the normal case, and what the tooling
+          nudges you toward — lands squarely in the working band. The failures live at the edges:
+          restarts, any provider that is not Claude, and — at the other end — a cron that names a
+          time far past the night you were bounding.
+        </p>
+
+        <div class="call good">
+          <div class="ch">The corrected position</div>
+          <p>
+            <strong>T3 does not replace the Claude scheduler. It backstops and bounds it.</strong>
+            The agent keeps pacing itself where it is good at that. T3 owns the things no in-process
+            scheduler can do: survive a restart, enforce a budget and a deadline, collect questions,
+            and say out loud whether a run finished or ran out.
+          </p>
+        </div>
+
+        <h3 class="sub">Which means observability replaces the kill switch</h3>
+        <p>
+          If the agent is genuinely self-pacing, the worst thing T3 can do is fire its own check-in
+          on top — two schedulers, doubled spend, and a confused agent. So the
+          <code>Stop</code> hook's <code>session_crons</code> field stops being a nice-to-have and
+          becomes <strong>load-bearing</strong>: it is the only way to know a thread has already
+          scheduled itself.
+        </p>
+        <p>
+          That delivery is no longer an assumption — it is the single biggest one this design used
+          to carry, and it has now been read out of the shipped binary (2.1.236). The
+          <code>{ background_tasks, session_crons }</code> payload is spread
+          <em>unconditionally</em> into both the <code>Stop</code> and
+          <code>SubagentStop</code> inputs; each entry arrives as
+          <code>{ id, schedule, recurring, prompt }</code>; and an empty table delivers
+          <code>[]</code> rather than nothing at all. One undocumented edge came with it:
+          <code>prompt</code> is <strong>truncated to 1000 characters</strong>, so nothing may
+          depend on getting the agent's full instruction back. All of this is verified against a
+          shipped dependency rather than against this tree, which means it can move without a repo
+          diff — it is worth re-reading on an SDK bump.
+        </p>
+        <p>
+          The rule falls out of that, with one bound this report did not originally carry.
+          <strong
+            >While a recorded wake is pending and its next fire falls at or before the loop's own
+            deadline, the loop does not fire until that wake is overdue by its grace: it waits,
+            spends nothing, and the console says "self-pacing · next wake 02:35".</strong
+          >
+          The loop's own check-in becomes the fallback for when the agent has <em>not</em> scheduled
+          itself, which is exactly the case the agent cannot handle: it has stopped.
+        </p>
+        <div class="call warn">
+          <div class="ch">The bound is new, and it is arguable</div>
+          <p>
+            An earlier draft deferred to a pending wake at <em>any</em> distance, arguing that the
+            [60, 3600] clamp bounded the exposure without a second rule.
+            <strong>That argument is retracted.</strong> The clamp belongs to
+            <code>ScheduleWakeup</code> alone, and the field the rule reads carries
+            <code>CronCreate</code> entries too: a recorded <code>0 9 * * *</code> would stand T3
+            down until 09:00, and a one-shot cron pinned to a future date would stand it down
+            indefinitely. Capping deference at the loop's own deadline needs no new knob — past the
+            deadline there is nothing left to defer to — but whether the deadline is the right cap,
+            or whether this wants an explicit <code>maxDeferMs</code>, belongs beside decision 4 in
+            <a href="#decide">§14</a>.
+          </p>
+        </div>
+        <p>
+          The grace is derived from the recorded entry rather than fixed, because the scheduler
+          jitters its own fires:
+          <em
+            >"recurring tasks fire up to 10% of their period late (max 15 min); one-shot tasks
+            landing on :00 or :30 fire up to 90 s early."</em
+          >
+          Only the late half can manufacture a false "its wake didn't land", so a recurring entry
+          gets <code>max(90s, min(10% of period, 15min))</code> and a one-shot gets 90 s. A flat 90
+          s would report a healthy 30-minute cadence as lost every time it drifted three minutes —
+          and on a healthy thread this reactor is supposed to be the thing that almost never fires.
+        </p>
+        <p>
+          I had this deferred to phase 3 as pure observability. It moves up:
+          <strong>it is now part of the trigger.</strong> The cost is unchanged — a single spread of
+          <code>hooks</code> into the existing <code>queryOptions</code> object in
+          <code>ClaudeAdapter.ts</code>, with every line of logic fork-side.
+        </p>
+
+        <h3 class="sub">And the third scheduler: auto-resume</h3>
+        <p>
+          The fork already owns one, so it is really three. The rule is the same one:
+          <b>one owner per wake.</b>
+        </p>
+        <p>
+          A loop never nudges a thread with a pending auto-resume (guard 9). But that alone is not
+          enough, and the reason is subtle: auto-resume only arms when <em>its own</em> per-thread
+          switch is on. On a thread where you turned auto-resume off, a rate limit produces no
+          pending resume, guard 9 passes, and the loop nudges straight into a live 5-hour limit.
+        </p>
+        <p>
+          So the loop runs a second fiber that taps the rate-limit event stream directly, reuses the
+          fork's existing <code>classifyRateLimit</code>, and writes
+          <code>rateLimitedUntilMs</code> to the <strong>durable</strong> store — durable, not
+          in-memory, so it survives the restart that would otherwise reopen the hole. The event
+          stream is PubSub-backed, so a second subscriber does not steal auto-resume's events.
+        </p>
+
+        <table class="tbl compact">
+          <thead>
+            <tr>
+              <th>Situation</th>
+              <th>Who owns the wake</th>
+              <th>Budget</th>
+              <th>Console says</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>Agent scheduled itself, wake still pending</b></td>
+              <td><b>the agent</b></td>
+              <td class="yes">spends nothing</td>
+              <td>Self-pacing · next wake 02:35</td>
+            </tr>
+            <tr>
+              <td>Agent scheduled itself, but the wake passed with no activity</td>
+              <td>loop — the fallback</td>
+              <td class="mid">spends one</td>
+              <td>Its wake didn't land · check-in 3 of 6</td>
+            </tr>
+            <tr>
+              <td>Usage limit, auto-resume on</td>
+              <td>auto-resume</td>
+              <td class="yes">spends nothing</td>
+              <td>Held — resumes 08:22</td>
+            </tr>
+            <tr>
+              <td>Usage limit, auto-resume off</td>
+              <td>nobody — loop stands down</td>
+              <td class="yes">spends nothing</td>
+              <td>Held — limit until 08:22</td>
+            </tr>
+            <tr>
+              <td>Thread quiet, nothing scheduled</td>
+              <td>loop</td>
+              <td class="mid">spends one</td>
+              <td>Check-in 3 of 6</td>
+            </tr>
+            <tr>
+              <td>Pending approval</td>
+              <td>you</td>
+              <td class="yes">spends nothing</td>
+              <td>Paused — needs approval</td>
+            </tr>
+            <tr>
+              <td>You typed something</td>
+              <td>you</td>
+              <td class="yes">disarms, no reset</td>
+              <td>Loop off — you took over</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Row two is the one that earns the whole design. A self-paced wake that was armed and then
+          <em>did not land</em> — because the session was stopped, the app restarted, or the gate
+          flipped — is invisible today: there is no record it was ever scheduled. With
+          <code>session_crons</code> persisted fork-side, T3 knows a wake was due, notices nothing
+          happened, and covers it. <strong>That is the durability gap, stated precisely.</strong>
+        </p>
+
+        <div class="call">
+          <div class="ch">Belt and braces</div>
+          <p>
+            Even if all of the above failed, a nudge rejected by a live limit produces no activity —
+            so it takes a strike, and the loop stops after two. The failure mode is bounded by the
+            strike detector regardless of whether the limit logic is correct.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 10 · MAINTAINER ==================== -->
+    <section class="band" id="maintainer">
+      <div class="wrap">
+        <div class="secnum"><i>10</i> Adjacent</div>
+        <h2 class="sec">Loops as maintainer bots</h2>
+        <p class="lead">
+          Issue #44 wants an agent that works a repo's issue queue. The question worth answering
+          before building anything is whether that is a second feature or the same loop pointed
+          somewhere else.
+        </p>
+
+        <!--EMBED:p6-maintainer.html|1180|P6|Maintainer loop|The comparison table at the top is the argument; the running view is below.-->
+        <p class="proto-cap">
+          <b>What to look at:</b> the green rows in the comparison are everything that stays
+          identical — trigger, reactor, budget, all fifteen guards, and the console. Only two things
+          differ, and both are configuration.
+        </p>
+
+        <p>
+          It is the same loop. What changes is <strong>where work comes from</strong> (a label query
+          instead of this thread's unfinished business) and <strong>when it ends</strong> (the query
+          returns nothing instead of a done-file). Both are configuration.
+        </p>
+        <p>
+          The one thing it genuinely needs that an overnight loop does not is a
+          <strong>work-source abstraction</strong> — something that answers "what should I do next"
+          from outside the thread. That is worth designing once, now, rather than retrofitting
+          later. Everything else that looks maintainer-specific (the queue panel, the never-merge
+          rule, per-issue worktrees) is UI and policy.
+        </p>
+
+        <div class="call warn">
+          <div class="ch">The rule that makes it safe</div>
+          <p>
+            A maintainer loop <strong>never merges and never closes an issue</strong>, and #44's v1
+            contract is tighter still: never <code>full-access</code>, always its own worktree and
+            branch, and in v1 it <strong>never pushes and never opens a PR</strong> — every output
+            lands as a plan or a comment, with draft PRs a later opt-in. A human promotes all of it.
+            Without that, the failure mode is a bot that quietly closes the issues it could not
+            solve — and you would not find out for weeks.
+          </p>
+        </div>
+
+        <p>
+          <strong>Sequencing:</strong> #44 is a second work-source on a shipped loop, not a parallel
+          build. It should follow, not accompany.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 11 · BACKEND ==================== -->
+    <section class="band tint" id="backend">
+      <div class="wrap">
+        <div class="secnum"><i>11</i> Machinery</div>
+        <h2 class="sec">The backend, in one page</h2>
+        <p class="lead">
+          Full version in <code>docs/coil/loops-v2/BACKEND.md</code>. This is the shape and the
+          three decisions that carry the most weight.
+        </p>
+
+        <h3 class="sub">Shape</h3>
+        <p>
+          A fork-owned reactor ticks once a minute. For each armed thread it reads one SQL
+          projection column — <code>updatedAt</code> — and if the thread has been silent past its
+          threshold and all fifteen guards pass, it dispatches an ordinary
+          <code>thread.turn.start</code>, exactly as auto-resume already does in production. It
+          mirrors <code>apps/server/src/coil/autoResume/</code> file-for-file, because that module
+          is proven and already reviewed.
+        </p>
+
+        <h4 class="sub2">Decision 1 — trigger on updatedAt, never on session.status</h4>
+        <p>
+          A top-level assistant message arriving with no active turn auto-opens a synthetic turn
+          that pins <code>session.status = "running"</code>, and nothing closes it
+          <em
+            >but a later SDK <code>result</code>, the next <code>sendTurn</code>, or the process
+            exiting</em
+          >. Until one of those lands, nothing automated will: the session reaper skips any binding
+          whose thread still has an <code>activeTurnId</code>. So a turn whose completion never
+          arrives holds <code>running</code> indefinitely, and gating on
+          <code>session.status</code> would deadlock on exactly the threads this feature exists to
+          save. Meanwhile <code>thread.activity-appended</code> rewrites <code>updatedAt</code>, so
+          the predicate stayed quiet through all 1,358 orphaned activities in the #38 run and would
+          have fired at ~01:07. It reads a durable SQL column rather than a hot stream, which is why
+          it is the only trigger that survives a mid-loop restart.
+        </p>
+        <p>
+          Two corrections to how this was argued before, neither of which moves the conclusion. It
+          is not a <em>subagent's</em> message that opens the synthetic turn — upstream #5219 added
+          a guard that returns first for any assistant snapshot carrying
+          <code>parent_tool_use_id</code>, precisely to stop spawning one synthetic turn per
+          subagent completion. And the #38 run is not evidence of a stuck synthetic turn: its
+          post-turn traffic is <code>system</code> messages, which never reach that path. What
+          survives is the reaper's rule, which is enough on its own.
+        </p>
+
+        <h4 class="sub2">Decision 2 — reserve the attempt before dispatching</h4>
+        <p>
+          The budget is persisted <em>before</em> the dispatch, not after. This is the only
+          unbounded path in the design: a provider that cannot spawn would otherwise tight-loop.
+          Reserving first means it burns budget — six attempts, not 480 a night.
+        </p>
+
+        <h4 class="sub2">Decision 3 — durable JSON, not a migration</h4>
+        <p>
+          The migration registry is upstream-owned; adding to it buys permanent conflict surface for
+          what one JSON file does fine. Every field carries a decoding default, because a missing
+          <em>required</em> key fails the whole-file decode and the boot path turns that into an
+          empty state — silently disarming every loop on the machine. That is the highest-severity
+          footgun in the module and it has a dedicated test.
+        </p>
+
+        <h3 class="sub">Seam cost</h3>
+        <table class="tbl compact">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Delta</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="k">coil/index.ts</td>
+              <td class="yes">+6</td>
+              <td>fork-owned aggregator, churn 0</td>
+            </tr>
+            <tr>
+              <td class="k">_chat.$environmentId.$threadId.tsx</td>
+              <td class="yes">±0</td>
+              <td>existing row rewritten in place — genuinely delta-zero</td>
+            </tr>
+            <tr>
+              <td class="k">server.ts</td>
+              <td class="yes">0</td>
+              <td>already has its row</td>
+            </tr>
+            <tr>
+              <td class="k">packages/contracts</td>
+              <td class="yes">0</td>
+              <td>activity <code>kind</code> is open, payload is <code>Unknown</code></td>
+            </tr>
+            <tr>
+              <td class="k">Sidebar.tsx</td>
+              <td class="yes">0</td>
+              <td>a loop is a pinned thread</td>
+            </tr>
+            <tr>
+              <td class="k">ClaudeAdapter.ts</td>
+              <td class="no">+1</td>
+              <td>
+                <b>new row</b> — one spread of <code>hooks</code> to read
+                <code>session_crons</code>. Additive, read-only, and it fails to a type error rather
+                than silent drift. This is the price of not fighting the agent's own scheduler.
+              </td>
+            </tr>
+            <tr>
+              <td class="k">settingsSearch.ts</td>
+              <td class="no">~+13</td>
+              <td>
+                <b>new row</b> — the <code>SettingsPath</code> union, its label, and the search
+                items. Additive. Measured by applying that recipe to today's file: each search entry
+                is a five-to-six line object literal, which is most of the cost.
+              </td>
+            </tr>
+            <tr>
+              <td class="k">SettingsSidebarNav.tsx</td>
+              <td class="no">+2</td>
+              <td>
+                <b>new row</b> — the section icon import and its record entry. Additive. Both
+                settings rows are priced against upstream's own
+                <code>/settings/integrations</code> — see <a href="#addendum">§15</a>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== 12 · REJECTED ==================== -->
+    <section class="band" id="rejected">
+      <div class="wrap">
+        <div class="secnum"><i>12</i> Negative space</div>
+        <h2 class="sec">Angles I considered and rejected</h2>
+        <p class="lead">
+          You asked for the ones that do not work and why. These are the ones I spent real time on
+          before discarding.
+        </p>
+
+        <h3 class="sub">Replacing Claude's scheduler rather than composing with it</h3>
+        <div class="call warn">
+          <div class="ch">Corrected</div>
+          <p>
+            An earlier draft of this report listed Claude's cron / <code>ScheduleWakeup</code> here
+            as rejected outright, on "four independent disqualifiers". That was wrong, and it was
+            wrong for a specific reason: it inherited issue #42's static analysis from 2026-08-07
+            without re-measuring. The gates are on, and upstream #5677 has since made the session
+            reaper skip threads with live background work. See <a href="#limits">§9</a> for the
+            numbers.
+          </p>
+        </div>
+        <p>
+          What is genuinely rejected is narrower:
+          <strong>building the whole feature on it, and nothing else.</strong> Three constraints are
+          real and re-verified today, and each one defines a job T3 has to do rather than a reason
+          to dismiss the scheduler.
+        </p>
+        <table class="tbl compact">
+          <thead>
+            <tr>
+              <th>Constraint</th>
+              <th>Still true?</th>
+              <th>So T3 owns…</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>In-process only — <code>cron_durable</code> is false</td>
+              <td class="no">yes</td>
+              <td>
+                durability. A wake lost to a restart leaves no trace; T3's store is the trace.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <code>ScheduleWakeup</code>'s delay clamps to [60, 3600] — but
+                <code>CronCreate</code>'s expression has no upper bound
+              </td>
+              <td class="mid">yes, and narrower than I first wrote</td>
+              <td>
+                anything longer than an hour on the one tool — and, on the other, the deadline that
+                caps how long T3 will stand down for a cron it did not set.
+              </td>
+            </tr>
+            <tr>
+              <td>Claude-only — no equivalent on codex, cursor, grok, opencode</td>
+              <td class="no">yes</td>
+              <td>the other four adapters, which otherwise get nothing.</td>
+            </tr>
+            <tr>
+              <td>Gate is code-default false, true from a cached remote evaluation</td>
+              <td class="mid">true, but on</td>
+              <td>a visible degraded state rather than a loop that silently stops pacing.</td>
+            </tr>
+            <tr>
+              <td>T3 has no handle on the binary's table</td>
+              <td class="mid">partly</td>
+              <td>
+                budget, cap and audit — but it can now <em>read</em> the table via
+                <code>session_crons</code>.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          <strong>What this changes in practice:</strong> the loop's check-in is a
+          <em>fallback</em>, not the primary pacing mechanism. On a Claude thread that is
+          self-pacing happily, T3 should fire almost never — and the measure of a good
+          implementation is how rarely it needs to.
+        </p>
+        <p>
+          <strong>And what survives from the original point:</strong> the <code>Stop</code> hook
+          exposes <code>session_crons</code>, which is the only way to know whether a thread will
+          wake <em>itself</em>. I had that filed as phase-3 observability. Given the above it is
+          <strong>phase 1 and load-bearing</strong> — it is what stops T3 firing on top of an agent
+          that is already pacing itself.
+        </p>
+
+        <h3 class="sub">Arm on turn boundaries instead of an idle clock</h3>
+        <p>
+          Stopping a session emits a real <code>turn.completed</code> — so arming on it restarts
+          exactly the work you just hit Stop on. A turnId-keyed denylist is the obvious patch and it
+          does not hold: it is hot-stream-only and therefore empty after every restart, so it fails
+          <strong>open</strong>. (An earlier draft cited a second kill — a result branch emitting
+          <code>turn.completed</code> with no turnId. Upstream #5710 removed that emission on
+          2026-08-08; the branch now emits only <code>thread.token-usage</code> plus a log line, so
+          the argument rests on the two reasons above.)
+        </p>
+
+        <h3 class="sub">An agent-authored JSON state contract</h3>
+        <p>
+          Rejected by the original panel and still rejected. It outsources the hardest judgement to
+          the thing whose judgement you are trying to check — and it degrades silently: an agent
+          that stops honouring the schema goes quiet in a way indistinguishable from the bug. A
+          one-line sentinel file with an mtime gate gets the same result for a fraction of the
+          protocol surface.
+        </p>
+
+        <h3 class="sub">Dollar-cost budgets</h3>
+        <p>
+          Tempting, and wrong for now. The adapter stamps <code>total_cost_usd</code> onto
+          <code>turn.completed.totalCostUsd</code> and nothing downstream aggregates it, while the
+          SDK's own documentation describes the number as accumulated <em>by the session</em> — so
+          summing it per turn could inflate quadratically and a "$25 cap" would trip around
+          iteration 6 of a $4 run. Those semantics are unmeasured, and a ledger whose entire selling
+          point is trust cannot rest on an unverified number. Budget is check-ins and wall-clock
+          until someone measures it.
+        </p>
+
+        <h3 class="sub">A new command in packages/contracts</h3>
+        <p>
+          <code>orchestration.ts</code> is churn-20 and is upstream's pre-announced landing zone for
+          its own scheduling concept. Zero contract edits means that when upstream ships
+          automations, this feature becomes a <em>caller</em> rather than a migration.
+        </p>
+
+        <h3 class="sub">Auto-arming any thread with an active turn</h3>
+        <p>
+          Would have saved the original night with zero clicks. Also exactly how a token-burn
+          incident happens. Two switches stay.
+        </p>
+
+        <h3 class="sub">Considered, not rejected — deferred with a reason</h3>
+        <p>
+          These are live ideas that a first version should not carry. Listing them so you can see
+          they were weighed rather than missed.
+        </p>
+        <table class="tbl compact">
+          <thead>
+            <tr>
+              <th>Idea</th>
+              <th>Why not now</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>Scheduled loops</b> — "start this every night at 23:00"</td>
+              <td>
+                Needs a thread-creation trigger, not just a thread-revival one, which is a second
+                mechanism with its own failure modes. It is also exactly where upstream's
+                automations work is heading. Ship revival first; a schedule is a wrapper around it
+                later.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <b>Reusable loop templates</b> (Cursor Automations' shape — a saved definition with
+                triggers and instructions)
+              </td>
+              <td>
+                The right end state, and the prior art is strong. But a template is only worth it
+                once you have run the same loop several times, and nobody has run one yet. Building
+                the abstraction first would fix the wrong shape in place.
+              </td>
+            </tr>
+            <tr>
+              <td><b>A loop that spans threads</b> — one loop driving several worktrees at once</td>
+              <td>
+                This is what the maintainer loop looks like if you squint, and the work-source
+                abstraction in <a href="#maintainer">§10</a> is the seam it would hang off. Deferred
+                because concurrency across worktrees multiplies every failure mode at once, and the
+                per-issue-thread shape gets most of the benefit.
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <b>Summarising each check-in</b> so the ledger reads as prose rather than counts
+              </td>
+              <td>
+                Cheap and appealing, and it is what would make the "Runs" tab genuinely readable. It
+                costs an extra model call per check-in, against a budget whose whole selling point
+                is that it is bounded and predictable. Worth doing once cost is metered, not before.
+              </td>
+            </tr>
+            <tr>
+              <td><b>Letting the loop answer its own low-stakes questions</b></td>
+              <td>
+                Tempting for approvals like "read this file". But the moment a loop can answer for
+                you, the console stops being a complete record of what needed a human — and that
+                completeness is the only reason to trust it at 9am.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== 13 · TESTS ==================== -->
+    <section class="band tint" id="tests">
+      <div class="wrap">
+        <div class="secnum"><i>13</i> Confidence</div>
+        <h2 class="sec">How this gets tested</h2>
+        <p class="lead">
+          162 cases in <code>docs/coil/loops-v2/TESTS.md</code>, written against the conventions
+          already in the tree. The starred ones each encode a specific bug this design exists to
+          prevent.
+        </p>
+
+        <table class="tbl compact">
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>Cases</th>
+              <th>Style</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>decide.ts — the decision table</td>
+              <td>39</td>
+              <td class="k">pure · vite-plus/test</td>
+            </tr>
+            <tr>
+              <td>guards.ts — ordering and effect</td>
+              <td>17</td>
+              <td class="k">pure</td>
+            </tr>
+            <tr>
+              <td>sentinel.ts — the done-file</td>
+              <td>12</td>
+              <td class="k">pure + fs</td>
+            </tr>
+            <tr>
+              <td>state.ts — durable store</td>
+              <td>12</td>
+              <td class="k">real fs, temp dir</td>
+            </tr>
+            <tr>
+              <td>crons.ts — the Stop-hook record</td>
+              <td>8</td>
+              <td class="k">pure + store</td>
+            </tr>
+            <tr>
+              <td>http.ts — routes</td>
+              <td>16</td>
+              <td class="k">route harness</td>
+            </tr>
+            <tr>
+              <td>Reactor.ts — the fibers</td>
+              <td>21</td>
+              <td class="k">@effect/vitest + TestClock</td>
+            </tr>
+            <tr>
+              <td>MCP toolkit — the question channel</td>
+              <td>11</td>
+              <td class="k">handler tests</td>
+            </tr>
+            <tr>
+              <td>Voided questions (#5127)</td>
+              <td>5</td>
+              <td class="k">handler + projection</td>
+            </tr>
+            <tr>
+              <td>Prompt composition</td>
+              <td>9</td>
+              <td class="k">pure</td>
+            </tr>
+            <tr>
+              <td>Integration scenarios</td>
+              <td>12</td>
+              <td class="k">layered</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 class="sub">The four I would write first</h3>
+        <ol>
+          <li>
+            <strong>Self-paced, healthy.</strong> Agent schedules its own wake every 20 minutes for
+            three hours. Assert T3 fires <b>zero</b> times and spends <b>zero</b> budget, while the
+            deadline still applies. This is the regression test for "T3 does not fight the agent",
+            and it is the one I would write before any other.
+          </li>
+          <li>
+            <strong>Self-paced, wake lost to a restart.</strong> Agent schedules a wake for +25 min;
+            the server restarts at +10 min. Assert the record survives, the unmet wake is noticed,
+            and T3 covers it exactly once. This is the durability gap stated as a test — and it is
+            the case that justifies the whole feature existing alongside a working scheduler.
+          </li>
+          <li>
+            <strong>The empty console.</strong> A loop that ends <code>spent</code> with a model
+            that never called <code>raise_blocker</code>. Assert the console still renders the stop
+            reason and budget. This is the degradation property, and it is the one that stops this
+            feature from repeating BATON's failure.
+          </li>
+          <li>
+            <strong><code>spent</code> is never reported as <code>done</code>.</strong> Budget or
+            deadline exhausted with work left over must render as <em>ran out of rope</em>, never as
+            success — the done-file is the only thing that says finished. This is failure mode 1
+            written as a test.
+          </li>
+        </ol>
+
+        <div class="call">
+          <div class="ch">Deliberately not tested</div>
+          <p>
+            The synthetic-turn-start marker on the wire. It is real, but it is a free-form optional
+            string in a hot ~4.6k-line file with no upstream test — a fork test asserting a
+            fork-defined constant cannot detect upstream drift, so it would pass green while the
+            feature silently broke. The design avoids depending on it at all; testing it would
+            create the illusion of coverage.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 14 · DECISIONS ==================== -->
+    <section class="band" id="decide">
+      <div class="wrap">
+        <div class="secnum"><i>14</i> Over to you</div>
+        <h2 class="sec">What I need from you</h2>
+        <p class="lead">
+          Five decisions. I have a recommendation on each; none of them are blocking for starting.
+        </p>
+
+        <div class="dec">
+          <div class="dec-q">1 · Sidebar treatment</div>
+          <div class="dec-r">
+            A is free and idiomatic, but in v1 a loop is marked only by being pinned — the row
+            chrome in the prototype would itself be a <code>Sidebar.tsx</code> row. C is richer and
+            scales, but is a mode you have to remember to open.
+          </div>
+          <div class="dec-opts">
+            <span class="dec-opt rec">A now, C in a later phase — recommended</span>
+            <span class="dec-opt">A only</span>
+            <span class="dec-opt">Go straight to C</span>
+          </div>
+        </div>
+
+        <div class="dec">
+          <div class="dec-q">
+            2 · Where does the console live, and does it outrank the transcript?
+          </div>
+          <div class="dec-r">
+            Two halves. <b>Placement</b> — a thread tab (free), a right-panel tab (2 new seam rows,
+            and a third edit site in <code>ChatView.tsx</code> unless the tab passes its body
+            through <code>children</code> — but you can read and answer at once), or a global "needs
+            you" inbox across every thread (1 row, and the only one that survives loops being
+            switched off). See <a href="#console">§3</a>. <b>Precedence</b> — your ask implies the
+            console wins by default, but that means opening a loop no longer shows you what it said,
+            which is a real loss when you <em>do</em> want to read along.
+          </div>
+          <div class="dec-opts" style="margin-bottom: 8px">
+            <span class="dec-opt rec">Thread tab now, global inbox next — recommended</span>
+            <span class="dec-opt">Right-panel tab</span>
+            <span class="dec-opt">Global inbox first</span>
+          </div>
+          <div class="dec-opts">
+            <span class="dec-opt rec"
+              >Console default only when something is waiting — recommended</span
+            >
+            <span class="dec-opt">Always console</span>
+            <span class="dec-opt">Always transcript, console is a tab</span>
+          </div>
+        </div>
+
+        <div class="dec">
+          <div class="dec-q">3 · Settings placement</div>
+          <div class="dec-r">
+            Its own section costs the <code>SettingsPath</code> union, the labels and icons records,
+            and a new route file — and that append-ordered search array is the same add/add conflict
+            shape as issue #29.
+          </div>
+          <div class="dec-opts">
+            <span class="dec-opt rec"
+              >Own section — recommended, it spends money while you sleep</span
+            >
+            <span class="dec-opt">Inside General</span>
+          </div>
+        </div>
+
+        <div class="dec">
+          <div class="dec-q">4 · How much should T3 defer to the agent's own scheduler?</div>
+          <div class="dec-r">
+            Self-pacing works in its range and you use it. The question is what T3 does when a
+            thread has already scheduled itself: stand down entirely, stand down but keep the
+            deadline and budget as an outer bound, or ignore it and pace on its own clock. Standing
+            down needs the
+            <code>session_crons</code> read to be in phase 1 rather than phase 3. Review has since
+            closed one of these: standing down <em>entirely</em> is unbounded, because a recorded
+            <code>CronCreate</code> entry can name 09:00 tomorrow. The design now caps deference at
+            the loop's own deadline (<a href="#limits">§9</a>); what is still live here is whether
+            that is the right cap or whether it wants an explicit <code>maxDeferMs</code>.
+          </div>
+          <div class="dec-opts">
+            <span class="dec-opt rec"
+              >Defer, but keep budget + deadline as the outer bound — recommended</span
+            >
+            <span class="dec-opt">Defer completely while a wake is pending</span>
+            <span class="dec-opt">T3 paces regardless</span>
+          </div>
+        </div>
+
+        <div class="dec">
+          <div class="dec-q">5 · Reopen #38, or open a fresh consolidated issue?</div>
+          <div class="dec-r">
+            #38 is closed with an explicit "surviving residue" note; #42 is open but framed as
+            building on Claude's crons alone; this design composes with them instead — its Phase
+            1a/1b observation is absorbed, its Phase 2 <code>wake_me</code> is dropped.
+          </div>
+          <div class="dec-opts">
+            <span class="dec-opt rec">Fresh issue, close #42 pointing at it — recommended</span>
+            <span class="dec-opt">Reopen #38</span>
+            <span class="dec-opt">Re-scope #42 in place</span>
+          </div>
+        </div>
+
+        <h3 class="sub">If you want to start immediately</h3>
+        <p>The order I would build in, each step shippable alone:</p>
+        <ol>
+          <li>
+            <strong>Read <code>session_crons</code> + the durable store</strong>, no UI. Behind the
+            master toggle, default off. Recording what the agent scheduled — and noticing when a
+            wake does not land — is the smallest thing that is useful on its own.
+          </li>
+          <li>
+            <strong>The reactor</strong>, as the fallback for when nothing was scheduled or the wake
+            was lost.
+          </li>
+          <li>
+            <strong>The console</strong>, reading only the two sources that need no model
+            cooperation. Useful immediately.
+          </li>
+          <li>
+            <strong><code>raise_blocker</code></strong> and the deferred channel. This is where it
+            stops being a supervisor and starts being a collaborator.
+          </li>
+          <li><strong>The workspace</strong>, once there are enough loops to warrant it.</li>
+        </ol>
+
+        <div class="call good">
+          <div class="ch">What I did not do</div>
+          <p>
+            <strong>None</strong> of #42's Phase 0 experiments were run — not A (does a cron-fired
+            turn reach T3), not B, not C (does the reaper win the race), not D. What stands in their
+            place is static evidence: the gate cache, the reaper change, and the clamp, laid out in
+            <a href="#limits">§9</a> so you can disagree with it. A and C are cheap and fold into
+            phase 1's observation checklist — the first thing the <code>session_crons</code> record
+            does is answer both from real traffic. If you want them run ahead of that, say so and I
+            will.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 15 · ADDENDUM ==================== -->
+    <section class="band tint" id="addendum">
+      <div class="wrap">
+        <div class="secnum"><i>15</i> Addendum · 17–19 August</div>
+        <h2 class="sec">Re-verified against three more days of upstream</h2>
+        <p class="lead">
+          This report was written against merge-base <code>196c8ea0d</code>. Before turning it into
+          a plan I re-measured everything load-bearing against <code>upstream/main</code> at
+          <code>a4cc1367b</code> — <b>116 commits, three days</b>. The design holds. Three findings
+          are worth carrying forward.
+        </p>
+
+        <div class="call good">
+          <div class="ch">Still free</div>
+          <p>
+            The beachhead is unclaimed: <code>session_crons</code>, <code>ScheduleWakeup</code> and
+            <code>CronCreate</code> return <b>zero hits</b> across the server and contracts,
+            <code>options.hooks</code> is still set nowhere in <code>ClaudeAdapter</code> (though
+            the neighbourhood is no longer empty — #4466 sets
+            <code>settings: { disableAllHooks: true }</code> on the capability probe),
+            <code>mcp/toolkits/</code> still holds only <code>preview</code>, and not one of the 116
+            commits mentions a loop, cron, schedule or automation. Pinning is fully intact, so
+            Direction A still costs nothing.
+          </p>
+        </div>
+
+        <div class="call hot">
+          <div class="ch">A new failure mode — and it argues for raise_blocker</div>
+          <p>
+            Upstream <b>#5127</b> now settles pending user-inputs when a session stops, by resolving
+            the deferred with an <b>empty answer object</b>. <code>AskUserQuestion</code> still
+            blocks, so <a href="#console">§3</a> stands. The agent does not carry on with a null
+            decision: the handler unparks, the tool call is then <em>denied</em> — "User cancelled
+            tool execution." — and the session is going away regardless. What survives is on the
+            projection side. The runtime emits <code>user-input.resolved</code> carrying
+            <code>answers: {}</code>, so <code>hasPendingUserInput</code> reads false afterwards and
+            <b>a voided question is indistinguishable from an answered one</b>. A deferred blocker
+            is durable fork-side state; a blocking question is in-memory. So the console cannot
+            derive its list from <code>hasPendingUserInput</code> — it has to record the request
+            when it is made, and mark it voided rather than answered.
+          </p>
+        </div>
+
+        <div class="call">
+          <div class="ch">Decision 3 is now priced, not estimated</div>
+          <p>
+            Upstream shipped <code>/settings/integrations</code> three days ago (<b>#7082</b>) — a
+            worked example of exactly the operation the Loops settings section needs. Reading what
+            it paid: an own settings section costs the fork <b>two new seam rows</b>,
+            <code>settingsSearch.ts</code> (~+13) and <code>SettingsSidebarNav.tsx</code> (+2), both
+            additive, ~+15 lines total. The row count has not moved; the line count has. An earlier
+            draft priced <code>settingsSearch.ts</code> at ~+4, which is about a third of the truth
+            — each <code>SETTINGS_SEARCH_ITEMS</code> entry is a five-to-six line object literal,
+            which is how upstream's own change to that same file came to +26. The fork renders its
+            own panel from its own route and keeps state in <code>coil-loop.json</code>, so it pays
+            neither of the two expensive rows upstream chose — <code>SettingsPanels.tsx</code> or
+            the persisted <code>contracts/settings.ts</code>.
+          </p>
+        </div>
+
+        <div class="call good">
+          <div class="ch">And then the sync landed, the same day</div>
+          <p>
+            Everything above was measured against <code>upstream/main</code> while the fork sat 116
+            commits behind it. Before this went out, the daily sync force-landed
+            <code>main</code> onto merge-base <code>a4cc1367b</code> —
+            <b>exactly the tree all of it was measured against</b> — and zero commits behind
+            upstream. So these are findings about the fork's current <code>main</code>, not a future
+            one, and every load-bearing claim was re-run against that tree and still passes: the
+            beachhead is empty, the <code>mcpServers</code> anchor is there,
+            <code>Sidebar.logic.ts</code> is still zero-diff, the overlay row is still +10/−6, and
+            phase 0's debt is still two scope-auth mirrors. The plan's one sequencing constraint —
+            write the settings row <em>after</em> the #7082 sync — is satisfied for free.
+          </p>
+          <p>
+            The sync ran again on 18 August, and it did not land on the same base. Two upstream
+            commits sit under the fork's replay stack, so the merge-base advanced to
+            <code>cebac353d</code>, and that is the anchor to quote from here on. It matters for one
+            number: the seam ledger re-baselines to <b>53 files, +2590/−1042</b> against
+            <code>cebac353d</code>, where the same recipe run against <code>a4cc1367b</code> reads
+            55 files and +2611/−1055 — two of upstream's own edits counted as the fork's. (Every
+            sync rewrites the fork-main SHA, so never cite one; but a sync can advance the
+            merge-base too, so re-read it rather than assuming it held.)
+          </p>
+        </div>
+
+        <p class="lead" style="margin-top: 30px">
+          The full accounting is in <code>UPSTREAM-DELTA.md</code>. The implementation plan that
+          came out of it — phases, seam budget, risk register, and the four questions I want an
+          outside opinion on — is in <code>PLAN.md</code>, written to be read without repo access.
+        </p>
+      </div>
+    </section>
+
+    <footer class="end">
+      <div class="wrap">
+        <p style="max-width: 70ch">
+          Prototypes are standalone files under <code>docs/coil/loops-v2/prototypes/</code> and open
+          on their own. Working notes in <code>FINDINGS.md</code>, the full backend in
+          <code>BACKEND.md</code>, the test list in <code>TESTS.md</code>, the upstream
+          re-verification in <code>UPSTREAM-DELTA.md</code>, the plan in <code>PLAN.md</code>. The
+          archived 2026-08-02 design is still at <code>docs/coil/loop/</code> and is worth reading
+          for the reactor detail I reused rather than restated.
+        </p>
+        <p style="color: var(--ink-3); font-family: var(--mono); font-size: 12px; margin-top: 26px">
+          Nothing merged. Branch t3code/loop-observation-thread-prototypes.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
