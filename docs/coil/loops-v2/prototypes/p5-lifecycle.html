@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P5 · Arming a loop, and every state it can be in</title>
+    <link rel="stylesheet" href="_shell.css" />
+    <style>
+      body {
+        overflow-y: auto;
+        height: auto;
+      }
+      .page {
+        padding: 22px 26px 70px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0 0 5px;
+      }
+      .lede {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        max-width: 70ch;
+        margin: 0 0 26px;
+        line-height: 1.6;
+      }
+      h2.sec {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 34px 0 4px;
+      }
+      .sec-note {
+        font-size: 12.5px;
+        color: var(--muted-foreground);
+        margin: 0 0 14px;
+        max-width: 74ch;
+        line-height: 1.55;
+      }
+
+      /* --- arming: the composer affordance --- */
+      .two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        align-items: start;
+      }
+      @media (max-width: 980px) {
+        .two {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .frame {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--card);
+        overflow: hidden;
+      }
+      .frame-cap {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        padding: 10px 14px 0;
+      }
+      .frame-in {
+        padding: 12px 14px 14px;
+      }
+
+      .composer-box {
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        background: rgb(255 255 255 / 3%);
+        padding: 10px 12px;
+      }
+      .composer-text {
+        font-size: 13px;
+        color: #d6d6d6;
+        line-height: 1.55;
+        min-height: 42px;
+      }
+      .composer-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 10px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 25px;
+        padding: 0 9px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-strong);
+        background: transparent;
+        color: var(--muted-foreground);
+        font-size: 11.5px;
+        cursor: pointer;
+        font: inherit;
+      }
+      .chip:hover {
+        color: var(--foreground);
+        border-color: rgb(255 255 255 / 20%);
+      }
+      .chip.on {
+        color: var(--sky);
+        border-color: rgb(125 211 252 / 40%);
+        background: rgb(125 211 252 / 10%);
+      }
+      .chip .loop-glyph {
+        width: 11px;
+        height: 11px;
+        flex: 0 0 11px;
+      }
+      .send {
+        margin-left: auto;
+        width: 27px;
+        height: 27px;
+        border-radius: var(--radius-md);
+        border: none;
+        background: var(--primary);
+        color: #fff;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+      }
+
+      /* arm popover */
+      .pop {
+        border: 1px solid var(--border-strong);
+        background: var(--popover);
+        border-radius: var(--radius-lg);
+        padding: 13px 14px;
+        box-shadow: 0 18px 44px rgb(0 0 0 / 55%);
+        margin-top: 9px;
+      }
+      .pop-t {
+        font-size: 13px;
+        font-weight: 560;
+        margin-bottom: 2px;
+      }
+      .pop-d {
+        font-size: 12px;
+        color: var(--muted-foreground);
+        line-height: 1.5;
+        margin-bottom: 11px;
+      }
+      .frow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px 0;
+      }
+      .frow label {
+        font-size: 12.5px;
+        flex: 1;
+      }
+      .frow .input {
+        width: 74px;
+        text-align: right;
+      }
+      .pop-foot {
+        display: flex;
+        gap: 7px;
+        margin-top: 12px;
+        padding-top: 11px;
+        border-top: 1px solid var(--border);
+      }
+      .cap-note {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        line-height: 1.5;
+        background: rgb(255 255 255 / 3%);
+        border-radius: var(--radius-md);
+        padding: 8px 10px;
+        margin-top: 10px;
+      }
+
+      /* --- state gallery --- */
+      .gal {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+        gap: 11px;
+      }
+      .st {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        padding: 12px 13px;
+        position: relative;
+        overflow: hidden;
+      }
+      .st::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+      }
+      .st.armed::before {
+        background: rgb(255 255 255 / 18%);
+      }
+      .st.working::before {
+        background: var(--sky);
+      }
+      .st.checking::before {
+        background: var(--sky);
+      }
+      .st.selfpaced::before {
+        background: var(--sky);
+      }
+      .st.wakelost::before {
+        background: var(--amber);
+      }
+      .st.blocked::before {
+        background: var(--indigo);
+      }
+      .st.approval::before {
+        background: var(--amber);
+      }
+      .st.plan::before {
+        background: var(--violet);
+      }
+      .st.held::before {
+        background: var(--amber);
+      }
+      .st.snoozed::before {
+        background: rgb(255 255 255 / 18%);
+      }
+      .st.done::before {
+        background: var(--emerald);
+      }
+      .st.spent::before {
+        background: var(--zinc);
+      }
+      .st.stalled::before {
+        background: var(--rose);
+      }
+      .st.handed::before {
+        background: rgb(148 163 184 / 60%);
+      }
+      .st.off::before {
+        background: rgb(255 255 255 / 10%);
+      }
+
+      .st-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 7px;
+      }
+      .st-name {
+        font-size: 12.5px;
+        font-weight: 560;
+      }
+      .st-pill {
+        margin-left: auto;
+      }
+      .st-face {
+        font-size: 12.5px;
+        color: #dcdcdc;
+        line-height: 1.45;
+        margin-bottom: 6px;
+        font-weight: 450;
+      }
+      .st-why {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+        line-height: 1.5;
+      }
+      .st-tag {
+        display: inline-block;
+        margin-top: 8px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--muted-foreground);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+      .st-tag.consumes {
+        color: var(--amber);
+        border-color: rgb(252 211 77 / 24%);
+      }
+      .st-tag.free {
+        color: var(--emerald);
+        border-color: rgb(110 231 183 / 22%);
+      }
+      .st-tag.terminal {
+        color: var(--zinc);
+        border-color: rgb(161 161 170 / 26%);
+      }
+
+      code.k {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--sky);
+      }
+      .note {
+        margin-top: 28px;
+        border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px;
+        font-size: 12.5px;
+        color: #bdbdbd;
+        line-height: 1.65;
+        max-width: 78ch;
+      }
+      .note b {
+        color: var(--foreground);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin: 0 0 14px;
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Arming a loop, and every state it can be in</h1>
+      <p class="lede">
+        Two switches stand between a thread and an unattended night, and no thread is ever armed
+        implicitly. Below that: the full state machine, written as the words the pill actually shows
+        — because the vocabulary <em>is</em> the feature.
+      </p>
+
+      <!-- ================= ARMING ================= -->
+      <h2 class="sec">1 · Arming, from the composer</h2>
+      <p class="sec-note">
+        The decision to leave a thread running is made at the moment you walk away from it, so it
+        belongs next to Send — not in Settings. The chip is off by default and shows the whole
+        contract before you commit: how many check-ins, when it stops, and what will end it early.
+      </p>
+
+      <div class="two">
+        <div class="frame">
+          <div class="frame-cap">Before — today's composer</div>
+          <div class="frame-in">
+            <div class="composer-box">
+              <div class="composer-text">
+                Keep going through the backlog in GOALS.md. Don't merge anything.
+              </div>
+              <div class="composer-bar">
+                <button class="chip">＠ Context</button>
+                <button class="chip">Opus 5</button>
+                <button class="chip">full-access</button>
+                <button class="send" aria-label="Send">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  >
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="cap-note">
+              You send this at 23:48, close the laptop, and the turn completes at 00:19 with
+              subagents still running. Nothing restarts it. That is the bug.
+            </div>
+          </div>
+        </div>
+
+        <div class="frame">
+          <div class="frame-cap">After — one chip, off by default</div>
+          <div class="frame-in">
+            <div class="composer-box">
+              <div class="composer-text">
+                Keep going through the backlog in GOALS.md. Don't merge anything.
+              </div>
+              <div class="composer-bar">
+                <button class="chip">＠ Context</button>
+                <button class="chip">Opus 5</button>
+                <button class="chip">full-access</button>
+                <button class="chip on" id="loopChip">
+                  <span class="loop-glyph"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    >
+                      <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+                      <path d="M21 4v5h-5" /></svg
+                  ></span>
+                  Loop · 6 · 07:00
+                </button>
+                <button class="send" aria-label="Send">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                  >
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="pop">
+              <div class="pop-t">Run this as a loop</div>
+              <div class="pop-d">
+                If the thread goes quiet, T3 restarts it — up to the budget, until the deadline, or
+                until the agent says it's done.
+              </div>
+              <div class="frow">
+                <label>Check in after</label><input class="input" value="15" /><span
+                  class="s12 t-muted"
+                  >min</span
+                >
+              </div>
+              <div class="frow">
+                <label>Check-ins</label><input class="input" value="6" /><span
+                  class="s12 t-muted"
+                  style="width: 26px"
+                ></span>
+              </div>
+              <div class="frow">
+                <label>Stop by</label
+                ><input class="input" type="time" value="07:00" style="width: 104px" />
+              </div>
+              <div class="cap-note">
+                Ends early if the agent writes<br />
+                <code class="k">~/dev/t3code/.coil/loop-done</code><br />
+                Otherwise: <b>6 check-ins max</b>, and nothing after <b>07:00</b>. Pins to the top
+                of your sidebar until it stops.
+              </div>
+              <div class="pop-foot">
+                <button class="btn sm primary">Arm &amp; send</button>
+                <button class="btn sm ghost">Just send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= STATES ================= -->
+      <h2 class="sec">2 · Every state, as the words the user actually sees</h2>
+      <p class="sec-note">
+        Three families, and the difference between them is the whole point: <b>running</b>,
+        <b>waiting</b> (on you, or on something else), and <b>stopped</b>. A user must be able to
+        tell "it finished", "it ran out of rope" and "it died" apart without reading a transcript.
+      </p>
+      <div class="legend">
+        <span><i class="st-tag consumes" style="margin: 0">spends a check-in</i></span>
+        <span><i class="st-tag free" style="margin: 0">spends nothing</i></span>
+        <span
+          ><i class="st-tag terminal" style="margin: 0"
+            >terminal — needs a human to restart</i
+          ></span
+        >
+      </div>
+
+      <div class="gal">
+        <!-- running -->
+        <div class="st armed">
+          <div class="st-top">
+            <span class="st-name">Armed</span><span class="pill st-pill">idle</span>
+          </div>
+          <div class="st-face">Loop on · 6 check-ins · stops 07:00</div>
+          <div class="st-why">
+            Watching, nothing to do. The thread is working normally and the loop has not intervened.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <div class="st working">
+          <div class="st-top">
+            <span class="st-name">Working</span
+            ><span class="pill sky st-pill"><span class="dot sky pulse"></span>live</span>
+          </div>
+          <div class="st-face">Loop watching · moved 40s ago</div>
+          <div class="st-why">
+            Real activity is arriving. The idle clock keeps resetting, so no check-in is needed or
+            spent.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <div class="st checking">
+          <div class="st-top">
+            <span class="st-name">Checking in</span><span class="pill sky st-pill">firing</span>
+          </div>
+          <div class="st-face">Loop check-in 3 of 6 — after 47m quiet</div>
+          <div class="st-why">
+            The nudge is dispatched as an ordinary user turn. Reserved <em>before</em> dispatch, so
+            a provider that cannot spawn burns budget rather than retrying forever.
+          </div>
+          <span class="st-tag consumes">spends a check-in</span>
+        </div>
+
+        <div class="st wakelost">
+          <div class="st-top">
+            <span class="st-name">Wake lost — covering</span
+            ><span class="pill amber st-pill"><span class="dot amber"></span>3 of 6</span>
+          </div>
+          <div class="st-face">Its wake didn't land · check-in 3 of 6</div>
+          <div class="st-why">
+            A wake the agent scheduled came and went with nothing following it — the session was
+            stopped, the app restarted, or the gate flipped. Nothing on the provider's side records
+            that it ever existed, so T3's copy is the only trace, and it covers the gap exactly
+            once.
+          </div>
+          <span class="st-tag consumes">spends a check-in</span>
+        </div>
+
+        <!-- waiting on you -->
+        <div class="st blocked">
+          <div class="st-top">
+            <span class="st-name">Needs you</span
+            ><span class="pill indigo st-pill"><span class="dot indigo"></span>3</span>
+          </div>
+          <div class="st-face">Loop paused — 3 waiting</div>
+          <div class="st-why">
+            A real question or approval it cannot get past. The loop deliberately does <b>not</b>
+            nudge — pushing past a pending decision is worse than waiting.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <div class="st approval">
+          <div class="st-top">
+            <span class="st-name">Approval</span
+            ><span class="pill amber st-pill"><span class="dot amber"></span>1</span>
+          </div>
+          <div class="st-face">Loop paused — needs approval</div>
+          <div class="st-why">
+            A tool permission prompt fired at 06:12 and nobody was awake. Console shows it first.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <div class="st plan">
+          <div class="st-top">
+            <span class="st-name">Plan ready</span
+            ><span class="pill violet st-pill"><span class="dot violet"></span>plan</span>
+          </div>
+          <div class="st-face">Loop paused — plan waiting on you</div>
+          <div class="st-why">
+            The guard no design in the field had: plan-ready reads as <em>not</em> pending-input, so
+            without it a parked plan sails through every other check and gets pushed past your yes.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <!-- waiting on something else -->
+        <div class="st selfpaced">
+          <div class="st-top">
+            <span class="st-name">Self-pacing — standing by</span
+            ><span class="pill sky st-pill"><span class="dot sky"></span>02:35</span>
+          </div>
+          <div class="st-face">Self-pacing · next wake 02:35</div>
+          <div class="st-why">
+            The agent scheduled its own wake and T3 can see it. The loop stands down for as long as
+            that wake is pending, up to the run's own deadline: two schedulers firing on one thread
+            is doubled spend and a confused agent, and a wake past the deadline has nothing left to
+            defer to.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <div class="st held">
+          <div class="st-top">
+            <span class="st-name">Held — limit</span
+            ><span class="pill amber st-pill"><span class="dot amber"></span>08:22</span>
+          </div>
+          <div class="st-face">Loop held — usage limit until 08:22</div>
+          <div class="st-why">
+            Auto-resume owns the wake; the loop stands down so the two never both fire. Nudging into
+            a live 5-hour limit is pure waste.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <div class="st snoozed">
+          <div class="st-top">
+            <span class="st-name">Snoozed</span><span class="pill st-pill">till 09:00</span>
+          </div>
+          <div class="st-face">Loop paused — snoozed</div>
+          <div class="st-why">
+            You snoozed the thread. That is an explicit human act and it outranks the loop. Surfaced
+            rather than silent — correct behaviour that reads as a bug is a bug.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+
+        <!-- stopped -->
+        <div class="st done">
+          <div class="st-top">
+            <span class="st-name">Done</span
+            ><span class="pill emerald st-pill"><span class="dot emerald"></span>done</span>
+          </div>
+          <div class="st-face">Loop done — finished 04:12</div>
+          <div class="st-why">
+            The agent wrote the done-file. This is the <b>only</b> success state, and it is the only
+            one that is emerald.
+          </div>
+          <span class="st-tag terminal">terminal</span>
+        </div>
+
+        <div class="st spent">
+          <div class="st-top">
+            <span class="st-name">Spent</span
+            ><span class="pill zinc st-pill"><span class="dot zinc"></span>0 left</span>
+          </div>
+          <div class="st-face">Loop spent — 6 of 6 used</div>
+          <div class="st-why">
+            Out of budget or past the deadline, with work left over. <b>Never</b> rendered as
+            success. Without an adopted done-file this is the common ending, which is exactly why it
+            must look different.
+          </div>
+          <span class="st-tag terminal">terminal</span>
+        </div>
+
+        <div class="st stalled">
+          <div class="st-top">
+            <span class="st-name">Stalled</span
+            ><span class="pill rose st-pill"><span class="dot rose"></span>2 strikes</span>
+          </div>
+          <div class="st-face">Loop stopped — two check-ins did nothing</div>
+          <div class="st-why">
+            Nudged twice, and the thread moved less than two minutes each time. Something is wrong
+            that another nudge will not fix.
+          </div>
+          <span class="st-tag terminal">terminal</span>
+        </div>
+
+        <div class="st handed">
+          <div class="st-top">
+            <span class="st-name">You took over</span><span class="pill st-pill">stood down</span>
+          </div>
+          <div class="st-face">Loop off — you took over</div>
+          <div class="st-why">
+            You typed into the thread. Takeover <b>disarms</b>; it does not reset the budget. Waking
+            at 4am and reading for twenty minutes must not get you nudged mid-thought.
+          </div>
+          <span class="st-tag terminal">terminal · one-tap re-arm</span>
+        </div>
+
+        <div class="st off">
+          <div class="st-top">
+            <span class="st-name">Off</span><span class="pill st-pill">—</span>
+          </div>
+          <div class="st-face">Loop off</div>
+          <div class="st-why">
+            The default for every thread that has ever existed. Nothing is supervised implicitly.
+          </div>
+          <span class="st-tag free">spends nothing</span>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>Read the "spends nothing" tags together.</b> Nine of the fifteen states cost no budget,
+        and that is deliberate: almost everything that stops a loop from firing is a <em>good</em>
+        reason, and a design that burned a check-in on each of them would exhaust a six-check-in
+        night without ever restarting the thread once. The only two states that spend are the two
+        that actually restart work.
+      </div>
+    </div>
+  </body>
+</html>

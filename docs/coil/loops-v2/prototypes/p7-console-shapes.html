@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P7 · Three places the console could live</title>
+    <link rel="stylesheet" href="_shell.css" />
+    <style>
+      body {
+        overflow-y: auto;
+        height: auto;
+      }
+      .page {
+        padding: 22px 26px 70px;
+        max-width: 1300px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0 0 5px;
+      }
+      .lede {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        max-width: 74ch;
+        margin: 0 0 24px;
+        line-height: 1.6;
+      }
+
+      .shape {
+        margin-bottom: 34px;
+      }
+      .shape-h {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 4px;
+        flex-wrap: wrap;
+      }
+      .shape-tag {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+      }
+      .shape-t {
+        font-size: 15px;
+        font-weight: 570;
+        letter-spacing: -0.01em;
+      }
+      .shape-d {
+        font-size: 12.5px;
+        color: var(--muted-foreground);
+        max-width: 82ch;
+        line-height: 1.55;
+        margin-bottom: 12px;
+      }
+
+      .mock {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        overflow: hidden;
+        background: var(--background);
+        height: 400px;
+        display: flex;
+      }
+      .mock .sb {
+        width: 178px;
+        flex: 0 0 178px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        padding: 8px 6px;
+      }
+      .mock .mn {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .mock .tb {
+        height: 38px;
+        flex: 0 0 38px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 11px;
+        font-size: 12px;
+      }
+      .mock .bd {
+        flex: 1;
+        overflow: hidden;
+        display: flex;
+        min-height: 0;
+      }
+      .mock .rp {
+        width: 300px;
+        flex: 0 0 300px;
+        border-left: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .tbar {
+        display: flex;
+        gap: 1px;
+        border-bottom: 1px solid var(--border);
+        padding: 0 8px;
+      }
+      .tb-item {
+        font-size: 11.5px;
+        padding: 7px 9px 6px;
+        color: var(--muted-foreground);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        cursor: default;
+      }
+      .tb-item.on {
+        color: var(--foreground);
+        border-bottom-color: var(--primary);
+      }
+      .tb-item .bg {
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        border-radius: 999px;
+        background: rgb(165 180 252 / 22%);
+        color: var(--indigo);
+        font-size: 9px;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+      }
+
+      .mini-q {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--card);
+        padding: 8px 10px;
+        margin: 6px 8px;
+        position: relative;
+        overflow: hidden;
+      }
+      .mini-q::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+      }
+      .mini-q.b::before {
+        background: var(--indigo);
+      }
+      .mini-q.a::before {
+        background: var(--amber);
+      }
+      .mini-q.d::before {
+        background: rgb(255 255 255 / 14%);
+      }
+      .mini-q .lbl {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+      .mini-q .txt {
+        font-size: 11.5px;
+        line-height: 1.4;
+      }
+      .mini-q .opt2 {
+        font-size: 10.5px;
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        padding: 3px 7px;
+        margin-top: 5px;
+        display: inline-block;
+        margin-right: 4px;
+        color: var(--muted-foreground);
+      }
+
+      .msg-mini {
+        padding: 9px 12px;
+        font-size: 11.5px;
+        color: #b4b4b4;
+        line-height: 1.5;
+      }
+      .msg-mini .who {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+        margin-bottom: 3px;
+      }
+
+      .cost {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+        margin-top: 12px;
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+      .cost b {
+        color: var(--foreground);
+        font-weight: 500;
+      }
+      .cost .g {
+        color: var(--emerald);
+      }
+      .cost .r {
+        color: var(--rose);
+      }
+      .cost .y {
+        color: var(--amber);
+      }
+
+      .verdict {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: var(--radius-md);
+        font-size: 12.5px;
+        line-height: 1.55;
+        border: 1px solid var(--border-strong);
+        max-width: 86ch;
+      }
+      .verdict.good {
+        border-color: rgb(110 231 183 / 30%);
+        background: rgb(110 231 183 / 6%);
+      }
+      .verdict.mid {
+        border-color: rgb(252 211 77 / 26%);
+        background: rgb(252 211 77 / 5%);
+      }
+      .verdict b {
+        font-weight: 620;
+      }
+
+      code.k {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--sky);
+      }
+      .note {
+        margin-top: 24px;
+        border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px;
+        font-size: 12.5px;
+        color: #bdbdbd;
+        line-height: 1.65;
+        max-width: 80ch;
+      }
+      .note b {
+        color: var(--foreground);
+      }
+      .trow.mini {
+        padding: 6px 8px;
+        margin-bottom: 2px;
+      }
+      .trow.mini .trow-title {
+        font-size: 11.5px;
+      }
+      .trow.mini .trow-meta {
+        font-size: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Three places the console could live</h1>
+      <p class="lede">
+        The console content is settled — blocking items, deferred blockers, loop state. Where it
+        <em>renders</em> is not, and the three answers have genuinely different consequences. The
+        third one is not a loop feature at all, which is the interesting part.
+      </p>
+
+      <!-- ============ A ============ -->
+      <section class="shape">
+        <div class="shape-h">
+          <span class="shape-tag">Shape A</span>
+          <span class="shape-t">A tab on the thread, ahead of the transcript</span>
+        </div>
+        <p class="shape-d">
+          Opening a loop lands on Console. The transcript is one click away. This is the literal
+          reading of "at any time I open the chat there should be a page where I have a
+          questionnaire ready".
+        </p>
+
+        <div class="mock">
+          <div class="sb">
+            <button class="trow mini is-loop is-active">
+              <div class="trow-top">
+                <span class="trow-title">auth refactor</span
+                ><span class="trow-status"><span class="dot indigo"></span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">3 waiting</span></div>
+            </button>
+            <button class="trow mini is-recede">
+              <div class="trow-top"><span class="trow-title">clone diagnostics</span></div>
+            </button>
+            <button class="trow mini is-recede">
+              <div class="trow-top"><span class="trow-title">seam ledger</span></div>
+            </button>
+          </div>
+          <div class="mn">
+            <div class="tb">
+              <strong style="font-size: 12.5px">Overnight: auth refactor</strong
+              ><span class="pill indigo" style="height: 18px; font-size: 10px"
+                ><span class="dot indigo"></span>Needs you</span
+              >
+            </div>
+            <div class="tbar">
+              <span class="tb-item on">Console <span class="bg">3</span></span>
+              <span class="tb-item">Transcript</span>
+              <span class="tb-item">Runs</span>
+              <span class="tb-item">Diff</span>
+            </div>
+            <div class="bd" style="flex-direction: column; overflow-y: auto">
+              <div style="padding: 10px 8px 2px; font-size: 11px; color: var(--muted-foreground)">
+                Stopped on these
+              </div>
+              <div class="mini-q b">
+                <div class="lbl t-indigo">Question</div>
+                <div class="txt">
+                  Migrate the session table in place, or new table and backfill?
+                </div>
+                <span class="opt2">Migrate in place</span><span class="opt2">New table</span>
+              </div>
+              <div class="mini-q a">
+                <div class="lbl t-amber">Approval</div>
+                <div class="txt">Run <code class="k">pnpm db:migrate</code> against dev</div>
+                <span class="opt2">Allow</span><span class="opt2">Deny</span>
+              </div>
+              <div style="padding: 8px 8px 2px; font-size: 11px; color: var(--muted-foreground)">
+                Answer when you can
+              </div>
+              <div class="mini-q d">
+                <div class="lbl t-muted">Blocker</div>
+                <div class="txt">
+                  <code class="k">AUTH0_TENANT</code> missing — provider stubbed
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cost">
+          <span
+            ><b>Seam:</b> <span class="g">0 new rows</span> — lives in the fork-owned overlay</span
+          >
+          <span><b>Discoverability:</b> <span class="g">unmissable</span></span>
+          <span><b>Read along while answering:</b> <span class="r">no</span></span>
+        </div>
+        <div class="verdict good">
+          <b>Cheapest and most direct.</b> The cost is that answering and reading are mutually
+          exclusive — and at 9am, half the time the first thing you want is to skim what it actually
+          did before you decide anything.
+        </div>
+      </section>
+
+      <!-- ============ B ============ -->
+      <section class="shape">
+        <div class="shape-h">
+          <span class="shape-tag">Shape B</span>
+          <span class="shape-t">A right-panel tab, beside the transcript</span>
+        </div>
+        <p class="shape-d">
+          The console sits in the existing right panel next to Diff, Agents and Terminal. You read
+          the transcript on the left and answer on the right, at the same time. The panel already
+          has a
+          <code class="k">badgeCount</code> concept, so the unread count is free.
+        </p>
+
+        <div class="mock">
+          <div class="sb">
+            <button class="trow mini is-loop is-active">
+              <div class="trow-top">
+                <span class="trow-title">auth refactor</span
+                ><span class="trow-status"><span class="dot indigo"></span></span>
+              </div>
+              <div class="trow-meta"><span class="ellip">3 waiting</span></div>
+            </button>
+            <button class="trow mini is-recede">
+              <div class="trow-top"><span class="trow-title">clone diagnostics</span></div>
+            </button>
+          </div>
+          <div class="mn">
+            <div class="tb">
+              <strong style="font-size: 12.5px">Overnight: auth refactor</strong>
+            </div>
+            <div class="bd">
+              <div style="flex: 1; min-width: 0; overflow-y: auto">
+                <div class="msg-mini">
+                  <div class="who">Assistant · 05:04</div>
+                  Wrote the rotation tests. 14 pass, 1 skipped — the Auth0 integration test needs a
+                  tenant I don't have.
+                </div>
+                <div class="msg-mini">
+                  <div class="who">Assistant · 06:12</div>
+                  I need to run the migration to continue. Requesting permission.
+                </div>
+                <div class="msg-mini" style="color: var(--muted-foreground); font-style: italic">
+                  Loop check-in 4 of 6 — paused, waiting on approval.
+                </div>
+              </div>
+              <div class="rp">
+                <div class="tbar" style="padding: 0 6px">
+                  <span class="tb-item">Diff</span>
+                  <span class="tb-item">Agents</span>
+                  <span class="tb-item on">Loop <span class="bg">3</span></span>
+                </div>
+                <div style="overflow-y: auto">
+                  <div class="mini-q b">
+                    <div class="lbl t-indigo">Question</div>
+                    <div class="txt">Migrate in place, or new table and backfill?</div>
+                    <span class="opt2">Migrate</span><span class="opt2">New table</span>
+                  </div>
+                  <div class="mini-q a">
+                    <div class="lbl t-amber">Approval</div>
+                    <div class="txt">Run <code class="k">pnpm db:migrate</code></div>
+                    <span class="opt2">Allow</span><span class="opt2">Deny</span>
+                  </div>
+                  <div class="mini-q d">
+                    <div class="lbl t-muted">Blocker</div>
+                    <div class="txt"><code class="k">AUTH0_TENANT</code> missing</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cost">
+          <span
+            ><b>Seam:</b> <span class="r">2 new rows</span> —
+            <code class="k">RightPanelTabs.tsx</code> (churn 14) +
+            <code class="k">rightPanelStore.ts</code> (churn 7)</span
+          >
+          <span><b>Discoverability:</b> <span class="y">needs opening</span></span>
+          <span><b>Read along while answering:</b> <span class="g">yes</span></span>
+        </div>
+        <div class="verdict mid">
+          <b>The best ergonomics, at a real price.</b> Measured: the kind union and its list, the
+          tab factory, the actions array and two switch cases — across two upstream-owned files the
+          fork does not touch today. Churn measured over the 60 days before merge-base
+          <code class="k">a4cc1367b</code>, the ledger's own method: <b>14</b> upstream commits on
+          <code class="k">RightPanelTabs.tsx</code>, <b>7</b> on
+          <code class="k">rightPanelStore.ts</code>, and there is no extension point — registering
+          through the tab switch is the only way in. Both switches render the tab
+          <em>chrome</em> only; the body comes from <code class="k">rightPanelContent</code>'s kind
+          ternary in <code class="k">ChatView.tsx</code> — an existing seam row, and a hot one
+          (churn 83, risk 18094) — so two rows holds only if the tab passes its content through
+          <code class="k">children</code>. (This also answers wayfinder issue #112, "what does
+          registering a right-panel tab actually cost", as a side effect:
+          <b>two rows, on files churning 14 and 7</b>, plus that constraint.)
+        </div>
+      </section>
+
+      <!-- ============ C ============ -->
+      <section class="shape">
+        <div class="shape-h">
+          <span class="shape-tag">Shape C</span>
+          <span class="shape-t">A global inbox — not a loop feature at all</span>
+        </div>
+        <p class="shape-d">
+          Every thread that wants something from you, loop or not, in one list. Loops become the
+          heaviest <em>contributor</em> to an inbox rather than the reason it exists — and threads
+          you started by hand get the same treatment.
+        </p>
+
+        <div class="mock">
+          <div class="sb">
+            <button class="trow mini is-active" style="padding-left: 8px">
+              <div class="trow-top">
+                <span class="trow-title">Needs you</span
+                ><span class="trow-status"
+                  ><span class="dot indigo"></span
+                  ><span class="t-indigo" style="font-size: 10px">5</span></span
+                >
+              </div>
+            </button>
+            <button class="trow mini is-recede" style="padding-left: 8px">
+              <div class="trow-top"><span class="trow-title">All threads</span></div>
+            </button>
+            <div class="side-group-label" style="padding: 10px 8px 4px; font-size: 10px">Loops</div>
+            <button class="trow mini is-loop is-recede">
+              <div class="trow-top"><span class="trow-title">auth refactor</span></div>
+            </button>
+            <button class="trow mini is-loop is-recede">
+              <div class="trow-top"><span class="trow-title">issue queue</span></div>
+            </button>
+          </div>
+          <div class="mn">
+            <div class="tb">
+              <strong style="font-size: 12.5px">Needs you</strong
+              ><span class="pill" style="height: 18px; font-size: 10px">5 items · 4 threads</span>
+            </div>
+            <div class="bd" style="flex-direction: column; overflow-y: auto">
+              <div class="mini-q b">
+                <div class="lbl t-indigo">
+                  Question ·
+                  <span class="t-muted"
+                    >auth refactor <span style="opacity: 0.6">· loop</span></span
+                  >
+                </div>
+                <div class="txt">
+                  Migrate the session table in place, or new table and backfill?
+                </div>
+                <span class="opt2">Migrate in place</span><span class="opt2">New table</span>
+              </div>
+              <div class="mini-q a">
+                <div class="lbl t-amber">
+                  Approval ·
+                  <span class="t-muted"
+                    >auth refactor <span style="opacity: 0.6">· loop</span></span
+                  >
+                </div>
+                <div class="txt">Run <code class="k">pnpm db:migrate</code> against dev</div>
+                <span class="opt2">Allow</span><span class="opt2">Deny</span>
+              </div>
+              <div class="mini-q a">
+                <div class="lbl t-amber">
+                  Approval · <span class="t-muted">Dependabot sweep</span>
+                </div>
+                <div class="txt">Force-push to <code class="k">deps/august</code></div>
+                <span class="opt2">Allow</span><span class="opt2">Deny</span>
+              </div>
+              <div class="mini-q b">
+                <div class="lbl t-indigo">
+                  Question ·
+                  <span class="t-muted">issue queue <span style="opacity: 0.6">· loop</span></span>
+                </div>
+                <div class="txt">Seam ledger or a fresh git walk for the map data?</div>
+              </div>
+              <div class="mini-q d">
+                <div class="lbl t-muted">
+                  Blocker ·
+                  <span class="t-muted"
+                    >auth refactor <span style="opacity: 0.6">· loop</span></span
+                  >
+                </div>
+                <div class="txt">
+                  <code class="k">AUTH0_TENANT</code> missing — provider stubbed
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cost">
+          <span><b>Seam:</b> <span class="y">1 row</span> — a route, plus wherever it mounts</span>
+          <span><b>Discoverability:</b> <span class="g">one place, always</span></span>
+          <span><b>Scope:</b> <span class="g">every thread, not just loops</span></span>
+        </div>
+        <div class="verdict good">
+          <b>The most useful thing on this page, and the least loop-specific.</b> Pending approvals
+          and questions already pile up on hand-run threads — this surfaces all of them. It is also
+          the one shape that keeps working if loops are turned off entirely.
+        </div>
+      </section>
+
+      <div class="note">
+        <b>These are not exclusive, and the sequencing matters.</b> A and C share their entire data
+        layer — the same three sources, filtered differently — so building A first and C second is
+        nearly free the second time. B is the one to defer: it costs the most, it is the only one
+        that touches upstream files, and its advantage (read while answering) partly disappears once
+        the console summarises what each check-in did. My order:
+        <b>A, then C, then B only if you find yourself flipping tabs.</b>
+      </div>
+    </div>
+  </body>
+</html>

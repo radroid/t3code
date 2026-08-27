@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P6 · A maintainer loop — same primitive, different source of work</title>
+    <link rel="stylesheet" href="_shell.css" />
+    <style>
+      body {
+        overflow-y: auto;
+        height: auto;
+      }
+      .page {
+        padding: 22px 26px 70px;
+        max-width: 1080px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin: 0 0 5px;
+      }
+      .lede {
+        font-size: 13px;
+        color: var(--muted-foreground);
+        max-width: 72ch;
+        margin: 0 0 24px;
+        line-height: 1.6;
+      }
+
+      .cmp {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-bottom: 30px;
+      }
+      @media (max-width: 900px) {
+        .cmp {
+          grid-template-columns: 1fr;
+        }
+      }
+      .cmp-c {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        padding: 13px 14px;
+      }
+      .cmp-c h2 {
+        font-size: 12.5px;
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 116px 1fr;
+        gap: 5px 10px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .kv dt {
+        color: var(--muted-foreground);
+      }
+      .kv dd {
+        margin: 0;
+      }
+      .same {
+        color: var(--emerald);
+      }
+      .diff {
+        color: var(--amber);
+      }
+
+      .frame {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        overflow: hidden;
+        background: var(--card);
+      }
+      .fbar {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      .fbody {
+        padding: 16px 18px 20px;
+      }
+
+      .qsec-h {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 22px 0 8px;
+      }
+      .qsec-h h2 {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .qsec-h .why {
+        font-size: 12px;
+        color: var(--muted-foreground);
+      }
+
+      .iq {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+      .iq-row {
+        display: grid;
+        grid-template-columns: 20px 62px 1fr 150px 116px;
+        gap: 11px;
+        align-items: center;
+        padding: 10px 13px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      .iq-row:last-child {
+        border-bottom: none;
+      }
+      .iq-row.head {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+        background: rgb(255 255 255 / 2%);
+      }
+      .iq-row .num {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+      .iq-row .ttl {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .iq-row .out {
+        font-size: 11.5px;
+        color: var(--muted-foreground);
+      }
+      .iq-row.doing {
+        background: rgb(125 211 252 / 5%);
+      }
+
+      .gate {
+        border: 1px solid rgb(252 211 77 / 26%);
+        background: rgb(252 211 77 / 6%);
+        border-radius: var(--radius-lg);
+        padding: 13px 15px;
+        margin-top: 16px;
+        display: flex;
+        gap: 11px;
+        align-items: flex-start;
+      }
+      .gate b {
+        color: var(--amber);
+      }
+
+      code.k {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--sky);
+      }
+      .note {
+        margin-top: 26px;
+        border-left: 2px solid var(--border-strong);
+        padding: 2px 0 2px 14px;
+        font-size: 12.5px;
+        color: #bdbdbd;
+        line-height: 1.65;
+        max-width: 78ch;
+      }
+      .note b {
+        color: var(--foreground);
+      }
+      h2.sec {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 30px 0 4px;
+      }
+      .sec-note {
+        font-size: 12.5px;
+        color: var(--muted-foreground);
+        margin: 0 0 13px;
+        max-width: 74ch;
+        line-height: 1.55;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>A maintainer loop — same primitive, different source of work</h1>
+      <p class="lede">
+        Issue #44 asks for an agent that works a repo's issue queue automatically. The question
+        worth answering before building anything is whether that is a <em>second feature</em> or the
+        <em>same loop</em> pointed at a different backlog. It is the same loop. Only two things
+        change, and both of them are configuration.
+      </p>
+
+      <div class="cmp">
+        <div class="cmp-c">
+          <h2>Overnight loop</h2>
+          <dl class="kv">
+            <dt>Trigger</dt>
+            <dd class="same">thread went quiet</dd>
+            <dt>Reactor</dt>
+            <dd class="same">idle-clock tick</dd>
+            <dt>Budget</dt>
+            <dd class="same">check-ins + deadline</dd>
+            <dt>Guards</dt>
+            <dd class="same">all 15, unchanged</dd>
+            <dt>Console</dt>
+            <dd class="same">blockers + questions</dd>
+            <dt class="diff">Work comes from</dt>
+            <dd class="diff">this thread's unfinished work</dd>
+            <dt class="diff">Ends when</dt>
+            <dd class="diff">the agent writes the done-file</dd>
+          </dl>
+        </div>
+        <div class="cmp-c">
+          <h2>Maintainer loop</h2>
+          <dl class="kv">
+            <dt>Trigger</dt>
+            <dd class="same">thread went quiet</dd>
+            <dt>Reactor</dt>
+            <dd class="same">idle-clock tick</dd>
+            <dt>Budget</dt>
+            <dd class="same">check-ins + deadline</dd>
+            <dt>Guards</dt>
+            <dd class="same">all 15, unchanged</dd>
+            <dt>Console</dt>
+            <dd class="same">blockers + questions</dd>
+            <dt class="diff">Work comes from</dt>
+            <dd class="diff">a label query on the issue tracker</dd>
+            <dt class="diff">Ends when</dt>
+            <dd class="diff">the query returns nothing</dd>
+          </dl>
+        </div>
+      </div>
+
+      <h2 class="sec">What it looks like running</h2>
+      <p class="sec-note">
+        The console is the same console. The only genuinely new panel is the queue itself — and it
+        is read-only, because a maintainer loop that can close its own issues is a maintainer loop
+        that can hide its own failures.
+      </p>
+
+      <div class="frame">
+        <div class="fbar">
+          <span class="loop-glyph t-sky pulse"
+            ><svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <path d="M21 12a9 9 0 1 1-3.3-6.96" />
+              <path d="M21 4v5h-5" /></svg
+          ></span>
+          <strong style="font-size: 13.5px; font-weight: 540">Maintainer: issue queue</strong>
+          <span class="pill sky"><span class="dot sky pulse"></span>Working</span>
+          <span class="grow"></span>
+          <span class="s12 t-muted tnum">check-in 2 of 8 · stops 09:00</span>
+        </div>
+        <div class="fbody">
+          <div class="between mb12">
+            <div>
+              <div class="s15 w500">
+                Working <code class="k">radroid/t3code</code> · label
+                <code class="k">ready-for-agent</code>
+              </div>
+              <div class="s12 t-muted mt4">
+                Oldest first · one worktree per issue · plans and comments in v1, draft PRs opt-in
+                later · never pushes, never merges, never closes.
+              </div>
+            </div>
+            <button class="btn sm">Pause queue</button>
+          </div>
+
+          <div class="iq">
+            <div class="iq-row head">
+              <span></span><span>Issue</span><span>Title</span><span>Outcome</span><span>PR</span>
+            </div>
+
+            <div class="iq-row doing">
+              <span class="dot sky pulse"></span>
+              <span class="num">#113</span>
+              <span class="ttl">How should $ invoke disable-model-invocation skills?</span>
+              <span class="out t-sky">writing tests · 22m</span>
+              <span class="out">—</span>
+            </div>
+
+            <div class="iq-row">
+              <span class="dot emerald"></span>
+              <span class="num">#112</span>
+              <span class="ttl">What does registering a right-panel tab actually cost?</span>
+              <span class="out">answered in a comment</span>
+              <span class="out">no code needed</span>
+            </div>
+
+            <div class="iq-row">
+              <span class="dot emerald"></span>
+              <span class="num">#109</span>
+              <span class="ttl">Where exactly does a picked $ skill get dropped?</span>
+              <span class="out">draft PR opened</span>
+              <span class="out"><span class="t-emerald">#118</span> · 4 files</span>
+            </div>
+
+            <div class="iq-row">
+              <span class="dot indigo"></span>
+              <span class="num">#111</span>
+              <span class="ttl">Where does the panel's map data come from?</span>
+              <span class="out t-indigo">asked you a question</span>
+              <span class="out">parked</span>
+            </div>
+
+            <div class="iq-row">
+              <span class="dot zinc"></span>
+              <span class="num">#115</span>
+              <span class="ttl"
+                >Does the maintainer agent survive contact with the earlier pieces?</span
+              >
+              <span class="out">skipped — needs a human</span>
+              <span class="out">left a comment</span>
+            </div>
+
+            <div class="iq-row">
+              <span class="dot" style="background: rgb(255 255 255/16%)"></span>
+              <span class="num">#114</span>
+              <span class="ttl">What shape is the skill manifest?</span>
+              <span class="out">queued</span>
+              <span class="out">—</span>
+            </div>
+          </div>
+
+          <div class="gate">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              style="color: var(--amber); flex: 0 0 15px; margin-top: 1px"
+            >
+              <rect x="4" y="10" width="16" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+            <div style="font-size: 12.5px; line-height: 1.55">
+              <b>Two draft PRs are waiting for you.</b> A maintainer loop never merges and never
+              closes an issue — every output lands as a draft PR or a comment, and a human is the
+              only thing that promotes it. Without that rule, the failure mode is a bot that quietly
+              closes the issues it could not solve.
+              <div class="mt8">
+                <button class="btn sm">Review #118</button>
+                <button class="btn sm">Review #117</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="qsec-h">
+            <h2>Waiting on you</h2>
+            <span class="why">one question, and it did not stop the queue</span>
+          </div>
+          <div class="card" style="padding: 12px 14px">
+            <div class="row mb4">
+              <span
+                class="s11 w600 t-indigo"
+                style="letter-spacing: 0.05em; text-transform: uppercase"
+                >Question · #111</span
+              >
+              <span class="grow"></span>
+              <span class="s11 t-muted tnum">02:14</span>
+            </div>
+            <div class="s13" style="line-height: 1.5">
+              The map data could come from the seam ledger or from a fresh git walk. The ledger is
+              stale by a day; the walk takes ~40s on this repo. Which do you want?
+            </div>
+            <div class="s11 t-muted mt4">
+              Raised with <code class="k">raise_blocker</code> — the loop moved on to #113 rather
+              than waiting.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>Why this matters for sequencing.</b> If a maintainer bot is the same reactor with a
+        different backlog source and a different stop condition, then #44 is not a separate build —
+        it is a <em>second work-source adapter</em> on top of a shipped loop, and it should be
+        sequenced after the loop rather than beside it. The parts that look maintainer-specific —
+        the queue panel, the never-merge rule, the per-issue worktree — are all configuration and
+        UI, not new machinery. The one thing it genuinely needs that an overnight loop does not is a
+        <b>work-source abstraction</b>: something that answers "what should I do next" from outside
+        the thread. That is worth designing once, now, rather than retrofitting.
+      </div>
+    </div>
+  </body>
+</html>
