@@ -174,6 +174,11 @@ describe("subagent fan-out — an arm placed while other agents keep working", (
 
         // Due at 160s; polls land on 30s multiples, so 180s is the first and only chance.
         yield* advanceSteps(6);
+        // `advanceSteps` ends in `settleQuiet`, a fixed 10-pump spin that reactorHarness.ts
+        // documents as too short whenever the state change is gated behind the store's
+        // filesystem write — the same race that took CI red on 2026-08-07. Destruction is
+        // such a change, so wait for it to land rather than looking once and hoping.
+        yield* settleUntil(pendingCountIs(harness.store, 0), "the collided arm to be destroyed");
         expect(yield* harness.store.listPending).toHaveLength(0);
 
         // The straggler finishes immediately afterwards. Too late.
