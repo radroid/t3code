@@ -123,11 +123,18 @@ describe("simple predicates", () => {
     expect(isClaudeThread(makeThread({ providerName: null }))).toBe(false);
   });
 
-  it("threadIsGone covers deleted / archived / settled", () => {
+  it("threadIsGone covers deleted / archived", () => {
     expect(threadIsGone(makeThread({ deletedAt: "2026-01-01" }))).toBe(true);
     expect(threadIsGone(makeThread({ archivedAt: "2026-01-01" }))).toBe(true);
-    expect(threadIsGone(makeThread({ settledOverride: "settled" }))).toBe(true);
     expect(threadIsGone(makeThread({}))).toBe(false);
+  });
+
+  it("a settled thread is not gone — a server timer settles it, not the user", () => {
+    // Upstream #8600's ThreadSettlementReactor auto-settles an idle thread after
+    // 3 days by default, writing the same settledOverride an explicit settle
+    // writes. Reading it as "gone" cancelled every resume armed more than three
+    // days out — the seven_day window could never survive to fire.
+    expect(threadIsGone(makeThread({ settledOverride: "settled" }))).toBe(false);
   });
 
   it("threadIsProgressing covers running/starting session and running turn", () => {
@@ -170,6 +177,13 @@ describe("cancelReason", () => {
   const AFTER_REOPEN_ISO = "1970-01-01T00:00:06.000Z"; // 6_000ms — after the window opened
   const BEFORE_REOPEN_ISO = "1970-01-01T00:00:00.500Z"; // 500ms — inside the shut window
   const arm = () => ({ baseline: baseline(), resumeAtMs: REOPENS_AT_MS });
+
+  it("does not cancel a resume the server's idle sweep settled", () => {
+    // The end-to-end shape of the threadIsGone change: without it, upstream's
+    // 3-day auto-settle cancelled every arm waiting on the seven_day window.
+    const thread = makeThread({ settledOverride: "settled" });
+    expect(cancelReason(thread, arm())).toBeNull();
+  });
 
   it("returns null when nothing changed and thread is idle Claude", () => {
     expect(cancelReason(base(), arm())).toBeNull();

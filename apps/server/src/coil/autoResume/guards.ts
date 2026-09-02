@@ -100,11 +100,28 @@ export function isClaudeThread(thread: OrchestrationThread): boolean {
   return typeof name === "string" && name.toLowerCase() === CLAUDE_DRIVER_KIND.toLowerCase();
 }
 
-/** The thread is deleted, archived, or explicitly settled by the user. */
+/**
+ * The thread is deleted or archived — destinations a resume could not reach.
+ *
+ * `settledOverride === "settled"` used to belong here, back when only an
+ * explicit `thread.settle` command could write it. Upstream #8600 moved
+ * settlement server-side: `ThreadSettlementReactor` sweeps every minute and
+ * dispatches `thread.auto-settle`, which shares `thread.settle`'s decider case
+ * and emits the same `thread.settled` event with no provenance marker. Auto
+ * settle is on by default (3 days idle, or as soon as the thread's PR merges),
+ * so an armed week-long resume was reliably destroyed on day 3 by a timer,
+ * reported as `coil.auto-resume.cancelled reason: "thread-gone"` on a thread
+ * nobody had settled.
+ *
+ * That makes settledness the same ambiguous fact as the three incidents below:
+ * it no longer carries the "the human is done here" meaning the guard read into
+ * it, and there is no discriminator to recover it from. The user's actual
+ * opt-out is the per-thread auto-resume switch, honoured in `Reactor.fireOne`.
+ * Settling is also not a one-way door for a resume — sending a turn to a
+ * settled thread clears the override on upstream's own path.
+ */
 export function threadIsGone(thread: OrchestrationThread): boolean {
-  return (
-    thread.deletedAt !== null || thread.archivedAt !== null || thread.settledOverride === "settled"
-  );
+  return thread.deletedAt !== null || thread.archivedAt !== null;
 }
 
 /** The thread is actively working (or spinning up) — resuming would double up. */
