@@ -10,8 +10,9 @@
  * durable record untouched, and a mocked store would assert that the handler did not call a
  * method rather than that the file did not change.
  *
- * Not covered here: `POST /api/coil/loop/answer` (cases 81-83). It lands in phase 3 with the
- * console — see the TODO in `http.ts` for why it cannot be built correctly before then.
+ * `POST /api/coil/loop/answer` (cases 81 and 83) covers the **blocker** half only. Case 82's
+ * native half is deliberately absent: a native `AskUserQuestion` is answered through upstream's
+ * own composer path, which the console points at rather than cloning — see the route's own note.
  */
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -49,6 +50,7 @@ import { LoopStore, makeLoopStore, type LoopStoreShape } from "./state.ts";
 const PATH = "/api/coil/loop";
 const LOOPS_PATH = "/api/coil/loops";
 const SETTINGS_PATH = "/api/coil/loop/settings";
+const ANSWER_PATH = "/api/coil/loop/answer";
 
 const THREAD_ID = "thread-a";
 const PROJECT_ID = ProjectId.make("project-a");
@@ -872,6 +874,172 @@ describe("/api/coil/loop derived state", () => {
           );
           assert.strictEqual(view.derived.state, "stopped");
           assert.strictEqual(view.derived.stoppedReason, "spent", "spent is never done");
+        }),
+    }));
+});
+
+describe("/api/coil/loop/answer", () => {
+  const blocker = (overrides: Record<string, unknown> = {}) => ({
+    id: "blocker-1",
+    raisedAtMs: 1_000,
+    question: "Migrate in place or backfill?",
+    options: [],
+    context: null,
+    answeredAtMs: null,
+    answer: null,
+    deliveredToAgent: false,
+    ...overrides,
+  });
+
+  it("rejects a bad credential and a read-only one, like every other route", () =>
+    withRoutes({
+      auth: authFails(new EnvironmentAuth.ServerAuthInvalidCredentialError({})),
+      body: () =>
+        Effect.gen(function* () {
+          const response = yield* postJson(ANSWER_PATH, {
+            threadId: THREAD_ID,
+            blockerId: "blocker-1",
+            answer: "yes",
+          });
+          assert.strictEqual(response.status, 401);
+        }),
+    }));
+
+  it("refuses a read-scope credential — answering mutates scheduling", () =>
+    withRoutes({
+      auth: authOk([AuthOrchestrationReadScope]),
+      body: () =>
+        Effect.gen(function* () {
+          const response = yield* postJson(ANSWER_PATH, {
+            threadId: THREAD_ID,
+            blockerId: "blocker-1",
+            answer: "yes",
+          });
+          assert.strictEqual(response.status, 403);
+        }),
+    }));
+
+  // 81 — the answer is recorded and stays UNDELIVERED: the thread is idle, so nothing has told
+  // the agent yet. `deliveredToAgent` is what stops the next check-in either losing it or
+  // restating it twice.
+  it("records the answer and leaves it undelivered", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          yield* store.addBlocker(THREAD_ID, blocker());
+
+          const response = yield* postJson(ANSWER_PATH, {
+            threadId: THREAD_ID,
+            blockerId: "blocker-1",
+            answer: "migrate in place",
+          });
+          assert.strictEqual(response.status, 200);
+          assert.deepStrictEqual(yield* jsonBody(response), { ok: true });
+
+          const record = yield* store.getThread(THREAD_ID);
+          const stored = record.blockers[0];
+          assert.strictEqual(stored?.answer, "migrate in place");
+          assert.notStrictEqual(stored?.answeredAtMs, null);
+          assert.strictEqual(stored?.deliveredToAgent, false);
+
+          // And it drops out of the console's actionable list.
+          const view = yield* decodeLoopView(
+            yield* jsonBody(yield* getJson(`${PATH}?threadId=${THREAD_ID}`)),
+          );
+          assert.deepStrictEqual(view.blockers, []);
+        }),
+    }));
+
+  it("is idempotent — a second answer keeps the first", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          yield* store.addBlocker(THREAD_ID, blocker());
+          yield* postJson(ANSWER_PATH, {
+            threadId: THREAD_ID,
+            blockerId: "blocker-1",
+            answer: "first",
+          });
+          const second = yield* postJson(ANSWER_PATH, {
+            threadId: THREAD_ID,
+            blockerId: "blocker-1",
+            answer: "second",
+          });
+
+          assert.strictEqual(second.status, 200);
+          const record = yield* store.getThread(THREAD_ID);
+          assert.strictEqual(record.blockers.length, 1, "not a second append");
+          assert.strictEqual(record.blockers[0]?.answer, "first");
+        }),
+    }));
+
+  // 83 — an id nobody raised. A silent 200 would show the console an answer that was never stored.
+  it("404s an unknown blocker id, and an unknown thread", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          yield* store.addBlocker(THREAD_ID, blocker());
+
+          assert.strictEqual(
+            (yield* postJson(ANSWER_PATH, {
+              threadId: THREAD_ID,
+              blockerId: "never-raised",
+              answer: "yes",
+            })).status,
+            404,
+          );
+          assert.strictEqual(
+            (yield* postJson(ANSWER_PATH, {
+              threadId: "never-seen",
+              blockerId: "blocker-1",
+              answer: "yes",
+            })).status,
+            404,
+          );
+        }),
+    }));
+
+  it("400s a malformed body and mutates nothing", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          yield* store.addBlocker(THREAD_ID, blocker());
+
+          const malformed = [
+            ["no fields", {}],
+            ["no blockerId", { threadId: THREAD_ID, answer: "yes" }],
+            ["no answer", { threadId: THREAD_ID, blockerId: "blocker-1" }],
+            ["empty blockerId", { threadId: THREAD_ID, blockerId: "  ", answer: "yes" }],
+            ["empty threadId", { threadId: "", blockerId: "blocker-1", answer: "yes" }],
+            ["a non-string answer", { threadId: THREAD_ID, blockerId: "blocker-1", answer: 3 }],
+          ] as const;
+          for (const [label, body] of malformed) {
+            const response = yield* postJson(ANSWER_PATH, body);
+            assert.strictEqual(response.status, 400, label);
+            assert.strictEqual((yield* jsonBody(response)).error, "invalid_body", label);
+          }
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).blockers[0]?.answer, null);
+        }),
+    }));
+
+  // A caller-controlled threadId reaches `Object.hasOwn` in the store on this route too.
+  it("handles a prototype-chain threadId as an ordinary unknown thread", () =>
+    withRoutes({
+      threads: [],
+      body: () =>
+        Effect.gen(function* () {
+          for (const hostile of ["constructor", "__proto__", "toString"]) {
+            const response = yield* postJson(ANSWER_PATH, {
+              threadId: hostile,
+              blockerId: "blocker-1",
+              answer: "yes",
+            });
+            assert.strictEqual(response.status, 404, `answer threadId=${hostile} must not 500`);
+          }
         }),
     }));
 });
