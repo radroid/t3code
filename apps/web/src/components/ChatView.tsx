@@ -5665,6 +5665,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (!sendCtx?.providerAvailable) return;
     const {
       images: composerImages,
+      files: composerFiles,
       terminalContexts: composerTerminalContexts,
       elementContexts: composerElementContexts,
       previewAnnotations: composerPreviewAnnotations,
@@ -5676,9 +5677,21 @@ function ChatViewContent(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
     const promptForSend = promptRef.current;
+    // Files count towards sendable content exactly as images do (upstream #8236
+    // added the second attachment class and counts both on its own send path).
+    // Counting only images here would disagree with the button, which reads
+    // upstream's files-aware state: a files-only composer renders Queue enabled
+    // and then does nothing at all when it is pressed.
+    const queuedAttachmentCount = composerImages.length + composerFiles.length;
+    const queuedAttachmentNoun =
+      composerImages.length > 0 && composerFiles.length > 0
+        ? "Attachments"
+        : composerFiles.length > 0
+          ? "Files"
+          : "Images";
     const { sendableTerminalContexts, hasSendableContent } = deriveComposerSendState({
       prompt: promptForSend,
-      imageCount: composerImages.length,
+      imageCount: queuedAttachmentCount,
       terminalContexts: composerTerminalContexts,
       elementContextCount:
         composerElementContexts.length +
@@ -5699,20 +5712,20 @@ function ChatViewContent(props: ChatViewProps) {
       messageTextWithPreviewAnnotations,
       composerReviewComments,
     );
-    // The queue is text-only. If the composer holds nothing but image
-    // attachments (no text and no non-image context survived), there is nothing
-    // we can faithfully queue: enqueuing the image-only bootstrap prompt would
-    // deliver a message claiming images are attached while carrying none, and
-    // clearing the draft would destroy the image. Warn and leave the composer
-    // intact so the user can add text, or wait for the thread to idle and send.
+    // The queue is text-only. If the composer holds nothing but attachments (no
+    // text and no non-attachment context survived), there is nothing we can
+    // faithfully queue: enqueuing the attachment-only bootstrap prompt would
+    // deliver a message claiming attachments while carrying none, and clearing
+    // the draft would destroy them. Warn and leave the composer intact so the
+    // user can add text, or wait for the thread to idle and send.
     if (messageTextForSend.trim().length === 0) {
-      if (composerImages.length > 0) {
+      if (queuedAttachmentCount > 0) {
         toastManager.add(
           stackedThreadToast({
             type: "warning",
-            title: "Images can't be queued",
+            title: `${queuedAttachmentNoun} can't be queued`,
             description:
-              "Queued messages are text-only. Add a message to queue, or wait until the chat is idle to send with the image.",
+              "Queued messages are text-only. Add a message to queue, or wait until the chat is idle to send with the attachment.",
           }),
         );
       }
@@ -5755,16 +5768,16 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
 
-    // Warn about dropped images only after the text message actually entered the
-    // queue, so a failed enqueue never misinforms the user that images were
-    // "not added" when nothing was queued at all.
-    if (composerImages.length > 0) {
+    // Warn about dropped attachments only after the text message actually
+    // entered the queue, so a failed enqueue never misinforms the user that
+    // attachments were "not added" when nothing was queued at all.
+    if (queuedAttachmentCount > 0) {
       toastManager.add(
         stackedThreadToast({
           type: "warning",
-          title: "Images aren't queued",
+          title: `${queuedAttachmentNoun} aren't queued`,
           description:
-            "Queued messages are text-only; attached images were not added to the queued message.",
+            "Queued messages are text-only; attachments were not added to the queued message.",
         }),
       );
     }
