@@ -63,7 +63,6 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
-import { T3xLayerLive, T3xRoutesLive } from "./t3x/index.ts"; // t3x fork seam — all fork-local features fan in here
 import { CoilLayerLive, CoilRoutesLive } from "./coil/index.ts"; // coil fork seam — all fork-local features fan in here
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
