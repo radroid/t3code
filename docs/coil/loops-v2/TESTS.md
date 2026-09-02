@@ -16,9 +16,11 @@ Written against the conventions already in the tree, not invented:
 Counts below are cases, not files. **★** marks a case that encodes a bug this design exists to
 prevent — if you cut scope, do not cut these.
 
-**The total is 162.** Cases inserted into an existing sequence carry a letter suffix rather than
-renumbering everything after them (`11b`–`11k`, `70b`–`70i`, `118b`–`118f`, `136b`–`136c`), so a
-case number cited elsewhere keeps meaning the same case.
+**The total is 183.** Cases inserted into an existing sequence carry a letter suffix rather than
+renumbering everything after them (`11b`–`11l`, `45b`–`45d`, `70b`–`70k`, `86b`–`86e`,
+`118b`–`118h`, `136b`–`136c`), so a case number cited elsewhere keeps meaning the same case. The
+2026-09-02 review (issue #125) added 21 and rewrote four; every one of them is marked
+**`[#125]`** so the delta is auditable.
 
 ---
 
@@ -57,8 +59,11 @@ decide whether the two schedulers cooperate or fight.
 inside the run.
 11d. `nextFireAtMs` in the past **with** `updatedAt` movement after it → the wake landed; clear it
 and treat the thread as normally active. Detected immediately, without waiting out `graceMs`.
-11e. `nextFireAtMs` overdue by more than `graceMs` **without** `updatedAt` movement → `fire`,
-reason `wake_lost`. ★ Inside `graceMs` T3 still stands down. `graceMs` is **derived from the
+11e. `nextFireAtMs` overdue by `graceMs` **or more**, without `updatedAt` movement → `fire`,
+reason `wake_lost`. ★ **The boundary is inclusive** — guard 10b is `now >= nextFireAtMs + graceMs`,
+the same way case 2's threshold is inclusive, and case 11k says so at the other end. `[#125]` an
+earlier draft of this case said "more than", which disagreed with both. Strictly inside `graceMs`
+T3 still stands down. `graceMs` is **derived from the
 recorded entry**, not a constant: `max(90s, min(0.10 × period, 15min))` when `recurring: true`,
 90s for a one-shot. This is the strongest trigger in the design: an unmet commitment, not an
 inference — so the grace has to be wide enough that jitter alone never trips it (11k).
@@ -75,7 +80,8 @@ that the exposure was bounded without a second rule because the binary clamps a 
 `ScheduleWakeup` takes `delaySeconds`, clamped; `CronCreate` takes a 5-field expression with no
 hour bound. Unbounded deference therefore stands T3 down for up to 24h on the first, and
 indefinitely on the second. The deadline is the cap because past it there is nothing left to
-defer to; whether that is the right cap, or an explicit `maxDeferMs` is, is open beside Q1.
+defer to. `[#125]` **Resolved**: the deadline is the cap and no `maxDeferMs` knob is added
+(PLAN Q1).
 11k. A `recurring: true` 30-minute wake that lands **2 minutes late** → **no** `wake_lost` and no
 fire. ★ From the binary's own scheduler text: "recurring tasks fire up to 10% of their period
 late (max 15 min); one-shot tasks landing on :00 or :30 fire up to 90 s early." The 90s is the
@@ -86,14 +92,31 @@ derivation too: a 30-minute period tolerates 3 min, a 20-minute period 2 min, an
 period 15 min and not more (the cap binds). The floor is inclusive the same way case 2 is: at
 exactly `graceMs` the wake counts as lost.
 
+11l. `[#125]` A record whose `deadlineAtMs` is the fail-closed decoding default `0` **never
+defers** and never fires: guard 4b stops it as `spent` before 10b is reached. ★ Assert the stop
+reason, and assert that no `nextFireAtMs` — however near — can produce a `skip` from such a
+record. This is the case the old `deadlineAtMs == null` branch got backwards: it read a missing
+deadline as "defer to nothing", i.e. fire freely on a healthy self-pacing thread.
+
 ### 1.2 Budget and deadline
 
 12. `checkInsUsed < maxCheckIns` → allowed.
 13. `checkInsUsed === maxCheckIns` → `stop("spent")`.
 14. `now >= deadlineAtMs` → `stop("spent")` **even when budget remains**. ★
-15. Deadline null → never stops on time.
+15. `[#125]` **Rewritten.** `deadlineAtMs` is a `number` and is never null — a null deadline is
+    not a state (BACKEND §3). What replaces the old "deadline null → never stops on time" case is
+    its inverse: a record decoded with the fail-closed default `0` → `stop("spent")` on the first
+    evaluation. ★ A deadline that did not survive a write must mean "over", never "unbounded";
+    the opposite default turns one corrupted byte into an unbounded overnight spend.
 16. Deadline in the past at arm time is rejected by the route, not silently accepted (see §5).
 17. `spent` is returned as `spent`, never as `done`. ★ (assert the literal, not truthiness)
+
+15b. `[#125]` The deadline stops the loop **while the thread is busy** — `busyTurn` true, idle
+below `busyIdleMs`, `now >= deadlineAtMs` → `stop("spent")`. ★ Guard 4b is swept before every
+○ guard for exactly this reason: with the old ordering a thread that never went idle never
+reached the stop check, and a self-paced run strolled through its own deadline indefinitely.
+15c. `[#125]` The sentinel is honoured while the thread is busy, for the same reason →
+`stop("done")`, not "noticed once it goes quiet". ★
 
 ### 1.3 Strikes
 
@@ -129,7 +152,16 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 31. `armed === false` → skip.
 32. Shell `None` → **disarm** (thread deleted).
 33. `archivedAt !== null` → disarm.
-34. `settledOverride === "settled"` → skip, budget intact. ★
+34. `[#125]` **Inverted.** `settledOverride === "settled"` → the loop **proceeds**; settledness
+    never blocks a check-in. ★ Guard 5 is retired. Upstream #8600 moved settlement server-side —
+    `ThreadSettlementReactor` sweeps every minute and dispatches `thread.auto-settle`, which shares
+    `thread.settle`'s decider case and emits the same event **with no provenance marker** — so the
+    flag no longer distinguishes "a human is done here" from "a timer fired". `autoResume/guards.ts`
+    already made this correction after a timer destroyed an armed week-long resume on day 3.
+    34b. `[#125]` The failure the retirement prevents, as a scenario: arm a loop, let a simulated
+    auto-settle write `settledOverride: "settled"`, and assert the loop still checks in. ★ With the
+    old guard it would have sat armed and silently done nothing until its deadline, then reported
+    `spent` — a ○ skip never stops, so the failure is invisible rather than loud.
 35. `snoozedUntil` in the future → skip, budget intact. ★
 36. `snoozedUntil` in the past → passes.
 37. `hasPendingApprovals` → skip. ★
@@ -141,6 +173,15 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
 43. `now - lastCheckIn.firedAtMs < idleMs` → skip, **even if the idle threshold appears met**. ★
     (structural anti-tight-loop floor; must hold even when `updatedAt` never bumps)
 44. `armedCount >= maxArmedThreads` → skip.
+    45b. `[#125]` **Guard 4b is swept before every ○ guard.** A record that is both past its deadline
+    _and_ rate-limited reports `stop("spent")`, not `skip("rate-limited")`. ★ Assert the returned
+    decision, because "the loop is held" and "the loop is over" are different words on the console
+    and the wrong one hides a finished run behind a hold.
+    45c. `[#125]` Guard 4b runs after guard 4, not before it: a deleted thread **disarms**, it does not
+    report `spent`. Order matters in both directions.
+    45d. `[#125]` Guard 2 (the master toggle) still precedes 4b: with the toggle off, a loop past its
+    deadline reports `standing_down` / `disabled` and is **not** stopped. ★ The toggle stands loops
+    down; it never manufactures terminal states nobody chose.
 45. **Guard order is asserted explicitly**: a record that trips several guards reports the
     _first_ one, because that string is what the console renders. ★
 46. A skip never increments `checkInsUsed` — asserted across every ○ guard in one table-driven case. ★
@@ -174,6 +215,11 @@ Each guard gets: passes-when-satisfied, blocks-when-not, and **the right kind of
     One case per field — this is the highest-severity footgun in the module, because a
     whole-file decode failure becomes `EMPTY_STATE` and silently disarms every loop.
 62. A corrupt/truncated file → `EMPTY_STATE` and an error log, never a throw at boot.
+    61b. `[#125]` Every decoding default is asserted to be the **fail-closed** value, not merely
+    present: `armed: false`, `deadlineAtMs: 0`, `maxCheckIns: 0`, `crons: null`,
+    `pinnedByLoop: false`, `global.enabled: false`. ★ Case 61 proves a missing field still decodes;
+    this proves it decodes to the reading that spends nothing. A default meaning "unbounded" would
+    turn one truncated write into an unbounded overnight spend.
 63. Unknown extra keys are tolerated (forward compatibility with a newer build).
 64. Concurrent mutations from two fibers serialize through the `SynchronizedRef` with no lost
     update. ★
@@ -209,6 +255,14 @@ today's.
 A fork observability bug must not be able to break a turn.
 70g. `SubagentStop` is handled identically to `Stop`.
 70h. The record survives a store round-trip (it is the only durable copy of the wake).
+70j. `[#125]` A `PostToolUse` callback matched on `ScheduleWakeup` whose `tool_response`
+stringifies to something containing `gate_off` writes `degraded: "gate_off"`. ★ The plumbing is
+verified — `HookCallbackMatcher.matcher` selects by tool name, and `PostToolUseHookInput` carries
+`tool_name` and `tool_response` `[V - external]` — but the response **body** is not, so this is a
+substring probe, not a parse.
+70k. `[#125]` A `tool_response` that does **not** contain the marker leaves `degraded` untouched —
+it is never inferred, never guessed, and a successful call never clears an unrelated degraded
+state by accident. ★ A probe that finds nothing must behave exactly like no probe.
 70i. The entry's `prompt` arrives **truncated to 1000 characters by the binary**. ★ Assert a
 longer prompt round-trips as the truncation, and that no fork path treats it as the agent's full
 prompt — the trigger reads `schedule` and `recurring`; `prompt` is console display text and
@@ -227,8 +281,20 @@ receive.
     non-bypassable; a silent clamp hides a mistake)
 76. `POST` arm with `maxCheckIns < 1` → 400.
 77. `POST` arm with a deadline in the past → 400. ★
+    77b. `[#125]` `POST` arm with **no** deadline → `400 deadline_required`. ★ Not a clamp and not a
+    default: a null deadline is not a state (D9, BACKEND §3). Assert the error code, because the
+    console distinguishes it from the past-deadline 400.
 78. `POST` arm when already at `maxArmedThreads` → 400, and **the tick re-checks it too**, so a
     hand-edited state file cannot exceed the ceiling. ★
+    78b. `[#125]` `POST` arm on a **snoozed** thread → `400 thread_snoozed`, and **no** `thread.pin` is
+    dispatched. ★ `thread.pin`'s decider case emits companion `thread.unsettled` /
+    `thread.unsnoozed` events `[V]`, so arming would otherwise silently cancel a snooze the human
+    set. Assert the absence of the dispatch, not just the status code.
+    78c. `[#125]` `POST` arm on a **settled** thread succeeds and pins; the resulting unsettle is
+    correct, because arming is the human asking for the thread to run.
+    78d. `[#125]` `pinnedByLoop` gates the unpin: arming a thread that was **already pinned** records
+    `pinnedByLoop: false`, and disarming it dispatches **no** `thread.unpin`. ★ Otherwise disarming
+    a loop removes a pin the user set themselves, and nothing records that it was ever theirs.
 79. `POST` disarm on a running loop → disarmed, terminal reason `handed-back`.
 80. `POST` re-arm after `spent` → clears terminal, fresh budget.
 81. `POST answer` on a blocker → recorded, `deliveredToAgent` false.
@@ -238,6 +304,17 @@ receive.
 84. Malformed JSON body → 400, no state mutation.
 85. Every response shape decodes against its schema (guards against drift with the client).
 86. `GET /api/coil/loops` returns every armed loop across projects, ordered deterministically.
+    86b. `[#125]` `GET /api/coil/loop/settings` on a fresh install returns the global block with
+    `enabled: false` and every default populated from config. The route exists in **phase 2**, with
+    the reactor — shipping "default off behind the master toggle" while only phase 4 could flip it
+    left phases 2 and 3 unswitchable.
+    86c. `[#125]` `POST /api/coil/loop/settings` writes the master toggle durably, and the next tick
+    observes it. ★ The toggle is re-read every tick _and_ pre-dispatch, so assert both.
+    86d. `[#125]` Toggling off leaves every armed loop **armed**: `armed` stays true, `stopped` stays
+    null, `checkInsUsed` is unchanged, and each reports `standing_down` / `disabled`. ★ Toggling
+    back on resumes the same loops with the same budgets. The toggle is a guard, not a lifecycle.
+    86e. `[#125]` `POST` settings with `maxArmedThreads` below the current armed count is accepted and
+    the excess loops stand down at the next tick rather than being disarmed — same rule as 86d.
 
 ---
 
@@ -295,6 +372,10 @@ receive.
 116. `loop_done` writes the terminal state and is equivalent to the sentinel file.
 117. `loop_done` from a thread with no loop is a no-op, not a crash.
 118. All three tools are unavailable when the global toggle is off. ★
+     118g. `[#125]` With `enableAgentBrowserAccess` off, the MCP credential is never minted `[V]`, so all
+     three tools vanish. Assert the console renders a **named** degraded state, not an empty blocker
+     list. ★ A missing question channel that looks like "no questions" is the exact failure mode
+     `raise_blocker` exists to prevent.
 
 ### 7b. Voided questions (upstream #5127)
 
@@ -306,6 +387,14 @@ The agent gets `{}` from upstream; the console must not report that as a human d
 118e. The console renders a voided question as still needing attention, with the reason. ★
 118f. A voided question does **not** count as a blocking guard hit on the next tick — the block is
 gone, so the loop may proceed, but the console still shows it. ★
+118h. `[#125]` **The loop can manufacture its own blocker.** Upstream #8144 added `onUserDialog`
+with `supportedDialogKinds: ["resume_return"]` to the same `queryOptions` object phase 1 edits
+`[V]`, routing into the same blocking `Deferred` as `AskUserQuestion` and firing on **session
+resume** — so a check-in landing on a torn-down session can park the loop on a dialog the loop
+itself caused. Assert three things: guard 8 still skips (nudging past a pending input is worse);
+the fork's `user-input.requested` record carries the **dialog kind**, so the console can say
+"waiting on a session-resume confirmation since 01:04" rather than showing an unexplained idle
+loop; and the loop spends nothing while parked and ends `spent`, not `stalled`. ★
 
 ---
 
@@ -338,6 +427,15 @@ Heavier tests; a handful, each replaying a real failure.
      deadline, strikes and `armedAtMs` all survive and the loop continues from check-in 3. ★
 130. **Reboot storm.** Three armed threads, all long-idle, server restarts. Assert none fire on
      the first tick and they do not all fire simultaneously afterwards. ★
+     130b. `[#125]` **Upstream's restart continuation.** `5b7d72aad` (#9167) re-establishes a binding
+     after a self-update and dispatches `session.status: "starting", activeTurnId: null`
+     synchronously at startup, while the actual `sendTurn` waits on server activation — a real
+     window in which a continued thread looks idle with no error. Assert the loop does not fire in
+     it and spends nothing. ★ Two independent mechanisms already cover it and **neither was added
+     for this**, which is the point of the case: `busyTurn` counts `"starting"`, so the fuse is
+     `busyIdleMs`; and `processStartedAtMs` floors the idle clock at process start. Also assert the
+     premise the feature rests on: a thread waiting on a scheduled wake has no `activeTurnId`, so
+     upstream never marks it for continuation and the durability gap is untouched.
 131. **Loop vs auto-resume.** A rate limit arrives while a loop is armed with auto-resume off.
      Assert the loop does not nudge into the live limit and spends no budget. ★
 132. **Loop vs auto-resume, the other direction.** A pending auto-resume exists; assert the loop
@@ -390,3 +488,8 @@ Heavier tests; a handful, each replaying a real failure.
   without that property fails the suite.
 - A test that fails if a new field is added to `LoopRecord` without a decoding default. ★
   (schema-reflective; this is the failure that silently disarms every loop on the machine)
+- `[#125]` **A guard-provenance review, once per guard, written down rather than tested.** Before
+  any guard is added, answer: _could a server timer write this value?_ Guard 5 died because
+  `settledOverride` changed answer from "no" to "yes" when upstream #8600 landed, and nothing in the
+  suite could notice — the old test passed, asserting the wrong behaviour. No test catches a
+  predicate whose _meaning_ moved, so this is a checklist item, not a case.
