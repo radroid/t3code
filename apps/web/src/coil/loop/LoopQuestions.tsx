@@ -32,7 +32,9 @@ import { cn } from "~/lib/utils";
 
 import type { LoopBlocker, LoopUserInput, LoopView } from "./loopClient";
 import {
+  describeBlockingHint,
   formatAge,
+  hasLoop,
   partitionBlockers,
   partitionUserInputs,
   resolveDeferredChannelNotice,
@@ -89,9 +91,8 @@ function QuestionCard({
 
 function BlockingSection({ view, nowMs }: { readonly view: LoopView; readonly nowMs: number }) {
   const { open } = partitionUserInputs(view.record.userInputs);
-  const derived = view.derived;
-  const blockedOnSomething = derived.state === "blocked";
-  if (open.length === 0 && !blockedOnSomething) return null;
+  const hint = describeBlockingHint(view.derived);
+  if (open.length === 0 && hint === null) return null;
 
   return (
     <section>
@@ -110,13 +111,17 @@ function BlockingSection({ view, nowMs }: { readonly view: LoopView; readonly no
           <p className="mt-1 text-[12.5px] leading-snug">{entry.question}</p>
         </QuestionCard>
       ))}
-      {blockedOnSomething ? (
+      {hint === null ? null : (
         <p className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
-          <ArrowDownIcon aria-hidden="true" className="size-3 shrink-0" />
-          {/* Pointing at the live control rather than cloning it — see the module note. */}
-          Answer it in the composer below. The loop resumes on its own once you do.
+          {/* Pointing at the live control rather than cloning it — see the module note. The
+              arrow only makes sense when the thing to do IS below; a snooze is undone
+              elsewhere, so the copy says so and the arrow goes. */}
+          {view.derived.reason === "snoozed" ? null : (
+            <ArrowDownIcon aria-hidden="true" className="size-3 shrink-0" />
+          )}
+          {hint}
         </p>
-      ) : null}
+      )}
     </section>
   );
 }
@@ -201,7 +206,13 @@ function DeferredSection({
   readonly onAnswer: (blockerId: string, answer: string) => void;
 }) {
   const { open, banked, delivered } = partitionBlockers(view.record.blockers);
-  const notice = resolveDeferredChannelNotice({ browserAccessKnown, browserAccessEnabled });
+  // `loopExists` is what keeps this off every thread in the app: with no loop here nothing
+  // would have used the channel, so the warning is noise rather than a fact about this thread.
+  const notice = resolveDeferredChannelNotice({
+    browserAccessKnown,
+    browserAccessEnabled,
+    loopExists: hasLoop(view),
+  });
   if (notice === null && open.length === 0 && banked.length === 0 && delivered.length === 0) {
     return null;
   }

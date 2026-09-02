@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { usePrimarySettings, usePrimarySettingsAvailable } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 
 import { useComposerAnchor } from "../composerAnchor";
 import { LoopArmForm } from "./LoopArmForm";
@@ -39,6 +40,7 @@ import type { LoopSettings, LoopView, LoopWriteBody } from "./loopClient";
 import { httpLoopClient } from "./loopClient";
 import type { LoopTone } from "./loopPresentation";
 import {
+  canRenderLoopConsole,
   countWaiting,
   describeCheckInRow,
   describeEmptyState,
@@ -46,6 +48,8 @@ import {
   describeRefusal,
   formatAge,
   formatClock,
+  hasLoop,
+  hasQuestionSections,
   summariseBounds,
 } from "./loopPresentation";
 import { useLoopPolling } from "./useLoopPolling";
@@ -100,6 +104,14 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
 
   const browserAccessKnown = usePrimarySettingsAvailable();
   const browserAccessEnabled = usePrimarySettings((settings) => settings.enableAgentBrowserAccess);
+
+  // Every fork route is called against the primary environment, so on a thread that belongs
+  // to another one the console would answer for a thread id that server has never heard of.
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const consoleTargetsThisThread = canRenderLoopConsole({
+    primaryEnvironmentId,
+    threadEnvironmentId: threadRef.environmentId,
+  });
 
   const loadView = useCallback(() => httpLoopClient.read(threadId), [threadId]);
   const loop = useLoopPolling<LoopView>(threadId, loadView);
@@ -163,19 +175,18 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
   const view = loop.value;
   // One clock read per load, not one per second. Every age in the panel is relative to it.
   const nowMs = loop.lastLoadedAtMs ?? 0;
-  const state = useMemo(() => (view === null ? null : describeLoopState(view.derived)), [view]);
+  const state = useMemo(
+    () => (view === null ? null : describeLoopState(view.derived, nowMs)),
+    [nowMs, view],
+  );
   const waiting = view === null ? 0 : countWaiting(view);
 
-  if (view === null || state === null) {
+  if (view === null || state === null || !consoleTargetsThisThread) {
     return null;
   }
 
   const empty = describeEmptyState(view, nowMs);
-  const hasQuestions =
-    view.record.blockers.length > 0 ||
-    view.record.userInputs.length > 0 ||
-    view.derived.state === "blocked" ||
-    (browserAccessKnown && !browserAccessEnabled);
+  const hasQuestions = hasQuestionSections(view, { browserAccessKnown, browserAccessEnabled });
 
   return (
     <div
@@ -207,9 +218,9 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
               className={cn("size-1.5 rounded-full", TONE_DOT[state.tone])}
             />
             <span className={cn("font-medium", TONE_TEXT[state.tone])}>{state.label}</span>
-            {view.record.armed || view.record.stopped !== null ? (
+            {hasLoop(view) ? (
               <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
-                {summariseBounds(view.derived)}
+                {summariseBounds(view.derived, nowMs)}
               </span>
             ) : null}
             {waiting > 0 ? (
@@ -269,7 +280,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
                 </div>
               )}
 
-              {view.record.armed || view.record.stopped !== null ? (
+              {hasLoop(view) ? (
                 <>
                   <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
                     <Fact
@@ -280,7 +291,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
                       label="Stops by"
                       value={
                         view.derived.deadlineAtMs > 0
-                          ? formatClock(view.derived.deadlineAtMs)
+                          ? formatClock(view.derived.deadlineAtMs, nowMs)
                           : "not set"
                       }
                     />
@@ -293,7 +304,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
                       value={
                         view.derived.nextWakeAtMs === null
                           ? "none recorded"
-                          : formatClock(view.derived.nextWakeAtMs)
+                          : formatClock(view.derived.nextWakeAtMs, nowMs)
                       }
                     />
                   </dl>

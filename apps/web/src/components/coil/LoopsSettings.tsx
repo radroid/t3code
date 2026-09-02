@@ -24,6 +24,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback } from "react";
 
+import { Button } from "~/components/ui/button";
 import {
   SettingsPageContainer,
   SettingsRow,
@@ -87,16 +88,49 @@ function NumberSetting({
 }
 
 /**
+ * "We could not read that" — with a way to try again.
+ *
+ * The panel used to render every non-200 as "Loading…", which is a lie that never resolves:
+ * a 403, an offline server or a route that is not deployed left the roster claiming to be
+ * busy forever with every control disabled and nothing to click.
+ */
+function LoadFailed({ what, onRetry }: { readonly what: string; readonly onRetry: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-3 sm:px-4">
+      <p className="text-muted-foreground text-xs">Could not load {what}.</p>
+      <Button onClick={onRetry} size="sm" type="button" variant="outline">
+        Try again
+      </Button>
+    </div>
+  );
+}
+
+/**
  * "Did any of my runs give up overnight?" answered from one page.
  *
  * Arming is deliberately *not* here: it is a decision made at the moment you walk away from a
  * thread, not one made in Settings.
  */
-function ArmedRoster({ loops }: { readonly loops: ReadonlyArray<LoopView> | null }) {
+function ArmedRoster({
+  loops,
+  failed,
+  nowMs,
+  onRetry,
+}: {
+  readonly loops: ReadonlyArray<LoopView> | null;
+  readonly failed: boolean;
+  /** The load's own clock read, so a deadline that is not today carries its date. */
+  readonly nowMs: number;
+  readonly onRetry: () => void;
+}) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
 
   if (loops === null) {
-    return <p className="px-3 text-muted-foreground text-xs sm:px-4">Loading…</p>;
+    return failed ? (
+      <LoadFailed onRetry={onRetry} what="the armed loops" />
+    ) : (
+      <p className="px-3 text-muted-foreground text-xs sm:px-4">Loading…</p>
+    );
   }
   if (loops.length === 0) {
     return (
@@ -109,7 +143,7 @@ function ArmedRoster({ loops }: { readonly loops: ReadonlyArray<LoopView> | null
   return (
     <ul className="flex flex-col gap-1 px-3 sm:px-4">
       {loops.map((loop) => {
-        const state = describeLoopState(loop.derived);
+        const state = describeLoopState(loop.derived, nowMs);
         return (
           <li
             className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2"
@@ -132,7 +166,7 @@ function ArmedRoster({ loops }: { readonly loops: ReadonlyArray<LoopView> | null
               <span className="block truncate text-muted-foreground text-xs">{state.label}</span>
             </span>
             <span className="shrink-0 font-mono text-muted-foreground text-xs tabular-nums">
-              {summariseBounds(loop.derived)}
+              {summariseBounds(loop.derived, nowMs)}
             </span>
           </li>
         );
@@ -164,11 +198,18 @@ export function LoopsSettingsPanel() {
     [loops, settings],
   );
 
+  // The controls stay disabled while the current values are unknown, deliberately: every one
+  // of them writes a value that spends money unattended, and writing one over a state we
+  // could not read is worse than not offering it. The retry above them is the enabled
+  // control — the failure this fixes was having none at all.
   const disabled = value === null;
 
   return (
     <SettingsPageContainer>
       <SettingsSection title="Loops">
+        {settings.value === null && settings.failed ? (
+          <LoadFailed onRetry={settings.refresh} what="the loop settings" />
+        ) : null}
         <SettingsRow
           {...searchableSetting("loops-enabled")}
           control={
@@ -280,7 +321,12 @@ export function LoopsSettingsPanel() {
           )
         }
       >
-        <ArmedRoster loops={loops.value} />
+        <ArmedRoster
+          failed={loops.failed}
+          loops={loops.value}
+          nowMs={loops.lastLoadedAtMs ?? 0}
+          onRetry={loops.refresh}
+        />
         {loops.lastLoadedAtMs === null ? null : (
           <p className="px-3 text-[11px] text-muted-foreground/80 sm:px-4">
             Updated {formatClock(loops.lastLoadedAtMs)}

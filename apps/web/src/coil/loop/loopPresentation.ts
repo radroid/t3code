@@ -43,10 +43,33 @@ export interface LoopStateCopy {
 }
 
 const clockFormatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const dateClockFormatter = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
-/** `07:00`. Absolute rather than a countdown: a countdown means a timer repainting forever. */
-export function formatClock(atMs: number): string {
-  return clockFormatter.format(new Date(atMs));
+/**
+ * `07:00`, or `Sep 4, 07:00` when that is not today.
+ *
+ * Absolute rather than a countdown: a countdown means a timer repainting forever. The date
+ * is not decoration — loops run overnight and their deadlines are routinely tomorrow, so a
+ * bare `07:00` on a run armed at 23:00 reads as eight hours ago rather than eight hours
+ * away. `nowMs` is what "today" is measured against; omit it and you get the time alone,
+ * which is right wherever the surrounding copy already says which day it means.
+ */
+export function formatClock(atMs: number, nowMs?: number): string {
+  const at = new Date(atMs);
+  if (nowMs === undefined || !Number.isFinite(nowMs) || nowMs === 0) {
+    return clockFormatter.format(at);
+  }
+  const now = new Date(nowMs);
+  const sameDay =
+    at.getFullYear() === now.getFullYear() &&
+    at.getMonth() === now.getMonth() &&
+    at.getDate() === now.getDate();
+  return sameDay ? clockFormatter.format(at) : dateClockFormatter.format(at);
 }
 
 /** `45m`, `8h`, `8h 30m`, `2d 3h`. Rounded down, because a bound that reads long is a lie. */
@@ -109,7 +132,7 @@ const STAND_DOWN_DETAIL: Readonly<Record<string, string>> = {
  * Reads the server's `derived` view rather than re-deriving anything: the route already resolved
  * the terminal-first ordering, and a second opinion computed in the browser would drift.
  */
-export function describeLoopState(derived: LoopDerived): LoopStateCopy {
+export function describeLoopState(derived: LoopDerived, nowMs?: number): LoopStateCopy {
   switch (derived.state) {
     case "stopped":
       return describeStop(derived.stoppedReason ?? "spent");
@@ -127,15 +150,28 @@ export function describeLoopState(derived: LoopDerived): LoopStateCopy {
           STAND_DOWN_DETAIL[derived.reason ?? ""] ??
           "A guard is holding the loop back. Its budget and deadline are intact.",
       };
+    // `held` carries two facts — a usage limit and a snooze — and they are not the same
+    // sentence. The server reports both here because both are bounded holds with an expiry;
+    // wording them identically would tell someone their thread was rate limited when they
+    // had snoozed it themselves.
     case "held":
-      return {
-        label: "Held",
-        tone: "held",
-        detail:
-          derived.rateLimitedUntilMs > 0
-            ? `Usage limit until ${formatClock(derived.rateLimitedUntilMs)}. No check-in was spent.`
-            : STAND_DOWN_DETAIL.rate_limited!,
-      };
+      return derived.reason === "snoozed"
+        ? {
+            label: "Snoozed",
+            tone: "held",
+            detail:
+              derived.snoozedUntilMs === null
+                ? STAND_DOWN_DETAIL.snoozed!
+                : `Snoozed until ${formatClock(derived.snoozedUntilMs, nowMs)}. The loop picks up where it left off.`,
+          }
+        : {
+            label: "Held",
+            tone: "held",
+            detail:
+              derived.rateLimitedUntilMs > 0
+                ? `Usage limit until ${formatClock(derived.rateLimitedUntilMs, nowMs)}. No check-in was spent.`
+                : STAND_DOWN_DETAIL.rate_limited!,
+          };
     case "blocked":
       return {
         label: "Waiting on you",
@@ -151,7 +187,7 @@ export function describeLoopState(derived: LoopDerived): LoopStateCopy {
         detail:
           derived.nextWakeAtMs === null
             ? "The agent is scheduling its own wake-ups. T3 is standing by."
-            : `The agent scheduled its own wake for ${formatClock(derived.nextWakeAtMs)}. T3 stands by and spends nothing.`,
+            : `The agent scheduled its own wake for ${formatClock(derived.nextWakeAtMs, nowMs)}. T3 stands by and spends nothing.`,
       };
     case "watching":
       return {
@@ -162,11 +198,17 @@ export function describeLoopState(derived: LoopDerived): LoopStateCopy {
   }
 }
 
-/** `2 of 6 check-ins · ends 07:00`, the one line the collapsed pill has room for. */
-export function summariseBounds(derived: LoopDerived): string {
+/**
+ * `2 of 6 check-ins · ends 07:00`, the one line the collapsed pill has room for.
+ *
+ * The deadline carries its date when it is not today, because that is the common case for
+ * this feature: a run armed at 23:00 ends tomorrow morning, and `ends 07:00` alone reads as
+ * a deadline that has already passed.
+ */
+export function summariseBounds(derived: LoopDerived, nowMs?: number): string {
   const budget = `${derived.checkInsUsed} of ${derived.maxCheckIns} check-ins`;
   if (derived.deadlineAtMs <= 0) return budget;
-  return `${budget} · ends ${formatClock(derived.deadlineAtMs)}`;
+  return `${budget} · ends ${formatClock(derived.deadlineAtMs, nowMs)}`;
 }
 
 export interface BlockerPartition {
@@ -239,7 +281,14 @@ export interface DeferredChannelNotice {
 export function resolveDeferredChannelNotice(input: {
   readonly browserAccessKnown: boolean;
   readonly browserAccessEnabled: boolean;
+  /**
+   * Whether this thread has a loop at all (armed, or one that ended). With no loop there is
+   * nothing that would have used the channel, so the warning is noise on every thread in the
+   * app rather than a fact about this one.
+   */
+  readonly loopExists?: boolean;
 }): DeferredChannelNotice | null {
+  if (input.loopExists === false) return null;
   if (!input.browserAccessKnown || input.browserAccessEnabled) return null;
   return {
     title: "Deferred questions unavailable",
@@ -261,6 +310,8 @@ const REFUSAL_COPY: Readonly<Record<string, string>> = {
   invalid_body: "The server did not understand that request.",
   out_of_range: "One of those values is outside the range the server accepts.",
   not_found: "That question is no longer open.",
+  not_armed: "This loop is not running any more. Refresh to see where it ended up.",
+  armed: "This loop is still running. Disarm it first.",
 };
 
 /**
@@ -311,7 +362,9 @@ export function describeEmptyState(view: LoopView, nowMs: number): LoopEmptyStat
     }
     lines.push(
       `Used ${derived.checkInsUsed} of ${derived.maxCheckIns} check-ins${
-        derived.deadlineAtMs > 0 ? ` against a ${formatClock(derived.deadlineAtMs)} deadline` : ""
+        derived.deadlineAtMs > 0
+          ? ` against a ${formatClock(derived.deadlineAtMs, nowMs)} deadline`
+          : ""
       }.`,
     );
     const lastRow = record.checkIns.at(-1);
@@ -336,9 +389,9 @@ export function describeEmptyState(view: LoopView, nowMs: number): LoopEmptyStat
     };
   }
 
-  const state = describeLoopState(derived);
+  const state = describeLoopState(derived, nowMs);
   lines.push(state.detail);
-  lines.push(summariseBounds(derived));
+  lines.push(summariseBounds(derived, nowMs));
   return { headline: "Nothing is waiting on you.", lines };
 }
 
@@ -396,6 +449,72 @@ export function fromDateTimeLocalValue(value: string): number | null {
   if (!DATE_TIME_LOCAL.test(value)) return null;
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** A loop this thread has now, or had: armed, or carrying a terminal state. */
+export function hasLoop(view: LoopView): boolean {
+  return view.record.armed || view.record.stopped !== null;
+}
+
+/**
+ * Whether `LoopQuestions` would render anything at all.
+ *
+ * The console shows either the question sections or the empty-state card, and this is the
+ * predicate that decides. It has to agree with what those sections actually render, or the
+ * panel shows neither: a run whose only recorded questions were already **answered** put
+ * every section into its own empty branch, and the empty-state card — the one thing that
+ * explains a finished run — was suppressed because `userInputs` was non-empty.
+ */
+export function hasQuestionSections(
+  view: LoopView,
+  channel: {
+    readonly browserAccessKnown: boolean;
+    readonly browserAccessEnabled: boolean;
+  },
+): boolean {
+  const inputs = partitionUserInputs(view.record.userInputs);
+  return (
+    inputs.open.length > 0 ||
+    inputs.voided.length > 0 ||
+    view.record.blockers.length > 0 ||
+    describeBlockingHint(view.derived) !== null ||
+    resolveDeferredChannelNotice({ ...channel, loopExists: hasLoop(view) }) !== null
+  );
+}
+
+/**
+ * What to say under the blocking section, or `null` when there is nothing to point at.
+ *
+ * A snooze is not a question. Telling someone to "answer it in the composer below" when they
+ * snoozed the thread themselves sends them looking for a prompt that does not exist — the
+ * way out is to unsnooze, and it is a different sentence.
+ */
+export function describeBlockingHint(derived: LoopDerived): string | null {
+  if (derived.reason === "snoozed") {
+    return "This thread is snoozed. Unsnooze it and the loop picks up where it left off.";
+  }
+  if (derived.state !== "blocked") return null;
+  return "Answer it in the composer below. The loop resumes on its own once you do.";
+}
+
+/**
+ * Whether the console can speak for this thread.
+ *
+ * Every fork route is called against the **primary** environment — the only one the web app
+ * knows how to authenticate — exactly as the auto-resume overlay's client is. On a thread
+ * belonging to another environment the reads would therefore answer for a thread id the
+ * primary server has never heard of: "no loop on this thread" for a loop that may well be
+ * armed, and an arm that 404s. Rendering nothing is the honest version of that, and
+ * `docs/user/loops.md` states the limitation. `null` means the primary is not resolved yet,
+ * which is not evidence of a mismatch.
+ */
+export function canRenderLoopConsole(input: {
+  readonly primaryEnvironmentId: string | null;
+  readonly threadEnvironmentId: string;
+}): boolean {
+  return input.primaryEnvironmentId === null
+    ? true
+    : input.primaryEnvironmentId === input.threadEnvironmentId;
 }
 
 /** How many things are actually waiting on a human, for the pill's count. */

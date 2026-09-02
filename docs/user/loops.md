@@ -92,7 +92,8 @@ nothing to ask.
   keeps the check-ins it already spent.
 
 All four are sticky. A stopped loop stays stopped until you deliberately give it another run, which
-clears the budget and starts fresh.
+clears the budget and starts fresh. **Clear** dismisses a finished run instead, and the panel goes
+back to offering you a fresh loop.
 
 When a run ends while the agent still has wakes of its own pending, T3 Code ends the session too.
 Those wakes live inside the session, and a bound that cannot stop the agent is not a bound. It is a
@@ -115,3 +116,11 @@ alters a run already in flight.
 **Armed right now** lists every loop across every project, with its state and what it has spent, so
 "did any of my runs give up overnight?" is one page rather than three threads. Arming is not on this
 page: it is a decision you make as you walk away from a thread.
+
+## One environment at a time
+
+Loops belong to the environment that runs the thread, and the app reads them from the environment
+it is connected to as its primary one. On a thread hosted by a _different_ environment — a second
+machine you have added, for instance — the loop control does not appear, rather than showing you
+another machine's answer for that thread. Open that environment as your primary one to arm, watch
+or disarm its loops. Auto-resume has the same reach today.

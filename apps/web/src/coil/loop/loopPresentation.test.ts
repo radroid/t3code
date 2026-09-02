@@ -2,15 +2,19 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { LoopBlocker, LoopDerived, LoopRecord, LoopUserInput, LoopView } from "./loopClient";
 import {
+  canRenderLoopConsole,
   countWaiting,
+  describeBlockingHint,
   describeCheckInRow,
   describeEmptyState,
   describeLoopState,
   describeRefusal,
   describeStop,
   formatAge,
+  formatClock,
   formatDuration,
   fromDateTimeLocalValue,
+  hasQuestionSections,
   partitionBlockers,
   partitionUserInputs,
   resolveDeferredChannelNotice,
@@ -388,5 +392,150 @@ describe("datetime-local round trip", () => {
   it("reads an empty or half-typed field as no deadline at all", () => {
     expect(fromDateTimeLocalValue("")).toBeNull();
     expect(fromDateTimeLocalValue("2026-09-")).toBeNull();
+  });
+});
+
+describe("formatClock and the date", () => {
+  const SEVEN_AM_TODAY = Date.UTC(2026, 8, 2, 7, 0, 0);
+  const SEVEN_AM_TOMORROW = Date.UTC(2026, 8, 3, 7, 0, 0);
+
+  it("prints the time alone for today", () => {
+    expect(formatClock(SEVEN_AM_TODAY, NOW_MS)).toBe(formatClock(SEVEN_AM_TODAY));
+  });
+
+  it("carries the date when the instant is not today", () => {
+    // Loops run overnight: a run armed at 23:00 ends tomorrow, and a bare `07:00` on it reads
+    // as eight hours in the PAST rather than eight hours away.
+    const withDate = formatClock(SEVEN_AM_TOMORROW, NOW_MS);
+    expect(withDate).not.toBe(formatClock(SEVEN_AM_TOMORROW));
+    expect(withDate).toContain(formatClock(SEVEN_AM_TOMORROW));
+  });
+
+  it("prints the time alone when there is no clock to compare against", () => {
+    // `lastLoadedAtMs` is null before the first load lands; guessing "not today" there would
+    // put a date on every timestamp in the panel for one render.
+    expect(formatClock(SEVEN_AM_TOMORROW, 0)).toBe(formatClock(SEVEN_AM_TOMORROW));
+  });
+
+  it("carries into the bounds summary a reader actually looks at", () => {
+    expect(summariseBounds(derived({ deadlineAtMs: SEVEN_AM_TOMORROW }), NOW_MS)).toContain(
+      formatClock(SEVEN_AM_TOMORROW, NOW_MS),
+    );
+  });
+});
+
+describe("describeLoopState — held is two different facts", () => {
+  it("words a snooze as a snooze, not as a usage limit", () => {
+    const copy = describeLoopState(
+      derived({ state: "held", reason: "snoozed", snoozedUntilMs: DEADLINE_MS }),
+      NOW_MS,
+    );
+    expect(copy.label).toBe("Snoozed");
+    expect(copy.detail).not.toContain("Usage limit");
+    expect(copy.detail).toContain("picks up where it left off");
+  });
+});
+
+describe("describeBlockingHint", () => {
+  it("points at the composer for a question that is answerable there", () => {
+    expect(describeBlockingHint(derived({ state: "blocked", reason: "pending_input" }))).toContain(
+      "composer below",
+    );
+  });
+
+  it("tells a snoozed thread to unsnooze rather than to answer something", () => {
+    // There is no prompt in the composer to answer: the human snoozed the thread themselves,
+    // and sending them looking for one is a dead end.
+    const hint = describeBlockingHint(derived({ state: "held", reason: "snoozed" }));
+    expect(hint).toContain("snoozed");
+    expect(hint).not.toContain("composer");
+  });
+
+  it("says nothing about a thread that is simply running", () => {
+    expect(describeBlockingHint(derived())).toBeNull();
+  });
+});
+
+describe("hasQuestionSections", () => {
+  const channel = { browserAccessKnown: true, browserAccessEnabled: true };
+
+  it("is false when every recorded question was already answered", () => {
+    // The failure: `userInputs` was non-empty so the console suppressed the empty-state card,
+    // but every section rendered its own empty branch — so a finished run explained nothing.
+    const answered = view({
+      record: record({
+        armed: false,
+        stopped: { reason: "spent", atMs: NOW_MS, detail: "budget" },
+        userInputs: [userInput({ resolution: "answered", resolvedAtMs: NOW_MS })],
+      }),
+      derived: derived({ state: "stopped", stoppedReason: "spent" }),
+    });
+    expect(hasQuestionSections(answered, channel)).toBe(false);
+    expect(describeEmptyState(answered, NOW_MS).headline).toContain("Stopped");
+  });
+
+  it("is true while a question is open, or was voided", () => {
+    expect(
+      hasQuestionSections(view({ record: record({ userInputs: [userInput()] }) }), channel),
+    ).toBe(true);
+    expect(
+      hasQuestionSections(
+        view({ record: record({ userInputs: [userInput({ resolution: "voided" })] }) }),
+        channel,
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for an answered blocker, which the deferred section still shows", () => {
+    const banked = blocker({ answeredAtMs: NOW_MS, answer: "in place" });
+    expect(hasQuestionSections(view({ record: record({ blockers: [banked] }) }), channel)).toBe(
+      true,
+    );
+  });
+
+  it("raises the missing-channel warning only on a thread that has a loop", () => {
+    const off = { browserAccessKnown: true, browserAccessEnabled: false };
+    // No loop here and none ever: nothing would have used the channel, so warning about it is
+    // noise on every thread in the app rather than a fact about this one.
+    const noLoop = view({
+      record: record({ armed: false }),
+      derived: derived({ state: "off" }),
+    });
+    expect(hasQuestionSections(noLoop, off)).toBe(false);
+    expect(hasQuestionSections(view(), off)).toBe(true);
+    const ended = view({
+      record: record({ armed: false, stopped: { reason: "done", atMs: NOW_MS, detail: "" } }),
+      derived: derived({ state: "stopped", stoppedReason: "done" }),
+    });
+    expect(hasQuestionSections(ended, off)).toBe(true);
+  });
+});
+
+describe("canRenderLoopConsole", () => {
+  it("renders on a thread in the primary environment", () => {
+    expect(
+      canRenderLoopConsole({ primaryEnvironmentId: "env-1", threadEnvironmentId: "env-1" }),
+    ).toBe(true);
+  });
+
+  it("renders nothing rather than answering for another environment's thread", () => {
+    // Every fork route is called against the primary environment, so this would report "no
+    // loop on this thread" for a loop that may well be armed — and arming would 404.
+    expect(
+      canRenderLoopConsole({ primaryEnvironmentId: "env-1", threadEnvironmentId: "env-2" }),
+    ).toBe(false);
+  });
+
+  it("does not treat an unresolved primary as a mismatch", () => {
+    expect(canRenderLoopConsole({ primaryEnvironmentId: null, threadEnvironmentId: "env-2" })).toBe(
+      true,
+    );
+  });
+});
+
+describe("describeRefusal — the armed preconditions", () => {
+  it("words both 409s rather than falling back to the generic sentence", () => {
+    expect(describeRefusal("not_armed").message).toContain("not running");
+    expect(describeRefusal("armed").message).toContain("Disarm it first");
   });
 });

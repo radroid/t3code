@@ -149,7 +149,8 @@ export interface LoopSettings {
 
 export interface LoopWriteBody {
   readonly threadId: string;
-  readonly action: "arm" | "rearm" | "edit" | "disarm";
+  /** `clear` forgets a finished run — the reverse of arming, refused while one is armed. */
+  readonly action: "arm" | "rearm" | "edit" | "disarm" | "clear";
   readonly maxCheckIns?: number;
   readonly deadlineAtMs?: number;
   readonly goal?: string | null;

@@ -153,6 +153,20 @@ export function LoopArmForm({
             Disarm
           </Button>
         ) : null}
+        {stopped ? (
+          // The other way out. Without it a finished run's pill and bounds sit above the
+          // composer forever, and the only way to dismiss them is to start another run —
+          // which is the one-way door pointing the other way.
+          <Button
+            disabled={busy}
+            onClick={() => onSubmit({ action: "clear" })}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Clear
+          </Button>
+        ) : null}
       </div>
     </form>
   );
