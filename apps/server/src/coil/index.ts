@@ -22,6 +22,9 @@ import { ServerConfig } from "../config.ts";
 import { autoResumeRouteLayer } from "./autoResume/http.ts";
 import { AutoResumeReactorLive } from "./autoResume/Reactor.ts";
 import { AutoResumeStore, makeAutoResumeStore } from "./autoResume/state.ts";
+import { loopRouteLayer } from "./loop/http.ts";
+import { LoopReactorLive } from "./loop/Reactor.ts";
+import { LoopStore, makeLoopStore } from "./loop/state.ts";
 import { resolveConfig as resolveWebPushConfig } from "./webPush/config.ts";
 import { webPushRouteLayer } from "./webPush/http.ts";
 import { WebPushReactorLive } from "./webPush/Reactor.ts";
@@ -30,6 +33,8 @@ import { makeWebPushVapid, WebPushVapid } from "./webPush/vapid.ts";
 
 const AUTO_RESUME_STATE_FILENAME = "t3x-auto-resume.json";
 const WEB_PUSH_STATE_FILENAME = "t3x-web-push-subscriptions.json";
+/** `coil-` rather than `t3x-`: the neighbours' names are legacy, kept only to avoid orphaning state. */
+const LOOP_STATE_FILENAME = "coil-loop.json";
 
 /** Wires the durable store to the server state directory. */
 const AutoResumeStoreLive = Layer.effect(
@@ -48,6 +53,23 @@ const PushSubscriptionStoreLive = Layer.effect(
     const config = yield* ServerConfig;
     const path = yield* Path.Path;
     return yield* makePushSubscriptionStore(path.join(config.stateDir, WEB_PUSH_STATE_FILENAME));
+  }),
+);
+
+/**
+ * The loops record, wired to the server state directory.
+ *
+ * Module scope for the same reason as `AutoResumeStoreLive`: the reactor and the routes each
+ * `Layer.provide` THIS value, and Effect memoises construction by layer identity, so both get
+ * one store over one file. Two copies would be silent — arming from the console would look
+ * like it worked while the supervisor kept reading a record with nothing armed in it.
+ */
+const LoopStoreLive = Layer.effect(
+  LoopStore,
+  Effect.gen(function* () {
+    const config = yield* ServerConfig;
+    const path = yield* Path.Path;
+    return yield* makeLoopStore(path.join(config.stateDir, LOOP_STATE_FILENAME));
   }),
 );
 
@@ -71,6 +93,10 @@ const WebPushDepsLive = Layer.mergeAll(PushSubscriptionStoreLive, WebPushVapidLi
 export const CoilLayerLive = Layer.mergeAll(
   AutoResumeReactorLive.pipe(Layer.provide(AutoResumeStoreLive)),
   WebPushReactorLive.pipe(Layer.provide(WebPushDepsLive)),
+  // The loop supervisor reads the auto-resume record for guard 9 (two reactors must never
+  // both nudge one thread), so it takes the SAME `AutoResumeStoreLive` value the auto-resume
+  // reactor and route already share.
+  LoopReactorLive.pipe(Layer.provide(Layer.merge(LoopStoreLive, AutoResumeStoreLive))),
 );
 
 /**
@@ -100,4 +126,5 @@ export const CoilLayerLive = Layer.mergeAll(
 export const CoilRoutesLive = Layer.mergeAll(
   autoResumeRouteLayer.pipe(Layer.provide(AutoResumeStoreLive)),
   webPushRouteLayer.pipe(Layer.provide(WebPushDepsLive)),
+  loopRouteLayer.pipe(Layer.provide(LoopStoreLive)),
 );
