@@ -2,9 +2,14 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **53 upstream-owned files, +2609 / -981 lines**, against merge-base
+Measured, not asserted: **54 upstream-owned files, +2612 / -981 lines**, against merge-base
 `941acb4f9` (the 2026-09-02 sync). Everything else the fork adds lives in new files upstream has
 never seen and cannot conflict.
+
+> **+1 file, +3 lines on 2026-09-02 (loops).** Row 44, `ClaudeAdapter.ts` `+3/-0`, is the only
+> upstream edit the loops feature takes; every other file it adds is new and fork-owned. The whole
+> backend — the durable record, the decision table, the guards, the supervisor, the HTTP surface —
+> fans in through `apps/server/src/coil/index.ts`, which is fork-owned at churn 0.
 
 > **Re-baselined 2026-09-02** against `941acb4f9`, after a **182-commit** upstream range
 > (issue #128, which escalated on a `pnpm-lock.yaml` conflict). Both halves were regenerated

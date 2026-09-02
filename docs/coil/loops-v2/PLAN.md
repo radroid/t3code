@@ -1,7 +1,9 @@
 # Loops — implementation plan
 
-**Status:** proposed — nothing built. **Reviewed and re-baselined 2026-09-02** against the
-findings in issue #125; §12 lists what changed.
+**Status:** phases 0–2 are built on `coil/loops-backend` — the durable record, the Claude hooks,
+the pure decision table, the sentinel, the HTTP surface and the supervisor. Phases 3–5 (the console,
+the settings section, the deferred question channel) remain proposed.
+**Reviewed and re-baselined 2026-09-02** against the findings in issue #125; §12 lists what changed.
 **Baseline:** upstream merge-base **`941acb4f9`** (the 2026-09-02 sync). The merge-base is the
 anchor rather than a fork `main` SHA, because every sync rewrites `main`. The package has now moved
 base three times — `a4cc1367b` → `cebac353d` → `941acb4f9` — and **every churn and risk figure below
