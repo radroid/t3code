@@ -239,17 +239,39 @@ describe("raise_blocker", () => {
     ),
   );
 
-  it.effect("112. records a blocker from a thread with no armed loop", () =>
+  it.effect("112. says so rather than banking a question from a thread with no armed loop", () =>
     withTools(
       (store) =>
         Effect.gen(function* () {
           const result = yield* callTool("raise_blocker", { question: "Still worth asking?" });
 
-          expect(structured(result)).toMatchObject({ status: "recorded" });
-          assert.lengthOf(yield* store.listOpenBlockers(THREAD), 1);
-          assert.isFalse((yield* store.getThread(THREAD)).armed);
+          // `recorded` here was a promise nothing could keep: answers are delivered by a
+          // check-in prompt, and with no armed loop there will never be one — so the agent
+          // would park a branch of the work on an answer that could not arrive. That is the
+          // exact failure this tool exists to prevent, and a status is how it is reported.
+          expect(structured(result)).toMatchObject({ status: "unavailable", id: null });
+          assert.include(String(structured(result).detail), "No loop is armed");
+          assert.lengthOf(yield* store.listOpenBlockers(THREAD), 0);
         }),
       (store) => store.setGlobal({ enabled: true }),
+    ),
+  );
+
+  it.effect("112b. a stopped loop is no more deliverable than a thread that never had one", () =>
+    withTools(
+      (store) =>
+        Effect.gen(function* () {
+          const result = yield* callTool("raise_blocker", { question: "One more thing?" });
+          expect(structured(result)).toMatchObject({ status: "unavailable" });
+          assert.lengthOf(yield* store.listOpenBlockers(THREAD), 0);
+        }),
+      (store) =>
+        store
+          .setGlobal({ enabled: true })
+          .pipe(
+            Effect.andThen(armed(store)),
+            Effect.andThen(store.stop(THREAD, { reason: "spent", atMs: NOW, detail: "budget" })),
+          ),
     ),
   );
 
@@ -517,14 +539,20 @@ describe("loop_done", () => {
     ),
   );
 
-  it.effect("118. records nothing when the master toggle is off", () =>
+  it.effect("118. records the done signal even when the master toggle is off", () =>
     withTools(
       (store) =>
         Effect.gen(function* () {
           const result = yield* callTool("loop_done", { reason: "toggle is off" });
 
+          // The toggle gates what FIRES, never what is written down. Discarding the signal
+          // meant an agent that finished while loops were switched off had its `done` thrown
+          // away — and switching loops back on resumed check-ins against a finished run.
           expect(structured(result)).toMatchObject({ ok: true, status: "disabled" });
-          assert.strictEqual((yield* store.getThread(THREAD)).loopDoneAtMs, null);
+          const record = yield* store.getThread(THREAD);
+          assert.isNotNull(record.loopDoneAtMs);
+          assert.strictEqual(record.loopDoneReason, "toggle is off");
+          assert.isNull(record.stopped, "and it is still the supervisor that writes the stop");
         }),
       (store) => store.setGlobal({ enabled: false }).pipe(Effect.andThen(armed(store))),
     ),

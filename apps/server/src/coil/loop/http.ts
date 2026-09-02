@@ -48,6 +48,7 @@ import type { OrchestrationEngineShape } from "../../orchestration/Services/Orch
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import type { ProjectionSnapshotQueryShape } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { authenticateWithScope, routeAuthErrorTags } from "../http/auth.ts";
+import { atArmedCeiling, hasPendingCrons } from "./guards.ts";
 import {
   Blocker,
   CheckInRow,
@@ -135,7 +136,7 @@ export type LoopSettingsView = typeof LoopSettingsView.Type;
 
 const WriteBody = Schema.Struct({
   threadId: Schema.String,
-  action: Schema.Literals(["arm", "rearm", "edit", "disarm"]),
+  action: Schema.Literals(["arm", "rearm", "edit", "disarm", "clear"]),
   // Nullable *and* optional: `deadline_required` must be able to tell "absent" from a
   // deliberate null, and both are the same refusal.
   maxCheckIns: Schema.optionalKey(Schema.NullOr(Schema.Number)),
@@ -192,6 +193,17 @@ const decodeAnswerBody = Schema.decodeUnknownEffect(AnswerBody);
 const fail = (status: number, error: string, detail?: Record<string, unknown>) =>
   HttpServerResponse.jsonUnsafe({ error, ...detail }, { status });
 
+/**
+ * The request body as JSON, or `unknown` that will never decode.
+ *
+ * `request.json` *fails* on a body that is not JSON at all, and that failure is not one of
+ * `routeAuthErrorTags` — so without this it escapes the handler and the client gets a bare
+ * empty 400 instead of the `invalid_body` code the console words. Every refusal on these
+ * routes carries a machine-readable code; a malformed body is not the exception.
+ */
+const readJsonBody = (request: HttpServerRequest.HttpServerRequest): Effect.Effect<unknown> =>
+  request.json.pipe(Effect.orElseSucceed(() => null as unknown));
+
 // --- derivation -------------------------------------------------------------
 
 const parseIsoMs = (value: string | null | undefined): number | null => {
@@ -246,8 +258,10 @@ const deriveView = (input: {
   if (!record.armed) return { ...base, state: "off" };
   // Guard 2: the toggle stands loops down; it disarms and stops nothing.
   if (!global.enabled) return { ...base, state: "standing_down", reason: "disabled" };
+  // `held`, matching guard 6's phase and `status.ts`: a snooze is a bounded hold with an
+  // expiry, not a question waiting on an answer.
   if (snoozedUntilMs !== null && snoozedUntilMs > nowMs) {
-    return { ...base, state: "blocked", reason: "snoozed" };
+    return { ...base, state: "held", reason: "snoozed" };
   }
   // Guard 8, including the plan clause: a thread parked on an unapproved plan is waiting on
   // a human even though `hasPendingUserInput` is false.
@@ -265,6 +279,13 @@ const deriveView = (input: {
   // late or genuinely lost depends on the derived grace.
   if (nextWakeAtMs !== null && nextWakeAtMs > nowMs && nextWakeAtMs <= record.deadlineAtMs) {
     return { ...base, state: "self_pacing", reason: null };
+  }
+  // Guard 14, last as in the guard table, and through the guard's own predicate so the
+  // console can never say "Watching" about a loop the supervisor is standing down. Without
+  // it the ceiling is the one stand-down with no lens at all: the loop goes quiet and the
+  // panel keeps claiming it is running.
+  if (atArmedCeiling(input.armedCount, global)) {
+    return { ...base, state: "standing_down", reason: "ceiling" };
   }
   return { ...base, state: "watching" };
 };
@@ -443,10 +464,14 @@ const handleArm = (deps: RouteDeps, body: WriteBody, nowMs: number) =>
       return fail(400, "thread_snoozed", { snoozedUntilMs });
     }
 
-    // Only a pin this route created may ever be removed by this route.
+    // Only a pin this route created may ever be removed by this route — and a re-arm must
+    // not disown one it already owns. The thread is pinned on a re-arm precisely *because*
+    // the previous arm pinned it, so reading "already pinned" as "the user's pin" would
+    // orphan it: `pinnedByLoop` would drop to false and no disarm would ever unpin.
+    const previous = yield* deps.store.getThread(body.threadId);
     const alreadyPinned = parseIsoMs(lookup.shell.pinnedAt ?? null) !== null;
     const pinnedByLoop = alreadyPinned
-      ? false
+      ? previous.pinnedByLoop
       : yield* dispatchPinCommand(deps, body.threadId, "thread.pin");
 
     yield* deps.store.arm({
@@ -473,10 +498,16 @@ const handleArm = (deps: RouteDeps, body: WriteBody, nowMs: number) =>
  *
  * Needs no shell, and that is deliberate: disarming must keep working when the thread has
  * been deleted from under the record. A one-way door is a bug.
+ *
+ * **Refused unless the loop is armed.** A stale tab holding a disarm button would otherwise
+ * overwrite a `done` or `spent` terminal with `handed-back` hours later, rewriting how the
+ * night ended, and a disarm of a thread that never had a loop would mint a terminal record
+ * for a run that never existed.
  */
 const handleDisarm = (deps: RouteDeps, body: WriteBody, nowMs: number) =>
   Effect.gen(function* () {
     const record = yield* deps.store.getThread(body.threadId);
+    if (!record.armed) return fail(409, "not_armed");
     // Cleared only when the unpin actually landed. A failed unpin leaves the flag set, so a
     // later disarm can still remove the pin the loop is still responsible for.
     const unpinned =
@@ -490,6 +521,29 @@ const handleDisarm = (deps: RouteDeps, body: WriteBody, nowMs: number) =>
     if (unpinned) {
       yield* deps.store.update(body.threadId, (current) => ({ ...current, pinnedByLoop: false }));
     }
+    // The agent's own wakes outlive the record that bounded them, and this route cannot end a
+    // session itself. Bank the request; the supervisor's next tick issues the one `stopSession`
+    // — the same call its own disarm path makes, on the same code path.
+    if (hasPendingCrons(record, nowMs)) {
+      yield* deps.store.requestSessionStop(body.threadId, nowMs);
+    }
+    const lookup = yield* readShell(deps, body.threadId);
+    return yield* respondWithView(deps, body.threadId, lookup.shell);
+  });
+
+/**
+ * Clear a finished run — the reverse of arming, for a loop that already ended.
+ *
+ * Without it the stopped pill and its bounds sit above the composer forever unless the thread
+ * is armed again, which is a one-way door in the other direction. Refused while the loop is
+ * armed, so this can never be a way to end a live run silently: that is `disarm`, which
+ * records why.
+ */
+const handleClear = (deps: RouteDeps, body: WriteBody) =>
+  Effect.gen(function* () {
+    const record = yield* deps.store.getThread(body.threadId);
+    if (record.armed) return fail(409, "armed");
+    yield* deps.store.clearThread(body.threadId);
     const lookup = yield* readShell(deps, body.threadId);
     return yield* respondWithView(deps, body.threadId, lookup.shell);
   });
@@ -499,9 +553,14 @@ const handleDisarm = (deps: RouteDeps, body: WriteBody, nowMs: number) =>
  *
  * Every field is optional and every one that is present is validated with the same rules
  * arming uses — extending a deadline into the past is as wrong here as it is there.
+ *
+ * **Refused unless the loop is armed**, for the same reason `disarm` is: editing the bounds
+ * of a run that is over would resurrect its numbers without resurrecting the run, and
+ * editing a thread that never had a loop would create a record out of a form submission.
  */
 const handleEdit = (deps: RouteDeps, body: WriteBody, nowMs: number) =>
   Effect.gen(function* () {
+    if (!(yield* deps.store.getThread(body.threadId)).armed) return fail(409, "not_armed");
     if (body.deadlineAtMs !== undefined && body.deadlineAtMs !== null) {
       if (!Number.isFinite(body.deadlineAtMs)) return fail(400, "invalid_body");
       if (body.deadlineAtMs <= nowMs) return fail(400, "deadline_in_past");
@@ -556,7 +615,8 @@ const makePostLoopRoute = (deps: RouteDeps) =>
     Effect.gen(function* () {
       yield* authenticate;
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const body = yield* decodeWriteBody(yield* request.json).pipe(
+      const body = yield* readJsonBody(request).pipe(
+        Effect.flatMap(decodeWriteBody),
         Effect.map((decoded): WriteBody | null => decoded),
         Effect.orElseSucceed(() => null),
       );
@@ -571,6 +631,8 @@ const makePostLoopRoute = (deps: RouteDeps) =>
           return yield* handleDisarm(deps, body, nowMs);
         case "edit":
           return yield* handleEdit(deps, body, nowMs);
+        case "clear":
+          return yield* handleClear(deps, body);
       }
     }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
@@ -611,7 +673,8 @@ const makePostSettingsRoute = (deps: RouteDeps) =>
     Effect.gen(function* () {
       yield* authenticate;
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const body = yield* decodeSettingsBody(yield* request.json).pipe(
+      const body = yield* readJsonBody(request).pipe(
+        Effect.flatMap(decodeSettingsBody),
         Effect.map((decoded): SettingsBody | null => decoded),
         Effect.orElseSucceed(() => null),
       );
@@ -642,7 +705,8 @@ const makeAnswerRoute = (deps: RouteDeps) =>
     Effect.gen(function* () {
       yield* authenticate;
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const body = yield* decodeAnswerBody(yield* request.json).pipe(
+      const body = yield* readJsonBody(request).pipe(
+        Effect.flatMap(decodeAnswerBody),
         Effect.map((decoded): AnswerBody | null => decoded),
         Effect.orElseSucceed(() => null),
       );

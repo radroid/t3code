@@ -41,6 +41,7 @@ import {
   getJson,
   jsonBody,
   postJson,
+  postText,
   runServed,
   serveRoutes,
 } from "../http/testAuth.ts";
@@ -404,6 +405,62 @@ describe("/api/coil/loop", () => {
         }),
     }));
 
+  it("derived reports the ceiling stand-down rather than claiming the loop is watching", () =>
+    withRoutes({
+      threads: [makeThread(THREAD_ID), makeThread("thread-b")],
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* store.setGlobal({ enabled: true, maxArmedThreads: 3 });
+          yield* postJson(PATH, armBody());
+          yield* postJson(PATH, { ...armBody(), threadId: "thread-b" });
+
+          // Two armed against a ceiling of two: nobody is over it, and both keep watching.
+          yield* store.setGlobal({ maxArmedThreads: 2 });
+          const fine = yield* decodeLoopView(
+            yield* jsonBody(yield* getJson(`${PATH}?threadId=${THREAD_ID}`)),
+          );
+          assert.strictEqual(fine.derived.state, "watching");
+
+          // Lowering the ceiling stands the excess down — and the console has to say so. It
+          // was the one stand-down with no lens at all: the loop went quiet and the panel
+          // kept claiming it was running.
+          yield* store.setGlobal({ maxArmedThreads: 1 });
+          const view = yield* decodeLoopView(
+            yield* jsonBody(yield* getJson(`${PATH}?threadId=${THREAD_ID}`)),
+          );
+          assert.strictEqual(view.derived.state, "standing_down");
+          assert.strictEqual(view.derived.reason, "ceiling");
+          assert.isTrue(view.record.armed, "a ceiling never disarms anything");
+        }),
+    }));
+
+  it("a re-arm of a thread the loop itself pinned keeps owning that pin", () =>
+    withRoutes({
+      // Pinned when the arm route looks: exactly what the projection shows on a RE-arm,
+      // because the previous arm is what pinned it.
+      threads: [makeThread(THREAD_ID, { pinnedAt: "2026-09-01T02:00:00.000Z" })],
+      body: ({ store, dispatched }) =>
+        Effect.gen(function* () {
+          yield* store.arm({
+            threadId: THREAD_ID,
+            armedAtMs: 1_000,
+            deadlineAtMs: FUTURE_DEADLINE,
+            maxCheckIns: 6,
+            pinnedByLoop: true,
+          });
+
+          assert.strictEqual((yield* postJson(PATH, armBody())).status, 200);
+          // Reading "already pinned" as "the user's pin" orphaned it: the flag dropped to
+          // false and no disarm would ever remove a pin the loop had created.
+          assert.isTrue((yield* store.getThread(THREAD_ID)).pinnedByLoop);
+          yield* postJson(PATH, { threadId: THREAD_ID, action: "disarm" });
+          assert.deepStrictEqual(
+            pinCommands(dispatched).map((command) => command.type),
+            ["thread.unpin"],
+          );
+        }),
+    }));
+
   it("unpins on disarm exactly when the loop created the pin", () =>
     withRoutes({
       body: ({ dispatched }) =>
@@ -444,12 +501,113 @@ describe("/api/coil/loop", () => {
 
   it("POST disarm still works when the thread is gone from the projection", () =>
     withRoutes({
-      body: () =>
+      body: ({ store }) =>
         Effect.gen(function* () {
-          yield* postJson(PATH, armBody());
-          // The thread has since been deleted; the way out must not depend on it existing.
+          // Armed, and the projection has no such row any more: the way out must not depend on
+          // the thread still existing.
+          yield* store.arm({
+            threadId: "never-seen",
+            armedAtMs: 1_000,
+            deadlineAtMs: FUTURE_DEADLINE,
+            maxCheckIns: 6,
+          });
           const response = yield* postJson(PATH, { threadId: "never-seen", action: "disarm" });
           assert.strictEqual(response.status, 200);
+          assert.strictEqual((yield* store.getThread("never-seen")).stopped?.reason, "handed-back");
+        }),
+    }));
+
+  it("POST disarm and edit are refused with 409 unless the loop is armed, and mutate nothing", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          // A thread nobody ever armed: neither action may mint a record for it.
+          for (const action of ["disarm", "edit"] as const) {
+            const response = yield* postJson(PATH, { threadId: THREAD_ID, action });
+            assert.strictEqual(response.status, 409);
+            assert.strictEqual((yield* jsonBody(response)).error, "not_armed");
+          }
+          assert.deepStrictEqual(yield* store.listArmed, []);
+          assert.isNull((yield* store.getThread(THREAD_ID)).stopped);
+
+          // A run that already ended: a stale tab must not rewrite how the night finished.
+          yield* postJson(PATH, armBody());
+          yield* store.stop(THREAD_ID, {
+            reason: "done",
+            atMs: 2_000,
+            detail: "the agent said so",
+          });
+          const stale = yield* postJson(PATH, { threadId: THREAD_ID, action: "disarm" });
+          assert.strictEqual(stale.status, 409);
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).stopped?.reason, "done");
+
+          const edited = yield* postJson(PATH, {
+            threadId: THREAD_ID,
+            action: "edit",
+            maxCheckIns: 20,
+          });
+          assert.strictEqual(edited.status, 409);
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).maxCheckIns, 6);
+        }),
+    }));
+
+  it("POST clear removes a finished run, and is refused while one is armed", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          // Armed: clearing is not a way to end a live run silently. That is `disarm`, which
+          // records why.
+          const refused = yield* postJson(PATH, { threadId: THREAD_ID, action: "clear" });
+          assert.strictEqual(refused.status, 409);
+          assert.strictEqual((yield* jsonBody(refused)).error, "armed");
+          assert.isTrue((yield* store.getThread(THREAD_ID)).armed);
+
+          yield* store.stop(THREAD_ID, { reason: "spent", atMs: 2_000, detail: "budget" });
+          const response = yield* postJson(PATH, { threadId: THREAD_ID, action: "clear" });
+          assert.strictEqual(response.status, 200);
+          // The stopped pill is gone, and the view says so rather than 404ing.
+          const view = yield* decodeLoopView(yield* jsonBody(response));
+          assert.strictEqual(view.derived.state, "off");
+          assert.isNull(view.record.stopped);
+          assert.isNull((yield* store.getThread(THREAD_ID)).stopped);
+        }),
+    }));
+
+  it("POST disarm with the agent's own wakes still pending banks one session stop", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          // A recurring wake: it reschedules itself, so ending the record does not end it.
+          yield* store.setCrons(THREAD_ID, {
+            recordedAtMs: 1_000,
+            entries: [
+              {
+                id: "cron-1",
+                schedule: "*/20 * * * *",
+                recurring: true,
+                prompt: "keep going",
+                nextFireAtMs: WAKE_INSIDE_DEADLINE,
+              },
+            ],
+          });
+
+          const response = yield* postJson(PATH, { threadId: THREAD_ID, action: "disarm" });
+          assert.strictEqual(response.status, 200);
+          // The route cannot end a session itself; it banks the request and the supervisor's
+          // next tick issues exactly one `stopSession`. `Reactor.test.ts` owns that half.
+          assert.isAbove((yield* store.getThread(THREAD_ID)).stopRequestedAtMs, 0);
+        }),
+    }));
+
+  it("POST disarm with no pending wakes banks nothing", () =>
+    withRoutes({
+      body: ({ store }) =>
+        Effect.gen(function* () {
+          yield* postJson(PATH, armBody());
+          yield* postJson(PATH, { threadId: THREAD_ID, action: "disarm" });
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).stopRequestedAtMs, 0);
         }),
     }));
 
@@ -542,6 +700,28 @@ describe("/api/coil/loop", () => {
             const response = yield* postJson(PATH, body);
             assert.strictEqual(response.status, 400, label);
             assert.strictEqual((yield* jsonBody(response)).error, "invalid_body", label);
+          }
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).armed, false);
+          assert.deepStrictEqual(dispatched, []);
+        }),
+    }));
+
+  it("POST with a body that is not JSON at all is still a coded invalid_body", () =>
+    withRoutes({
+      body: ({ store, dispatched }) =>
+        Effect.gen(function* () {
+          // `request.json` FAILS on these rather than decoding to something unusable, and that
+          // failure is not one of the auth tags — so it escaped the handler and the client got
+          // a bare, empty 400 with no code for the console to word.
+          for (const raw of ["not json at all", "{", ""]) {
+            const response = yield* postText(PATH, raw);
+            assert.strictEqual(response.status, 400, raw);
+            assert.strictEqual((yield* jsonBody(response)).error, "invalid_body", raw);
+          }
+          for (const path of [SETTINGS_PATH, ANSWER_PATH]) {
+            const response = yield* postText(path, "not json at all");
+            assert.strictEqual(response.status, 400, path);
+            assert.strictEqual((yield* jsonBody(response)).error, "invalid_body", path);
           }
           assert.strictEqual((yield* store.getThread(THREAD_ID)).armed, false);
           assert.deepStrictEqual(dispatched, []);

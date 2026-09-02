@@ -25,9 +25,20 @@
  * default meaning "unbounded" would turn one truncated write into an unbounded overnight
  * spend, which is the single worst outcome this feature can produce.
  *
+ * ## The file is bounded on every write
+ *
+ * One file is shared by every thread on the machine and is rewritten in full on each
+ * mutation, so anything that only ever grows is a cost every other thread pays. Three caps
+ * hold it: the ledger keeps its last 20 rows, blockers and recorded user-inputs their last
+ * 50 each, and `pruneThreads` drops records nothing will read again — a stopped run older
+ * than the retention window, and a record that is neither armed nor carrying anything. All
+ * three are applied inside the same critical section that persists, so memory and disk never
+ * disagree about what was dropped.
+ *
  * @module coil/loop/state
  */
 
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -184,6 +195,16 @@ export const LoopRecord = Schema.Struct({
 
   /** Gates the unpin: `false` ⇒ the loop never created the pin ⇒ never remove it. */
   pinnedByLoop: withDefault(Schema.Boolean, false),
+  /**
+   * When the console asked for the provider session to be ended, or `0`.
+   *
+   * The route cannot end a session itself — `ProviderService` is not one of the services
+   * upstream's `makeRoutesLayer` already requires, and taking it would widen an upstream
+   * signature. So a disarm that leaves the agent's own wakes pending records the request
+   * here and the supervisor's next tick services it, which keeps `stopSession` on exactly
+   * one code path.
+   */
+  stopRequestedAtMs: withDefault(Schema.Number, 0),
   stopped: withDefault(Schema.NullOr(StopRecord), null),
   overridePrompt: withDefault(Schema.NullOr(Schema.String), null),
   blockers: withDefault(Schema.Array(Blocker), []),
@@ -236,6 +257,7 @@ export const EMPTY_RECORD: LoopRecord = {
   strikes: 0,
   rateLimitedUntilMs: 0,
   pinnedByLoop: false,
+  stopRequestedAtMs: 0,
   stopped: null,
   overridePrompt: null,
   blockers: [],
@@ -252,6 +274,65 @@ const EMPTY_STATE: LoopState = { version: 1, global: DEFAULT_GLOBAL_SETTINGS, th
  * never reached in normal operation — it bounds the file even for a hand-edited record.
  */
 const LEDGER_MAX_ROWS = 20;
+
+/**
+ * Structural caps on the two append-only lists, applied on write.
+ *
+ * Both are appended by things outside a run's budget — `raise_blocker` is bounded per
+ * check-in window but not per run, and `user-input.requested` fires as often as the agent
+ * asks — so without a cap one long-lived thread grows a file every other thread on the
+ * machine shares. Fifty is far above what a night produces and far below what makes the file
+ * expensive; the oldest entries fall off, which is also the order a human stops caring about
+ * them in.
+ */
+const MAX_BLOCKERS = 50;
+const MAX_USER_INPUTS = 50;
+
+/**
+ * How long a stopped record survives.
+ *
+ * The console explains last night's run from this record, so it cannot be dropped when the
+ * loop ends — but a month later nobody is reading it and it is pure weight. Armed records
+ * are never pruned at any age.
+ */
+const STOPPED_RETENTION_MS = 30 * 24 * 3_600_000;
+
+/** Anything a human or the supervisor might still want to read back. */
+const hasContent = (record: LoopRecord): boolean =>
+  record.armed ||
+  record.stopped !== null ||
+  record.blockers.length > 0 ||
+  record.userInputs.length > 0 ||
+  record.checkIns.length > 0 ||
+  record.crons !== null ||
+  record.degraded !== null ||
+  record.overridePrompt !== null ||
+  record.loopDoneAtMs !== null ||
+  record.rateLimitedUntilMs > 0 ||
+  record.stopRequestedAtMs > 0;
+
+/**
+ * Drop the records nothing will ever read again, on every write.
+ *
+ * Two rules, both conservative: a stopped run older than the retention window, and a record
+ * that is neither armed nor carrying anything (which is what a thread that was armed and
+ * then cleared, or one touched by a write that turned out to be a no-op, decays to).
+ * `keepThreadId` is the thread the current write is about — pruning it here would make a
+ * write followed by a read look like the write never happened.
+ */
+const pruneThreads = (state: LoopState, nowMs: number, keepThreadId: string | null): LoopState => {
+  let dropped = false;
+  const threads: Record<string, LoopRecord> = {};
+  for (const [threadId, record] of Object.entries(state.threads)) {
+    const expired = record.stopped !== null && nowMs - record.stopped.atMs > STOPPED_RETENTION_MS;
+    if (threadId !== keepThreadId && !record.armed && (expired || !hasContent(record))) {
+      dropped = true;
+      continue;
+    }
+    threads[threadId] = record;
+  }
+  return dropped ? { ...state, threads } : state;
+};
 
 const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(LoopState));
 
@@ -310,6 +391,24 @@ export interface LoopStoreShape {
   readonly disarm: (threadId: string) => Effect.Effect<void>;
   /** Write the sticky terminal state and disarm. Only `arm` clears it. */
   readonly stop: (threadId: string, stopped: StopRecord) => Effect.Effect<void>;
+  /**
+   * Forget a thread entirely — the console's "clear" on a finished run.
+   *
+   * The reverse of `arm`: a stopped pill that cannot be dismissed is a one-way door. Refused
+   * at the route while the loop is armed, so this can never be the way a live run ends.
+   */
+  readonly clearThread: (threadId: string) => Effect.Effect<void>;
+
+  /**
+   * Ask the supervisor to end this thread's provider session on its next tick.
+   *
+   * The console's disarm cannot call `stopSession` itself (see `stopRequestedAtMs`), so it
+   * records the request and the reactor services it — one code path, whichever side disarmed.
+   */
+  readonly requestSessionStop: (threadId: string, atMs: number) => Effect.Effect<void>;
+  /** The tick's stop-request work list. In memory only: it issues no query of any kind. */
+  readonly listStopRequested: Effect.Effect<ReadonlyArray<LoopStoreEntry>>;
+  readonly clearSessionStopRequest: (threadId: string) => Effect.Effect<void>;
   /** The escape hatch for reactor-owned bookkeeping (strikes, ledger outcomes, pins). */
   readonly update: (
     threadId: string,
@@ -442,17 +541,31 @@ export const makeLoopStore = (
       );
     };
 
-    const modify = <A>(f: (state: LoopState) => readonly [A, LoopState]) =>
-      SynchronizedRef.modifyEffect(ref, (state) => {
-        const [value, next] = f(state);
-        return persist(next).pipe(Effect.as([value, next] as const));
-      });
+    /**
+     * Every write goes through here, which is also where the file is bounded: the state is
+     * pruned inside the same critical section that persists it, so memory and disk can never
+     * disagree about what was dropped. `threadId` is the thread the write is about and is
+     * exempt from the prune.
+     */
+    const modify = <A>(threadId: string | null, f: (state: LoopState) => readonly [A, LoopState]) =>
+      SynchronizedRef.modifyEffect(ref, (state) =>
+        Effect.gen(function* () {
+          const [value, next] = f(state);
+          const nowMs = yield* Clock.currentTimeMillis;
+          const pruned = pruneThreads(next, nowMs, threadId);
+          yield* persist(pruned);
+          return [value, pruned] as const;
+        }),
+      );
 
-    const mutate = (f: (state: LoopState) => LoopState) =>
+    const mutate = (threadId: string | null, f: (state: LoopState) => LoopState) =>
       SynchronizedRef.updateEffect(ref, (state) =>
-        Effect.suspend(() => {
+        Effect.gen(function* () {
           const next = f(state);
-          return persist(next).pipe(Effect.as(next));
+          const nowMs = yield* Clock.currentTimeMillis;
+          const pruned = pruneThreads(next, nowMs, threadId);
+          yield* persist(pruned);
+          return pruned;
         }),
       );
 
@@ -474,7 +587,7 @@ export const makeLoopStore = (
     });
 
     const updateRecord = (threadId: string, f: (record: LoopRecord) => LoopRecord) =>
-      modify((state) => {
+      modify(threadId, (state) => {
         const next = f(recordFor(state, threadId));
         return [next, withRecord(state, threadId, next)] as const;
       });
@@ -486,7 +599,7 @@ export const makeLoopStore = (
       getGlobal: SynchronizedRef.get(ref).pipe(Effect.map((state) => state.global)),
 
       setGlobal: (patch) =>
-        modify((state) => {
+        modify(null, (state) => {
           const global = { ...state.global, ...patch };
           return [global, { ...state, global }] as const;
         }),
@@ -501,8 +614,16 @@ export const makeLoopStore = (
         ),
       ),
 
+      listStopRequested: SynchronizedRef.get(ref).pipe(
+        Effect.map((state) =>
+          Object.entries(state.threads).flatMap(([threadId, record]) =>
+            record.stopRequestedAtMs > 0 ? [{ threadId, record }] : [],
+          ),
+        ),
+      ),
+
       arm: (input) =>
-        modify((state) => {
+        modify(input.threadId, (state) => {
           const previous = recordFor(state, input.threadId);
           const next: LoopRecord = {
             ...previous,
@@ -519,6 +640,9 @@ export const makeLoopStore = (
             checkIns: [],
             strikes: 0,
             pinnedByLoop: input.pinnedByLoop ?? false,
+            // A stop request banked by a disarm the human then changed their mind about must
+            // never reach the session this arm is starting.
+            stopRequestedAtMs: 0,
             stopped: null,
             overridePrompt: input.overridePrompt ?? previous.overridePrompt,
           };
@@ -526,19 +650,41 @@ export const makeLoopStore = (
         }),
 
       disarm: (threadId) =>
-        mutate((state) =>
+        mutate(threadId, (state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), armed: false }),
         ),
 
       stop: (threadId, stopped) =>
-        mutate((state) =>
+        mutate(threadId, (state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), armed: false, stopped }),
+        ),
+
+      clearThread: (threadId) =>
+        mutate(null, (state) => {
+          if (!Object.hasOwn(state.threads, threadId)) return state;
+          const { [threadId]: _removed, ...threads } = state.threads;
+          return { ...state, threads };
+        }),
+
+      requestSessionStop: (threadId, atMs) =>
+        mutate(threadId, (state) =>
+          withRecord(state, threadId, {
+            ...recordFor(state, threadId),
+            stopRequestedAtMs: atMs,
+          }),
+        ),
+
+      // `null`, not this thread: clearing the last thing a spent record carried is exactly
+      // when it becomes prunable.
+      clearSessionStopRequest: (threadId) =>
+        mutate(null, (state) =>
+          withRecord(state, threadId, { ...recordFor(state, threadId), stopRequestedAtMs: 0 }),
         ),
 
       update: (threadId, f) => updateRecord(threadId, f),
 
       recordCheckIn: (input) =>
-        modify((state) => {
+        modify(input.threadId, (state) => {
           const previous = recordFor(state, input.threadId);
           const n = previous.checkInsUsed + 1;
           const row: CheckInRow = {
@@ -558,7 +704,7 @@ export const makeLoopStore = (
         }),
 
       setRateLimitedUntil: (threadId, untilMs) =>
-        mutate((state) =>
+        mutate(threadId, (state) =>
           withRecord(state, threadId, {
             ...recordFor(state, threadId),
             rateLimitedUntilMs: untilMs,
@@ -566,30 +712,34 @@ export const makeLoopStore = (
         ),
 
       setCrons: (threadId, crons) =>
-        mutate((state) => withRecord(state, threadId, { ...recordFor(state, threadId), crons })),
+        mutate(threadId, (state) =>
+          withRecord(state, threadId, { ...recordFor(state, threadId), crons }),
+        ),
 
       setDegraded: (threadId, degraded) =>
-        mutate((state) => withRecord(state, threadId, { ...recordFor(state, threadId), degraded })),
+        mutate(threadId, (state) =>
+          withRecord(state, threadId, { ...recordFor(state, threadId), degraded }),
+        ),
 
       setOverridePrompt: (threadId, overridePrompt) =>
-        mutate((state) =>
+        mutate(threadId, (state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), overridePrompt }),
         ),
 
       recordUserInput: (threadId, input) =>
-        mutate((state) => {
+        mutate(threadId, (state) => {
           const previous = recordFor(state, threadId);
           if (previous.userInputs.some((entry) => entry.requestId === input.requestId)) {
             return state;
           }
           return withRecord(state, threadId, {
             ...previous,
-            userInputs: [...previous.userInputs, input],
+            userInputs: [...previous.userInputs, input].slice(-MAX_USER_INPUTS),
           });
         }),
 
       resolveUserInput: (threadId, requestId, resolution, resolvedAtMs) =>
-        mutate((state) => {
+        mutate(threadId, (state) => {
           const previous = recordFor(state, threadId);
           let changed = false;
           const userInputs = previous.userInputs.map((entry) => {
@@ -601,7 +751,7 @@ export const makeLoopStore = (
         }),
 
       addBlocker: (threadId, blocker) =>
-        modify((state) => {
+        modify(threadId, (state) => {
           const previous = recordFor(state, threadId);
           const existing = previous.blockers.find((entry) => entry.id === blocker.id);
           if (existing) return [existing, state] as const;
@@ -609,13 +759,13 @@ export const makeLoopStore = (
             blocker,
             withRecord(state, threadId, {
               ...previous,
-              blockers: [...previous.blockers, blocker],
+              blockers: [...previous.blockers, blocker].slice(-MAX_BLOCKERS),
             }),
           ] as const;
         }),
 
       answerBlocker: (threadId, blockerId, answer, answeredAtMs) =>
-        modify((state) => {
+        modify(threadId, (state) => {
           const previous = recordFor(state, threadId);
           const target = previous.blockers.find((entry) => entry.id === blockerId);
           if (!target) return [null, state] as const;
@@ -643,7 +793,7 @@ export const makeLoopStore = (
         ),
 
       markBlockersDelivered: (threadId, blockerIds) =>
-        mutate((state) => {
+        mutate(threadId, (state) => {
           const previous = recordFor(state, threadId);
           const ids = new Set(blockerIds);
           if (ids.size === 0) return state;

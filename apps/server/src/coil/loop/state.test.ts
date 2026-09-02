@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -103,6 +104,7 @@ const FULL_RECORD: LoopRecord = {
   strikes: 1,
   rateLimitedUntilMs: 1_700_005_000_000,
   pinnedByLoop: true,
+  stopRequestedAtMs: 1_700_005_500_000,
   stopped: { reason: "stalled", atMs: 1_700_006_000_000, detail: "two quiet check-ins" },
   overridePrompt: "resume the migration",
   blockers: [
@@ -770,6 +772,116 @@ describe("LoopStore — blockers", () => {
         const record = yield* store.getThread("thread-a");
         assert.strictEqual(record.blockers.length, 1);
         assert.strictEqual(record.blockers[0]?.question, blocker("b-1").question);
+      }),
+    ));
+});
+
+/**
+ * One file is shared by every thread on the machine and rewritten in full on every mutation,
+ * so anything that only ever grows is a cost every other thread pays.
+ */
+describe("LoopStore — the file is bounded", () => {
+  it("caps blockers and recorded questions at fifty per thread, oldest first", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.arm(arm("thread-a"));
+        for (let n = 0; n < 60; n += 1) {
+          yield* store.addBlocker("thread-a", blocker(`b-${n}`));
+          yield* store.recordUserInput("thread-a", {
+            requestId: `req-${n}`,
+            raisedAtMs: n,
+            dialogKind: null,
+            question: `question ${n}`,
+            resolution: null,
+            resolvedAtMs: null,
+          });
+        }
+        const record = yield* store.getThread("thread-a");
+        assert.lengthOf(record.blockers, 50);
+        assert.strictEqual(record.blockers[0]?.id, "b-10", "the oldest fall off");
+        assert.strictEqual(record.blockers.at(-1)?.id, "b-59");
+        assert.lengthOf(record.userInputs, 50);
+        assert.strictEqual(record.userInputs[0]?.requestId, "req-10");
+      }),
+    ));
+
+  it("drops a stopped record once it is older than the retention window", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.arm(arm("ancient"));
+        // Epoch: months in the past against the real clock these writes read.
+        yield* store.stop("ancient", { reason: "spent", atMs: 0, detail: "last winter" });
+        yield* store.arm(arm("recent"));
+        yield* store.stop("recent", {
+          reason: "done",
+          atMs: yield* Clock.currentTimeMillis,
+          detail: "this morning",
+        });
+
+        // A write about a THIRD thing sweeps: the thread a write is about is exempt from its
+        // own prune, or a write followed by a read would look like the write never happened.
+        yield* store.setGlobal({ enabled: true });
+        assert.deepStrictEqual(yield* store.getThread("ancient"), EMPTY_RECORD);
+        assert.strictEqual((yield* store.getThread("recent")).stopped?.reason, "done");
+      }),
+    ));
+
+  it("never drops an armed record, whatever its age", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.arm(arm("armed-forever", { armedAtMs: 0 }));
+        yield* store.setGlobal({ enabled: true });
+        assert.isTrue((yield* store.getThread("armed-forever")).armed);
+        assert.lengthOf(yield* store.listArmed, 1);
+      }),
+    ));
+
+  it("does not keep a record left carrying nothing", () =>
+    withTempDir((root) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = NodePath.join(root, "coil-loop.json");
+        const store = yield* makeLoopStore(path);
+        // A resolution runs for every thread on the machine, armed or not — it is a no-op when
+        // nothing matches, and it must not leave an empty record behind for each one.
+        yield* store.resolveUserInput("passer-by", "req-1", "voided", 1_000);
+        yield* store.setGlobal({ enabled: true });
+        // The file, not the reader: `getThread` answers `EMPTY_RECORD` either way, so only the
+        // bytes can say whether the row is gone.
+        assert.notInclude(yield* fs.readFileString(path), "passer-by");
+      }),
+    ));
+
+  it("clearThread forgets a finished run entirely", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.arm(arm("thread-a"));
+        yield* store.stop("thread-a", { reason: "done", atMs: 5_000, detail: "finished" });
+        yield* store.clearThread("thread-a");
+        assert.deepStrictEqual(yield* store.getThread("thread-a"), EMPTY_RECORD);
+        // And clearing something that was never there is a no-op, not a crash.
+        yield* store.clearThread("never-seen");
+      }),
+    ));
+
+  it("a banked session stop is listable and clearable, and a fresh arm cancels it", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.arm(arm("thread-a"));
+        yield* store.requestSessionStop("thread-a", 7_000);
+        assert.deepStrictEqual(
+          (yield* store.listStopRequested).map((entry) => entry.threadId),
+          ["thread-a"],
+        );
+
+        yield* store.clearSessionStopRequest("thread-a");
+        assert.deepStrictEqual(yield* store.listStopRequested, []);
+
+        // A disarm the human changed their mind about must never reach the session the
+        // re-arm is starting.
+        yield* store.requestSessionStop("thread-a", 8_000);
+        yield* store.arm(arm("thread-a"));
+        assert.deepStrictEqual(yield* store.listStopRequested, []);
       }),
     ));
 });

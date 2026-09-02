@@ -102,6 +102,20 @@ const handlers = {
         cap: MAX_OPEN_BLOCKERS_PER_WINDOW,
       };
     }
+    // No armed loop means no check-in will ever carry the answer back, and the console shows
+    // this channel only for a thread that has a loop. Recording here would report `recorded`
+    // for a question that is not merely late but undeliverable — the exact failure this tool
+    // exists to prevent, with the agent believing it had banked the decision.
+    if (!record.armed || record.stopped !== null) {
+      return {
+        status: "unavailable" as const,
+        id: null,
+        detail:
+          "No loop is armed on this thread, so no check-in will ever deliver an answer to this question. Ask directly instead.",
+        openBlockers: open.length,
+        cap: MAX_OPEN_BLOCKERS_PER_WINDOW,
+      };
+    }
 
     const windowStartMs = capWindowStartMs({
       armedAtMs: record.armedAtMs,
@@ -180,13 +194,6 @@ const handlers = {
     const global = yield* store.getGlobal;
     const record = yield* store.getThread(threadId);
 
-    if (!global.enabled) {
-      return {
-        ok: true,
-        status: "disabled" as const,
-        detail: "Loops are switched off for this machine; there is no run to end.",
-      };
-    }
     if (!record.armed || record.stopped !== null) {
       return {
         ok: true,
@@ -195,6 +202,11 @@ const handlers = {
       };
     }
 
+    // Recorded **before** the master toggle is consulted, and that ordering is the whole
+    // point: the toggle gates what *fires*, never what is written down. With the write behind
+    // it, an agent that finished while loops were switched off had its `done` thrown away —
+    // and switching loops back on resumed check-ins against a run that was over.
+    //
     // Exactly what `guards.ts` `doneSignal` reads: a timestamp newer than `armedAtMs`. The
     // record is never cleared, for the same reason the supervisor never deletes a
     // `.coil/loop-done` file — a re-arm takes a fresh `armedAtMs` and supersedes both.
@@ -205,6 +217,14 @@ const handlers = {
       loopDoneAtMs: nowMs,
       loopDoneReason: reason.length > 0 ? reason : null,
     }));
+    if (!global.enabled) {
+      return {
+        ok: true,
+        status: "disabled" as const,
+        detail:
+          "Loops are switched off for this machine, so nothing was checking in on you anyway. The run is recorded as done; switching loops back on will not resume it.",
+      };
+    }
     return {
       ok: true,
       status: "recorded" as const,
