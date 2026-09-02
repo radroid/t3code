@@ -76,6 +76,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { loopHooksFor } from "../../coil/loop/crons.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
@@ -4349,6 +4350,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? [input.cwd] : []),
         serverConfig.attachmentsDir,
       ];
+      const loopHooks = yield* loopHooksFor(threadId);
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -4389,6 +4391,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               },
             }
           : {}),
+        ...(loopHooks ? { hooks: loopHooks } : {}),
       };
 
       yield* Effect.annotateCurrentSpan({
