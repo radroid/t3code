@@ -187,6 +187,18 @@ export const LoopRecord = Schema.Struct({
   stopped: withDefault(Schema.NullOr(StopRecord), null),
   overridePrompt: withDefault(Schema.NullOr(Schema.String), null),
   blockers: withDefault(Schema.Array(Blocker), []),
+
+  /**
+   * When the agent called the `loop_done` MCP tool, or `null`.
+   *
+   * The tool-shaped twin of the done-file sentinel, and read the same way: `doneSignal`
+   * honours it only when it is newer than `armedAtMs`, so a re-arm supersedes a previous
+   * run's call exactly as it supersedes a leftover `.coil/loop-done`. Nothing clears it,
+   * for the same reason the supervisor never deletes the file.
+   */
+  loopDoneAtMs: withDefault(Schema.NullOr(Schema.Number), null),
+  /** The `reason` the agent gave, for the stop detail and the console. Display only. */
+  loopDoneReason: withDefault(Schema.NullOr(Schema.String), null),
 });
 export type LoopRecord = typeof LoopRecord.Type;
 
@@ -227,6 +239,8 @@ export const EMPTY_RECORD: LoopRecord = {
   stopped: null,
   overridePrompt: null,
   blockers: [],
+  loopDoneAtMs: null,
+  loopDoneReason: null,
 };
 
 const EMPTY_STATE: LoopState = { version: 1, global: DEFAULT_GLOBAL_SETTINGS, threads: {} };

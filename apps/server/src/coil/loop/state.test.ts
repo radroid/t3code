@@ -108,6 +108,8 @@ const FULL_RECORD: LoopRecord = {
   blockers: [
     blocker("b-1", { answeredAtMs: 1_700_007_000_000, answer: "shim", deliveredToAgent: true }),
   ],
+  loopDoneAtMs: 1_700_008_000_000,
+  loopDoneReason: "migration landed",
 };
 
 // These two pin the exact on-disk bytes rather than round-tripping through the encoder, so
