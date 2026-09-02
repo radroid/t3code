@@ -564,7 +564,11 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     // the controlled value (setText), never this typing path. Hardware
     // Command-Return keeps flowing through the UIKeyCommand above, and a
     // Shift+Return line break is let through via isInsertingHardLineBreak.
-    if text == "\n", (textView as? ComposerTextView)?.isInsertingHardLineBreak != true {
+    // `!isReadOnly` leads: upstream #8614 freezes the editor while a dictation
+    // transcription settles, and a hardware Return must not submit a composer
+    // the user has been told is frozen. Upstream's own guard is the `return
+    // !isReadOnly` tail below, which this branch would otherwise jump.
+    if !isReadOnly, text == "\n", (textView as? ComposerTextView)?.isInsertingHardLineBreak != true {
       onComposerSubmit([:])
       return false
     }
