@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 #
-# coil upstream sync — rebase the fork's patch series onto upstream/main and verify.
+# coil upstream sync — merge upstream/main into the fork's main and verify.
 #
-# Implements the mechanical core of A4 (daily sync). Locally testable and reused by
-# .github/workflows/coil-upstream-sync.yml. Writes a machine-readable status file and
-# uses exit codes so a caller (workflow or agent) can decide whether to push / escalate.
+# Implements the mechanical core of A4 (daily sync), as amended 2026-09-02: the fork MERGES
+# upstream rather than rebasing onto it. `main` only ever fast-forwards, no step rewrites
+# history and no step force-pushes, so worktrees, tags, open PRs and in-flight branches all
+# stay anchored. Locally testable and reused by .github/workflows/coil-upstream-sync.yml.
+# Writes a machine-readable status file and uses exit codes so a caller (workflow or agent)
+# can decide whether to push / escalate.
 #
-#   exit 0  = clean rebase, verification green  -> caller may push
+#   exit 0  = clean merge, verification green  -> caller may push (a plain fast-forward)
 #   exit 10 = upstream unchanged, nothing to do (no-op)
-#   exit 20 = rebase conflict (working tree restored, nothing pushed)
-#   exit 30 = rebase clean but verification failed (nothing pushed)
-#   exit 40 = rebase clean & verification green, but a fork patch was dropped during
-#            rebase (upstream likely absorbed it) -> needs review, nothing pushed
+#   exit 20 = merge conflict (merge aborted, working tree restored, nothing pushed)
+#   exit 30 = merge clean but verification failed (nothing pushed)
+#
+# There is no dropped-patch exit any more (it used to be 40). A rebase replays each fork
+# commit and can silently drop one that upstream absorbed; a merge replays nothing, so every
+# fork commit stays reachable from `main` by construction and there is nothing to detect.
 #
 # Status file (default: ./coil-sync-status.json) always written before exit.
 #
@@ -22,7 +27,7 @@
 #   RUN               command prefix for package scripts (default: "vp run")
 #   VERIFY            space-separated script names (default: "typecheck lint test")
 #   STATUS_FILE       (default: ./coil-sync-status.json)
-#   SKIP_VERIFY=1     rebase only, skip verification (used by callers that verify separately)
+#   SKIP_VERIFY=1     merge only, skip verification (used by callers that verify separately)
 #
 set -uo pipefail
 
@@ -49,7 +54,6 @@ write_status() {
     printf '  "conflicted_files": %s,\n' "$(json_escape "${CONFLICTED:-}")"
     printf '  "culprit_commits": %s,\n' "$(json_escape "${CULPRITS:-}")"
     printf '  "failing_step": %s,\n' "$(json_escape "${FAILING_STEP:-}")"
-    printf '  "dropped_patches": %s,\n' "$(json_escape "${DROPPED:-}")"
     printf '  "patch_manifest": %s,\n' "$(json_escape "${MANIFEST:-}")"
     printf '  "detail": %s\n' "$(json_escape "$detail")"
     printf '}\n'
@@ -72,8 +76,10 @@ UPSTREAM_HEAD="$(git rev-parse "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH")"
 LOCAL_HEAD="$(git rev-parse "$LOCAL_BRANCH")"
 MERGE_BASE="$(git merge-base "$LOCAL_BRANCH" "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH")"
 
-# Patch manifest = commits on local not in upstream (before rebase).
-MANIFEST="$(git log --oneline "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || true)"
+# Patch manifest = the fork's own commits, i.e. everything on local that upstream does not
+# have. --no-merges drops the sync merges themselves, which are not fork changes; the list is
+# the same before and after a merge, since a merge never rewrites a commit.
+MANIFEST="$(git log --oneline --no-merges "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" | head -100 || true)"
 
 # --- no-op if upstream hasn't advanced beyond our merge base ----------------
 if [[ "$MERGE_BASE" == "$UPSTREAM_HEAD" ]]; then
@@ -83,48 +89,48 @@ if [[ "$MERGE_BASE" == "$UPSTREAM_HEAD" ]]; then
 fi
 
 UPSTREAM_RANGE="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" | head -100 || true)"
-# --no-merges: a default `git rebase` flattens merge commits, so counting them would make
-# PATCH_COUNT_AFTER < BEFORE even when no real patch was dropped (e.g. a t3x PR merged into
-# fork main via GitHub's merge button) — a false "dropped patch" that would stall the sync
-# every day. Counting only non-merge commits is invariant across that flattening while
-# still catching a genuinely dropped patch (a real commit that upstream absorbed).
-PATCH_COUNT_BEFORE="$(git rev-list --count --no-merges "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
+UPSTREAM_COUNT="$(git rev-list --count "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" || echo 0)"
+FORK_COUNT="$(git rev-list --count --no-merges "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
 
-echo "→ rebasing $LOCAL_BRANCH ($PATCH_COUNT_BEFORE patch commits) onto $UPSTREAM_REMOTE/$UPSTREAM_BRANCH"
-git checkout -q "$LOCAL_BRANCH"
+echo "→ merging $UPSTREAM_REMOTE/$UPSTREAM_BRANCH ($UPSTREAM_COUNT commits) into $LOCAL_BRANCH ($FORK_COUNT fork commits)"
+# Checked, not assumed. An unclean tree (or a missing branch) makes this fail, and an unchecked
+# failure leaves the script merging into whatever branch happened to be out — then reporting ok.
+git checkout -q "$LOCAL_BRANCH" || {
+  FAILING_STEP="checkout"
+  write_status daily error "could not check out $LOCAL_BRANCH"
+  exit 1
+}
 
-if ! git rebase "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
+# --no-ff so the sync is always one reviewable merge commit with a subject that names the
+# absorbed range, even in the degenerate case where the fork has nothing of its own left.
+MERGE_MSG="chore(coil): merge $UPSTREAM_REMOTE/$UPSTREAM_BRANCH $(git rev-parse --short "$UPSTREAM_HEAD") ($UPSTREAM_COUNT commits)"
+
+if ! git merge --no-ff -m "$MERGE_MSG" "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
   CONFLICTED="$(git diff --name-only --diff-filter=U | sort -u | tr '\n' ' ')"
   # Which upstream commits touched the conflicted files (the likely culprits).
   if [[ -n "$CONFLICTED" ]]; then
     # shellcheck disable=SC2086
     CULPRITS="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" -- $CONFLICTED | head -40 || true)"
   fi
-  git rebase --abort || true
-  fail "rebase conflict in: $CONFLICTED"
-  write_status daily conflict "rebase aborted; working tree restored"
+  git merge --abort || true
+  fail "merge conflict in: $CONFLICTED"
+  # `git merge --abort` restores the pre-merge tree, but it can itself fail. Confirm the merge
+  # really is gone before claiming it: nothing pushes either way, but a half-aborted merge left
+  # in the checkout is the one outcome a human has to be told about. Only merge residue counts —
+  # an unrelated local edit is not this script's business to report or to clean up.
+  if [[ -n "$(git ls-files --unmerged)" ]] || [[ -e "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+    fail "merge --abort did not restore the checkout; it is still mid-merge. Recover by hand ('git merge --abort', or 'git reset --hard $LOCAL_HEAD' if you have nothing else in the tree)"
+    write_status daily conflict "merge aborted but the checkout is still mid-merge; needs manual recovery to $LOCAL_HEAD"
+    exit 20
+  fi
+  write_status daily conflict "merge aborted; working tree restored"
   exit 20
-fi
-
-# --- dropped-patch detection (A4 step 7) ------------------------------------
-# Compare non-merge counts (see PATCH_COUNT_BEFORE above) so merge-flattening never
-# false-positives.
-PATCH_COUNT_AFTER="$(git rev-list --count --no-merges "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH..$LOCAL_BRANCH" || echo 0)"
-if (( PATCH_COUNT_AFTER < PATCH_COUNT_BEFORE )); then
-  DROPPED="non-merge patch count dropped $PATCH_COUNT_BEFORE -> $PATCH_COUNT_AFTER (upstream likely absorbed a change); manifest before: $MANIFEST"
-  fail "$DROPPED"
 fi
 
 # --- verify ------------------------------------------------------------------
 if [[ "$SKIP_VERIFY" == 1 ]]; then
-  # A dropped patch must escalate even when the caller verifies separately: it means a
-  # fork commit silently vanished, which is never safe to auto-push.
-  if [[ -n "${DROPPED:-}" ]]; then
-    write_status daily dropped-patch "rebase clean; verification skipped; a fork patch was dropped"
-    exit 40
-  fi
-  echo "→ SKIP_VERIFY set; rebase clean, leaving verification to caller"
-  write_status daily rebased "rebase clean; verification skipped"
+  echo "→ SKIP_VERIFY set; merge clean, leaving verification to caller"
+  write_status daily merged "merge clean; verification skipped"
   exit 0
 fi
 
@@ -144,20 +150,11 @@ for script in $VERIFY; do
   if ! $RUN "$script" $EXTRA; then
     FAILING_STEP="$script"
     fail "verification step '$script' failed"
-    write_status daily verify-failed "rebase clean but '$script' failed"
+    write_status daily verify-failed "merge clean but '$script' failed"
     exit 30
   fi
 done
 
-# A green tree that dropped one of our own patches is still NOT safe to auto-push: the
-# fork lost a change and a human/agent must confirm the loss was intentional. Escalate
-# with a distinct code so the workflow opens an issue instead of pushing.
-if [[ -n "${DROPPED:-}" ]]; then
-  fail "escalating (exit 40): a fork patch was dropped during rebase; not auto-pushing"
-  write_status daily dropped-patch "rebase clean and verification green, but a fork patch was dropped: $DROPPED"
-  exit 40
-fi
-
-write_status daily ok "rebase clean and verification green"
+write_status daily ok "merge clean and verification green"
 echo "✓ sync clean and verified"
 exit 0

@@ -1,10 +1,15 @@
 # t3x daily sync — conflict-resolver runbook
 
-The daily GitHub Action (`coil-upstream-sync.yml`) does the mechanical rebase every day for
-free. When it **can't** complete — a merge conflict, a red verify, or a dropped patch — it
-opens (or updates) a single `coil-sync` issue with a status JSON block. This runbook is how that
-issue gets resolved: **on demand, by activating an agent**. This resolver runs only when asked —
-though `coil-ci.yml` still gates every push and PR, and `coil-weekly-verify.yml` runs on Sundays.
+The daily GitHub Action (`coil-upstream-sync.yml`) **merges** `upstream/main` into fork `main`
+every day for free. When it **can't** complete — a merge conflict or a red verify — it opens (or
+updates) a single `coil-sync` issue with a status JSON block. This runbook is how that issue gets
+resolved: **on demand, by activating an agent**. This resolver runs only when asked — though
+`coil-ci.yml` still gates every push and PR, and `coil-weekly-verify.yml` runs on Sundays.
+
+The sync merges; it does not rebase (changed 2026-09-02). `main` only ever fast-forwards, so
+nothing in this process force-pushes, no worktree or tag or open PR goes stale on a sync day, and a
+sync PR is an ordinary PR you land with the merge button. The one rule that replaces all of that
+machinery: **land a sync PR as a merge commit, never a squash.**
 
 See the design specs `docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md` (the
 daily/weekly sync + the `coil-sync` escalation contract) and
@@ -19,8 +24,8 @@ On the open `coil-sync` issue, comment:
 ```
 
 That triggers `.github/workflows/coil-sync-resolve.yml`, which runs Claude Code in CI to replay
-the rebase, resolve the conflicts, run verify, and **open a PR into `main`**. It never pushes to
-`main` — you review it and land it yourself (see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button)).
+the merge, resolve the conflicts, run verify, and **open a PR into `main`**. It never pushes to
+`main` — you review it and land it yourself (see [Landing a sync PR](#landing-a-sync-pr-merge-commit-never-squash)).
 The agent comments the PR link back on the issue when done.
 
 > **The comment path always uses `claude-sonnet-5`.** The `model` input only exists on manual
@@ -33,10 +38,10 @@ The agent comments the PR link back on the issue when done.
 
 **Check the budget before you pick a path.** The job is capped at `timeout-minutes: 45` and
 `--max-turns 150`. The one successful resolve to date absorbed a 36-commit upstream range against
-37 fork patches and used 36m15s — 81% of the budget. A materially larger range will exhaust it, and
-a timeout mid-rebase leaves an unpushed branch and a spent budget. Raising the caps needs a workflow
+37 fork commits and used 36m15s — 81% of the budget. A materially larger range will exhaust it, and
+a timeout mid-merge leaves an unpushed branch and a spent budget. Raising the caps needs a workflow
 edit; `workflow_dispatch` reads the workflow file from `--ref`, so you can carry raised limits on a
-scratch branch without merging it (the job still checks out and rebases `main`):
+scratch branch without merging it (the job still checks out `main` and merges upstream into it):
 
 ```
 gh workflow run coil-sync-resolve.yml -R radroid/t3code \
@@ -47,8 +52,8 @@ Measure the range first:
 
 ```
 git fetch upstream
-git rev-list --count $(git merge-base main upstream/main)..upstream/main   # upstream commits
-git rev-list --count --no-merges upstream/main..main                       # fork patches to replay
+git rev-list --count $(git merge-base main upstream/main)..upstream/main   # upstream commits to absorb
+git rev-list --count --no-merges upstream/main..main                       # fork commits (a merge moves none of them)
 ```
 
 ### The daily job cannot trigger the resolver
@@ -61,18 +66,22 @@ NONE`, which fails the workflow's own permission check. Resolution is always hum
 A comment that fails the gate (missing `coil-sync` label, wrong author, edited rather than newly
 created) shows up in the Actions tab as **skipped**, not as an error. Check there if nothing happens.
 
-### Not every `coil-sync` issue is a rebase conflict
+### Not every `coil-sync` issue is a merge conflict
 
 `coil-weekly-verify.yml` escalates onto the _same_ label and issue with `**kind:** weekly-build`.
 `@claude resolve` passes the full gate on those too and will spend an entire agent budget replaying
-a rebase that is not the problem. Read the `**Result:**` / `**kind:**` line first; a `weekly-build`
+a merge that is not the problem. Read the `**Result:**` / `**kind:**` line first; a `weekly-build`
 failure means fix the build.
 
 ### A `push-failed` issue is not a conflict — do not send the agent
 
-`**Result:** push-failed` means the rebase was clean and typecheck/lint/test were all green, and
-then `git push --force-with-lease origin main` was rejected. Replaying the rebase fixes nothing;
-fix the credential and re-run _coil upstream sync (daily)_.
+`**Result:** push-failed` means the merge was clean and typecheck/lint/test were all green, and
+then the fast-forward `git push origin main` was rejected. Replaying the merge fixes nothing.
+
+**Read the push output in the issue before doing anything.** If it says `fetch first` /
+non-fast-forward, `main` simply moved while the job ran — a PR landed — and nothing is wrong:
+re-running _coil upstream sync (daily)_ is the entire fix. Anything else is a credential or
+branch-protection problem; fix that, then re-run. In neither case send the resolver agent.
 
 The dominant cause: **GitHub forbids `GITHUB_TOKEN` from creating or updating any file under
 the `.github/workflows/` directory** — on `main` or on a branch. It is not grantable from the
@@ -82,14 +91,14 @@ something else. Both sync workflows therefore check out with `secrets.T3X_SYNC_T
 
 This stayed invisible until 2026-08-11, when the absorbed range first included an upstream commit
 that edited a workflow file (`1b120f352`, _fix(ci): extend release publish timeout_). Every sync
-carrying an upstream CI change hits it. Nothing is force-landed when it happens: `origin/main` is
-untouched and in-flight PRs stay mergeable, which is why re-running is safe.
+carrying an upstream CI change hits it. Nothing lands when it happens: `origin/main` is untouched
+and in-flight PRs stay mergeable, which is why re-running is safe.
 
 ### When verify goes red on code the fork does not own
 
 A sync can import an upstream test that fails **in this fork's CI but not upstream's**, because
 upstream runs on `blacksmith-*` runners and the fork runs on 2-core `ubuntu-latest`. Before treating
-a red verify as a bad rebase, run the control experiment — it takes two minutes and gives a
+a red verify as a bad merge, run the control experiment — it takes two minutes and gives a
 definitive answer:
 
 ```
@@ -100,10 +109,10 @@ gh workflow run coil-ci.yml -R radroid/t3code --ref t3x/ci-control-upstream
 ```
 
 That branch is pristine upstream plus one fork-owned file. If it fails the same way, the failure is
-upstream-inherited and no fork patch caused it. Delete the branch afterwards.
+upstream-inherited and nothing the fork did caused it. Delete the branch afterwards.
 
 Fix such failures in `.github/workflows/coil-ci.yml` (fork-owned) rather than by patching the upstream
-file — patching adds a row to `docs/coil/SEAMS.md` and permanent rebase cost for a CI-environment
+file — patching adds a row to `docs/coil/SEAMS.md` and permanent sync cost for a CI-environment
 problem. The `--testTimeout` override on the Test step exists for exactly this reason; its comment
 records the case.
 
@@ -112,108 +121,130 @@ records the case.
 This is the checklist the workflow prompt mirrors — follow it if you resolve locally instead.
 
 1. `git fetch upstream && git switch -c coil/sync-<id> main`
-2. `git rebase upstream/main`. Resolve each conflict by understanding intent — favour
-   upstream's structure while preserving the fork's t3x behaviour. `git add -A && git rebase --continue`.
-   `rerere` auto-applies anything resolved before, but **only in a local clone** (`setup-fork.sh`
-   enables it) — the CI resolver gets no rerere replay.
+2. `git merge upstream/main`. Resolve each conflict by understanding intent — favour
+   upstream's structure while preserving the fork's coil behaviour. `git add <file>` per
+   resolution, then `git commit` to close the merge — **one** merge commit, not a rebase and
+   not a flattened squash. `rerere` auto-applies anything resolved before, but **only in a
+   local clone** (`setup-fork.sh` enables it) — the CI resolver gets no rerere replay.
 3. **Do the thing CI cannot:** review the upstream commits that touched t3x _seams_
    (`docs/coil/SEAMS.md`) even when they did **not** textually conflict — upstream may have
    changed the semantics of an API the fork hooks into. For each seam file,
    `git log <old>..upstream/main -- <file>` and read the diffs; confirm the fork's feature
    still behaves.
 4. **Parallel path:** `apps/coil-home/` duplicates `apps/marketing/`. A copy cannot conflict, so
-   the rebase will never flag it — it just drifts. Check upstream's marketing churn this cycle
+   the merge will never flag it — it just drifts. Check upstream's marketing churn this cycle
    (`git log <merge-base>..upstream/main --oneline -- apps/marketing`) and either port
    intentionally or record "nothing worth porting".
-5. If a patch commit went **empty/dropped**, upstream absorbed it — confirm the behaviour now
-   exists upstream, drop the patch, and note it.
+5. **Absorbed work is now yours to remove.** A merge never drops a fork commit, so when upstream
+   has grown its own version of something the fork carries, both survive. Confirm the behaviour
+   really exists upstream, delete the fork's redundant copy as its own commit on the branch, and
+   note it in the PR. (The old rebase-era "dropped patch" escalation is gone; nothing can vanish
+   on its own any more.)
 6. Verify: `vp run typecheck && vp run lint && vp run test --testTimeout=120000`. Fix the fork's
-   patches to match upstream's new internals until green.
+   code to match upstream's new internals until green.
 
    Two notes. **`AGENTS.md` says "do not run repo-wide checks" — an upstream sync is the sanctioned
-   exception.** A rebase can break any package, so the full suite is the point; that rule is about
+   exception.** A sync can break any package, so the full suite is the point; that rule is about
    routine feature work. And the `--testTimeout` flag is required (see the section above); it must
    not follow a `--` separator or it is silently ignored.
 
 7. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
-   and **lands it — see [Landing a sync PR](#landing-a-sync-pr-do-not-use-the-github-merge-button);
-   the GitHub merge button does not work on a rebased branch.** The recovery tag
-   `coil/last-good-*` from the Action is the rollback point.
+   and **lands it with a merge commit — see
+   [Landing a sync PR](#landing-a-sync-pr-merge-commit-never-squash).** To undo a landed sync,
+   `git revert -m 1 <merge sha>` — but that leaves the merge in `main`'s ancestry, so the sync will
+   never re-offer the range (see the rollback note there). The `coil/last-good-*` tag from the
+   Action names the exact pre-sync tip if you need the tree itself.
 8. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
    breaks auto-resume's detection): do NOT open a green PR. Push the branch, open a **draft**
    PR, and comment on the issue with exactly what is blocked and what decision is needed.
 
-## Landing a sync PR (do NOT use the GitHub merge button)
+## Landing a sync PR (merge commit, never squash)
 
-The resolver's branch is the fork's patch series **rebased onto new upstream**, so `main` is
-_not_ an ancestor of it. GitHub reports the PR `CONFLICTING`/`DIRTY` (a huge diff plus add/add
-conflicts on the fork's own files), and **Merge / Squash / Rebase all fail** — the branch is
-meant to _replace_ `main`'s history, not extend it. Land it by force-updating `main` to the
-reviewed tip instead.
+The resolver's branch is `main` **plus one merge commit**, optionally followed by ordinary commits
+(absorbed-work removals, verify fix-ups); `main` is an ancestor either way. GitHub can build the
+merge ref, `pull_request` fires, the diff is honest, and the merge button works. Land it with a
+**merge commit**, and set the subject:
+
+```
+gh pr merge <n> -R radroid/t3code --merge \
+  --subject "chore(coil): merge upstream/main <sha> (N commits)"
+```
+
+`--subject` is not decoration. GitHub's default merge title is `Merge pull request #N from …`, and
+the release changelog walks `--first-parent`, so that default is what users would read as the entry
+for a whole upstream range. The daily job writes the `chore(coil):` subject itself; a PR landed by
+hand carries it only because you passed it.
+
+**Never `--squash`, never `--rebase`.** A squash rewrites the whole sync into one fork commit whose
+only parent is the old `main`. Upstream's commits stop being reachable from `main`, so the merge-base
+with `upstream/main` never advances: the next daily sync re-offers the same range, re-conflicts on
+the same files, and does it again every day after that. It also invalidates `docs/coil/SEAMS.md`,
+which is measured against that merge-base. The merge commit is the whole point of the design — it is
+what records that this range is absorbed.
 
 The branch is `coil/sync-<workflow run id>` — the run id, not the issue number. A **draft** PR means
 the resolver could not get all three verify steps green; read its issue comment before anything else.
 
 **1. Get a CI signal — it may not appear on its own.** `coil-ci.yml` has a `push` trigger on
-`coil/sync-**`, but it only fires if the resolver pushed with a PAT (`T3X_SYNC_TOKEN`). On the
-`GITHUB_TOKEN` fallback GitHub creates no workflow runs from its own events, so neither that
-trigger nor `pull_request` fires. Check first; if there is no run, dispatch it:
+`coil/sync-**` and a `pull_request` trigger, but GitHub creates no workflow run from an event its own
+`GITHUB_TOKEN` authored. If the resolver pushed and opened the PR on the token fallback rather than
+`T3X_SYNC_TOKEN`, neither trigger fires. Check first; if there is no run, dispatch it:
 
 ```
 gh workflow run coil-ci.yml -R radroid/t3code --ref coil/sync-<id>
 gh run list -R radroid/t3code --workflow coil-ci.yml --branch coil/sync-<id>
 ```
 
-**2. Review what the resolver changed in each fork patch.** A plain `git diff` against `main` is a
-useless whole-upstream delta; use `range-diff`:
+**2. Review the resolutions, not the range.** The PR diff is upstream's entire range; reading it is
+not the job. Two views do the actual work:
 
 ```
 git fetch origin && git fetch upstream
-OLD=$(git merge-base origin/main upstream/main)
-NEW=$(git merge-base origin/coil/sync-<id> upstream/main)
-git range-diff "$OLD..origin/main" "$NEW..origin/coil/sync-<id>"
+B=origin/coil/sync-<id>                       # the branch tip
+M=$(git rev-list --merges -1 "$B")            # the merge commit — NOT necessarily the tip
+
+git log --merges -1 -p --cc "$M"              # the combined diff: ONLY hunks that differ from BOTH
+                                              # parents — i.e. exactly the conflict resolutions
+git diff "$M^1" "$B" --stat                   # what main gains: upstream's range, those
+                                              # resolutions, and any follow-up commits
 ```
 
-Confirm no fork patch silently vanished — `git rev-list --count --no-merges upstream/main..origin/coil/sync-<id>`
-should equal the pre-sync patch count.
+`--cc` is the review surface. A merge that resolved nothing by hand shows an empty combined diff; every
+hunk it does print is a decision someone made, and each one deserves a reason. (`git diff "$M^2" "$M"`
+is the mirror image — the fork's whole footprint against upstream, which is what the seam ledger
+measures.)
 
-**3. Land it.** Save the old `main` first; step 5 needs it.
-
-```
-git fetch origin
-OLD_MAIN=$(git rev-parse origin/main)          # SAVE THIS
-git push --force-with-lease origin origin/coil/sync-<id>:main
-```
-
-`--force-with-lease` leases against your local `refs/remotes/origin/main`, so the `git fetch`
-immediately before is required. It works from any worktree with no branch checked out.
-
-**4. Close out.** GitHub usually auto-marks the PR `MERGED` on force-update, in which case
-`gh pr close` errors — check first. The **issue** is what actually needs closing by hand.
+Then do the thing no diff shows — the **seam review**. Upstream can change the semantics of an API the
+fork hooks into without ever touching a line the fork also touched, so there is no conflict to see:
 
 ```
-gh pr view <n> -R radroid/t3code --json state
-gh issue close <sync-issue> -R radroid/t3code --comment "Landed by force-updating main"
+OLD_MB=$(git merge-base "$M^1" "$M^2")        # the merge-base this sync advances from
+git log "$OLD_MB..upstream/main" -- <seam file from docs/coil/SEAMS.md>
 ```
 
-**5. Rebase in-flight branches with `--onto`, not a plain rebase.** `main`'s history was _replaced_,
-so `git rebase origin/main` would try to replay all of pre-sync `main`:
+There is no dropped-patch check any more. A merge replays nothing, so no fork commit can go missing;
+`git rev-list --count --no-merges upstream/main..$B` only moves if someone deliberately removed
+absorbed work, which the PR body should say.
+
+**3. Close out.** The PR closes itself as `MERGED`. The **issue** still needs closing by hand.
 
 ```
-git rebase --onto origin/main "$OLD_MAIN" t3x/<feature>
-git push --force-with-lease origin t3x/<feature>
+gh issue close <sync-issue> -R radroid/t3code --comment "Landed as a merge commit"
 ```
 
-Any branch left un-rebased shows `[origin/main: ahead N, behind M]` and cannot land.
+**4. Nothing else needs repairing.** `main` only moved forward, so worktrees take the change with
+`git pull --ff-only`, in-flight branches pick it up with an ordinary `git merge origin/main` or
+`git rebase origin/main`, and every tag, open PR and local branch stays valid. This is the step that
+used to be the expensive one.
 
-- `main` has **no branch protection** (verified: no protection, no rulesets), so the force-push is
-  allowed but unguarded. Rollback is the `coil/last-good-*` tag from the escalation issue:
-  `git push --force-with-lease origin coil/last-good-<stamp>^{commit}:main`. The tag is cut per daily
-  run on pre-rebase `main`, so if feature PRs merged after it, rolling back drops them. If the tag
-  push failed the issue says `none` and there is no rollback point.
-- Repair local checkouts: `git fetch origin && git branch -f main origin/main` (a plain
-  `git checkout main` fails if another worktree holds it). The auto-build worktree needs no action —
-  it force-detaches to the freshly fetched sha on every tick.
+- **To undo a landed sync:** `git revert -m 1 <merge sha>` on a branch, then a normal PR — an ordinary
+  commit, no force-push, and history stays intact. `-m 1` keeps the fork's side. **Know the
+  consequence:** the merge itself stays in `main`'s ancestry, so the daily sync sees that range as
+  already absorbed, reports no-op (exit 10), and never re-offers it — and every later sync lands on
+  top of the reverted tree. Re-absorbing the range means reverting the revert on a branch, not
+  waiting for the sync to bring it back. The `coil/last-good-*` tag the daily job cuts still names
+  the exact pre-sync tip if you want to diff against it or reset to it; if its push failed, the
+  issue says `none`.
 - To re-gate locally before landing:
   `git switch --detach origin/coil/sync-<id> && vp run typecheck && vp run lint && vp run test`.
 
@@ -252,4 +283,4 @@ API budget can't be spent by a passer-by on the public fork.
 gh workflow run "coil upstream sync (daily)" -R radroid/t3code -f dry_run=true
 ```
 
-(drop `dry_run` to actually push a clean rebase).
+(drop `dry_run` to actually fast-forward `main` when the merge is clean and verify is green).

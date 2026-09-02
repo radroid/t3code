@@ -1,13 +1,16 @@
-# coil sync-conflict resolver — on-demand agent for an escalated upstream rebase.
+# coil sync-conflict resolver — on-demand agent for an escalated upstream sync.
 # See docs/superpowers/specs/2026-07-25-sync-conflict-agent-design.md and
 # docs/coil/sync-agent-runbook.md.
 #
 # Activate it by commenting `@claude resolve` on the coil-sync issue the daily sync opened,
-# or by running this workflow manually. It replays the rebase in CI, resolves conflicts,
+# or by running this workflow manually. It replays the merge in CI, resolves conflicts,
 # runs verify, and opens a PR into main. It is scoped to push only a coil/sync-* branch and
 # open a PR — a human reviews and merges; this workflow does not update main directly. (That
 # scoping is by instruction + the PR-review gate; see the spec's Safety notes to also enforce
 # it with a branch-protection ruleset on main.)
+#
+# The branch is `main` plus a merge of `upstream/main`, so its PR is an ordinary, button-
+# mergeable PR — but it MUST land as a merge commit, never a squash. See the prompt below.
 #
 # One-time setup: install the Claude GitHub App (`/install-github-app`) so the repo has an
 # auth secret (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY). Skip the generic @claude
@@ -70,7 +73,7 @@ jobs:
           # Same wall as the daily job: GITHUB_TOKEN may not create or update `.github/workflows/**`
           # on ANY ref, branches included. Since the resolver exists to land upstream ranges — the
           # exact ranges that carry upstream CI edits — pushing its `coil/sync-*` branch as
-          # GITHUB_TOKEN fails at step 5 after the whole rebase+verify budget is already spent.
+          # GITHUB_TOKEN fails at the push step after the whole merge+verify budget is already spent.
           # T3X_SYNC_TOKEN carries the `workflow` scope; the fallback preserves today's behaviour
           # when the secret is absent. `gh` below stays on GITHUB_TOKEN on purpose — only the git
           # push needs the wider scope.
@@ -91,12 +94,16 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Resolve rebase with Claude
+      - name: Resolve the merge with Claude
         uses: anthropics/claude-code-action@v1
         env:
           # Lets the agent's `gh` and `git push` calls authenticate. GITHUB_TOKEN has the
           # contents/pull-requests/issues write scopes granted above.
           GH_TOKEN: ${{ github.token }}
+          # Pin every gh call to THIS fork: the step above adds an `upstream` remote (the parent
+          # repo) and gh's base-repo resolution ranks it above `origin`, so an un-pinned `gh pr
+          # create` targets pingdotgg, where this token cannot write.
+          GH_REPO: ${{ github.repository }}
         with:
           # Whichever secret the install flow set is used; the empty one is ignored.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -106,7 +113,7 @@ jobs:
           # comment body — so there is no workflow-injection surface here.
           prompt: |
             You are the coil upstream-sync resolver for the radroid/t3code fork. The daily
-            rebase of fork `main` onto `upstream/main` was escalated because it could not
+            merge of `upstream/main` into fork `main` was escalated because it could not
             complete automatically. Resolve it and open a PR. Do NOT push to `main`.
 
             Already set up in this checkout:
@@ -116,25 +123,34 @@ jobs:
               are listed in docs/coil/SEAMS.md.
 
             Steps:
-            1. Create a working branch: `git switch -c coil/sync-${{ github.run_id }}`.
-            2. `git rebase upstream/main`. Resolve every conflict by understanding intent —
-               favour upstream's structure while preserving the fork's coil behaviour. Loop
-               `git add -A && git rebase --continue` until the rebase completes.
+            1. Create a working branch from `main`: `git switch -c coil/sync-${{ github.run_id }}`.
+            2. `git merge upstream/main`. Resolve every conflict by understanding intent —
+               favour upstream's structure while preserving the fork's coil behaviour. `git add`
+               each resolved file, then `git commit` to complete the merge. That is ONE merge
+               commit on top of `main`: never `git rebase`, never flatten it, never force-push.
             3. Review the upstream commits that touched files listed in docs/coil/SEAMS.md even
-               where they did NOT textually conflict, and adjust the fork's patches if upstream
-               changed the semantics of an API the fork hooks into. If a fork patch became
-               empty (upstream absorbed it), drop it and note that.
+               where they did NOT textually conflict, and adjust the fork's code if upstream
+               changed the semantics of an API the fork hooks into. If upstream has absorbed a
+               fork change, delete the fork's now-redundant version as a normal follow-up commit
+               on this branch and say so — a merge never drops fork code for you.
             4. Verify: run `vp run typecheck`, `vp run lint`, then
                `vp run test --testTimeout=120000`. The --testTimeout flag is required: apps/web
                pins 15s, which is too tight for this fork's 2-core runners, and 120s matches the
                fork's CI gate without lowering any package's own budget. Note the flag must NOT
-               come after a `--` separator or it is silently ignored. Fix the fork's patches until
+               come after a `--` separator or it is silently ignored. Fix the fork's code until
                all three pass.
             5. Push the branch: `git push -u origin HEAD`.
             6. Open a PR into `main` with `gh pr create`, title "coil: resolve upstream sync
                (run ${{ github.run_id }})". In the body summarise: the upstream range merged,
-               each conflicted file and how you resolved it, any dropped patches, and the
-               typecheck/lint/test results.
+               each conflicted file and how you resolved it, anything upstream absorbed, and the
+               typecheck/lint/test results. End the body with this instruction to the human who
+               lands it, verbatim (it is a YAML block scalar here, so copy it exactly as written):
+               Land with a merge commit, and set the subject, or the release changelog will read
+               `Merge pull request #N` for a whole upstream range:
+               `gh pr merge <n> -R radroid/t3code --merge --subject "chore(coil): merge
+               upstream/main <sha> (N commits)"`. Do NOT squash or rebase — a squash collapses the
+               merged upstream history into a single fork commit, the merge-base never advances,
+               and every later sync re-conflicts on the same files.
             7. If an escalation issue is known (#${{ github.event.issue.number || github.event.inputs.issue }}),
                comment the PR URL on it. Then stop.
 

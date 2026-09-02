@@ -65,7 +65,7 @@ pnpm --filter coil-update-relay deploy
 ```
 
 `wrangler` is deliberately **not** a dependency. It drags ~500 lines into `pnpm-lock.yaml`, which
-`SEAMS.md` records as the second-worst rebase-conflict surface in this fork, and it is only ever
+`SEAMS.md` records as the second-worst sync-conflict surface in this fork, and it is only ever
 needed at deploy time. `pnpm dlx` fetches it for that one command instead.
 
 > The wrangler migration must use `new_sqlite_classes`, not `new_classes`. Durable Objects are on

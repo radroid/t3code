@@ -1,5 +1,5 @@
 # coil weekly deep verification — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md (A5).
-# Runs the full monorepo build against the current fork main. Does NOT rebase and never
+# Runs the full monorepo build against the current fork main. Does NOT merge upstream and never
 # blocks the daily sync. On failure it escalates via the shared `coil-sync` issue.
 #
 # NOTE: runs on ubuntu-latest — the fork has no access to upstream's blacksmith-* runners.
@@ -69,7 +69,7 @@ jobs:
           gh label create "$SYNC_LABEL" --color B60205 --description "Upstream sync needs a human/agent" 2>/dev/null || true
 
           TITLE="[coil-sync] weekly full build failing"
-          BODY="$(printf 'Weekly full build failed.\n\n**kind:** `weekly-build`\n**failed steps:**%s\n**run:** %s\n\nThis is advisory — it does not block the daily rebase. A green typecheck/lint/test can still hide a build regression; investigate when convenient.' "$FAILED_STEPS" "$RUN_URL")"
+          BODY="$(printf 'Weekly full build failed.\n\n**kind:** `weekly-build`\n**failed steps:**%s\n**run:** %s\n\nThis is advisory — it does not block the daily sync. A green typecheck/lint/test can still hide a build regression; investigate when convenient.' "$FAILED_STEPS" "$RUN_URL")"
 
           # See the daily workflow for why we decouple label attachment from issue creation:
           # `gh issue create --label` aborts creation when the label lookup lags behind
