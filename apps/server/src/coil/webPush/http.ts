@@ -7,68 +7,25 @@
  *
  * Raw routes, not WS-RPC: an RPC would force edits to `@t3tools/contracts` + `ws.ts` + its
  * scope map. These mount via `CoilRoutesLive` in coil/index.ts, so server.ts is untouched.
- * See docs/coil/SEAMS.md and coil/autoResume/http.ts (the mirrored template).
+ * Auth is the shared `coil/http/auth.ts` mirror, not a local paste. See docs/coil/SEAMS.md.
  *
  * @module coil/webPush/http
  */
 
-import {
-  type AuthEnvironmentScope,
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerRespondable,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
-import {
-  failEnvironmentAuthInvalid,
-  failEnvironmentInternal,
-  failEnvironmentScopeRequired,
-} from "../../auth/http.ts";
+import { authenticateWithScope, routeAuthErrorTags } from "../http/auth.ts";
 import { PushSubscriptionStore, type PushSubscriptionStoreShape } from "./state.ts";
 import { WebPushVapid, type WebPushVapidKeys } from "./vapid.ts";
 
 export const VAPID_KEY_ROUTE_PATH = "/api/coil/push/vapid-public-key";
 export const SUBSCRIBE_ROUTE_PATH = "/api/coil/push/subscribe";
 export const UNSUBSCRIBE_ROUTE_PATH = "/api/coil/push/unsubscribe";
-
-/**
- * MIRROR of the module-private raw-route auth in apps/server/src/http.ts (also mirrored by
- * coil/autoResume/http.ts). Returns the session so the subscribe route can record which device
- * registered. Registered as a logic mirror in docs/coil/SEAMS.md.
- */
-const authenticateWithScope = (scope: AuthEnvironmentScope) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
-      Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-        failEnvironmentAuthInvalid(EnvironmentAuth.serverAuthCredentialReason(error)),
-      ),
-      Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-        failEnvironmentInternal("internal_error", error),
-      ),
-    );
-    if (!session.scopes.includes(scope)) {
-      return yield* failEnvironmentScopeRequired(scope);
-    }
-    return session;
-  });
-
-const respondableTags = {
-  EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
-  EnvironmentInternalError: HttpServerRespondable.toResponse,
-  EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
-} as const;
 
 const SubscribeBody = Schema.Struct({
   endpoint: Schema.String,
@@ -91,7 +48,7 @@ const makeVapidKeyRoute = (vapid: WebPushVapidKeys) =>
     Effect.gen(function* () {
       yield* authenticateWithScope(AuthOrchestrationReadScope);
       return HttpServerResponse.jsonUnsafe({ publicKey: vapid.publicKey });
-    }).pipe(Effect.catchTags(respondableTags)),
+    }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
 
 const makeSubscribeRoute = (store: PushSubscriptionStoreShape) =>
@@ -121,7 +78,7 @@ const makeSubscribeRoute = (store: PushSubscriptionStoreShape) =>
         createdAt,
       });
       return HttpServerResponse.jsonUnsafe({ ok: true });
-    }).pipe(Effect.catchTags(respondableTags)),
+    }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
 
 const makeUnsubscribeRoute = (store: PushSubscriptionStoreShape) =>
@@ -144,7 +101,7 @@ const makeUnsubscribeRoute = (store: PushSubscriptionStoreShape) =>
       }
       yield* store.removeByEndpoint(body.endpoint);
       return HttpServerResponse.jsonUnsafe({ ok: true });
-    }).pipe(Effect.catchTags(respondableTags)),
+    }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
 
 /**
