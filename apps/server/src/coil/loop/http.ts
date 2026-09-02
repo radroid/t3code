@@ -7,6 +7,7 @@
  *   GET  /api/coil/loops             -> { loops: [...] }, deterministically ordered
  *   GET  /api/coil/loop/settings     -> the global block + armedCount
  *   POST /api/coil/loop/settings     -> write the master toggle and the defaults
+ *   POST /api/coil/loop/answer       -> answer one deferred blocker
  *
  * Raw routes rather than WS-RPC for the reason `webPush/http.ts` states: an RPC would force
  * edits to `@t3tools/contracts`, `ws.ts` and its scope map, where a raw route costs one
@@ -59,6 +60,7 @@ import {
 export const LOOP_ROUTE_PATH = "/api/coil/loop";
 export const LOOPS_ROUTE_PATH = "/api/coil/loops";
 export const LOOP_SETTINGS_ROUTE_PATH = "/api/coil/loop/settings";
+export const LOOP_ANSWER_ROUTE_PATH = "/api/coil/loop/answer";
 
 /** The hard ceiling on a single run's check-ins. A request above it is a 400, never a clamp. */
 export const MAX_CHECK_INS = 20;
@@ -156,6 +158,29 @@ const SettingsBody = Schema.Struct({
 });
 type SettingsBody = typeof SettingsBody.Type;
 const decodeSettingsBody = Schema.decodeUnknownEffect(SettingsBody);
+
+/**
+ * `POST /api/coil/loop/answer`.
+ *
+ * **The blocker half only, and the field is named `blockerId` rather than §9's `id`.** §9 sketched
+ * one polymorphic `id` routing two mechanisms — a native pending input to
+ * `thread.user-input.respond`, a deferred blocker to this store — behind a single console control.
+ * The native half is not built and this route does not stand in for it: a native
+ * `AskUserQuestion` is already rendered live and answerable by `ComposerPendingUserInputPanel`
+ * inside the composer, so the console names it and points there rather than cloning the control.
+ * That leaves upstream's answer path with exactly one instance of itself on the page, and it is
+ * also the honest reading of the §9 note that this route cannot build a correct `answers` map:
+ * upstream keys answers by *question* id while the phase-1 `UserInputRecord` stores one
+ * `requestId` and one question string. An explicit `blockerId` says which of the two mechanisms
+ * this route serves; a `requestId` field is what the native half would add if it is ever built.
+ */
+const AnswerBody = Schema.Struct({
+  threadId: Schema.String,
+  blockerId: Schema.String,
+  answer: Schema.String,
+});
+type AnswerBody = typeof AnswerBody.Type;
+const decodeAnswerBody = Schema.decodeUnknownEffect(AnswerBody);
 
 // --- responses --------------------------------------------------------------
 
@@ -602,24 +627,42 @@ const makePostSettingsRoute = (deps: RouteDeps) =>
     }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
 
-/*
- * TODO(phase 3) — `POST /api/coil/loop/answer`.
+/**
+ * Answer one deferred blocker.
  *
- * BUILD-BRIEF §9 specifies it and TESTS.md 81-83 cover it, but §5 lands it with the console
- * in **phase 3**, not here, and that ordering is right for two reasons:
- *
- *  1. Nothing can raise a blocker until `raise_blocker` ships in phase 5, so the blocker
- *     half of the route would be unreachable code with no way to exercise it end to end.
- *  2. The native half routes an id to `thread.user-input.respond`, whose `answers` are keyed
- *     by *question id*. The phase-1 `UserInputRecord` stores a `requestId` and one question
- *     string, so this route cannot build a correct answers map on its own — the console,
- *     which renders the questions, can. Guessing a key here would produce a route that
- *     answers the wrong question.
- *
- * When it lands: `{ threadId, id, answer }`, operate scope; an id matching an unresolved
- * `record.userInputs` entry goes to `thread.user-input.respond`, an id matching a blocker
- * goes to `store.answerBlocker` (idempotent, `deliveredToAgent: false`), anything else 404.
+ * Idempotent by construction: `store.answerBlocker` keeps the first answer, so a double-click or
+ * a retried request is not a second append and never overwrites what was already banked.
+ * `deliveredToAgent` stays false — the answer is owed to the agent, and the next check-in prompt
+ * is what discharges it.
  */
+const makeAnswerRoute = (deps: RouteDeps) =>
+  HttpRouter.add(
+    "POST",
+    LOOP_ANSWER_ROUTE_PATH,
+    Effect.gen(function* () {
+      yield* authenticate;
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const body = yield* decodeAnswerBody(yield* request.json).pipe(
+        Effect.map((decoded): AnswerBody | null => decoded),
+        Effect.orElseSucceed(() => null),
+      );
+      if (body === null || body.threadId.trim() === "" || body.blockerId.trim() === "") {
+        return fail(400, "invalid_body");
+      }
+
+      const nowMs = yield* Clock.currentTimeMillis;
+      const answered = yield* deps.store.answerBlocker(
+        body.threadId,
+        body.blockerId,
+        body.answer,
+        nowMs,
+      );
+      // An id nobody raised is a 404, not a silent success: the console would otherwise show an
+      // answer as banked while nothing was recorded.
+      if (answered === null) return fail(404, "not_found");
+      return HttpServerResponse.jsonUnsafe({ ok: true });
+    }).pipe(Effect.catchTags(routeAuthErrorTags)),
+  );
 
 /**
  * Mounted from `coil/index.ts`, which discharges `LoopStore`.
@@ -648,6 +691,7 @@ export const loopRouteLayer = Layer.unwrap(
       makeListLoopsRoute(deps),
       makeGetSettingsRoute(deps),
       makePostSettingsRoute(deps),
+      makeAnswerRoute(deps),
     );
   }),
 );

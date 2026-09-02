@@ -15,7 +15,7 @@ import {
 } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
-import { AutoResumeOverlay } from "../coil/AutoResumeOverlay";
+import { ThreadCoilOverlay } from "../coil/ThreadCoilOverlay";
 
 function ChatThreadRouteView() {
   const navigate = useNavigate();
@@ -89,7 +89,7 @@ function ChatThreadRouteView() {
             routeKind="server"
             threadSyncPhase={threadSyncPhase}
           />
-          <AutoResumeOverlay threadRef={threadRef} />
+          <ThreadCoilOverlay threadRef={threadRef} />
         </>
       ) : null}
     </SidebarInset>
