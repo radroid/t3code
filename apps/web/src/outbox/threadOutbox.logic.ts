@@ -1,6 +1,10 @@
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentShellStatus,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
+import { hasQueuedTurnStart } from "@t3tools/client-runtime/state/thread-settled";
 import {
   CommandId,
   EnvironmentId,
@@ -302,4 +306,30 @@ export function resolveThreadOutboxFailureAction(input: {
     return "retry";
   }
   return "discard";
+}
+
+/**
+ * The drain's idle gate: may the next queued head be dispatched into this
+ * thread right now?
+ *
+ * This was `canSettle` from client-runtime until upstream #8600 moved thread
+ * settling server-side and deleted it. The surviving `canSnooze` is not a
+ * substitute — it deliberately permits a running session, because snooze only
+ * changes visibility — so reusing it would dispatch the next queued message on
+ * top of a live turn, which is the exact double-send this gate exists to stop.
+ *
+ * The three blockers are unchanged from the predicate this replaces: the agent
+ * is waiting on the user, a session is live, or a user message exists that no
+ * turn has adopted yet (`hasQueuedTurnStart`, still upstream's and still the
+ * only way to see work that is pending but invisible to session status).
+ */
+export function isThreadIdleForOutboxDrain(
+  shell: Parameters<typeof hasQueuedTurnStart>[0] &
+    Pick<EnvironmentThreadShell, "hasPendingApprovals" | "hasPendingUserInput">,
+  options: { readonly now: string },
+): boolean {
+  if (shell.hasPendingApprovals || shell.hasPendingUserInput) return false;
+  if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
+  if (hasQueuedTurnStart(shell, options)) return false;
+  return true;
 }

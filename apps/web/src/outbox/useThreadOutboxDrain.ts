@@ -2,7 +2,6 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import { canSettle } from "@t3tools/client-runtime/state/thread-settled";
 import { CommandId, type EnvironmentId, type MessageId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
@@ -24,6 +23,7 @@ import {
   modelSelectionsEqual,
   resolveQueuedThreadSettings,
   resolveThreadOutboxDeliveryAction,
+  isThreadIdleForOutboxDrain,
   resolveThreadOutboxFailureAction,
   threadOutboxRetryDelayMs,
   type QueuedThreadMessage,
@@ -32,7 +32,7 @@ import {
 
 /**
  * While messages are queued, re-run the drain on this cadence so the time-based
- * idle-gate (`canSettle`, whose queued-turn-start grace window opens purely by
+ * idle-gate (`isThreadIdleForOutboxDrain`, whose queued-turn-start grace window opens purely by
  * elapsed time with no atom change to signal it) is re-evaluated instead of a
  * head stalling until some unrelated re-render happens to fire.
  */
@@ -44,7 +44,7 @@ const THREAD_OUTBOX_DRAIN_HEARTBEAT_MS = 5_000;
  * A single global in-flight lock, picks the first eligible head per thread,
  * sends one-at-a-time, removes on success, retries transient failures with
  * backoff and discards deterministic ones. The "idle" gate reuses the
- * client-runtime `canSettle` predicate so a just-adopted turn (still invisible
+ * fork-owned `isThreadIdleForOutboxDrain` predicate so a just-adopted turn (still invisible
  * to session status) can never trigger a double send.
  */
 export const dispatchingQueuedMessageIdAtom = Atom.make<MessageId | null>(null).pipe(
@@ -170,7 +170,7 @@ export function useThreadOutboxDrain(): void {
       //  * `hasQueuedTurnStart` only recognises an unadopted turn start within
       //    `QUEUED_TURN_START_GRACE_MS` (2 min) of the message time. A message that
       //    waited longer than that — the normal case for a queued one — arrived with
-      //    the anti-double-send gate already expired, so `canSettle` read the thread
+      //    the anti-double-send gate already expired, so the idle gate read the thread
       //    as settleable and a second `turn/start` could go out. On Codex that
       //    orphans the first turn's events.
       //
@@ -253,7 +253,7 @@ export function useThreadOutboxDrain(): void {
     ],
   );
 
-  // Heartbeat: the `canSettle` gate can hinge on elapsed time alone, which no
+  // Heartbeat: the idle gate can hinge on elapsed time alone, which no
   // dependency below changes. While anything is queued, tick periodically so a
   // head held back only by that time-gate is delivered promptly once its grace
   // window elapses, rather than waiting for an incidental state change.
@@ -307,7 +307,8 @@ export function useThreadOutboxDrain(): void {
         threadExists: thread !== undefined,
         shellStatus,
         environmentConnected: connectedEnvironmentIds.has(nextQueuedMessage.environmentId),
-        threadBusy: thread !== undefined ? !canSettle(thread, { now: nowIso }) : true,
+        threadBusy:
+          thread !== undefined ? !isThreadIdleForOutboxDrain(thread, { now: nowIso }) : true,
       });
       if (deliveryAction === "wait") {
         continue;

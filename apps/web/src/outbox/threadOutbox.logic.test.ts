@@ -1,6 +1,8 @@
 import {
   CommandId,
+  DEFAULT_RUNTIME_MODE,
   EnvironmentId,
+  IsoDateTime,
   MessageId,
   ProviderInstanceId,
   ThreadId,
@@ -22,6 +24,7 @@ import {
   shouldRetryThreadOutboxDelivery,
   threadOutboxRetryDelayMs,
   type QueuedThreadMessage,
+  isThreadIdleForOutboxDrain,
 } from "./threadOutbox.logic";
 import { createThreadOutboxManager, ThreadOutboxManagerError } from "./threadOutboxManager";
 import type { ThreadOutboxStorage } from "./threadOutboxStorage";
@@ -575,5 +578,77 @@ describe("thread outbox manager", () => {
       messageIds(diskQueues["environment-1:thread-1"]),
     );
     registry.dispose();
+  });
+});
+
+describe("isThreadIdleForOutboxDrain", () => {
+  // Upstream #8600 deleted client-runtime's `canSettle`, which this replaces.
+  // The regression it guards is a queued head dispatching on top of a live
+  // turn, which the surviving `canSnooze` would have allowed.
+  const NOW = "2026-09-02T12:00:00.000Z";
+  type OutboxIdleShell = Parameters<typeof isThreadIdleForOutboxDrain>[0];
+  type OutboxIdleSession = NonNullable<OutboxIdleShell["session"]>;
+
+  const idle: OutboxIdleShell = {
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    session: null,
+    latestUserMessageAt: null,
+    latestTurn: null,
+  };
+
+  // Spelled out rather than cast so that a field upstream adds to the session
+  // breaks this file instead of being silently absorbed.
+  const sessionWith = (status: OutboxIdleSession["status"]): OutboxIdleSession => ({
+    threadId: ThreadId.make("thread-1"),
+    status,
+    providerName: null,
+    runtimeMode: DEFAULT_RUNTIME_MODE,
+    activeTurnId: null,
+    lastError: null,
+    updatedAt: IsoDateTime.make("2026-09-02T11:59:00.000Z"),
+  });
+
+  it("dispatches into a thread with no live session and nothing pending", () => {
+    expect(isThreadIdleForOutboxDrain(idle, { now: NOW })).toBe(true);
+  });
+
+  it.each(["starting", "running"] as const)("holds while the session is %s", (status) => {
+    expect(
+      isThreadIdleForOutboxDrain({ ...idle, session: sessionWith(status) }, { now: NOW }),
+    ).toBe(false);
+  });
+
+  it("dispatches once a previous session has gone idle", () => {
+    expect(
+      isThreadIdleForOutboxDrain({ ...idle, session: sessionWith("idle") }, { now: NOW }),
+    ).toBe(true);
+  });
+
+  it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
+    "holds while the agent is blocked on the user (%s)",
+    (blocker) => {
+      expect(isThreadIdleForOutboxDrain({ ...idle, [blocker]: true }, { now: NOW })).toBe(false);
+    },
+  );
+
+  it("holds for a user message no turn has adopted yet", () => {
+    // Inside the adoption grace window with no turn to match it: pending work
+    // that session status cannot see.
+    expect(
+      isThreadIdleForOutboxDrain(
+        { ...idle, latestUserMessageAt: IsoDateTime.make("2026-09-02T11:59:30.000Z") },
+        { now: NOW },
+      ),
+    ).toBe(false);
+  });
+
+  it("dispatches once the unadopted message ages past the grace window", () => {
+    expect(
+      isThreadIdleForOutboxDrain(
+        { ...idle, latestUserMessageAt: IsoDateTime.make("2026-09-02T11:50:00.000Z") },
+        { now: NOW },
+      ),
+    ).toBe(true);
   });
 });
