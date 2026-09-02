@@ -47,7 +47,14 @@ const authenticateWithOperateScope = Effect.gen(function* () {
   const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
     Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-      failEnvironmentAuthInvalid(EnvironmentAuth.serverAuthCredentialReason(error)),
+      // Second argument tracks upstream's `authenticateRawRouteWithScope`, which
+      // this mirrors. `dpopFailureReason` is optional, so dropping it compiles —
+      // it just costs a relay client the precise reason (clock skew being the
+      // motivating case) that every other environment endpoint reports.
+      failEnvironmentAuthInvalid(
+        EnvironmentAuth.serverAuthCredentialReason(error),
+        EnvironmentAuth.serverAuthDpopFailureReason(error),
+      ),
     ),
     Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
       failEnvironmentInternal("internal_error", error),
