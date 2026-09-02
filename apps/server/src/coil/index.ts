@@ -23,8 +23,8 @@ import { autoResumeRouteLayer } from "./autoResume/http.ts";
 import { AutoResumeReactorLive } from "./autoResume/Reactor.ts";
 import { AutoResumeStore, makeAutoResumeStore } from "./autoResume/state.ts";
 import { loopRouteLayer } from "./loop/http.ts";
+import { LoopStoreLive } from "./loop/layer.ts";
 import { LoopReactorLive } from "./loop/Reactor.ts";
-import { LoopStore, makeLoopStore } from "./loop/state.ts";
 import { resolveConfig as resolveWebPushConfig } from "./webPush/config.ts";
 import { webPushRouteLayer } from "./webPush/http.ts";
 import { WebPushReactorLive } from "./webPush/Reactor.ts";
@@ -33,8 +33,6 @@ import { makeWebPushVapid, WebPushVapid } from "./webPush/vapid.ts";
 
 const AUTO_RESUME_STATE_FILENAME = "t3x-auto-resume.json";
 const WEB_PUSH_STATE_FILENAME = "t3x-web-push-subscriptions.json";
-/** `coil-` rather than `t3x-`: the neighbours' names are legacy, kept only to avoid orphaning state. */
-const LOOP_STATE_FILENAME = "coil-loop.json";
 
 /** Wires the durable store to the server state directory. */
 const AutoResumeStoreLive = Layer.effect(
@@ -57,21 +55,18 @@ const PushSubscriptionStoreLive = Layer.effect(
 );
 
 /**
- * The loops record, wired to the server state directory.
+ * The loops record is IMPORTED, not declared here.
  *
- * Module scope for the same reason as `AutoResumeStoreLive`: the reactor and the routes each
- * `Layer.provide` THIS value, and Effect memoises construction by layer identity, so both get
- * one store over one file. Two copies would be silent — arming from the console would look
- * like it worked while the supervisor kept reading a record with nothing armed in it.
+ * Same shared-identity rule as `AutoResumeStoreLive` above — Effect memoises layer
+ * construction by layer identity, so every consumer that `Layer.provide`s this one value gets
+ * one store over one file — but loops has a third consumer the other two do not: the MCP
+ * toolkit, which registers off `mcp/McpHttpServer.ts`, on the far side of the layer graph
+ * from this aggregator. It cannot import from here without a cycle, so the value lives in
+ * `loop/layer.ts` and all three import it. Re-declaring it here would hand the reactor and
+ * the routes a *different* instance from the toolkit's, and the failure is silent: the agent
+ * would call `loop_done`, the tool would report success, and the supervisor would keep
+ * checking in against a record that never saw the write.
  */
-const LoopStoreLive = Layer.effect(
-  LoopStore,
-  Effect.gen(function* () {
-    const config = yield* ServerConfig;
-    const path = yield* Path.Path;
-    return yield* makeLoopStore(path.join(config.stateDir, LOOP_STATE_FILENAME));
-  }),
-);
 
 /** VAPID keypair (env override, else generated + persisted in the secret store). */
 const WebPushVapidLive = Layer.effect(WebPushVapid, makeWebPushVapid(resolveWebPushConfig()));

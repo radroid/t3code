@@ -5,7 +5,7 @@ the pure decision table, the sentinel, the HTTP surface and the supervisor. Phas
 the settings section, the deferred question channel) remain proposed.
 **Reviewed and re-baselined 2026-09-02** against the findings in issue #125; §12 lists what changed.
 **Baseline:** upstream merge-base **`941acb4f9`** (the 2026-09-02 sync). The merge-base is the
-anchor rather than a fork `main` SHA, because every sync rewrites `main`. The package has now moved
+anchor rather than a fork `main` SHA, because every sync rewrote `main` until the 2026-09-02 switch to merge-based syncs (PR #132); anchoring on the merge-base still holds, because that is what the seam ledger measures against. The package has now moved
 base three times — `a4cc1367b` → `cebac353d` → `941acb4f9` — and **every churn and risk figure below
 is re-measured against `941acb4f9`**. Several moved materially: `ClaudeAdapter.ts` 16 → **23**,
 `settingsSearch.ts` 14 → **24**, `_chat.$environmentId.$threadId.tsx` 4 → **2**. Churn is counted

@@ -245,10 +245,11 @@ const makeSupervisor = Effect.gen(function* () {
   /**
    * Assemble the pure decision input.
    *
-   * `loopDoneAtMs` is always `null` until the `loop_done` MCP tool ships (phase 5). The
-   * done-file is the primary contract precisely because it works with no MCP at all, and
-   * `doneSignal` already takes the newest of the two channels, so the tool drops in later
-   * with no change here.
+   * The two done channels arrive here side by side and `doneSignal` takes the newer of them:
+   * `sentinelAtMs` is the done-file's mtime, `loopDoneAtMs` is what the `loop_done` MCP tool
+   * wrote to the record. The file stays the primary contract because it works from a plain
+   * terminal with no MCP at all — `enableAgentBrowserAccess` off removes the toolkit
+   * entirely — so neither channel may depend on the other.
    */
   const gatherInput = (record: LoopRecord, shell: OrchestrationThreadShell, nowMs: number) =>
     Effect.gen(function* () {
@@ -267,7 +268,7 @@ const makeSupervisor = Effect.gen(function* () {
         // `stale` still carries its mtime: `doneSignal` owns the freshness compare, so the
         // reactor never re-implements it and the two can never disagree.
         sentinelAtMs: sentinel.kind === "absent" ? null : sentinel.mtimeMs,
-        loopDoneAtMs: null,
+        loopDoneAtMs: record.loopDoneAtMs,
         autoResumePending: autoResume.pending !== null,
         config,
         workspaceRoot: project?.workspaceRoot ?? null,
@@ -348,7 +349,12 @@ const makeSupervisor = Effect.gen(function* () {
 
   const onStop = (threadId: string, record: LoopRecord, action: StopAction, nowMs: number) =>
     Effect.gen(function* () {
-      yield* store.stop(threadId, { reason: action.outcome, atMs: nowMs, detail: action.detail });
+      // `loop_done(reason)` is the one channel that carries the agent's own words. The
+      // decision table never sees them — it is pure and takes a timestamp — so they are
+      // stitched on here, where the terminal is actually written and read.
+      const spoken = action.cause === "loop_done" ? record.loopDoneReason?.trim() : null;
+      const detail = spoken ? `${action.detail}: ${spoken}` : action.detail;
+      yield* store.stop(threadId, { reason: action.outcome, atMs: nowMs, detail });
       lastSkipReason.delete(threadId);
       yield* unpinIfOurs(threadId, record);
       if (action.stopSession) yield* stopProviderSession(threadId);
@@ -361,7 +367,7 @@ const makeSupervisor = Effect.gen(function* () {
         {
           reason: action.outcome,
           cause: action.cause,
-          detail: action.detail,
+          detail,
           checkInsUsed: record.checkInsUsed,
           of: record.maxCheckIns,
         },
@@ -600,7 +606,7 @@ const makeSupervisor = Effect.gen(function* () {
           global,
           shell: null,
           sentinelAtMs: null,
-          loopDoneAtMs: null,
+          loopDoneAtMs: record.loopDoneAtMs,
           autoResumePending: false,
           armedCount,
           config,

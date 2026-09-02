@@ -848,6 +848,51 @@ describe("LoopReactor — the fibers", () => {
     }).pipe(scoped),
   );
 
+  it.effect("loop_done from the MCP toolkit ends the run as done and unpins", () =>
+    Effect.gen(function* () {
+      // The toolkit's whole contract with the supervisor is two fields on the record. It
+      // never dispatches and never stops anything itself, so this is the only place the two
+      // halves meet — and the file channel and the tool channel must be indistinguishable
+      // once written, because `enableAgentBrowserAccess` off removes the tool entirely.
+      const h = yield* harness({ shell: threadShell() });
+      yield* arm(h.store, { pinnedByLoop: true });
+      yield* h.store.update(LOOP_THREAD_ID, (current) => ({
+        ...current,
+        loopDoneAtMs: 5 * MINUTE,
+        loopDoneReason: "shipped the migration and the tests are green",
+      }));
+      yield* withReactor(
+        h.deps,
+        Effect.gen(function* () {
+          yield* advanceUntil(
+            Ref.get(h.dispatched).pipe(
+              Effect.map((all) => activitiesOfKind(all, LOOP_ACTIVITY_KINDS.stopped).length > 0),
+            ),
+            "the done terminal",
+            10,
+          );
+          const after = yield* record(h.store);
+          assert.strictEqual(after.stopped?.reason, "done");
+          assert.notStrictEqual(after.stopped?.reason, "spent", "done is never reported as spent");
+          assert.strictEqual(after.checkInsUsed, 0, "loop_done costs no check-ins");
+          assert.include(
+            after.stopped?.detail ?? "",
+            "shipped the migration",
+            "the agent's own words survive onto the terminal",
+          );
+
+          const notes = activitiesOfKind(yield* Ref.get(h.dispatched), LOOP_ACTIVITY_KINDS.stopped);
+          assert.strictEqual(notes.length, 1);
+          assert.strictEqual((notes[0]!.payload as { cause: string }).cause, "loop_done");
+
+          assert.include(commandTypes(yield* Ref.get(h.dispatched)), "thread.unpin");
+          assert.isFalse((yield* record(h.store)).pinnedByLoop);
+          assert.strictEqual(turnStarts(yield* Ref.get(h.dispatched)).length, 0);
+        }),
+      );
+    }).pipe(scoped),
+  );
+
   it.effect("a pending auto-resume stands the loop down without spending budget", () =>
     Effect.gen(function* () {
       const h = yield* harness({ shell: threadShell(), autoResumePending: true });

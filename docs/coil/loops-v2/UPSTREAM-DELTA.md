@@ -13,7 +13,7 @@ origin/main  df027ec08              116 behind upstream — the sync has not lan
 > **Superseded the same day — the sync landed.** While this was being written, the daily sync
 > force-landed onto `main`, putting the fork on merge-base **`a4cc1367b`** — exactly the tree
 > everything below was measured against — **0 commits behind upstream**. The merge-base is cited
-> throughout rather than a fork `main` SHA, because every sync rewrites `main`. Every
+> throughout rather than a fork `main` SHA, because every sync rewrote `main` until the 2026-09-02 switch to merge-based syncs (PR #132); anchoring on the merge-base still holds, because that is what the seam ledger measures against. Every
 > finding therefore describes the fork's _current_ `main`, not a future one, and every check below
 > was re-run against that tree and still passes. Two consequences, both good: the sequencing
 > question in §6 is moot, and the seam ledger re-baselined to **53 files, +2590 / −1042**.
@@ -271,8 +271,9 @@ because it is the tree the work would actually be built on.
 No claim in this document changed on the way across.
 
 `origin/main` was **`f6355f06f`** when this table was run. The next daily sync force-rewrote it to
-**`94c6328ef`** on 2026-08-18. Fork `main` SHAs are rewritten by every sync — which is exactly why
-the merge-base is the anchor this package cites.
+**`94c6328ef`** on 2026-08-18. Fork `main` SHAs were rewritten by every sync until the 2026-09-02
+switch to merge-based syncs (PR #132) — which is why the merge-base is the anchor this package
+cites, and it still is: the seam ledger measures against it either way.
 
 **Retracted: that sync did not hold the merge-base.** This paragraph said `94c6328ef` sat on the
 _same_ base `a4cc1367b`, with two extra upstream commits riding along. The base **moved**, and the
