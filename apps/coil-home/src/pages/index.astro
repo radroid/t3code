@@ -33,7 +33,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
 
       <p class="hero-sub">
         A personal fork of <a href={UPSTREAM_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">T3 Code</a>
-        {" "}(MIT) by Curly Cloud. I use it every day and keep it rebased on upstream — everything
+        {" "}(MIT) by Curly Cloud. I use it every day and merge upstream into it daily — everything
         upstream ships, plus the things I wanted sooner.
       </p>
 
@@ -55,7 +55,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
           Unsigned builds for macOS (Apple Silicon) and Windows (x64). No store apps.
         </p>
 
-        <p class="hero-sync" data-sync-strip>Rebased onto upstream daily</p>
+        <p class="hero-sync" data-sync-strip>Merged with upstream daily</p>
 
         <a class="hero-source-link" href={GITHUB_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">
           <svg class="hero-source-mark" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -112,7 +112,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
         </li>
         <li class="add">
           <h3>Daily upstream sync</h3>
-          <p>An automated agent rebases this fork onto upstream every day and keeps a public ledger of every divergence.</p>
+          <p>An automated agent merges upstream into this fork every day and keeps a public ledger of every divergence.</p>
         </li>
         <li class="add">
           <h3>Dependency security sweep</h3>
@@ -332,7 +332,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
         Your agents deserve better than a terminal.
       </h2>
       <p class="cta-sub">
-        Coil is free, open source, and rebased on upstream every day. Install it, plug in the
+        Coil is free, open source, and merged with upstream every day. Install it, plug in the
         harness you already pay for, and let your agents get to work.
       </p>
       <div class="cta-actions">
@@ -397,7 +397,7 @@ import { GITHUB_REPOSITORY_URL, UPSTREAM_REPOSITORY_URL } from "../lib/site";
       }
     } catch {
       // Nothing to do: the buttons already point at the releases page from the server-rendered
-      // markup, and the strip keeps its static "Rebased onto upstream daily" text.
+      // markup, and the strip keeps its static "Merged with upstream daily" text.
     }
   }
 
