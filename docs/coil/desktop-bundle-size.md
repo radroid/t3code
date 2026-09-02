@@ -192,7 +192,7 @@ against `upstream/main`:
 | New seam rows                | **0**                                                                 |
 | New fork-owned files         | 8, in `scripts/coil/` and `docs/coil/` — paths upstream has never had |
 
-So the additive-seam invariant that makes a clean rebase mean anything still holds: no deletion count
+So the additive-seam invariant that makes a clean sync mean anything still holds: no deletion count
 moved, and the file count did not change. The only realistic conflict is a _textual_ one — upstream
 adding its own entry to `DESKTOP_FILE_EXCLUSIONS` collides with the `...coilExtraFileExclusions,` line
 that sits at the end of that array. That is a two-line resolution (keep both), and it is the smallest

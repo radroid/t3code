@@ -34,14 +34,22 @@ When set to `yes`, PRs run through the same labels and states as issues, using t
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
-### Sync PRs are not button-mergeable
+### Sync PRs land as merge commits, never squashed
 
-Branches named `coil/sync-<id>` are rebases onto upstream, not merges. GitHub's merge button will
-refuse or produce the wrong history. Land them with:
+Branches named `coil/sync-<id>` are `main` plus a merge of `upstream/main`, so they are ordinary
+button-mergeable PRs — but only via **Create a merge commit**:
 
 ```bash
-git push --force-with-lease origin coil/sync-<id>:main
+gh pr merge <number> -R radroid/t3code --merge \
+  --subject "chore(coil): merge upstream/main <sha> (N commits)"
 ```
+
+`--subject` matters: GitHub's default title is `Merge pull request #N …`, and the release changelog
+walks `--first-parent`, so the default would ship as the entry for the whole range.
+
+Never `--squash` or `--rebase`. A squash collapses the absorbed upstream history into one fork
+commit, the merge-base with `upstream/main` never advances, and every later sync re-conflicts on
+the same files. See `docs/coil/sync-agent-runbook.md`.
 
 ## When a skill says "publish to the issue tracker"
 

@@ -21,15 +21,17 @@ const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // `--since`/`--until` filter on COMMITTER date, but the log reports AUTHOR date (%aI) because that
-// is when the work happened. On this fork main is force-rebased, so the two routinely differ by
-// days. The git-level bounds therefore exist only to prune traversal; the exact window test runs in
-// JS against %aI.
+// is when the work happened. The two routinely differ by days — squash-merges stamp the committer
+// date at merge time, cherry-picks and local rebases copy commits, and this fork's history before
+// 2026-09-02 was force-rebased daily. The git-level bounds therefore exist only to prune traversal;
+// the exact window test runs in JS against %aI.
 //
-// The two pads are deliberately different sizes. A rebase moves the committer date FORWARD, so an
-// in-window commit can surface far past `end` (hence the generous upper pad) but essentially never
-// before `start` (hence the small lower one, which only absorbs clock skew and timezone slop).
-// Bounding the upper end at all is a trade: a commit rebased more than a month after the day it was
-// authored is missed, which is far cheaper than letting a report for an old day walk all of history.
+// The two pads are deliberately different sizes. Every one of those operations moves the committer
+// date FORWARD, so an in-window commit can surface far past `end` (hence the generous upper pad) but
+// essentially never before `start` (hence the small lower one, which only absorbs clock skew and
+// timezone slop). Bounding the upper end at all is a trade: a commit re-committed more than a month
+// after the day it was authored is missed, which is far cheaper than letting a report for an old day
+// walk all of history.
 const SINCE_SKEW_PAD_MS = 2 * DAY_MS;
 const UNTIL_REBASE_PAD_MS = 30 * DAY_MS;
 
@@ -482,10 +484,12 @@ function matchesIdentity(commit, identities) {
 
 // Two commits are the same piece of work when a rebase or cherry-pick copied one into the other,
 // and `--all` reaches both. Deduping by SHA cannot see that: a copy keeps the author, the AUTHOR
-// date and the subject, and changes exactly the SHA and the committer date. On this fork that is
-// the normal case rather than an edge — every sync replays ~91 patches onto upstream while the
-// pre-sync recovery tag keeps the originals reachable, so a sync day counted almost all of its
-// commits and their churn twice.
+// date and the subject, and changes exactly the SHA and the committer date. Before 2026-09-02 this
+// fork made that the normal case rather than an edge — every sync replayed ~90 patches onto
+// upstream while the pre-sync recovery tag kept the originals reachable, so a sync day counted
+// almost all of its commits and their churn twice. Syncs merge now and copy nothing, but a tag on
+// pre-sync history still reaches both copies, and cherry-picks still make the shape, so the dedup
+// stays.
 //
 // The knowing cost: two genuinely distinct commits by one author, in the same second, with the
 // same subject collapse into one. That shape is a scripted loop, not a person, and undercounting

@@ -4,9 +4,11 @@
 # here and PRs show "no checks". This runs the same fast checks on ubuntu-latest so every fork
 # PR (and every push to main / a sync branch) gets an independent typecheck/lint/test gate.
 #
-# NOTE: pull_request does NOT fire on a CONFLICTING sync PR (GitHub can't build the merge ref),
-# so sync branches are gated by the push trigger on `coil/sync-**` instead — an independent check
-# alongside the resolve job's own verify.
+# NOTE: a sync PR is an ordinary PR now that the fork merges upstream instead of rebasing onto it
+# — `main` is an ancestor of the branch, GitHub can build the merge ref, and `pull_request` fires
+# like it does anywhere else. The `coil/sync-**` push trigger is kept as an EARLY signal: it runs
+# the moment the resolver pushes the branch, before a human opens or reopens the PR, and it is an
+# independent check alongside the resolve job's own verify.
 name: coil fork CI
 
 on:
@@ -15,12 +17,6 @@ on:
     branches:
       - main
       - "coil/sync-**"
-      # The pre-#71 prefix, kept for one sync cycle. A sync branch that was pushed before the
-      # rename landed is still open afterwards, and it is precisely the branch that cannot fall
-      # back to `pull_request` — a conflicting sync PR has no merge ref, which is why this push
-      # trigger exists at all. Dropping this line early ungates exactly the branches that need
-      # gating most. Remove it once a `coil/sync-*` branch has completed a full cycle.
-      - "t3x/sync-**"
   workflow_dispatch: {}
 
 permissions:

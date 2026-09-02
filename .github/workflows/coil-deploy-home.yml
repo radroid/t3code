@@ -4,8 +4,10 @@
 # variable CLOUDFLARE_ACCOUNT_ID; both are set. If either is ever removed this job fails at the
 # deploy step, and `pnpm run deploy` from apps/coil-home is the manual fallback.
 #
-# The daily sync force-pushes `main`, and on an undiffable force push GitHub runs `paths`-filtered
-# workflows anyway. That is harmless: `wrangler deploy` is idempotent.
+# `main` only fast-forwards now that the sync merges rather than rebases, so the `paths` filter
+# below is honoured and this runs when the homepage actually changed. (Written when syncs
+# force-pushed `main`: GitHub runs `paths`-filtered workflows anyway on an undiffable force push.
+# Either way it is harmless — `wrangler deploy` is idempotent.)
 name: "coil: deploy homepage"
 
 on:
@@ -61,7 +63,7 @@ jobs:
           "$vp_pnpm_bin/pnpm" --version
 
       # wrangler is fetched on demand rather than depended on — it drags ~500 lines into
-      # pnpm-lock.yaml, which SEAMS.md records as the fork's second-worst rebase-conflict surface.
+      # pnpm-lock.yaml, which SEAMS.md records as the fork's second-worst sync-conflict surface.
       #
       # The version is pinned EXACTLY, not to `@4`. This step is the only place in the repo that
       # runs an on-demand package while holding CLOUDFLARE_API_TOKEN, and a floating major would

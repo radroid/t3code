@@ -5,6 +5,34 @@
 **Fork:** `radroid/t3code`
 **Builds on:** `2026-07-23-fork-upstream-sync-design.md` (the daily/weekly sync + `coil-sync` escalation contract)
 
+## Amendment 2026-09-02 — the resolver merges, and its PR is button-mergeable
+
+The daily sync now **merges** `upstream/main` into fork `main` instead of rebasing onto it; see the
+2026-09-02 amendment in `2026-07-23-fork-upstream-sync-design.md` for the reasoning. Four things in
+this spec change, and nothing else does:
+
+1. The resolver's step 2 is `git merge upstream/main` on a `coil/sync-<run_id>` branch cut from
+   `main`, finished with a single merge commit — not a rebase loop.
+2. The escalation triggers lose **dropped-patch**: a merge cannot drop a fork commit, so exit code 40
+   and its detector are gone. Conflict, red verify, and failed push remain.
+3. The branch has `main` as an ancestor, so its PR is an ordinary, button-mergeable PR. The "land it
+   by force-updating `main`" step is replaced by
+   `gh pr merge --merge --subject "chore(coil): merge upstream/main <sha> (N commits)"` — a **merge
+   commit, never a squash**, because a squash would strand upstream's history off `main` and leave
+   the merge-base where it was, re-conflicting the same files on every later sync. The `--subject`
+   is what keeps the release changelog readable, since it walks `--first-parent`.
+4. **The Safety section's reason for leaving `main` unprotected is void.** It argued that a
+   branch-protection ruleset would block the daily sync's own intentional `--force-with-lease` push
+   to `main`, so adopting it would mean moving the daily job to a PR too. The daily push is a plain
+   fast-forward now, so a "block force pushes" rule does not interfere with the sync at all.
+   Enabling one is a recommended follow-up: it would make this workflow's "never push to `main`"
+   instruction structural rather than conventional, which is exactly the gap that section named.
+
+Everything else holds: the trigger and gating, the untrusted-input rules, the push-only-a-branch
+scoping, the seam review the agent does that CI cannot, and the verify commands.
+
+---
+
 ## Problem
 
 The daily upstream sync (`coil-upstream-sync.yml`) rebases the fork onto `pingdotgg/t3code`

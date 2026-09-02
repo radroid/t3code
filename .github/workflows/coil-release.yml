@@ -197,14 +197,26 @@ jobs:
 
           # What changed since the last release we actually published.
           #
-          # Anchored on the previous RELEASE TAG, not on main's ancestry. The sync playbook
-          # force-pushes main, so "the commits since the last build" cannot be derived from
-          # branch history — a released commit may not even be an ancestor of main. Tags survive
-          # that rewrite, and `git log A..B` is "reachable from B, not from A", which stays
-          # correct when A is not an ancestor of B.
+          # Anchored on the previous RELEASE TAG rather than on a branch ref, so a release built
+          # from a sha that is not main's tip still gets the right range. `git log A..B` is
+          # "reachable from B, not from A", which is correct whether or not A is an ancestor of B
+          # — that also kept this line working through the era when syncs force-pushed main, when a
+          # released commit could fall off main's ancestry entirely.
           #
-          # Newest first. Merge commits are dropped: on a squash-merge fork their subjects are
-          # duplicates of the commit they merged.
+          # Newest first, and FIRST-PARENT only. The fork merges upstream rather than rebasing
+          # onto it, so a plain log would list every upstream commit absorbed since the last
+          # release — hundreds of entries nobody here wrote, drowning the fork's own changes.
+          # Walking first parents follows main's own line: each feature PR lands squashed as one
+          # commit, and each sync lands as one merge commit whose subject is the changelog entry we
+          # want for it — which is why merges are NOT dropped here.
+          #
+          # That subject is only guaranteed for an automatic sync. The daily job writes it itself
+          # (`chore(coil): merge upstream/main <sha> (N commits)`, from sync-upstream.sh). A sync
+          # landed by hand from a resolver PR is merged through the GitHub API, whose default
+          # subject is `Merge pull request #N from …`, so the runbook requires
+          # `gh pr merge --merge --subject "chore(coil): merge upstream/main <sha> (N commits)"`.
+          # A changelog line reading `Merge pull request` is that step being skipped: cosmetic, but
+          # it is the tell.
           # Both prefixes, permanently. #71 renamed the tag from `t3x-build-*` to `coil-build-*`,
           # and a lookup that knew only the new one would have found nothing on the first coil
           # release, taken the "first release ever" branch below, and shipped an empty changelog
@@ -223,7 +235,7 @@ jobs:
             # happened here) would produce a toast nobody can read, and a manifest nobody wants to
             # ship. The count in the title still comes from this list, so the cap is visible as
             # "20 changes" rather than silently truncating a larger number.
-            changes="$(git log "${previous}..${sha}" --no-merges --format=%s --max-count=20 || true)"
+            changes="$(git log "${previous}..${sha}" --first-parent --format=%s --max-count=20 || true)"
           fi
 
           # Commit subjects are attacker-influenced content — anyone whose commit reaches main,
