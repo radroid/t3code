@@ -167,10 +167,18 @@ describe("nextFireAtMs — daylight saving (70b)", () => {
     );
   });
 
-  it("70b — an ambiguous wall clock on fall-back resolves to its first occurrence", () => {
-    // 2026-11-01 01:30 happens twice: 05:30Z (EDT) and 06:30Z (EST).
+  it("70b — an ambiguous wall clock on fall-back resolves to its LATER occurrence", () => {
+    // 2026-11-01 01:30 happens twice: 05:30Z (EDT) and 06:30Z (EST). Nothing in the payload
+    // says which one the binary meant, and the two errors are not symmetric: the wake grace is
+    // capped at fifteen minutes, so resolving early on an hour-wide ambiguity reports a
+    // perfectly healthy self-paced run as `wake_lost` and nudges it an hour before its own
+    // wake was due. Resolving late costs one extra hour of deference, one night a year.
     expect(nextFireAtMs("30 1 * * *", utc("2026-10-31T12:00:00Z"), NY)).toBe(
-      utc("2026-11-01T05:30:00Z"),
+      utc("2026-11-01T06:30:00Z"),
+    );
+    // And from between the two occurrences it is still the later one that is next.
+    expect(nextFireAtMs("30 1 * * *", utc("2026-11-01T06:00:00Z"), NY)).toBe(
+      utc("2026-11-01T06:30:00Z"),
     );
   });
 });

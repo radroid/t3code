@@ -129,7 +129,10 @@ export interface LoopDecisionInput {
   readonly loopDoneAtMs: number | null;
   /** Auto-resume has a pending resume armed for this thread (guard 9). */
   readonly autoResumePending: boolean;
-  /** Armed loops machine-wide, including this one (guard 14). */
+  /**
+   * Armed loops machine-wide, **including this one**. Guard 14 measures the others against
+   * the ceiling, so the count it is handed must include the loop under evaluation.
+   */
   readonly armedCount: number;
   readonly config: LoopConfig;
 }

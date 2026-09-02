@@ -270,6 +270,33 @@ describe("decide — 1.1b deference to the agent's own scheduler", () => {
     );
   });
 
+  it("11i-c. a wake that already landed never masks a still-pending one", () => {
+    // The snapshot is a table, not a queue: it is only refreshed when a `Stop` hook lands, so
+    // the earliest entry is routinely one that already fired. Taking it anyway answered "the
+    // wake landed, nothing to defer to" while a second entry was still hours out — one dropped
+    // `Stop` (a timeout, a teardown, a restart) and T3 nudged a self-pacing thread.
+    const landed = entry({ id: "landed", nextFireAtMs: NOW - 30 * MINUTE });
+    const pending = entry({ id: "pending", nextFireAtMs: NOW + 105 * MINUTE });
+    const rec = record({ crons: crons([landed, pending]) });
+    // `updatedAt` moved after the first wake, which is what makes it history.
+    const moved = shell({ updatedAt: iso(NOW - 29 * MINUTE) });
+    expect(resolveWake(input({ record: rec, shell: moved }))?.cronId).toBe("pending");
+    expect(decide(input({ record: rec, shell: moved }))).toMatchObject({
+      type: "stand_down",
+      reason: "self_pacing",
+      untilMs: NOW + 105 * MINUTE,
+    });
+    // With every recorded wake landed there is simply nothing left to defer to, exactly as
+    // before: no deference, and no `wake_lost` either.
+    const allLanded = record({ crons: crons([landed]) });
+    expect(resolveWake(input({ record: allLanded, shell: moved }))).toBeNull();
+    expect(decide(input({ record: allLanded, shell: moved }))).toMatchObject({
+      type: "fire",
+      kind: "check_in",
+      degrade: null,
+    });
+  });
+
   it("11g. a stale record whose session is gone or stopped is not a live wake", () => {
     const rec = record({ crons: crons([entry({ nextFireAtMs: NOW + 5 * MINUTE })]) });
     expect(

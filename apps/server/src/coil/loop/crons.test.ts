@@ -80,6 +80,11 @@ const postToolUseMatcher = (hooks: LoopHooks) => hooks.PostToolUse![0]!;
 /**
  * A real store over a temp file, plus the hooks wired to it. `storePath` is handed back so a
  * case can reopen the same file with a second store and prove the record is durable.
+ *
+ * The thread is **armed** by default, because that is the only state in which these
+ * callbacks record anything: they run on the Stop of every Claude turn on the machine, and
+ * an unarmed thread must cost zero writes. `armed: false` opts out, for the cases that prove
+ * exactly that.
  */
 const withHooks = <A>(
   f: (context: {
@@ -89,12 +94,21 @@ const withHooks = <A>(
     readonly reopen: Effect.Effect<LoopStoreShape, never, FileSystem.FileSystem | Path.Path>;
   }) => Effect.Effect<A, never, FileSystem.FileSystem | Path.Path>,
   makeStore: (store: LoopStoreShape) => LoopStoreShape = (store) => store,
+  options: { readonly armed?: boolean } = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "coil-loop-crons-" });
     const storePath = NodePath.join(root, "coil-loop.json");
     const store = yield* makeLoopStore(storePath);
+    if (options.armed !== false) {
+      yield* store.arm({
+        threadId: THREAD_ID,
+        armedAtMs: 0,
+        deadlineAtMs: 4_102_444_800_000,
+        maxCheckIns: 6,
+      });
+    }
     return yield* f({
       store,
       hooks: makeLoopHooks({ store: makeStore(store), threadId: THREAD_ID, run }),
@@ -318,6 +332,44 @@ describe("coil loop crons hooks", () => {
         assert.deepStrictEqual(output, { continue: true });
         assert.strictEqual((yield* store.getThread(THREAD_ID)).crons, null);
       }),
+    ));
+
+  it("records nothing at all for a thread with no armed loop", () =>
+    withHooks(
+      ({ store, hooks }) =>
+        Effect.gen(function* () {
+          const output = yield* Effect.promise(() =>
+            stopCallback(hooks)(
+              stopInput([{ id: "cron-1", schedule: "0 3 * * *", recurring: true, prompt: "x" }]),
+              undefined,
+              notAborted,
+            ),
+          );
+          assert.deepStrictEqual(output, { continue: true });
+          // Every Claude turn on the machine ends in a Stop, and the state file is rewritten
+          // in full on every mutation: recording here would be a write per turn per thread
+          // for a table nothing supervises and nothing will read.
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).crons, null);
+        }),
+      undefined,
+      { armed: false },
+    ));
+
+  it("does not set degraded on a thread with no armed loop", () =>
+    withHooks(
+      ({ store, hooks }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            postToolUseMatcher(hooks).hooks[0]!(
+              postToolUseInput("ScheduleWakeup", { error: "gate_off" }),
+              undefined,
+              notAborted,
+            ),
+          );
+          assert.strictEqual((yield* store.getThread(THREAD_ID)).degraded, null);
+        }),
+      undefined,
+      { armed: false },
     ));
 
   it("70f: every matcher carries a timeout so a wedged callback cannot stall a turn", () =>

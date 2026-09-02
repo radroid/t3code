@@ -103,11 +103,13 @@ export function deriveLoopStatus(input: LoopStatusInput): LoopStatus {
   if (!global.enabled) {
     return { ...base, armed: false, state: "standing_down", reason: "disabled" };
   }
+  // `held`, matching guard 6's phase: a snooze is a bounded hold with an expiry, not a
+  // question waiting on an answer. One fact, one word, whichever lens asks.
   if (shell !== null && isSnoozed(shell, nowMs)) {
     return {
       ...base,
       armed: true,
-      state: "blocked",
+      state: "held",
       reason: "snoozed",
       nextWakeAtMs: isoMs(shell.snoozedUntil) ?? nextWakeAtMs,
     };

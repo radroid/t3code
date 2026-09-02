@@ -171,9 +171,18 @@ export function idleThresholdMet(trigger: TriggerFacts): boolean {
   return trigger.idleForMs >= trigger.thresholdMs;
 }
 
-/** Guard 14 — the machine-wide ceiling, re-checked here so hand-editing the file cannot bypass it. */
+/**
+ * Guard 14 — the machine-wide ceiling, re-checked here so hand-editing the file cannot
+ * bypass it.
+ *
+ * `armedCount` includes the loop being evaluated, and the count that matters is of the
+ * **others**: with exactly `maxArmedThreads` armed, counting yourself makes every loop on
+ * the machine report `ceiling` and stand down, which is the ceiling refusing the very
+ * population it was sized for. The arm route already applies the other-loops rule; this is
+ * the same predicate, so the two lenses cannot disagree.
+ */
 export function atArmedCeiling(armedCount: number, global: LoopGlobalSettings): boolean {
-  return armedCount >= global.maxArmedThreads;
+  return Math.max(0, armedCount - 1) >= global.maxArmedThreads;
 }
 
 /**
@@ -183,12 +192,18 @@ export function atArmedCeiling(armedCount: number, global: LoopGlobalSettings): 
  * would otherwise disarm every loop on its own first check-in: `latestUserMessageAt` equal
  * to the nudge we sent is the nudge, not a takeover. Before the first check-in the baseline
  * is `armedAtMs`, so a message typed after arming still counts.
+ *
+ * An **empty** `createdAtIso` is not a baseline either. It is `LastCheckIn`'s decoding
+ * default, so a record written by an older build or truncated mid-write would compare every
+ * user message against `""` — which every ISO string sorts after — and end the run as
+ * handed-back on the first tick after a restart. Fail-closed defaults must not fail *loudly*
+ * in the one direction that destroys an armed run.
  */
 export function tookOver(record: LoopRecord, shell: LoopThreadShell): boolean {
   const latest = shell.latestUserMessageAt;
   if (typeof latest !== "string") return false;
-  const last = record.lastCheckIn;
-  if (last !== null) return latest > last.createdAtIso;
+  const baselineIso = record.lastCheckIn?.createdAtIso ?? "";
+  if (baselineIso !== "") return latest > baselineIso;
   const latestMs = isoMs(latest);
   return latestMs !== null && latestMs > record.armedAtMs;
 }
@@ -243,8 +258,17 @@ const stop = (outcome: GuardStop["outcome"], cause: StopCause, detail: string): 
 });
 
 /**
- * Guard 4b — the stop sweep, in the design's order: deadline, budget, done, strikes,
- * takeover.
+ * Guard 4b — the stop sweep: **done first**, then deadline, budget, strikes, takeover.
+ *
+ * ## Why done outranks the bounds
+ *
+ * `checkInsUsed` reaches `maxCheckIns` on the *final* fire, so a run that succeeds on its
+ * last check-in is over on the budget before the tick that would read its done signal. With
+ * the bounds first, every loop that finished on its last check-in reported `spent` — "it ran
+ * out of rope" for a run that actually finished — and `stopsSession` fires for `spent` and
+ * not for `done`, so T3 would also kill a session whose agent had just declared it was done
+ * and might still have background work in it. Reading the signal first costs nothing: the
+ * bounds are still swept immediately after, and the run still ends on this same tick.
  *
  * `deadlineAtMs: 0` and `maxCheckIns: 0` are the fail-closed decoding defaults, and both
  * land here on the first evaluation: a deadline that did not survive a write means "over",
@@ -264,6 +288,10 @@ export function stopCondition(input: {
   readonly loopDoneAtMs: number | null;
 }): GuardStop | null {
   const { nowMs, record } = input;
+  const done = doneSignal(input);
+  if (done !== null) {
+    return stop("done", done.cause, `${done.cause} at ${done.atMs}`);
+  }
   if (nowMs >= record.deadlineAtMs) {
     return stop("spent", "deadline", `deadline passed at ${record.deadlineAtMs}`);
   }
@@ -273,10 +301,6 @@ export function stopCondition(input: {
       "budget",
       `used ${record.checkInsUsed} of ${record.maxCheckIns} check-ins`,
     );
-  }
-  const done = doneSignal(input);
-  if (done !== null) {
-    return stop("done", done.cause, `${done.cause} at ${done.atMs}`);
   }
   if (record.strikes >= STRIKE_LIMIT) {
     return stop("stalled", "strikes", `${record.strikes} consecutive unproductive check-ins`);
@@ -320,9 +344,11 @@ export function evaluateGuards(input: LoopGuardInput): GuardOutcome {
   const stopped = stopCondition({ ...input, shell });
   if (stopped !== null) return stopped;
 
-  // 6
+  // 6 — `held`, not `watching`: a snooze is a bounded hold with an expiry, exactly like the
+  // rate limit, and `status.ts` reports the same fact for the same thread. Two phases for one
+  // state is how a console and a tool end up telling a user different things at 03:00.
   if (isSnoozed(shell, nowMs)) {
-    return standDown("6", "snoozed", "watching", isoMs(shell.snoozedUntil));
+    return standDown("6", "snoozed", "held", isoMs(shell.snoozedUntil));
   }
 
   // 8

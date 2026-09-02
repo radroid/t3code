@@ -25,11 +25,13 @@ import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import type * as Path from "effect/Path";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 
+import { loopHooksFor } from "./crons.ts";
 import { LOOP_ACTIVITY_KINDS, LoopReactorLive } from "./Reactor.ts";
 import {
   activitiesOfKind,
@@ -39,6 +41,7 @@ import {
   commandTypes,
   harness,
   HOUR,
+  isStopped,
   LOOP_THREAD_ID,
   MINUTE,
   msToIso,
@@ -50,7 +53,7 @@ import {
   userInputRequestedEvent,
   writeSentinel,
 } from "./reactorHarness.ts";
-import { LoopState, type LoopStoreShape } from "./state.ts";
+import { LoopState, LoopStore, type LoopStoreShape } from "./state.ts";
 
 clearLoopEnv();
 
@@ -820,6 +823,117 @@ describe("LoopReactor — the fibers", () => {
     }).pipe(scoped),
   );
 
+  it.effect(
+    "a projection failure on the pre-dispatch re-read is not reported as a missing thread",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* harness({ shell: threadShell() });
+        yield* arm(h.store);
+        // One strike already on the record, so "did this abort add one?" is answerable.
+        yield* h.store.update(LOOP_THREAD_ID, (current) => ({ ...current, strikes: 1 }));
+        yield* withReactor(
+          h.deps,
+          Effect.gen(function* () {
+            yield* advancePolls(14);
+            const readsSoFar = yield* Ref.get(h.shellCalls);
+            // The guard block's read succeeds; the pre-dispatch re-read fails.
+            yield* Ref.set(h.shellFailsAfterCall, readsSoFar + 1);
+            const abortNoted = Ref.get(h.dispatched).pipe(
+              Effect.map((all) =>
+                activitiesOfKind(all, LOOP_ACTIVITY_KINDS.skipped).some(
+                  (a) => (a.payload as { reason?: string }).reason === "aborted_pre_dispatch",
+                ),
+              ),
+            );
+            yield* advanceUntil(abortNoted, "the aborted attempt", 6);
+
+            const abort = activitiesOfKind(
+              yield* Ref.get(h.dispatched),
+              LOOP_ACTIVITY_KINDS.skipped,
+            ).find((a) => (a.payload as { reason?: string }).reason === "aborted_pre_dispatch");
+            assert.strictEqual(
+              (abort!.payload as { verdict: string }).verdict,
+              "projection_unavailable",
+              "a projection that did not answer is not a thread that is gone",
+            );
+            assert.strictEqual(turnStarts(yield* Ref.get(h.dispatched)).length, 0);
+            const after = yield* record(h.store);
+            assert.isTrue(after.armed, "a hiccup never disarms");
+            assert.isNull(after.stopped);
+            assert.strictEqual(
+              after.strikes,
+              1,
+              "nothing was sent, so nothing about the agent was demonstrated",
+            );
+          }),
+        );
+      }).pipe(scoped),
+  );
+
+  it.effect("a takeover seen by the pre-dispatch re-read is recorded on that same tick", () =>
+    Effect.gen(function* () {
+      const h = yield* harness({ shell: threadShell() });
+      yield* arm(h.store);
+      yield* withReactor(
+        h.deps,
+        Effect.gen(function* () {
+          yield* advancePolls(14);
+          const readsSoFar = yield* Ref.get(h.shellCalls);
+          yield* Ref.set(h.shellOverrideRef, {
+            afterCall: readsSoFar + 1,
+            // Typed while the tick was mid-flight: later than any `createdAt` this nudge
+            // could carry, so the compare reads it as a takeover rather than as our own turn.
+            shell: threadShell({ latestUserMessageAt: msToIso(HOUR) }),
+          });
+          yield* advanceUntil(isStopped(h.store), "the handback terminal", 6);
+
+          const after = yield* record(h.store);
+          assert.strictEqual(
+            after.stopped?.reason,
+            "handed-back",
+            "the console must not keep saying 'watching' about a run that is already over",
+          );
+          assert.isFalse(after.armed);
+          assert.strictEqual(turnStarts(yield* Ref.get(h.dispatched)).length, 0, "no nudge");
+          assert.strictEqual(
+            activitiesOfKind(yield* Ref.get(h.dispatched), LOOP_ACTIVITY_KINDS.stopped).length,
+            1,
+          );
+        }),
+      );
+    }).pipe(scoped),
+  );
+
+  it.effect("a stop request banked by the console is serviced exactly once", () =>
+    Effect.gen(function* () {
+      const h = yield* harness({ shell: threadShell() });
+      // Exactly what `POST /api/coil/loop` leaves behind on a disarm with pending wakes: a
+      // stopped record, nothing armed, and one banked request.
+      yield* arm(h.store);
+      yield* h.store.stop(LOOP_THREAD_ID, {
+        reason: "handed-back",
+        atMs: MINUTE,
+        detail: "disarmed from the console",
+      });
+      yield* h.store.requestSessionStop(LOOP_THREAD_ID, MINUTE);
+      yield* withReactor(
+        h.deps,
+        Effect.gen(function* () {
+          yield* advanceUntil(
+            Ref.get(h.stopSessions).pipe(Effect.map((all) => all.length > 0)),
+            "the banked stop",
+            6,
+          );
+          // Ten more polls: the request is cleared, so it cannot re-fire every minute for the
+          // rest of the night.
+          yield* advancePolls(10);
+          assert.deepStrictEqual(yield* Ref.get(h.stopSessions), [LOOP_THREAD_ID]);
+          assert.strictEqual((yield* record(h.store)).stopRequestedAtMs, 0);
+        }),
+      );
+    }).pipe(scoped),
+  );
+
   it.effect("the done-file ends the run as done, with budget left over", () =>
     Effect.gen(function* () {
       const h = yield* harness({ shell: threadShell() });
@@ -912,6 +1026,60 @@ describe("LoopReactor — the fibers", () => {
           );
         }),
       );
+    }).pipe(scoped),
+  );
+});
+
+/**
+ * The seam the whole feature hangs off: the Claude adapter's hooks.
+ *
+ * `server.ts` composes the supervisor with `Layer.provide`, not `provideMerge` — so
+ * `LoopStore` is discharged and does *not* reach the app context the adapter's fiber runs in.
+ * Every other test in this file uses `provideMerge` for convenience, which is exactly the
+ * shape that hid this: `Effect.serviceOption(LoopStore)` answered `Some` in the tests and
+ * `None` in production, and the hooks were never installed on any real machine.
+ */
+describe("LoopReactor — installing the adapter's hooks", () => {
+  it.effect("a server-shaped composition installs them, even with no LoopStore in context", () =>
+    Effect.gen(function* () {
+      const h = yield* harness({ shell: threadShell() });
+      // `Layer.provide`, exactly as `coil/index.ts` composes it. Nothing is re-exported.
+      const serverShaped = LoopReactorLive.pipe(Layer.provide(h.deps));
+      yield* Effect.provide(
+        Effect.gen(function* () {
+          assert.isTrue(
+            Option.isNone(yield* Effect.serviceOption(LoopStore)),
+            "this is the adapter's world: the store is genuinely not in context",
+          );
+          const hooks = yield* loopHooksFor(LOOP_THREAD_ID);
+          assert.isDefined(hooks, "the adapter must still get its hooks");
+          assert.deepStrictEqual(Object.keys(hooks!).sort(), [
+            "PostToolUse",
+            "Stop",
+            "SubagentStop",
+          ]);
+        }),
+        serverShaped,
+      );
+      // Outside the supervisor's scope there is nothing to record into, and the holder says so.
+      assert.isUndefined(yield* loopHooksFor(LOOP_THREAD_ID));
+    }).pipe(scoped),
+  );
+
+  it.effect("the kill switch still means no hooks at all", () =>
+    Effect.gen(function* () {
+      const h = yield* harness({ shell: threadShell() });
+      process.env.COIL_LOOP_ENABLED = "0";
+      try {
+        yield* Effect.provide(
+          Effect.map(loopHooksFor(LOOP_THREAD_ID), (hooks) => {
+            assert.isUndefined(hooks);
+          }),
+          LoopReactorLive.pipe(Layer.provide(h.deps)),
+        );
+      } finally {
+        delete process.env.COIL_LOOP_ENABLED;
+      }
     }).pipe(scoped),
   );
 });

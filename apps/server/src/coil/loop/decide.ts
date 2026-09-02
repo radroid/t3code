@@ -110,6 +110,16 @@ function newestPerId(entries: ReadonlyArray<CronEntry>): ReadonlyArray<CronEntry
  * `CronCreate` takes an unbounded 5-field expression: a recorded `0 9 * * *` would otherwise
  * stand supervision down for 24 hours, and a one-shot pinned days out indefinitely, all
  * while the run is nominally armed. Past the deadline there is nothing left to defer to.
+ *
+ * ## A wake that already landed is not a candidate
+ *
+ * The snapshot describes a table, not a queue, and it is only refreshed when a `Stop` hook
+ * lands. So the earliest entry is routinely one that has already fired — and taking it
+ * anyway answers "the wake landed, nothing to defer to" while a *second*, still-pending
+ * entry sits behind it. One dropped `Stop` (a timeout, a teardown, a restart) and T3 would
+ * nudge a thread whose own next wake is hours away, which is precisely the deference this
+ * guard exists to give. Landed entries are therefore skipped in the selection, and the
+ * earliest of what remains is the wake T3 measures itself against.
  */
 export function resolveWake(input: LoopDecisionInput): ResolvedWake | null {
   const { record, shell } = input;
@@ -119,10 +129,14 @@ export function resolveWake(input: LoopDecisionInput): ResolvedWake | null {
   const crons = record.crons;
   if (crons === null) return null;
 
+  // Raw `updatedAt`, deliberately NOT floored by `processStartedAtMs` — see `landed` below.
+  const movedAtMsValue = movedAtMs(shell, input.nowMs);
   let best: { readonly entry: CronEntry; readonly atMs: number } | null = null;
   for (const entry of newestPerId(crons.entries)) {
     const atMs = entry.nextFireAtMs;
     if (atMs === null) continue;
+    // Already landed: the thread moved after this wake, so it is history, not a commitment.
+    if (movedAtMsValue > atMs) continue;
     if (best === null || atMs < best.atMs) best = { entry, atMs };
   }
   if (best === null) return null;
@@ -136,10 +150,12 @@ export function resolveWake(input: LoopDecisionInput): ResolvedWake | null {
     atMs,
     graceMs: wakeGraceMs({ recurring: entry.recurring, periodMs }, input.config),
     deferrable: atMs <= record.deadlineAtMs,
-    // Raw `updatedAt`, deliberately NOT floored by `processStartedAtMs`: the boot clamp
-    // would read a restart as the wake having landed, which is the one case this signal
-    // exists to catch.
-    landed: movedAtMs(shell, input.nowMs) > atMs,
+    // False by construction now that the selection skips landed entries, and still computed
+    // rather than hardcoded so `wakeIsPending` / `wakeIsLost` keep reading the fact instead
+    // of an assumption. Raw `updatedAt`, deliberately NOT floored by `processStartedAtMs`:
+    // the boot clamp would read a restart as the wake having landed, which is the one case
+    // this signal exists to catch.
+    landed: movedAtMsValue > atMs,
   };
 }
 

@@ -207,7 +207,9 @@ describe("evaluateGuards — the blocking guards", () => {
       kind: "stand_down",
       guard: "6",
       reason: "snoozed",
-      phase: "watching",
+      // `held`, the same word `status.ts` and the route's `derived` use for it: a snooze is a
+      // bounded hold with an expiry, not a thread that is being watched.
+      phase: "held",
       untilMs: until,
     });
   });
@@ -216,6 +218,11 @@ describe("evaluateGuards — the blocking guards", () => {
     expect(
       evaluateGuards(guardInput({ shell: shell({ snoozedUntil: iso(NOW - MINUTE) }) })).kind,
     ).toBe("fire");
+    // Exactly at the expiry the snooze is over. An inclusive boundary here would hold the loop
+    // for one more poll on the tick the user's snooze was supposed to end.
+    expect(evaluateGuards(guardInput({ shell: shell({ snoozedUntil: iso(NOW) }) })).kind).toBe(
+      "fire",
+    );
     expect(evaluateGuards(guardInput({ shell: shell({ snoozedUntil: null }) })).kind).toBe("fire");
     expect(evaluateGuards(guardInput({ shell: shell({ snoozedUntil: "not-a-date" }) })).kind).toBe(
       "fire",
@@ -324,14 +331,19 @@ describe("evaluateGuards — the blocking guards", () => {
     });
   });
 
-  it("44. the machine-wide ceiling is re-checked per tick", () => {
-    expect(evaluateGuards(guardInput({ armedCount: 3 }))).toEqual({
+  it("44. the machine-wide ceiling is re-checked per tick, and counts the OTHER loops", () => {
+    // Four armed against a ceiling of three: this loop is the one over the line.
+    expect(evaluateGuards(guardInput({ armedCount: 4 }))).toEqual({
       kind: "stand_down",
       guard: "14",
       reason: "ceiling",
       phase: "standing_down",
       untilMs: null,
     });
+    // Exactly at the ceiling, every one of the three still fires. Counting yourself here made
+    // the ceiling refuse the very population it was sized for: with three armed and a limit of
+    // three, all three stood down and nothing was supervised at all.
+    expect(evaluateGuards(guardInput({ armedCount: 3 })).kind).toBe("fire");
     expect(evaluateGuards(guardInput({ armedCount: 2 })).kind).toBe("fire");
   });
 
@@ -492,6 +504,29 @@ describe("stopCondition — the 4b sweep", () => {
     });
   });
 
+  it("a run that finishes on its LAST check-in reports done, not spent", () => {
+    // The budget is exhausted the moment the final check-in is reserved, so with the bounds
+    // swept first every successful run that used its whole budget was recorded as "out of
+    // rope" — and `spent` also ends the provider session, which `done` deliberately does not.
+    expect(
+      sweep({
+        record: record({ checkInsUsed: 6, maxCheckIns: 6 }),
+        loopDoneAtMs: NOW - MINUTE,
+      }),
+    ).toMatchObject({ outcome: "done", cause: "loop_done" });
+    expect(
+      sweep({ record: record({ checkInsUsed: 6, maxCheckIns: 6 }), sentinelAtMs: NOW - MINUTE }),
+    ).toMatchObject({ outcome: "done", cause: "sentinel" });
+    // Same on the deadline: the agent said it finished, and it did.
+    expect(
+      sweep({ record: record({ deadlineAtMs: NOW - 1 }), sentinelAtMs: NOW - MINUTE }),
+    ).toMatchObject({ outcome: "done", cause: "sentinel" });
+    // A STALE signal is still no signal: the bounds win, exactly as before.
+    expect(
+      sweep({ record: record({ checkInsUsed: 6, maxCheckIns: 6 }), sentinelAtMs: NOW - 3 * HOUR }),
+    ).toMatchObject({ outcome: "spent", cause: "budget" });
+  });
+
   it("two strikes on the durable record stop the run as stalled", () => {
     expect(sweep({ record: record({ strikes: STRIKE_LIMIT }) })).toMatchObject({
       outcome: "stalled",
@@ -534,13 +569,21 @@ describe("guard predicates", () => {
 
   it("isSnoozed, needsPinRepair, isRateLimited and atArmedCeiling", () => {
     expect(isSnoozed(shell({ snoozedUntil: iso(NOW + 1) }), NOW)).toBe(true);
+    // Exactly now is NOT snoozed: `snoozedUntil` is the instant the snooze lifts, so the
+    // boundary is exclusive and a snooze that has just expired stops holding the loop back.
     expect(isSnoozed(shell({ snoozedUntil: iso(NOW) }), NOW)).toBe(false);
+    expect(isSnoozed(shell({ snoozedUntil: iso(NOW - 1) }), NOW)).toBe(false);
     expect(needsPinRepair(shell({ settledOverride: "active" }))).toBe(true);
     expect(needsPinRepair(shell({ settledOverride: "settled" }))).toBe(false);
     expect(isRateLimited(record({ rateLimitedUntilMs: NOW + 1 }), NOW)).toBe(true);
     expect(isRateLimited(record(), NOW)).toBe(false);
-    expect(atArmedCeiling(3, globalSettings({ maxArmedThreads: 3 }))).toBe(true);
+    // `armedCount` includes the loop being evaluated, so the ceiling is measured against the
+    // others: three armed against a limit of three is fine, four is one too many.
+    expect(atArmedCeiling(4, globalSettings({ maxArmedThreads: 3 }))).toBe(true);
+    expect(atArmedCeiling(3, globalSettings({ maxArmedThreads: 3 }))).toBe(false);
     expect(atArmedCeiling(2, globalSettings({ maxArmedThreads: 3 }))).toBe(false);
+    // The only armed loop on a machine with a ceiling of one is never over it.
+    expect(atArmedCeiling(1, globalSettings({ maxArmedThreads: 1 }))).toBe(false);
   });
 
   it("the wake predicates split pending from lost at an inclusive boundary", () => {
@@ -583,6 +626,16 @@ describe("guard predicates", () => {
     expect(tookOver(fresh, shell({ latestUserMessageAt: iso(NOW - MINUTE) }))).toBe(true);
     expect(tookOver(fresh, shell({ latestUserMessageAt: iso(NOW - 2 * HOUR) }))).toBe(false);
     expect(tookOver(fresh, shell({ latestUserMessageAt: "nonsense" }))).toBe(false);
+    // An EMPTY `createdAtIso` is `LastCheckIn`'s decoding default, not a baseline. Comparing
+    // against `""` — which every ISO string sorts after — ended an armed run as handed-back on
+    // the first tick after a partial write, the one direction a fail-closed default must not
+    // fail in. It falls back to `armedAtMs` exactly as a record with no check-in does.
+    const partial = record({
+      lastCheckIn: { firedAtMs: NOW - HOUR, createdAtIso: "" },
+      armedAtMs: NOW - HOUR,
+    });
+    expect(tookOver(partial, shell({ latestUserMessageAt: iso(NOW - 2 * HOUR) }))).toBe(false);
+    expect(tookOver(partial, shell({ latestUserMessageAt: iso(NOW - MINUTE) }))).toBe(true);
   });
 
   it("doneSignal ignores anything older than the arm", () => {

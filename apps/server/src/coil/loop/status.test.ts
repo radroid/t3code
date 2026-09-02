@@ -160,8 +160,10 @@ describe("deriveLoopStatus", () => {
   });
 
   it("uses the shell clauses when a shell is supplied", () => {
+    // `held`, matching guard 6's phase and the route's `derived`: a snooze is a bounded hold
+    // with an expiry, not a question waiting on an answer. One fact, one word.
     expect(derive({ shell: shell({ snoozedUntil: iso(NOW + HOUR) }) })).toMatchObject({
-      state: "blocked",
+      state: "held",
       reason: "snoozed",
     });
     expect(derive({ shell: shell({ hasActionableProposedPlan: true }) })).toMatchObject({

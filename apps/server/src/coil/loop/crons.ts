@@ -19,6 +19,14 @@
  * this backwards silently retires deference: every stop would look like "no wake pending"
  * and the supervisor would nudge straight through a healthy self-paced run.
  *
+ * ## Only armed threads accrue records
+ *
+ * Both callbacks read the record and return early unless the thread is armed. Every Claude
+ * turn on the machine ends in a `Stop`, and `coil-loop.json` is rewritten in full on every
+ * mutation, so recording unconditionally would mean a write per turn per thread for a table
+ * nothing will ever read. The `gate_off` probe follows the same rule for the same reason —
+ * a degraded state is a fact about a supervised run.
+ *
  * ## A throwing hook must never break the turn
  *
  * `HookJSONOutput` carries `continue` and, for `Stop`, `decision: "block"` — **a Stop hook
@@ -51,6 +59,7 @@ import * as Option from "effect/Option";
 
 import { resolveConfig } from "./config.ts";
 import { nextFireAtMs } from "./cron/parse.ts";
+import { installedLoopStore } from "./hooksRegistry.ts";
 import { type CronEntry, type CronRecord, LoopStore, type LoopStoreShape } from "./state.ts";
 
 /** What `queryOptions.hooks` wants. Kept as an alias so the SDK owns the shape. */
@@ -153,6 +162,11 @@ const recordCronSnapshot = (
   sessionCrons: unknown,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
+    // Armed only. These callbacks run on the Stop of EVERY Claude turn on the machine, and
+    // `coil-loop.json` is rewritten in full on every mutation — recording a cron table for
+    // threads nothing supervises would grow one shared file by a write per turn for no
+    // reader at all. Same rule as `userInputs.ts`.
+    if (!(yield* store.getThread(threadId)).armed) return;
     const nowMs = yield* Clock.currentTimeMillis;
     const snapshot = normalizeCronSnapshot(sessionCrons, nowMs);
     if (snapshot === null) {
@@ -185,6 +199,9 @@ const probeGateOff = (
   Effect.gen(function* () {
     const text = stringifyToolResponse(toolResponse);
     if (text === null || !text.toLowerCase().includes(GATE_OFF_MARKER)) return;
+    // Armed only, for the same reason the cron snapshot is: `degraded` is a fact about a
+    // supervised run, and only a supervised run has anywhere to show it.
+    if (!(yield* store.getThread(threadId)).armed) return;
     yield* store.setDegraded(threadId, "gate_off");
     yield* Effect.logDebug("coil loop: scheduler gate reported off", { threadId });
   });
@@ -257,17 +274,24 @@ export function makeLoopHooks(input: LoopHooksInput): LoopHooks {
  * The adapter's whole entry point: one `yield*` that resolves to the hooks object, or
  * `undefined` when loops are not in play.
  *
- * `Effect.serviceOption` is what keeps this free. Reading `LoopStore` optionally means the
+ * `Effect.serviceOption` is what keeps this free: reading `LoopStore` optionally means the
  * adapter's Layer requirements do not widen, so no second seam edit appears in `server.ts`
- * or in upstream's adapter tests — a server built without the loop layer simply gets
- * `undefined` here. The runtime context is captured from the caller so hook logs and spans
- * belong to the session that owns them.
+ * or in upstream's adapter tests. But it is not what makes it *work* in production — the
+ * adapter's fiber runs in upstream's layer graph, where `CoilLayerLive` has already
+ * discharged `LoopStore` with `Layer.provide`, so the service is genuinely absent there.
+ * `hooksRegistry.ts` is the fallback the running supervisor installs; the context is still
+ * preferred when one carries the store, which is how every test that provides it stays
+ * honest. A server with no loop layer at all finds neither and gets `undefined`.
+ *
+ * The runtime context is captured from the caller either way, so hook logs and spans belong
+ * to the session that owns them.
  */
 export const loopHooksFor = (threadId: string): Effect.Effect<LoopHooks | undefined> =>
   Effect.gen(function* () {
     if (!resolveConfig().enabled) return undefined;
-    const store = yield* Effect.serviceOption(LoopStore);
-    if (Option.isNone(store)) return undefined;
+    const fromContext = yield* Effect.serviceOption(LoopStore);
+    const store = Option.isSome(fromContext) ? fromContext.value : installedLoopStore();
+    if (store === null) return undefined;
     const context = yield* Effect.context<never>();
-    return makeLoopHooks({ store: store.value, threadId, run: Effect.runPromiseWith(context) });
+    return makeLoopHooks({ store, threadId, run: Effect.runPromiseWith(context) });
   });

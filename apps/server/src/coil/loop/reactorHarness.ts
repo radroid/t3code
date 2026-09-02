@@ -265,12 +265,19 @@ export const harness = (options: HarnessOptions = {}) =>
     const projectCalls = yield* Ref.make(0);
     /** Set to make the projection read fail, distinct from "the thread is gone". */
     const shellReadFails = yield* Ref.make(false);
+    /**
+     * Fail reads only from call `n + 1` on, the same shape `shellOverrideRef` uses — which is
+     * how a scenario makes the *pre-dispatch* re-read fail while the guard block's read
+     * succeeded. The two are different worlds and the reactor must not conflate them.
+     */
+    const shellFailsAfterCall = yield* Ref.make<number | null>(null);
 
     const SnapshotStub = Layer.succeed(ProjectionSnapshotQuery, {
       getThreadShellById: (threadId: string) =>
         Effect.gen(function* () {
           const n = yield* Ref.updateAndGet(shellCalls, (c) => c + 1);
-          if (yield* Ref.get(shellReadFails)) {
+          const failAfter = yield* Ref.get(shellFailsAfterCall);
+          if ((yield* Ref.get(shellReadFails)) || (failAfter !== null && n > failAfter)) {
             return yield* Effect.fail(new Error("simulated projection failure"));
           }
           const extra = (yield* Ref.get(extraShellsRef)).find((s) => s.id === threadId);
@@ -352,6 +359,7 @@ export const harness = (options: HarnessOptions = {}) =>
       shellCalls,
       projectCalls,
       shellReadFails,
+      shellFailsAfterCall,
       stopSessions,
       autoResumePending,
     };

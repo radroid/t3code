@@ -69,6 +69,7 @@ import { AutoResumeStore } from "../autoResume/state.ts";
 import { composeCheckInPrompt, resolveConfig } from "./config.ts";
 import { decide, resolveWake } from "./decide.ts";
 import { hasPendingCrons } from "./guards.ts";
+import { installLoopStore } from "./hooksRegistry.ts";
 import { readSentinel } from "./sentinel.ts";
 import { LoopStore, type LoopGlobalSettings, type LoopRecord, type StopRecord } from "./state.ts";
 import type {
@@ -374,6 +375,30 @@ const makeSupervisor = Effect.gen(function* () {
       );
     });
 
+  /**
+   * Service the stop requests the console banked.
+   *
+   * `POST /api/coil/loop` cannot end a session itself — `ProviderService` is not already a
+   * requirement of upstream's `makeRoutesLayer`, and taking it would widen an upstream
+   * signature — so a disarm that left the agent's own wakes pending records the request and
+   * this is where it lands. Reads one in-memory list and issues no query when it is empty,
+   * so the "zero SQL when nothing is armed" floor still holds.
+   */
+  const serviceStopRequests = Effect.gen(function* () {
+    const requested = yield* store.listStopRequested;
+    if (requested.length === 0) return;
+    yield* Effect.forEach(
+      requested,
+      (entry) =>
+        // Cleared first, so a `stopSession` that fails cannot leave a request that retries
+        // every minute for the rest of the night.
+        store
+          .clearSessionStopRequest(entry.threadId)
+          .pipe(Effect.andThen(stopProviderSession(entry.threadId))),
+      { discard: true },
+    );
+  });
+
   const onDisarm = (threadId: string, record: LoopRecord, action: DisarmAction, nowMs: number) =>
     Effect.gen(function* () {
       yield* store.disarm(threadId);
@@ -497,12 +522,29 @@ const makeSupervisor = Effect.gen(function* () {
       // 2. RE-READ, and re-decide. Guard 2 comes back with a fresh `global` here too, so the
       //    master toggle is never one tick stale at the moment money is spent.
       const fresh = yield* readShell(threadId);
+      if (!fresh.ok) {
+        // A projection that failed to answer is NOT a missing thread, and reporting it as one
+        // sends a reader hunting for a thread that is fine. The reservation still stands — the
+        // reserve-before-dispatch discipline is not conditional on why the dispatch did not
+        // happen — but the strike projection is rolled back to what the record carried before
+        // this tick: nothing was sent, so nothing about the agent was demonstrated, and two
+        // hiccups in a row must not read as a stalled run.
+        yield* store.update(threadId, (current) => ({ ...current, strikes: record.strikes }));
+        yield* appendActivity(
+          threadId,
+          "info",
+          LOOP_ACTIVITY_KINDS.skipped,
+          "Loop check-in aborted: the thread index did not answer in time.",
+          { reason: "aborted_pre_dispatch", verdict: "projection_unavailable", n: reserved.n },
+        );
+        return;
+      }
+      // A `null` shell here is a thread that really is gone; `decide` answers it with a
+      // disarm, and naming it in the guard is also what narrows it for the dispatch below.
+      const shell = fresh.shell;
       const global = yield* store.getGlobal;
-      const verdict =
-        fresh.shell === null
-          ? null
-          : decide({ ...input, record, global, shell: fresh.shell, nowMs: input.nowMs });
-      if (fresh.shell === null || verdict?.type !== "fire") {
+      const verdict = decide({ ...input, record, global, shell, nowMs: input.nowMs });
+      if (shell === null || verdict.type !== "fire") {
         // The reservation stands. It is spent, and that is the discipline: an abort needs
         // the thread to have moved inside one tick, which resets the idle clock, so this can
         // never repeat tightly — and refunding here would make "reserve before dispatch"
@@ -512,12 +554,14 @@ const makeSupervisor = Effect.gen(function* () {
           "info",
           LOOP_ACTIVITY_KINDS.skipped,
           "Loop check-in aborted: the thread moved before the nudge was sent.",
-          {
-            reason: "aborted_pre_dispatch",
-            verdict: verdict === null ? "thread_gone" : verdict.type,
-            n: reserved.n,
-          },
+          { reason: "aborted_pre_dispatch", verdict: verdict.type, n: reserved.n },
         );
+        // What the re-read saw is as real as what a tick sees: a takeover observed here is a
+        // handback, and a thread that vanished under us is a disarm. Leaving them for the next
+        // tick would keep the console saying "watching" about a run that is already over, and
+        // would leave a pin the loop owns in place for another poll interval.
+        if (verdict.type === "stop") yield* onStop(threadId, record, verdict, input.nowMs);
+        if (verdict.type === "disarm") yield* onDisarm(threadId, record, verdict, input.nowMs);
         return;
       }
 
@@ -525,7 +569,7 @@ const makeSupervisor = Effect.gen(function* () {
       //    the ids actually included, so an answer that landed mid-composition is not lost.
       const banked = yield* store.listUndeliveredAnswers(threadId);
       const prompt = yield* composeCheckInPrompt({
-        worktreePath: fresh.shell.worktreePath,
+        worktreePath: shell.worktreePath,
         workspaceRoot: input.workspaceRoot,
         overridePrompt: record.overridePrompt,
         checkInNumber: reserved.n,
@@ -543,7 +587,7 @@ const makeSupervisor = Effect.gen(function* () {
       // 4. DISPATCH. `createdAtIso` is the same string `lastCheckIn` recorded, which is what
       //    makes the handback compare exact: the decider stamps the user message with the
       //    command's `createdAt`, so our own nudge can never read as a takeover.
-      const sent = yield* dispatchCheckIn(fresh.shell, prompt.text, createdAtIso).pipe(
+      const sent = yield* dispatchCheckIn(shell, prompt.text, createdAtIso).pipe(
         Effect.as(true),
         Effect.catchCause((cause) =>
           Effect.logWarning("coil loop: check-in dispatch failed", {
@@ -557,7 +601,7 @@ const makeSupervisor = Effect.gen(function* () {
       yield* store.markBlockersDelivered(threadId, prompt.deliveredBlockerIds);
 
       // 5. REPAIR, only when the pin was already there.
-      if (fresh.shell.settledOverride === "active") yield* repairPin(threadId);
+      if (shell.settledOverride === "active") yield* repairPin(threadId);
 
       // 6. BREADCRUMBS. A lost wake is the strongest signal in the design, so it gets its own
       //    row with the numbers needed to re-diagnose it.
@@ -640,6 +684,7 @@ const makeSupervisor = Effect.gen(function* () {
     );
 
   const tick = Effect.gen(function* () {
+    yield* serviceStopRequests;
     const armed = yield* store.listArmed;
     // Zero SQL and zero filesystem work when nothing is armed. This is the whole reason the
     // by-id reads replaced `getSnapshot()`.
@@ -686,6 +731,11 @@ const makeSupervisor = Effect.gen(function* () {
     yield* Effect.logInfo("coil loop: disabled via COIL_LOOP_ENABLED");
     return;
   }
+
+  // The Claude adapter builds its hooks from `loopHooksFor`, and its fiber runs in upstream's
+  // layer graph where `LoopStore` has already been discharged — so it cannot reach the store
+  // through the context. Publish it for the life of this layer's scope. See `hooksRegistry.ts`.
+  yield* installLoopStore(store);
 
   yield* Effect.forkScoped(
     Stream.runForEach(providerService.streamEvents, (event) =>

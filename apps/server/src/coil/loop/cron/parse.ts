@@ -22,7 +22,9 @@
  * makes it DST-correct rather than DST-ignorant: candidates are generated as calendar
  * minutes and only then converted to an instant, so a `0 3 * * *` job is 03:00 local on both
  * sides of a transition. A wall-clock minute that does not exist (the spring-forward gap) is
- * skipped; one that occurs twice (the fall-back repeat) resolves to its first occurrence.
+ * skipped; one that occurs twice (the fall-back repeat) resolves to its **later** occurrence,
+ * because deferring an hour too long is cheap and deferring an hour too little reports a
+ * healthy run as a lost wake — see `timestampFor`.
  *
  * @module coil/loop/cron/parse
  */
@@ -205,7 +207,16 @@ function partsAt(
 }
 
 /** The zone's UTC offset at an instant, derived by reading the wall clock back. */
-function offsetMsAt(timestampMs: number, timeZone: string): number | null {
+function offsetMsAt(timestampMs: number, timeZone: string | undefined): number | null {
+  if (timeZone === undefined) {
+    // `getTimezoneOffset` is minutes WEST of UTC, i.e. the negation of the offset.
+    const minutesWest = new Date(timestampMs).getTimezoneOffset();
+    return Number.isFinite(minutesWest) ? -minutesWest * 60_000 : null;
+  }
+  return zoneOffsetMsAt(timestampMs, timeZone);
+}
+
+function zoneOffsetMsAt(timestampMs: number, timeZone: string): number | null {
   const parts = partsAt(timestampMs, timeZone);
   if (parts === null) return null;
   const asUtc = Date.UTC(
@@ -219,49 +230,54 @@ function offsetMsAt(timestampMs: number, timeZone: string): number | null {
   return asUtc - Math.floor(timestampMs / 1000) * 1000;
 }
 
+/** A transition happens at most once a day, so probes a day out bracket it. */
+const OFFSET_PROBE_MS = 86_400_000;
+
 /**
  * The instant a wall-clock minute names, or `null` when it names none.
  *
  * `null` is the spring-forward gap: 02:30 simply does not happen on that date, and a job
- * scheduled for it does not run that day. Ambiguous minutes (the fall-back repeat) resolve
- * to the first occurrence, which is what every cron implementation does.
+ * scheduled for it does not run that day.
+ *
+ * ## An ambiguous minute resolves to the LATER instant
+ *
+ * On a fall-back day 01:30 happens twice, an hour apart, and nothing in the payload says
+ * which one the binary meant. This is not a "pick a convention" choice, because the two
+ * errors are not symmetric: T3 uses this value only to decide how long to keep deferring to
+ * a wake it did not schedule, and the wake grace is capped at fifteen minutes. Resolving
+ * early on an hour-wide ambiguity therefore reports a healthy self-paced run as `wake_lost`
+ * and nudges it, an hour before its own wake was even due. Resolving late costs at most one
+ * extra hour of deference on one night a year, and the deadline still bounds it.
+ *
+ * The offset is probed on both sides of the naive instant rather than re-derived once: away
+ * from a transition the probes agree, and across one they are exactly the two candidate
+ * offsets, so the ambiguous case falls out of taking the later surviving candidate.
  */
 function timestampFor(wall: WallClock, timeZone: string | undefined): number | null {
-  if (timeZone === undefined) {
-    const date = new Date(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, 0, 0);
-    const timestampMs = date.getTime();
-    if (Number.isNaN(timestampMs)) return null;
-    // A shifted result means the wall-clock minute does not exist in this zone.
-    return date.getFullYear() === wall.year &&
-      date.getMonth() === wall.month - 1 &&
-      date.getDate() === wall.day &&
-      date.getHours() === wall.hour &&
-      date.getMinutes() === wall.minute
-      ? timestampMs
-      : null;
-  }
-
   const asUtc = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, 0, 0);
   if (Number.isNaN(asUtc)) return null;
 
-  // Guess with the offset at the naive instant, then re-derive it at the guess so a
-  // transition between the two is corrected.
-  const firstOffset = offsetMsAt(asUtc, timeZone);
-  if (firstOffset === null) return null;
-  const guess = asUtc - firstOffset;
-  const secondOffset = offsetMsAt(guess, timeZone);
-  if (secondOffset === null) return null;
-  const timestampMs = asUtc - secondOffset;
-
-  const check = partsAt(timestampMs, timeZone);
-  if (check === null) return null;
-  return check.year === wall.year &&
-    check.month === wall.month &&
-    check.day === wall.day &&
-    check.hour === wall.hour &&
-    check.minute === wall.minute
-    ? timestampMs
-    : null;
+  let latest: number | null = null;
+  for (const probe of [asUtc - OFFSET_PROBE_MS, asUtc, asUtc + OFFSET_PROBE_MS]) {
+    const offset = offsetMsAt(probe, timeZone);
+    if (offset === null) continue;
+    const candidate = asUtc - offset;
+    if (latest !== null && candidate <= latest) continue;
+    // Reading the wall clock back is what rejects the spring-forward gap: a minute that does
+    // not exist resolves to some other minute, and no candidate survives the compare.
+    const check = partsAt(candidate, timeZone);
+    if (check === null) continue;
+    if (
+      check.year === wall.year &&
+      check.month === wall.month &&
+      check.day === wall.day &&
+      check.hour === wall.hour &&
+      check.minute === wall.minute
+    ) {
+      latest = candidate;
+    }
+  }
+  return latest;
 }
 
 function dayOfWeek(year: number, month: number, day: number): number {
