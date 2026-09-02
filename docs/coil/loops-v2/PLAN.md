@@ -183,6 +183,30 @@ The `updatedAt` half of the trigger is independently verified and unchanged.
   row. The latter is not free the way P8 implies — chrome on the mobile row is a **mobile seam row**,
   in a file the fork does not touch today. Price both when mobile is built.
 
+### Vocabulary
+
+Kept here, and **not** in `docs/internals/glossary.md`. That file is upstream-owned and the fork
+does not touch it today, so adding four terms would open a **new seam row** for prose — against the
+tripwire in `docs/coil/SEAMS.md`, and for a feature whose whole budget is four rows. Move it to
+`docs/coil/CONTEXT.md` when that file is created (§12.6); move it upstream only if the feature is
+ever upstreamed.
+
+- **Loop** — a bounded, durable supervision record on one thread: a goal, a check-in budget, a
+  wall-clock deadline, and the ledger of what happened. Armed by a human, never implicitly.
+- **Check-in** — one nudge the loop sends a quiet thread, spending one unit of the budget. Firing
+  is the exception; standing down is the normal tick.
+- **Stand down** — a tick that did nothing and spent nothing, with a reason. Distinct from a stop:
+  the loop stays armed and keeps its bounds.
+- **Blocker** — a question the agent raised through `raise_blocker` _without_ stopping, answered
+  asynchronously and restated to the agent on the next check-in. Distinct from a native
+  `AskUserQuestion`, which blocks the turn.
+- **Deference** — standing down because the agent has a wake of its own pending inside the run's
+  deadline. The loop covers that wake only if it never lands.
+- **Spent** — a run that ended on its budget or its deadline. **Never rendered as success**: the
+  agent never signalled done.
+- **Iteration ledger** — the per-check-in rows, built from observed facts (cursors, timestamps,
+  outcomes) and never from a model-authored summary of its own run.
+
 ### Divergences from #42 and #38 (deliberate, and open to challenge)
 
 - **#42 Phase 1d's `CLAUDE_CODE_DISABLE_CRON` per-thread toggle (default off) is dropped.** It was
