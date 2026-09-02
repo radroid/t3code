@@ -1,9 +1,11 @@
 /**
  * Pure guard helpers for auto-resume.
  *
- * All predicates operate on the authoritative `OrchestrationThread` read-model snapshot
- * (the full-thread shape, which carries `messages` and `activities` — NOT the shell-only
- * derived flags). Keeping them pure makes every guard trivially unit-testable.
+ * Predicates operate on the authoritative `OrchestrationThread` read-model snapshot (the
+ * full-thread shape, which carries `messages` and `activities` — NOT the shell-only derived
+ * flags). The one exception is `isClaudeThread`, which asks for only the field it reads so a
+ * caller holding a thread shell can reuse it. Keeping them pure makes every guard trivially
+ * unit-testable.
  *
  * @module coil/autoResume/guards
  */
@@ -91,11 +93,21 @@ function isStaleRequestFailureDetail(payload: Record<string, unknown> | null): b
 
 /**
  * The thread's session is backed by the Claude driver. The driver slug is
- * `"claudeAgent"` (ClaudeAdapter.ts:96); `session.providerName` is set from
- * `event.provider` (ProviderRuntimeIngestion.ts:1442).
+ * `"claudeAgent"`; `session.providerName` is set from `event.provider` in
+ * `ProviderRuntimeIngestion`.
  */
 export const CLAUDE_DRIVER_KIND = "claudeAgent";
-export function isClaudeThread(thread: OrchestrationThread): boolean {
+
+/**
+ * Takes the narrowest shape it reads rather than a whole `OrchestrationThread`, so a caller
+ * holding only an `OrchestrationThreadShell` can ask too — the shell declares `session` with
+ * the identical `OrchestrationSession | null` type, so it is structurally assignable and no
+ * second copy of this predicate has to exist.
+ *
+ * Every other guard in this module still takes the full thread, because they read `messages`
+ * and `activities`, which the shell does not carry.
+ */
+export function isClaudeThread(thread: Pick<OrchestrationThread, "session">): boolean {
   const name = thread.session?.providerName;
   return typeof name === "string" && name.toLowerCase() === CLAUDE_DRIVER_KIND.toLowerCase();
 }

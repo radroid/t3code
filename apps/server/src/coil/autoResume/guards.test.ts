@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { OrchestrationThread } from "@t3tools/contracts";
+import {
+  type OrchestrationThread,
+  type OrchestrationThreadShell,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import {
   cancelReason,
@@ -121,6 +127,48 @@ describe("simple predicates", () => {
     expect(isClaudeThread(makeThread({ providerName: "ClaudeAgent" }))).toBe(true);
     expect(isClaudeThread(makeThread({ providerName: "codex" }))).toBe(false);
     expect(isClaudeThread(makeThread({ providerName: null }))).toBe(false);
+  });
+
+  // A shell carries `session` with the same `OrchestrationSession | null` type the full
+  // thread does, so it satisfies the guard's `Pick<…, "session">` argument.
+  //
+  // Built with NO cast, deliberately: the cast-free literal is the only thing pinning the
+  // widening. Revert `isClaudeThread` to `(thread: OrchestrationThread)` and this file stops
+  // type-checking, which is the failure a shell-only caller (the loop supervisor reads the
+  // shell stream) would otherwise hit at build time instead of here.
+  it("isClaudeThread accepts a thread shell, not just a full thread", () => {
+    const shell: OrchestrationThreadShell = {
+      id: ThreadId.make("thread-1"),
+      projectId: ProjectId.make("project-1"),
+      title: "Thread",
+      modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "feature",
+      worktreePath: "/repo",
+      latestTurn: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-02T00:00:00.000Z",
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      session: {
+        threadId: ThreadId.make("thread-1"),
+        status: "ready",
+        providerName: "claudeAgent",
+        runtimeMode: "full-access",
+        activeTurnId: null,
+        lastError: null,
+        updatedAt: "2026-09-02T00:00:00.000Z",
+      },
+      latestUserMessageAt: "2026-09-02T00:00:00.000Z",
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+    };
+
+    expect(isClaudeThread(shell)).toBe(true);
+    expect(isClaudeThread({ ...shell, session: null })).toBe(false);
   });
 
   it("threadIsGone covers deleted / archived", () => {

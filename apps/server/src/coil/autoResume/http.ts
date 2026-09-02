@@ -17,53 +17,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import {
-  HttpRouter,
-  HttpServerRequest,
-  HttpServerRespondable,
-  HttpServerResponse,
-} from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
-import {
-  failEnvironmentAuthInvalid,
-  failEnvironmentInternal,
-  failEnvironmentScopeRequired,
-} from "../../auth/http.ts";
+import { authenticateWithScope, routeAuthErrorTags } from "../http/auth.ts";
 import { AutoResumeStore, type AutoResumeStoreShape } from "./state.ts";
 
 export const AUTO_RESUME_ROUTE_PATH = "/api/coil/auto-resume";
 
-/**
- * MIRROR of the module-private `authenticateRawRouteWithScope` in `apps/server/src/http.ts`
- * (which the OTLP proxy route uses). It is not exported, so importing it would mean editing
- * an upstream file; the fork replicates the ~15 lines instead. Registered as a logic mirror
- * in docs/coil/SEAMS.md — if upstream changes how raw routes authenticate, this must follow.
- *
- * Operate (not read) scope: these endpoints mutate scheduling behaviour.
- */
-const authenticateWithOperateScope = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-  const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
-    Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-      // Second argument tracks upstream's `authenticateRawRouteWithScope`, which
-      // this mirrors. `dpopFailureReason` is optional, so dropping it compiles —
-      // it just costs a relay client the precise reason (clock skew being the
-      // motivating case) that every other environment endpoint reports.
-      failEnvironmentAuthInvalid(
-        EnvironmentAuth.serverAuthCredentialReason(error),
-        EnvironmentAuth.serverAuthDpopFailureReason(error),
-      ),
-    ),
-    Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-      failEnvironmentInternal("internal_error", error),
-    ),
-  );
-  if (!session.scopes.includes(AuthOrchestrationOperateScope)) {
-    return yield* failEnvironmentScopeRequired(AuthOrchestrationOperateScope);
-  }
-});
+/** Operate (not read) scope: these endpoints mutate scheduling behaviour. */
+const authenticateWithOperateScope = authenticateWithScope(AuthOrchestrationOperateScope);
 
 const WriteBody = Schema.Struct({
   threadId: Schema.String,
@@ -108,13 +70,7 @@ const makeGetRoute = (store: AutoResumeStoreShape) =>
         return HttpServerResponse.text("Missing threadId", { status: 400 });
       }
       return HttpServerResponse.jsonUnsafe(yield* readThreadState(store, threadId));
-    }).pipe(
-      Effect.catchTags({
-        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
-        EnvironmentInternalError: HttpServerRespondable.toResponse,
-        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
-      }),
-    ),
+    }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
 
 const makePostRoute = (store: AutoResumeStoreShape) =>
@@ -144,13 +100,7 @@ const makePostRoute = (store: AutoResumeStoreShape) =>
       }
 
       return HttpServerResponse.jsonUnsafe(yield* readThreadState(store, body.threadId));
-    }).pipe(
-      Effect.catchTags({
-        EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
-        EnvironmentInternalError: HttpServerRespondable.toResponse,
-        EnvironmentScopeRequiredError: HttpServerRespondable.toResponse,
-      }),
-    ),
+    }).pipe(Effect.catchTags(routeAuthErrorTags)),
   );
 
 /**
