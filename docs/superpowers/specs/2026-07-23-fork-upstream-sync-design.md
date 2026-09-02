@@ -5,6 +5,65 @@
 **Fork:** `radroid/t3code` (fork of `pingdotgg/t3code`, MIT-licensed)
 **Companion spec:** `2026-07-23-usage-limit-auto-resume-design.md` (Project B)
 
+## Amendment 2026-09-02 — merge, not rebase
+
+**The daily sync merges `upstream/main` into fork `main`. It no longer rebases `main` onto
+`upstream/main`, and nothing in the process force-pushes.**
+
+Why. The rebase was cheap for the machine and expensive for everyone else: it rewrote `main`'s
+history every single day. Worktrees, tags, open PRs and every in-flight branch went stale on a sync
+day; a sync PR showed `CONFLICTING` and could not be landed with GitHub's merge button; landing meant
+force-updating `main` and then repairing every in-flight branch with `git rebase --onto`. That is a
+daily tax on a fork of 183 commits, paid to preserve a linear history nobody was reading. Merging
+costs one merge commit a day and buys back all of it: `main` only fast-forwards, a sync PR is an
+ordinary PR, and no recovery recipe is needed because nothing is destroyed.
+
+What this supersedes:
+
+- **A1** — `main` is no longer "`upstream/main` + a patch series". It is a branch that contains
+  upstream's history, so `git log --oneline upstream/main..main` is a list of the fork's own commits
+  plus the sync merges, and `git format-patch upstream/main` is no longer an upstream PR set. The
+  "force-push is safe here" note under A4 is void: there is no force-push.
+- **A4 step 4** — `git rebase upstream/main` becomes `git merge --no-ff upstream/main`, with a
+  subject naming the absorbed range (`chore(coil): merge upstream/main <sha> (N commits)`). On
+  conflict the script still records conflicted paths and the upstream commits that touched them,
+  then `git merge --abort`.
+- **A4 step 6** — exit 0 now means "clean merge, verified", and its push is a plain fast-forward
+  `git push origin main`, not `git push --force-with-lease`.
+- **A4 step 7** — the **dropped-patch detector is deleted**, along with exit code 40. It existed
+  because a rebase replays each fork commit and can drop one that upstream absorbed. A merge replays
+  nothing; every fork commit stays reachable from `main` by construction, so there is no loss to
+  detect. Absorbed work now surfaces as duplication, and removing the fork's redundant copy is a
+  deliberate commit a human or agent makes on the sync branch.
+- **Landing** — sync PRs land with
+  `gh pr merge --merge --subject "chore(coil): merge upstream/main <sha> (N commits)"`. Never
+  squash: a squash rewrites the merge into a single fork commit whose only parent is the old
+  `main`, so the merge-base with upstream never advances and every later sync re-conflicts on the
+  same files. `--subject` is required because GitHub titles a merge `Merge pull request #N …` by
+  default, and the release changelog now walks `--first-parent` — the daily job writes the
+  `chore(coil):` subject itself, a hand-landed PR only carries it if the human passes it.
+
+What this keeps, unchanged: the conflict-surface budget (A2), the seam ledger measured against the
+merge-base (`docs/coil/SEAMS.md` — a merge advances that merge-base exactly as a rebase did), the
+daily verify depth and its `--testTimeout`/`--hookTimeout` handling, the weekly deep verify (A5), the
+`coil-sync` escalation contract, and exit codes 0/10/20/30 with their meanings.
+
+The status JSON keeps its shape but not its contents. It lost the `dropped_patches` key along with
+the detector — nothing read it; the workflow's escalation step reads only `result` — and the key is
+deliberately not re-added as a dead field. `patch_manifest` is now the fork's own commits
+(`--no-merges`, capped at 100), and the `SKIP_VERIFY` path reports `result: "merged"` where it used
+to say `"rebased"`.
+
+The `coil/last-good-*` tag is still cut every run — now as a rollback _reference_, since the
+ordinary way to undo a landed sync is `git revert -m 1 <merge sha>`. That revert leaves the merge in
+`main`'s ancestry, so the daily sync treats the range as absorbed (exit 10) and never re-offers it,
+and later syncs land on the reverted tree; re-absorbing means reverting the revert.
+
+The sections below are the original 2026-07-23 design and are kept as written; read them through this
+amendment.
+
+---
+
 ## Problem
 
 The fork will accumulate local features (starting with usage-limit auto-resume).

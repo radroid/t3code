@@ -5,7 +5,7 @@ How the engineering skills should consume this repo's domain documentation when 
 **Layout: single-context**, held entirely inside the fork-owned `docs/coil/` namespace. This repo is
 a pnpm monorepo and would normally suggest a multi-context layout, but it is a **fork** of
 `pingdotgg/t3code`: per-context `CONTEXT.md` files would have to live inside `apps/*` and
-`packages/*`, which upstream owns. Keeping one context under `docs/coil/` costs zero rebase surface.
+`packages/*`, which upstream owns. Keeping one context under `docs/coil/` costs zero conflict surface.
 See `docs/coil/SEAMS.md`.
 
 ## Before exploring, read these

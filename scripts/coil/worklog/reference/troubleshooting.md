@@ -175,8 +175,11 @@ Numbers that do not match the user's memory of the day.
   `worklog projects`, not the bundle.
 - **Commits missing.** Either the repo root is not in any project's `roots`, or the commit
   author is not in `identities`. Both are registry fixes.
-- **A sync day's commit count looks low.** Expected. A rebase copy keeps its author, author
-  date and subject, so the collector counts the patch once instead of counting both SHAs.
+- **A sync day's commit count looks low.** Expected. The sync lands as one merge commit, and
+  `--no-merges` drops it; the upstream commits it brings in are other people's work and are
+  filtered out by `identities`. (Before 2026-09-02 syncs rebased, and the same day looked low for
+  a different reason: a rebase copy keeps its author, author date and subject, so the collector
+  counted the patch once instead of counting both SHAs.)
 
 Never open the JSON bundle to investigate. If the summary cannot answer the question, re-run
 collect with different flags or ask the user.

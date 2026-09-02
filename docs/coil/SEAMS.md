@@ -76,7 +76,7 @@ never seen and cannot conflict.
 > merge-base. The footprint moved from **+2590/-1042 to +2613/-1044**.
 >
 > The rebase itself displaced nothing — after conflict resolution the deletion count was still
-> exactly `-1042`, which is the property that makes a zero-conflict rebase trustworthy, since _any_
+> exactly `-1042`, which is the property that makes a zero-conflict sync trustworthy, since _any_
 > displacement of upstream code moves a deletion count. The two extra deletions were then spent
 > **deliberately**, on the ordering fix below. Three rows changed:
 >
@@ -216,7 +216,7 @@ never seen and cannot conflict.
 > **2026-08-11: the first exception, and it is a small one.** `scripts/build-desktop-artifact.ts` (#70)
 > replaces one line — a constant's initialiser — so the fork's total is no longer +N/-0 on every shared
 > file, and the invariant above weakens from "no deletions anywhere" to "one known deletion, at a known
-> line". Keep it that way. The additive rule is what makes a clean rebase evidence of anything, so a
+> line". Keep it that way. The additive rule is what makes a clean sync evidence of anything, so a
 > second displacement should have to argue for itself in this file the way that one did.
 >
 > **2026-08-12 (#71): the argument for the second set.** Renaming the app is not expressible as an
@@ -416,8 +416,8 @@ The window slides forward at every sync, so these figures move even when the for
 >
 > The older correction this replaces is still worth knowing: the [Regenerating](#regenerating) script
 > once resolved the merge-base through the **local** `main`, which had drifted 62 commits behind
-> `origin/main` (sync branches land by force-push, so local `main` diverges rather than
-> fast-forwards) and under-reported the surface by 11 lines while looking plausible. The script uses
+> `origin/main` (sync branches landed by force-push then, so local `main` diverged rather than
+> fast-forwarded) and under-reported the surface by 11 lines while looking plausible. The script uses
 > `origin/main` now. Sanity-check with `git rev-list --left-right --count main...origin/main` before
 > trusting a run.
 
@@ -456,7 +456,7 @@ recurring rebase conflict in a file this doc said the fork did not touch) went u
 ## Reading the risk column
 
 `risk = (fork lines changed) × (upstream commits touching that file in the 60 days before the
-merge-base)`. It is a rebase-pain estimate, not a correctness signal: a big fork edit to a file
+merge-base)`. It is a conflict-pain estimate, not a correctness signal: a big fork edit to a file
 upstream never touches is cheap, and a two-line edit to a file upstream rewrites weekly is expensive.
 
 ## The ledger
@@ -542,7 +542,7 @@ Sorted by risk, worst first.
 ## Logic mirrors (semantic dependencies, not code seams)
 
 Upstream helpers the fork **replicates** rather than imports, to avoid a code seam. These never
-conflict during rebase, so nothing warns you when the original changes and the mirror drifts.
+conflict during a sync, so nothing warns you when the original changes and the mirror drifts.
 
 | Fork mirror                                                                                               | Mirrors upstream                                                                                                                                                                                                                  | Risk if upstream changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -618,12 +618,12 @@ git diff --numstat "$MB"..origin/main | while read -r a d p; do
 done
 ```
 
-`origin/main` is load-bearing, the same way `@<epoch>` is below. Sync branches land by
-`git push --force-with-lease origin coil/sync-<id>:main`, so local `main` never fast-forwards — it
-**diverges**, and silently. On 2026-08-05 it was 62 behind / 64 ahead, and a regeneration run
-through it under-reported the surface by 11 lines while still looking plausible. Sanity-check with
-`git rev-list --left-right --count main...origin/main` before trusting a run; anything non-zero on
-the left means local `main` is not the fork.
+`origin/main` is load-bearing, the same way `@<epoch>` is below. A local `main` that has not been
+fetched is simply behind now that syncs land as merge commits — but back when they landed by
+force-push it **diverged**, and silently: on 2026-08-05 it was 62 behind / 64 ahead, and a
+regeneration run through it under-reported the surface by 11 lines while still looking plausible.
+Sanity-check with `git rev-list --left-right --count main...origin/main` before trusting a run;
+anything non-zero on the left means local `main` is not the fork.
 
 That prints exactly the upstream-owned files the fork edits. Churn for any one of them — anchored to
 the merge-base date, **not** to today, so the number is reproducible after the fact:
