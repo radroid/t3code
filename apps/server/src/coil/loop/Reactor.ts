@@ -381,13 +381,12 @@ const makeSupervisor = Effect.gen(function* () {
    * `POST /api/coil/loop` cannot end a session itself — `ProviderService` is not already a
    * requirement of upstream's `makeRoutesLayer`, and taking it would widen an upstream
    * signature — so a disarm that left the agent's own wakes pending records the request and
-   * this is where it lands. Reads one in-memory list and issues no query when it is empty,
-   * so the "zero SQL when nothing is armed" floor still holds.
+   * this is where it lands. The list arrives with the tick's own single read of the store, so
+   * a tick with nothing banked costs nothing at all: no second trip through the synchronized
+   * ref, and the "zero queries when nothing is armed" floor is untouched.
    */
-  const serviceStopRequests = Effect.gen(function* () {
-    const requested = yield* store.listStopRequested;
-    if (requested.length === 0) return;
-    yield* Effect.forEach(
+  const serviceStopRequests = (requested: ReadonlyArray<{ readonly threadId: string }>) =>
+    Effect.forEach(
       requested,
       (entry) =>
         // Cleared first, so a `stopSession` that fails cannot leave a request that retries
@@ -397,7 +396,6 @@ const makeSupervisor = Effect.gen(function* () {
           .pipe(Effect.andThen(stopProviderSession(entry.threadId))),
       { discard: true },
     );
-  });
 
   const onDisarm = (threadId: string, record: LoopRecord, action: DisarmAction, nowMs: number) =>
     Effect.gen(function* () {
@@ -684,8 +682,11 @@ const makeSupervisor = Effect.gen(function* () {
     );
 
   const tick = Effect.gen(function* () {
-    yield* serviceStopRequests;
-    const armed = yield* store.listArmed;
+    // ONE read of the store per tick, for both work lists. Two reads would be one more
+    // scheduler turn every minute forever, for a stop-request list that is nearly always
+    // empty.
+    const { armed, stopRequested } = yield* store.listWork;
+    if (stopRequested.length > 0) yield* serviceStopRequests(stopRequested);
     // Zero SQL and zero filesystem work when nothing is armed. This is the whole reason the
     // by-id reads replaced `getSnapshot()`.
     if (armed.length === 0) return;

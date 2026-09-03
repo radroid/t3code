@@ -468,10 +468,36 @@ export const advancePolls = (polls: number) =>
   });
 
 /**
+ * How many extra polls the drain below is allowed, once the caller's budget is spent.
+ *
+ * Small on purpose: it is there to let work that is already in flight finish, not to widen
+ * what the caller asked for. A condition that is genuinely never going to hold still fails,
+ * just after a bounded number of additional turns rather than in the middle of a write.
+ */
+const DRAIN_POLLS = 5;
+
+/**
  * Advance the clock in poll-sized steps until `condition` holds.
  *
  * Same reasoning as `settleUntil`, one layer out: the tick fiber's work also ends in a store
  * write, so "advance N times and look" has the same race.
+ *
+ * ## Why there are two phases
+ *
+ * Phase one is the fast path, and its per-poll `settleQuiet` is a **guess**: ten scheduler
+ * turns, on the assumption that ten turns buys enough real progress for the tick to land.
+ * The tick persists through real filesystem I/O, so on a loaded machine a turn buys less —
+ * the simulated clock then races ahead of a tick that is still in flight, the caller's poll
+ * budget is spent, and the harness declares failure while the answer is one turn away. That
+ * is a test whose outcome depends on how busy the machine is, which is precisely what a
+ * TestClock is for avoiding: it cost CI one red run on `136c`, where the tightest budget in
+ * the suite meets the heaviest tick.
+ *
+ * So when the budget is spent, phase two stops guessing and waits on the **condition**,
+ * pumping both schedulers and only nudging the clock between drains. Both phases are bounded
+ * by iteration counts and neither waits on wall-clock time, so a slow machine costs seconds
+ * and never an outcome. Nothing here loosens what a caller asked for: phase one still decides
+ * every passing run, and its `maxPolls` still says how promptly the thing must happen.
  */
 export const advanceUntil = (
   condition: Effect.Effect<boolean>,
@@ -484,7 +510,15 @@ export const advanceUntil = (
       yield* TestClock.adjust(Duration.millis(POLL_MS));
       yield* settleQuiet;
     }
-    if (yield* condition) return;
+    for (let poll = 0; poll < DRAIN_POLLS; poll++) {
+      for (let i = 0; i < MAX_SETTLE_PUMPS; i++) {
+        if (yield* condition) return;
+        yield* pump;
+      }
+      // A tick that finished while the clock was racing ahead is now asleep until the next
+      // poll, so the drain needs the clock to move for it to run at all.
+      yield* TestClock.adjust(Duration.millis(POLL_MS));
+    }
     return yield* Effect.die(new Error(`timed out waiting for ${description}`));
   });
 

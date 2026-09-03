@@ -869,19 +869,27 @@ describe("LoopStore — the file is bounded", () => {
       Effect.gen(function* () {
         yield* store.arm(arm("thread-a"));
         yield* store.requestSessionStop("thread-a", 7_000);
+        // Both work lists come from ONE read: the tick runs every minute forever, and a
+        // second trip through the synchronized ref is a scheduler turn per tick for a list
+        // that is nearly always empty.
+        const work = yield* store.listWork;
         assert.deepStrictEqual(
-          (yield* store.listStopRequested).map((entry) => entry.threadId),
+          work.stopRequested.map((entry) => entry.threadId),
+          ["thread-a"],
+        );
+        assert.deepStrictEqual(
+          work.armed.map((entry) => entry.threadId),
           ["thread-a"],
         );
 
         yield* store.clearSessionStopRequest("thread-a");
-        assert.deepStrictEqual(yield* store.listStopRequested, []);
+        assert.deepStrictEqual((yield* store.listWork).stopRequested, []);
 
         // A disarm the human changed their mind about must never reach the session the
         // re-arm is starting.
         yield* store.requestSessionStop("thread-a", 8_000);
         yield* store.arm(arm("thread-a"));
-        assert.deepStrictEqual(yield* store.listStopRequested, []);
+        assert.deepStrictEqual((yield* store.listWork).stopRequested, []);
       }),
     ));
 });

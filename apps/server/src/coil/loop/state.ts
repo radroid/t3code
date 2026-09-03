@@ -406,8 +406,18 @@ export interface LoopStoreShape {
    * records the request and the reactor services it — one code path, whichever side disarmed.
    */
   readonly requestSessionStop: (threadId: string, atMs: number) => Effect.Effect<void>;
-  /** The tick's stop-request work list. In memory only: it issues no query of any kind. */
-  readonly listStopRequested: Effect.Effect<ReadonlyArray<LoopStoreEntry>>;
+  /**
+   * Everything one tick needs, from **one** read of the in-memory state.
+   *
+   * Deliberately not two effects. The tick runs every `pollMs` forever, and a second read is
+   * a second trip through the synchronized ref — one more scheduler turn per tick, on every
+   * machine, for a list that is almost always empty. Reading both at once keeps a tick with
+   * nothing armed exactly as cheap as it was before stop requests existed.
+   */
+  readonly listWork: Effect.Effect<{
+    readonly armed: ReadonlyArray<LoopStoreEntry>;
+    readonly stopRequested: ReadonlyArray<LoopStoreEntry>;
+  }>;
   readonly clearSessionStopRequest: (threadId: string) => Effect.Effect<void>;
   /** The escape hatch for reactor-owned bookkeeping (strikes, ledger outcomes, pins). */
   readonly update: (
@@ -614,12 +624,16 @@ export const makeLoopStore = (
         ),
       ),
 
-      listStopRequested: SynchronizedRef.get(ref).pipe(
-        Effect.map((state) =>
-          Object.entries(state.threads).flatMap(([threadId, record]) =>
-            record.stopRequestedAtMs > 0 ? [{ threadId, record }] : [],
-          ),
-        ),
+      listWork: SynchronizedRef.get(ref).pipe(
+        Effect.map((state) => {
+          const armed: Array<LoopStoreEntry> = [];
+          const stopRequested: Array<LoopStoreEntry> = [];
+          for (const [threadId, record] of Object.entries(state.threads)) {
+            if (record.armed) armed.push({ threadId, record });
+            if (record.stopRequestedAtMs > 0) stopRequested.push({ threadId, record });
+          }
+          return { armed, stopRequested };
+        }),
       ),
 
       arm: (input) =>
