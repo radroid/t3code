@@ -2,135 +2,148 @@
  * The harness's own timing contract.
  *
  * `reactorHarness.ts` is test infrastructure, and normally that is not worth testing — except
- * that forty-eight scenarios read their assertions out of a simulated clock this file
- * advances, so *when* it advances that clock is a load-bearing property rather than an
- * implementation detail. It has been wrong once: a drain that nudged `TestClock` between
- * rounds made simulated time a function of how busy the machine was, and CI reported it as a
- * loop covering its wake twice and a check-in landing five simulated minutes late — real
- * scheduling leaking into the world the assertions read, which is the exact failure a
- * TestClock exists to make impossible.
+ * that forty-eight scenarios read their assertions out of a simulated clock it advances, so
+ * *when* it advances that clock is a load-bearing property rather than an implementation
+ * detail. It has been wrong twice, and both times the bill arrived as assertions about the
+ * product: a loop covering one wake twice, and a check-in landing five simulated minutes late,
+ * on a two-core CI runner where a wait that counted scheduler turns ran out of them.
  *
- * So: a test may spend as many scheduler turns as it needs, and simulated time may only move
- * where a test says it moves.
+ * The waits are receipts now, so the properties below are the ones that matter: a poll waits
+ * for the whole tick however slow the machine is, and simulated time moves only where a
+ * scenario says it moves.
+ *
+ * The reactor here is a stand-in that publishes the same `tick.completed` the real one does,
+ * with deliberately slow work in front of it. Booting the real supervisor would test the
+ * supervisor; this tests the waiting.
  *
  * @module coil/loop/reactorHarness.test
  */
 
 import { assert, describe, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 
-import {
-  advanceUntil,
-  PER_POLL_TURNS,
-  POLL_MS,
-  settleQuiet,
-  settleUntil,
-} from "./reactorHarness.ts";
+import { advancePolls, advanceUntil, POLL_MS, untilReceipt } from "./reactorHarness.ts";
+import { LoopReactorReceipts, LoopReactorReceiptsLive } from "./receipts.ts";
 
 /**
  * Work that finishes only after `turns` real event-loop turns.
  *
- * A stand-in for the reactor's store writes, which are real filesystem I/O: the number of
- * turns they need is a fact about the machine, and nothing about it may reach the clock.
+ * A stand-in for the reactor's store writes, which are real filesystem I/O: how many turns
+ * they need is a fact about the machine, and nothing about it may reach the clock.
  */
-const afterTurns = (turns: number, flag: Ref.Ref<boolean>) =>
+const afterTurns = (turns: number) =>
   Effect.promise(async () => {
     for (let i = 0; i < turns; i += 1) {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
-  }).pipe(Effect.andThen(Ref.set(flag, true)));
+  });
 
-const scoped = <A, E>(body: Effect.Effect<A, E, Scope.Scope>) =>
-  body.pipe(Effect.scoped, Effect.provide(TestClock.layer()));
+/** Far more turns than any turn-counting wait would have budgeted. */
+const SLOW_TURNS = 200;
 
-describe("reactorHarness — simulated time only moves where a test says it does", () => {
-  it.effect("a drain spends scheduler turns and no simulated time", () =>
+/**
+ * A reactor-shaped fiber: sleep a poll, do slow work, announce that the tick is over.
+ *
+ * `ticks` counts completed passes, so a test can assert the wait really waited rather than
+ * merely returned.
+ */
+const fakeReactor = Effect.gen(function* () {
+  const receipts = yield* LoopReactorReceipts;
+  const ticks = yield* Ref.make(0);
+  yield* Effect.forkScoped(
     Effect.gen(function* () {
-      const flag = yield* Ref.make(false);
-      // More turns than the whole poll budget buys, so the condition can only come true in
-      // the drain that follows it. This is the loaded-runner case, made deterministic.
-      yield* Effect.forkScoped(afterTurns(PER_POLL_TURNS * 3, flag));
-      const startedAtMs = yield* Clock.currentTimeMillis;
+      yield* Effect.sleep(Duration.millis(POLL_MS));
+      yield* afterTurns(SLOW_TURNS);
+      const nowMs = yield* Clock.currentTimeMillis;
+      yield* Ref.update(ticks, (n) => n + 1);
+      yield* receipts.publish({ type: "tick.completed", armedCount: 0, nowMs });
+    }).pipe(Effect.forever),
+  );
+  return { ticks, receipts };
+});
 
-      yield* advanceUntil(Ref.get(flag), "the slow work", 1);
+const scoped = <A, E>(body: Effect.Effect<A, E, Scope.Scope | LoopReactorReceipts>) =>
+  body.pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(LoopReactorReceiptsLive, TestClock.layer())),
+  );
 
-      assert.isTrue(yield* Ref.get(flag), "the drain waited for the work to finish");
+describe("reactorHarness — a poll is one whole tick, and time moves nowhere else", () => {
+  it.effect("a poll waits for the tick to finish, however slow the machine is", () =>
+    Effect.gen(function* () {
+      const { ticks } = yield* fakeReactor;
+
+      yield* advancePolls(3);
+
+      assert.strictEqual(yield* Ref.get(ticks), 3, "three ticks ran to completion");
       assert.strictEqual(
-        (yield* Clock.currentTimeMillis) - startedAtMs,
-        POLL_MS,
-        "exactly the one poll that was asked for — the drain added none of its own",
+        yield* Clock.currentTimeMillis,
+        3 * POLL_MS,
+        "three polls of movement, and not a millisecond of the machine's own",
       );
+    }).pipe(scoped),
+  );
+
+  it.effect("advanceUntil rests on the poll where the answer arrived", () =>
+    Effect.gen(function* () {
+      const { ticks } = yield* fakeReactor;
+      // True on the fourth completed tick and no earlier, so the resting place is known.
+      const condition = Ref.get(ticks).pipe(Effect.map((n) => n >= 4));
+
+      yield* advanceUntil(condition, "the fourth tick", 20);
+
+      assert.strictEqual(yield* Clock.currentTimeMillis, 4 * POLL_MS);
     }).pipe(scoped),
   );
 
   it.effect("a condition that already holds costs nothing at all", () =>
     Effect.gen(function* () {
-      const startedAtMs = yield* Clock.currentTimeMillis;
+      yield* fakeReactor;
       yield* advanceUntil(Effect.succeed(true), "nothing to wait for", 20);
-      assert.strictEqual(yield* Clock.currentTimeMillis, startedAtMs);
+      assert.strictEqual(yield* Clock.currentTimeMillis, 0);
     }).pipe(scoped),
   );
 
-  it.effect("the counted polls are the whole cost, however long the drain runs", () =>
+  it.effect("even giving up costs only the polls it was given", () =>
     Effect.gen(function* () {
-      // A condition that answers `false` for more looks than three polls of budget can spend,
-      // so it cannot be satisfied inside the counted polls and must be resolved in the drain
-      // that follows them. It depends on nothing real — not I/O, not turns-per-pump — so this
-      // pins the arithmetic rather than a machine's timing.
-      const looksAvailable = 3 * (PER_POLL_TURNS + 1);
-      const evaluations = yield* Ref.make(0);
-      const condition = Ref.updateAndGet(evaluations, (n) => n + 1).pipe(
-        Effect.map((n) => n > looksAvailable + 10),
-      );
-      const startedAtMs = yield* Clock.currentTimeMillis;
-
-      yield* advanceUntil(condition, "the look after the budget ran out", 3);
-
-      assert.isAbove(yield* Ref.get(evaluations), looksAvailable, "the drain is what answered it");
-      // Three polls of budget, three polls of movement. A harness that borrowed a poll per
-      // drain round is what carried a test past its own check-in floor and covered one wake
-      // twice — and it would read 4, 5 or 8 here depending on how busy the machine was.
-      assert.strictEqual((yield* Clock.currentTimeMillis) - startedAtMs, 3 * POLL_MS);
-    }).pipe(scoped),
-  );
-
-  it.effect("even giving up costs no simulated time", () =>
-    Effect.gen(function* () {
-      // The discriminating case, and the one CI actually hit. A condition the drain cannot
-      // satisfy is where a clock-nudging drain shows itself: it keeps buying simulated
-      // minutes hoping the next tick answers, and by the time it gives up — or worse,
-      // succeeds — the clock is somewhere the test never asked for. The loop had then already
-      // been carried over its check-in floor, and the run it was watching was covered twice.
-      const startedAtMs = yield* Clock.currentTimeMillis;
+      // The discriminating case, and the one CI hit: a wait that cannot be satisfied is where
+      // a harness that buys simulated time hoping the next round answers shows itself. By the
+      // time it gives up — or worse, succeeds — the clock is somewhere no test asked for, and
+      // in `136c` that was past the loop's check-in floor, which covered one wake twice.
+      yield* fakeReactor;
       const exit = yield* Effect.exit(
         advanceUntil(Effect.succeed(false), "something that never happens", 2),
       );
 
       assert.isTrue(Exit.isFailure(exit), "an unsatisfiable condition still fails the test");
       assert.strictEqual(
-        (yield* Clock.currentTimeMillis) - startedAtMs,
+        yield* Clock.currentTimeMillis,
         2 * POLL_MS,
         "the two polls it was given, and not one minute more",
       );
     }).pipe(scoped),
   );
 
-  it.effect("settleQuiet and settleUntil never touch the clock", () =>
+  it.effect("waiting for a receipt spends no simulated time", () =>
     Effect.gen(function* () {
-      const flag = yield* Ref.make(false);
-      yield* Effect.forkScoped(afterTurns(30, flag));
-      const startedAtMs = yield* Clock.currentTimeMillis;
+      const { receipts } = yield* fakeReactor;
+      yield* Effect.forkScoped(
+        afterTurns(SLOW_TURNS).pipe(
+          Effect.andThen(receipts.publish({ type: "disarmed", threadId: "thread-1" })),
+        ),
+      );
 
-      yield* settleQuiet;
-      yield* settleUntil(Ref.get(flag), "the slow work");
+      const receipt = yield* untilReceipt((r) => r.type === "disarmed");
 
-      assert.isTrue(yield* Ref.get(flag));
-      assert.strictEqual(yield* Clock.currentTimeMillis, startedAtMs);
+      assert.strictEqual(receipt.type, "disarmed");
+      assert.strictEqual(yield* Clock.currentTimeMillis, 0, "the clock never moved");
     }).pipe(scoped),
   );
 });

@@ -37,6 +37,7 @@ import {
   activitiesOfKind,
   advancePolls,
   advanceUntil,
+  advanceWithoutReactor,
   clearLoopEnv,
   commandTypes,
   harness,
@@ -50,6 +51,8 @@ import {
   threadShell,
   turnStarts,
   turnStartsAtLeast,
+  untilAllReceipts,
+  untilReceipt,
   userInputRequestedEvent,
   writeSentinel,
 } from "./reactorHarness.ts";
@@ -124,8 +127,9 @@ describe("LoopReactor — the fibers", () => {
         yield* withReactor(
           h.deps,
           Effect.gen(function* () {
-            // Three simulated hours past every threshold this thread has.
-            yield* advancePolls(180);
+            // Three simulated hours past every threshold this thread has. Blind, because a
+            // switched-off supervisor never completes a tick and so never announces one.
+            yield* advanceWithoutReactor(180);
             assert.strictEqual(
               yield* Ref.get(h.shellCalls),
               0,
@@ -541,11 +545,9 @@ describe("LoopReactor — the fibers", () => {
       yield* withReactor(
         h.deps,
         Effect.gen(function* () {
-          yield* advanceUntil(
-            record(h.store).pipe(Effect.map((r) => r.rateLimitedUntilMs > 0)),
-            "the rate-limit hold",
-            5,
-          );
+          // The tap is stream-driven, not clock-driven: it announces the write, so this
+          // waits for the announcement rather than advancing time in the hope of catching it.
+          yield* untilReceipt((r) => r.type === "rateLimit.recorded");
           assert.strictEqual((yield* record(h.store)).rateLimitedUntilMs, 3_600_000);
           // Durable: a five-hour limit outlives the process that observed it.
           const persisted = yield* Effect.promise(() => NodeFSP.readFile(h.statePath, "utf8"));
@@ -589,13 +591,12 @@ describe("LoopReactor — the fibers", () => {
       yield* withReactor(
         h.deps,
         Effect.gen(function* () {
-          yield* advanceUntil(
-            record(h.store).pipe(
-              Effect.map((r) => r.rateLimitedUntilMs > 0 && r.userInputs.length > 0),
-            ),
-            "both subscribers to record",
-            5,
-          );
+          // Both taps announce, and one drain collects both — waiting for them separately
+          // would throw away whichever arrived first.
+          yield* untilAllReceipts([
+            (r) => r.type === "rateLimit.recorded",
+            (r) => r.type === "userInput.recorded",
+          ]);
           const after = yield* record(h.store);
           assert.strictEqual(after.rateLimitedUntilMs, 3_600_000);
           assert.strictEqual(after.userInputs[0]?.requestId, "req-1");

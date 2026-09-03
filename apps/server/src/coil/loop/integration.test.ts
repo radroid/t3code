@@ -36,10 +36,10 @@ import {
   MINUTE,
   msToIso,
   rateLimitEvent,
-  settleQuiet,
   threadShell,
   turnStarts,
   turnStartsAtLeast,
+  untilReceipt,
   writeSentinel,
 } from "./reactorHarness.ts";
 import { makeLoopStore, type LoopStoreShape } from "./state.ts";
@@ -362,11 +362,9 @@ describe("Loops — the scenarios that motivated the feature", () => {
       yield* withReactor(
         h.deps,
         Effect.gen(function* () {
-          yield* advanceUntil(
-            record(h.store).pipe(Effect.map((r) => r.rateLimitedUntilMs > 0)),
-            "the hold",
-            5,
-          );
+          // Stream-driven: the tap announces its write, so the hold is provably in place
+          // before a single poll is spent rather than probably in place after five.
+          yield* untilReceipt((r) => r.type === "rateLimit.recorded");
           yield* advancePolls(60);
           assert.strictEqual(
             turnStarts(yield* Ref.get(h.dispatched)).length,
@@ -484,7 +482,9 @@ describe("Loops — the scenarios that motivated the feature", () => {
           const second = turnStarts(yield* Ref.get(h.dispatched))[1]!;
           assert.include(second.message.text, "Should I bump the major version?");
           assert.include(second.message.text, "yes, go to 2.0");
-          yield* settleQuiet;
+          // No settling: the wait above returned on a completed tick, and the delivery was
+          // marked inside it. This is the assertion CI failed on when the wait was a turn
+          // budget that could run out between the dispatch and the write that follows it.
           assert.deepStrictEqual(
             yield* h.store.listUndeliveredAnswers(LOOP_THREAD_ID),
             [],
@@ -596,7 +596,6 @@ describe("Loops — the scenarios that motivated the feature", () => {
             "the done terminal",
             40,
           );
-          yield* settleQuiet;
           const after = yield* record(h.store);
           assert.strictEqual(after.stopped?.reason, "done");
           assert.notStrictEqual(after.stopped?.reason, "spent", "done is never reported as spent");

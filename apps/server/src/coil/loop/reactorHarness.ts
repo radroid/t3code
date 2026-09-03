@@ -18,9 +18,9 @@
  * The store, the reactor, its config, its guards, its decision table, its sentinel reads and
  * its persistence are all real.
  *
- * The scheduler machinery below (`pump`, `settleUntil`, `advanceUntil`) is carried over from
- * `autoResume/Reactor.test.ts` and its reasoning is preserved verbatim — it encodes a real CI
- * failure and must not be simplified away.
+ * Nothing here waits by counting scheduler turns. The reactor publishes a receipt at every
+ * milestone (`receipts.ts`) and every wait below is an await on one, so a scenario's timing is
+ * a property of the scenario and not of the machine running it.
  *
  * @module coil/loop/reactorHarness
  */
@@ -45,6 +45,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -54,6 +55,11 @@ import { ProjectionSnapshotQuery } from "../../orchestration/Services/Projection
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { AutoResumeStore } from "../autoResume/state.ts";
 import { LOOP_DONE_RELATIVE_PATH } from "./config.ts";
+import {
+  type LoopReactorReceipt,
+  LoopReactorReceipts,
+  LoopReactorReceiptsLive,
+} from "./receipts.ts";
 import { LoopStore, makeLoopStore } from "./state.ts";
 
 export const LOOP_THREAD_ID = "thread-1";
@@ -342,6 +348,9 @@ export const harness = (options: HarnessOptions = {}) =>
       AutoResumeStub,
       CryptoStub,
       StoreLive,
+      // Test-only, and the whole reason the waits below are exact. Production never provides
+      // it, so the reactor's emitter resolves to a no-op there. See `receipts.ts`.
+      LoopReactorReceiptsLive,
     );
 
     return {
@@ -411,14 +420,20 @@ export const activitiesOfKind = (
   kind: string,
 ): ReadonlyArray<AppendedActivity> => activities(commands).filter((a) => a.kind === kind);
 
-// --- schedulers -------------------------------------------------------------
+// --- waiting -----------------------------------------------------------------
 //
-// Carried over from `autoResume/Reactor.test.ts`, comments included, because they encode a
-// real CI failure: the store persists through `writeFileStringAtomically`, real filesystem
-// I/O whose completion callback fires on the Node event loop and NOT on TestClock, and the
-// in-memory ref update is gated behind that write. `Effect.yieldNow` alone never observes it.
+// Every wait below is an await on a receipt the reactor published. Nothing here counts
+// scheduler turns, and nothing here moves the clock except the polls a scenario asks for.
+//
+// It used to count turns, and that is what three CI failures were: the store persists through
+// `writeFileStringAtomically`, real filesystem I/O whose completion fires on the Node event
+// loop and not on `TestClock`, so on a two-core runner a turn buys less real progress and a
+// budget that is generous on a laptop runs out. The tests then read a half-finished tick as a
+// finished one — and because the harness kept advancing, the failures came back as assertions
+// about the product (a wake covered twice, a check-in five simulated minutes late) rather than
+// as anything that looked like a timing bug. See `receipts.ts`.
 
-/** A real event-loop tick, so store persistence completes deterministically. */
+/** A real event-loop tick. */
 const realTick = Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
 
 /** One pump of both schedulers: the Effect fiber scheduler and the real Node event loop. */
@@ -430,102 +445,110 @@ export const pump = Effect.gen(function* () {
 /**
  * A bounded spin, for asserting that something does NOT happen.
  *
- * You cannot wait for the absence of an event, so these sites keep a fixed number of turns.
- * Anything waiting for something to APPEAR must use `settleUntil`.
+ * The only wait left that is not a receipt, because you cannot await the absence of one. It
+ * moves no clock, so the worst a starved runner can do here is make the assertion weaker —
+ * never make it wrong. Anything waiting for something to APPEAR must await its receipt.
  */
 export const settleQuiet = Effect.gen(function* () {
   for (let i = 0; i < 10; i++) yield* pump;
 });
 
-const MAX_SETTLE_PUMPS = 500;
-
-/**
- * Wait until `condition` holds, pumping both schedulers.
- *
- * Condition-based rather than a fixed spin, because no tick count is correct on every
- * machine — how many turns a write takes depends on the disk and the load. Exiting as soon
- * as the condition holds also makes the common case faster than a fixed spin, which always
- * pays for all of it.
- */
-export const settleUntil = (condition: Effect.Effect<boolean>, description: string) =>
+/** The next receipt matching `matches`. Unbounded on purpose: the test timeout is the bound. */
+export const untilReceipt = (matches: (receipt: LoopReactorReceipt) => boolean) =>
   Effect.gen(function* () {
-    for (let i = 0; i < MAX_SETTLE_PUMPS; i++) {
-      if (yield* condition) return;
-      yield* pump;
+    const { log } = yield* LoopReactorReceipts;
+    while (true) {
+      const receipt = yield* PubSub.take(log);
+      if (matches(receipt)) return receipt;
     }
-    return yield* Effect.die(
-      new Error(`timed out waiting for ${description} after ${MAX_SETTLE_PUMPS} pumps`),
-    );
   });
 
-/** Advance the clock by whole poll intervals, letting the tick fiber run each one. */
+/**
+ * Wait until every matcher has seen a receipt, in any order.
+ *
+ * One drain serves all of them, because a second `untilReceipt` would have thrown away the
+ * receipt the first one was not looking for.
+ */
+export const untilAllReceipts = (
+  matchers: ReadonlyArray<(receipt: LoopReactorReceipt) => boolean>,
+) =>
+  Effect.gen(function* () {
+    const { log } = yield* LoopReactorReceipts;
+    const outstanding = [...matchers];
+    while (outstanding.length > 0) {
+      const receipt = yield* PubSub.take(log);
+      const index = outstanding.findIndex((matches) => matches(receipt));
+      if (index >= 0) outstanding.splice(index, 1);
+    }
+  });
+
+/**
+ * Advance one poll and wait for the tick it triggers to finish.
+ *
+ * `tick.completed` is published after every armed thread has been evaluated and every write
+ * is durable, so when this returns the world is exactly one whole tick further on — no more
+ * and no less, on any machine. Receipts from earlier in the tick are drained on the way past.
+ */
+const advanceOnePoll = (log: PubSub.Subscription<LoopReactorReceipt>) =>
+  Effect.gen(function* () {
+    yield* TestClock.adjust(Duration.millis(POLL_MS));
+    while (true) {
+      const receipt = yield* PubSub.take(log);
+      if (receipt.type === "tick.completed") return receipt;
+    }
+  });
+
+/**
+ * One real turn before the first poll, so a tick fiber that was forked but has not started
+ * yet reaches its `Effect.sleep` before the clock steps over it. Turns, never time.
+ */
+const reactorSleeping = realTick;
+
+/** Advance the clock by whole poll intervals, waiting out each tick. */
 export const advancePolls = (polls: number) =>
   Effect.gen(function* () {
-    for (let i = 0; i < polls; i++) {
-      yield* TestClock.adjust(Duration.millis(POLL_MS));
-      yield* settleQuiet;
-    }
+    const { log } = yield* LoopReactorReceipts;
+    yield* reactorSleeping;
+    for (let i = 0; i < polls; i++) yield* advanceOnePoll(log);
   });
 
 /**
  * Advance the clock in poll-sized steps until `condition` holds.
  *
- * Same reasoning as `settleUntil`, one layer out: the tick fiber's work also ends in a store
- * write, so "advance N times and look" has the same race.
- *
- * ## The clock stops at the instant that satisfied the condition
- *
- * This is the whole contract, and everything below is in service of it. Each iteration looks,
- * advances **one** poll, and then spends scheduler turns on that instant until the condition
- * holds — returning the moment it does. So the clock ends where the answer was, and where the
- * answer was does not depend on how busy the machine is.
- *
- * Getting this wrong does not produce a flake that looks like a flake. The tick persists
- * through real filesystem I/O, so on a loaded runner a scheduler turn buys less real
- * progress; with a fixed handful of turns per poll, "the condition is still false" stops
- * meaning "nothing has happened yet" and starts meaning "the write has not landed yet". The
- * loop then advances anyway, and every simulated minute it borrows lands in the assertions:
- * CI reported `136c` covering one wake **twice** — the borrowed minutes carried the following
- * `advancePolls(10)` over the loop's 15-minute check-in floor — and `128` reporting a fire
- * five simulated minutes late. Both are assertion failures about the product, produced
- * entirely by the harness. `PER_POLL_TURNS` is what buys the headroom, and it costs nothing on
- * the happy path because the loop exits on the condition, not on the budget.
- *
- * Simulated time may therefore only move where a test says it moves: `advancePolls`, the
- * polls counted here, and explicit `TestClock.adjust` calls. When the poll budget runs out,
- * `settleUntil` waits on the condition with turns and **nothing else** — an earlier version
- * that nudged the clock between drain rounds is exactly how `128` lost its five minutes.
- * `reactorHarness.test.ts` pins all of this, including on the give-up path.
+ * The condition is evaluated once per *completed* tick, so it can never see a half-finished
+ * one and the clock's resting place is a property of the scenario alone. `maxPolls` bounds
+ * simulated time — how long the scenario is willing to wait — and nothing about the machine.
  */
-
-/**
- * Scheduler turns one simulated instant may be given before the clock moves on.
- *
- * Six times what a fixed settle used to spend, and paid only while the condition is false:
- * the inner loop returns on the condition, so a run where the tick lands promptly spends two
- * or three turns here, not sixty. It is a bound on how slow a machine may be before the
- * harness starts inventing simulated time, and nothing else.
- */
-export const PER_POLL_TURNS = 60;
 export const advanceUntil = (
   condition: Effect.Effect<boolean>,
   description: string,
   maxPolls = 600,
 ) =>
   Effect.gen(function* () {
+    const { log } = yield* LoopReactorReceipts;
+    yield* reactorSleeping;
     for (let poll = 0; poll < maxPolls; poll++) {
       if (yield* condition) return;
-      yield* TestClock.adjust(Duration.millis(POLL_MS));
-      // Settle THIS instant before considering the next one, and stop the moment the
-      // condition holds: that is what keeps the clock's resting place a property of the
-      // scenario rather than of the machine.
-      for (let turn = 0; turn < PER_POLL_TURNS; turn++) {
-        if (yield* condition) return;
-        yield* pump;
-      }
+      yield* advanceOnePoll(log);
     }
-    // Turns, not time. `settleUntil` dies with its own message if the condition never holds.
-    return yield* settleUntil(condition, description);
+    if (yield* condition) return;
+    return yield* Effect.die(
+      new Error(`timed out waiting for ${description} after ${maxPolls} polls`),
+    );
+  });
+
+/**
+ * Move the clock with no reactor to wait for.
+ *
+ * Only correct where the supervisor is switched off and no tick will ever complete: awaiting
+ * a receipt that cannot come would hang instead of asserting.
+ */
+export const advanceWithoutReactor = (polls: number) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < polls; i++) {
+      yield* TestClock.adjust(Duration.millis(POLL_MS));
+      yield* settleQuiet;
+    }
   });
 
 /** `true` once at least `n` turn starts have been dispatched. */

@@ -6,8 +6,18 @@ Written against the conventions already in the tree, not invented:
   `decide.ts`, `guards.ts`, `config.ts`, `sentinel.ts` are pure precisely so most of this list
   runs in microseconds.
 - **Reactor / time** — `@effect/vitest` with `TestClock`, stub `OrchestrationEngineService`,
-  `ProjectionSnapshotQuery` and `ProviderService` layers. Pattern is
-  `coil/autoResume/Reactor.test.ts` verbatim.
+  `ProjectionSnapshotQuery` and `ProviderService` layers, from
+  `coil/autoResume/Reactor.test.ts` — except for how the scenarios **wait**. That pattern spins
+  the schedulers a fixed number of turns and looks again, which is a bet on how fast the machine
+  is: the store persists through real filesystem I/O, so on a loaded two-core runner a turn buys
+  less progress and a budget that is generous on a laptop runs out. It cost this branch three CI
+  failures naming three different sets of tests, and because the harness kept advancing the
+  simulated clock while it guessed, they arrived as assertions about the _product_ — a wake
+  covered twice, a check-in five simulated minutes late — rather than as anything that looked
+  like a timing bug. The reactor therefore announces: `coil/loop/receipts.ts` publishes a
+  receipt at every milestone, `tick.completed` last of all, and every wait in `reactorHarness.ts`
+  is an await on one. `advancePolls(n)` is exactly `n` whole ticks on any machine. The service is
+  optional and no production layer provides it, so the reactor's emitter is a no-op there.
 - **Store** — real `FileSystem` against a temp dir (`NodeServices`), same as
   `autoResume/state.test.ts`.
 - **Routes** — `http.test.ts` shape from `autoResume/http.test.ts`.
