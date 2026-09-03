@@ -14,13 +14,8 @@ import { Textarea } from "~/components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
-import {
-  type AnchorRect,
-  COMPOSER_FALLBACK_OFFSET_PX,
-  type ComposerAnchor,
-  resolveComposerAnchor,
-} from "./autoResumeAnchor";
 import { type AutoResumeThreadRef, httpAutoResumeClient } from "./autoResumeClient";
+import { useComposerAnchor } from "./composerAnchor";
 import { createAutoResumeController } from "./autoResumeController";
 import {
   describeAutoResumeTooltip,
@@ -34,91 +29,6 @@ export { formatAutoResumeStatus } from "./autoResumePresentation";
 
 const POLL_INTERVAL_MS = 30_000;
 const COUNTDOWN_TICK_MS = 1_000;
-
-/**
- * Read-only DOM dependency on upstream's composer overlay — the same element `ChatView` measures
- * for its own `composerOverlayHeight`. The overlay is mounted as a sibling of `<ChatView>` in the
- * route file, so it cannot receive that geometry as a prop without widening the seam. Degrades to
- * `COMPOSER_FALLBACK_OFFSET_PX` if the attribute ever disappears. Recorded in docs/coil/SEAMS.md.
- */
-const COMPOSER_OVERLAY_SELECTOR = '[data-chat-composer-overlay="true"]';
-
-const UNMEASURED_ANCHOR: ComposerAnchor = {
-  visible: true,
-  bottom: COMPOSER_FALLBACK_OFFSET_PX,
-  left: null,
-  width: null,
-};
-
-function toAnchorRect(element: Element | null): AnchorRect | null {
-  if (!(element instanceof HTMLElement)) {
-    return null;
-  }
-  const { top, bottom, left, width, height } = element.getBoundingClientRect();
-  return { top, bottom, left, width, height };
-}
-
-function sameAnchor(a: ComposerAnchor, b: ComposerAnchor): boolean {
-  return (
-    a.visible === b.visible && a.bottom === b.bottom && a.left === b.left && a.width === b.width
-  );
-}
-
-/**
- * Mirrors the composer overlay's box onto the capsule, in the capsule's own coordinate space.
- *
- * `anchorElement` is the capsule's positioned wrapper: it is what supplies the third rect the maths
- * needs — its `offsetParent` (`SidebarInset`) is the box the returned `bottom`/`left` are resolved
- * against, and it is the one box the panels do NOT resize. Reading it here rather than assuming it
- * matches the composer's parent is the whole fix; see `resolveComposerAnchor`.
- *
- * Observes all three boxes because each panel perturbs a different one: the right panel changes the
- * chat column's width, the terminal drawer changes its height, and collapsing the main sidebar
- * changes `SidebarInset`'s width. A `ResizeObserver` fires per frame during those transitions and
- * during a drag-resize, so the capsule travels with the composer rather than snapping after it.
- */
-function useComposerAnchor(anchorElement: HTMLElement | null): ComposerAnchor {
-  const [anchor, setAnchor] = useState<ComposerAnchor>(UNMEASURED_ANCHOR);
-
-  useEffect(() => {
-    if (anchorElement === null) {
-      return;
-    }
-    const composer = document.querySelector(COMPOSER_OVERLAY_SELECTOR);
-    if (!(composer instanceof HTMLElement)) {
-      setAnchor(UNMEASURED_ANCHOR);
-      return;
-    }
-
-    const measure = () => {
-      const next = resolveComposerAnchor({
-        composer: toAnchorRect(composer),
-        composerParent: toAnchorRect(composer.offsetParent),
-        anchorParent: toAnchorRect(anchorElement.offsetParent),
-      });
-      // Identity-stable when nothing moved: a drag-resize of the drawer would otherwise re-render
-      // the capsule on every frame for no visible change.
-      setAnchor((previous) => (sameAnchor(previous, next) ? previous : next));
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(composer);
-    if (composer.offsetParent instanceof HTMLElement) {
-      observer.observe(composer.offsetParent);
-    }
-    if (anchorElement.offsetParent instanceof HTMLElement) {
-      observer.observe(anchorElement.offsetParent);
-    }
-    window.addEventListener("resize", measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [anchorElement]);
-
-  return anchor;
-}
 
 /** Re-renders once a second, but only while a resume is actually scheduled. */
 function useCountdownTick(active: boolean): number {

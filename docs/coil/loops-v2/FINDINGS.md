@@ -34,13 +34,25 @@ da6e1a967 2026-08-04 feat(sidebar-v2): thread pinning for sidebar v2 (#5312)
 > A pin overrides the settled/snoozed lifecycle: while `pinnedAt` is set the thread renders
 > in the pinned block and never classifies into a shelf.
 
-That comment overstates its own rule, and this file repeated the overstatement. What a pin
-actually overrides is **auto-settle**. **Snooze still outranks a pin**, which the sidebar's
-partition loop says outright (`Sidebar.tsx`, the `supportsSnooze` branch): "Snooze outranks
-everything, including a pin: 'hide until Tuesday' temporarily suspends 'keep on top'. The pin
-survives underneath". Read every "a pin overrides the lifecycle" below as _overrides
-auto-settle_ — a snoozed Loop leaves the pinned block until it wakes, and returns to its exact
-slot.
+That comment overstated its own rule, and this file repeated the overstatement. It has since been
+**rewritten upstream, and in the other direction**.
+
+> **Corrected 2026-09-02 (issue #125 §D).** `f70eeeeb0` (#7969, 2026-08-23) inverted pin-vs-settle.
+> The contract comment now reads _"Settled and snoozed threads remain in their respective shelves
+> even when pinned"_, and the sidebar partition is a single `if / else if` chain — **snoozed, then
+> settled, then pinned, then active** `[V]` — mirrored verbatim in
+> `apps/mobile/src/features/threads/threadListV2.ts`. So the earlier claim here, that a pin
+> overrides auto-settle, is **false**: a settled Loop leaves the pinned block, not just a snoozed
+> one. What a pin still buys is a pin marker in whichever shelf the thread lands in, plus
+> user-arranged order within the pinned block.
+>
+> **This does not sink D3, and the reason matters.** D3's load-bearing claim was never "pinning
+> keeps a Loop visible forever" — it was **"Direction A costs zero rows in `Sidebar.tsx`"**, and
+> that is unchanged. What did change is more useful than what was lost: `thread.pin`'s decider case
+> emits companion `thread.unsettled` and `thread.unsnoozed` events `[V]` — _"Pinning is a promotion:
+> it clears the parked states rather than silently outranking them"_ — so arming a Loop actively
+> un-parks it rather than relying on an ordering rule. The cost of that promotion (arming a snoozed
+> thread would cancel the snooze; disarming could remove a user's own pin) is priced in BACKEND §7.
 
 Also real today: `thread.pinned` / `thread.unpinned` **events** (`:1070-1071`; the commands that
 produce them are `thread.pin` / `thread.unpin`, `:739,749`), a fractional
@@ -270,6 +282,23 @@ Requirement: opening a loop thread lands on a **console**, not a transcript tail
 console's primary content is a queue of human-answerable items the loop has accumulated —
 questions, decisions, blockers — each answerable in place, without reading back through the
 night's output.
+
+> **The plan diverges from the first half of this, deliberately (issue #125 §A2).** PLAN §3 decides
+> that **the transcript stays the default view and the console is an overlay on the same route**.
+> This paragraph and prototype P7's Shape A both read as though the opposite had been decided, and
+> the reversal was never declared — that is the contradiction #125 caught, and this note is the
+> declaration.
+>
+> The reason is #38's, restated: an overlay has _"nothing to toggle back from"_. A second default
+> view means a sticky per-thread toggle that has to survive reload, agree across two windows, agree
+> on mobile, and be discoverable when it is wrong — and landing on a different view means owning the
+> thread route's render decision, which is `ChatView.tsx` territory (an existing seam row at churn 83) rather than the delta-zero overlay row.
+>
+> **The content half of this requirement is met in full.** Everything below — the three sources, the
+> degradation property, answering without steering into a live turn — is unchanged. What is given up
+> is one interaction: the console is a click away rather than zero, so a human opening the thread
+> still sees the night's tail first. If dogfooding shows that tail is what sends people back to
+> typing "are you still working on it?", Shape A is the fallback and P7 prices it.
 
 Design consequences to work through in the prototypes:
 

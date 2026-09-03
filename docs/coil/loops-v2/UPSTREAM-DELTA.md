@@ -13,7 +13,7 @@ origin/main  df027ec08              116 behind upstream — the sync has not lan
 > **Superseded the same day — the sync landed.** While this was being written, the daily sync
 > force-landed onto `main`, putting the fork on merge-base **`a4cc1367b`** — exactly the tree
 > everything below was measured against — **0 commits behind upstream**. The merge-base is cited
-> throughout rather than a fork `main` SHA, because every sync rewrites `main`. Every
+> throughout rather than a fork `main` SHA, because every sync rewrote `main` until the 2026-09-02 switch to merge-based syncs (PR #132); anchoring on the merge-base still holds, because that is what the seam ledger measures against. Every
 > finding therefore describes the fork's _current_ `main`, not a future one, and every check below
 > was re-run against that tree and still passes. Two consequences, both good: the sequencing
 > question in §6 is moot, and the seam ledger re-baselined to **53 files, +2590 / −1042**.
@@ -271,8 +271,9 @@ because it is the tree the work would actually be built on.
 No claim in this document changed on the way across.
 
 `origin/main` was **`f6355f06f`** when this table was run. The next daily sync force-rewrote it to
-**`94c6328ef`** on 2026-08-18. Fork `main` SHAs are rewritten by every sync — which is exactly why
-the merge-base is the anchor this package cites.
+**`94c6328ef`** on 2026-08-18. Fork `main` SHAs were rewritten by every sync until the 2026-09-02
+switch to merge-based syncs (PR #132) — which is why the merge-base is the anchor this package
+cites, and it still is: the seam ledger measures against it either way.
 
 **Retracted: that sync did not hold the merge-base.** This paragraph said `94c6328ef` sat on the
 _same_ base `a4cc1367b`, with two extra upstream commits riding along. The base **moved**, and the
@@ -328,3 +329,104 @@ Undocumented anywhere in this package until now: the binary truncates each entry
 the agent's full prompt text is wrong — it receives a prefix. Harmless for the `id`, `schedule` and
 `recurring` fields the deference rule reads; not harmless for anything that wants to match on prompt
 content, hash it, or round-trip it back into a turn.
+
+---
+
+## 9. Second re-verification — 2026-09-02 (issue #125 §D)
+
+Two syncs have landed since §7. The merge-base moved `cebac353d` → **`941acb4f9`** (the 2026-09-02
+sync, 182 upstream commits, issue #128), and the seam ledger re-baselined to **53 files,
++2609 / −981** — the same 53 files, so no row was added or retired by the sync itself.
+
+### 9.1 Both facts #125 flagged as stale are confirmed, and both are now in the fork's tree
+
+| Change                                                                                                                                                                                                                                                                                                                             | Effect on this package                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`f70eeeeb0` (#7969, 2026-08-23) inverted pin-vs-settle.** The contract now reads _"Settled and snoozed threads remain in their respective shelves even when pinned"_, and the sidebar partition is a single chain: **snoozed → settled → pinned → active** `[V]`, mirrored in `apps/mobile/src/features/threads/threadListV2.ts` | **D3 survives, with lower confidence.** Loop-as-pinned-thread no longer keeps a _settled_ loop visible. But D3's load-bearing claim was the **zero row count** in `Sidebar.tsx`, not the visibility, and that is untouched. FINDINGS §A1 and PLAN D3 corrected                                                                                                            |
+| **`c7222ca4d` (#8144, 2026-08-25) added a second blocking dialog.** `onUserDialog` with `supportedDialogKinds: ["resume_return"]` sits in the _same_ `queryOptions` object phase 1 edits, routes into the same blocking `Deferred` as `AskUserQuestion`, and fires on **session resume** `[V]`                                     | **A real new failure mode**: the loop's own nudge, landing on a torn-down session, can manufacture a pending user-input that guard 8 then treats as a hard skip — the loop causes the thing that parks it. No new guard; the fork's `user-input.requested` record carries the dialog kind so the console can name it, and the deadline ends it. BACKEND §9.1c, TESTS 118h |
+
+### 9.2 Churn has moved a lot, and it moved the plan's conclusions
+
+Re-measured with the SEAMS.md recipe against `941acb4f9`. #125 was right that the figures only
+reproduced against the older base; they now reproduce against the stated one.
+
+| File                                        | Churn then | Churn now | Consequence                                                          |
+| ------------------------------------------- | ---------- | --------- | -------------------------------------------------------------------- |
+| `provider/Layers/ClaudeAdapter.ts`          | 16         | **23**    | Phase 1's row is dearer but still one additive line — risk 23        |
+| `settings/settingsSearch.ts`                | 14         | **24**    | Phase 4 is now **the most expensive phase in the plan** at ~312 risk |
+| `settings/SettingsSidebarNav.tsx`           | —          | **19**    | ~38 risk; both settings rows are type-forced, not optional           |
+| `routes/_chat.$environmentId.$threadId.tsx` | 4          | **2**     | Phase 3's row is _cheaper_ than recorded — risk 32, delta still zero |
+| `mcp/McpHttpServer.ts`                      | 6          | **2**     | Phase 5 is one row at risk **6**                                     |
+| `mcp/McpSessionRegistry.ts`                 | 7          | **1**     | not taken — see §9.3                                                 |
+| `mcp/McpInvocationContext.ts`               | 3          | **1**     | not taken — see §9.3                                                 |
+| `settings/SettingsPanels.tsx`               | 36         | **43**    | still avoided; ~2900 risk if it were not                             |
+| `contracts/settings.ts`                     | 26         | **38**    | still avoided; D12                                                   |
+
+**The inversion is the finding.** The plan was written expecting phase 5 (agent-facing MCP tools)
+to be the expensive, scary one and phase 4 (a settings entry) to be routine. Measured, it is the
+other way round: the `mcp/` neighbourhood is the quietest in the plan, and the **navigation entry
+carries ~350 of the feature's ~411 total risk**.
+
+### 9.3 Phase 5's seam cost, measured rather than estimated
+
+PLAN carried `0–3 rows [A]`; the archived design guessed three files. Three paths exist:
+
+- **Path A — a gated `"loop"` capability: 4 rows, risk 16. Rejected.** `McpCapability` is backed by
+  a runtime `Schema.Literal("preview")` in `packages/contracts/src/previewAutomation.ts`, so
+  widening the union is a **contracts edit** (breaking D12), and it would make `raise_blocker` fail
+  with an error class named `PreviewAutomationUnavailableError`. It buys nothing: nothing at
+  registration or dispatch consults `capabilities` — `requireMcpCapability` is one voluntary line
+  inside one handler helper — and the MCP credential is already per-thread and already
+  all-or-nothing `[V]`.
+- **Path B — an ungated toolkit: 1 row (`McpHttpServer.ts` `+2/−1`, churn 2, risk 6). The decision.**
+- **Path C — register from `coil/index.ts`: 0 rows. Worth one attempt, not typechecked.**
+  `McpServer.toolkit(t)` and `layerHttp` provide the same `McpServer` layer value, so Effect's
+  MemoMap should hand both the one instance — the property `coil/index.ts` already relies on. The
+  blocker is typed, not behavioural: a declared `McpInvocationContext` dependency leaks into the
+  layer's `R`. Upstream's own `registerPreviewSnapshot` shows the way out (`Effect.withFiber` +
+  `Context.getUnsafe`). Take Path B the moment it fights back; the difference is one row at risk 6.
+
+**A coupling phase 5 inherits and cannot fix:** the MCP credential is minted only when
+`enableAgentBrowserAccess` is true `[V]`, so turning **Settings → Integrations → Agent browser
+access** off silently removes `raise_blocker`, `loop_status` and `loop_done`. TESTS 118g.
+
+### 9.4 `5b7d72aad` (#9167) — upstream continues active threads across a restart
+
+Arriving on the next sync, and the closest upstream has come to this feature's territory. It does
+**not** take D1's premise away, for four reasons, each from the commit `[V]`:
+
+1. It marks only threads with `session.status === "running" && activeTurnId !== null`. **A thread
+   waiting on a scheduled wake is neither, so a pending wake is never marked and never continued** —
+   which is exactly the gap this feature covers.
+2. It is opt-in and ships **off** (`continueThreadsAfterServerUpdate` decodes to `false`).
+3. It writes its marker only on the **intentional self-update** path. A crash, an OOM, a `kill` or a
+   machine reboot — the cases a supervisor is for — behave exactly as before.
+4. It does not continue the interrupted turn; `activeTurnId` is nulled and a fresh turn is started.
+
+It does introduce a **double-fire window**: reconciliation dispatches `status: "starting",
+activeTurnId: null` synchronously at startup while the `sendTurn` waits on server activation, so a
+continued thread looks idle for a real interval with no error and no lease. This design already
+covers it twice over — `busyTurn` counts `"starting"` (so the fuse is `busyIdleMs`) and
+`processStartedAtMs` floors the idle clock at process start — and **neither mechanism was added for
+this**. BACKEND §12; TESTS 130b.
+
+### 9.5 Everything else re-checked, and still true
+
+| Claim                                                                   | Result at `941acb4f9`                                                                                     |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `session_crons` / `ScheduleWakeup` / `CronCreate` in server + contracts | **0 files**                                                                                               |
+| `options.hooks` set in `ClaudeAdapter`                                  | **0** — the beachhead is still unclaimed                                                                  |
+| `mcp/toolkits/` contents                                                | **`preview` only**                                                                                        |
+| the `mcpServers` spread anchor in `queryOptions`                        | **present**, and `onUserDialog` now sits beside it                                                        |
+| `pinnedAt` / `thread.pin` / `thread.unpin` in contracts                 | **present**                                                                                               |
+| an actor check on `thread.pin`                                          | **none** — commands carry no actor; the decider guards on archival alone                                  |
+| a cron parser dependency anywhere in the repo                           | **none** — `git grep -i cron -- '*package.json'` and a `cron` search over `pnpm-lock.yaml` are both empty |
+| two independent scope-auth mirrors (phase 0's debt)                     | **still two** — and they are no longer equivalent, see below                                              |
+
+**One correction to phase 0's brief.** The webPush helper is _not_ strictly more general than the
+autoResume one. It is parameterised on scope and returns the session, which autoResume's is not —
+but it calls `failEnvironmentAuthInvalid` with **one** argument where autoResume's passes
+`EnvironmentAuth.serverAuthDpopFailureReason(error)` as the second. That argument is `3bdf109e2`
+(2026-09-02), which landed precisely because the stale one-argument call compiled and drifted
+silently. Promoting webPush's body verbatim would re-introduce that bug in a shared helper, for all
+three callers. Promote the **union**: parameterised, session-returning, and DPoP-reporting.

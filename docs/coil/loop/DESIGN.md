@@ -1,20 +1,34 @@
 # Loop Watch — design (radroid/t3code#38)
 
-> **Superseded by [`docs/coil/loops-v2/`](../loops-v2/PLAN.md) (2026-08-17).** The re-checks the
-> second paragraph below asks for are covered in
-> [`loops-v2/UPSTREAM-DELTA.md`](../loops-v2/UPSTREAM-DELTA.md): #5219 as `ThreadBackgroundLiveness`
-> in its §2, and #3638 confirmed still not on `upstream/main` in its §1. Three of this design's
-> premises did not survive them.
+> **Superseded by [`docs/coil/loops-v2/`](../loops-v2/PLAN.md) (2026-08-17).**
 >
 > **Status: designed, not built.** No `apps/server/src/coil/loop/` exists — every path this
 > document writes in the present tense is a proposal. It is archived here because the research
-> underneath it is reusable, not because the feature shipped.
+> underneath it is reusable, not because the feature shipped. The reactor detail is the part that
+> survived best and is what `loops-v2/BACKEND.md` builds on.
 >
-> Two things have moved since 2026-08-02 and must be re-checked before anyone builds from it.
-> Upstream #5219 supersedes the subagent-tracking gap that motivated the issue, and upstream
-> PR #3638 ships `schedule_task` / `delegate_task` MCP tools. The codebase line numbers cited
-> throughout were measured against the 2026-08-02 merge-base and have since drifted through
-> several upstream syncs — re-verify each one rather than trusting it.
+> **Corrected 2026-09-02 (issue #125 §A6).** An earlier version of this banner named upstream
+> **#5219** and PR **#3638** as the premises that "did not survive". That is backwards: both
+> re-checks came back **confirming** — #5219 landed and is exactly the `ThreadBackgroundLiveness`
+> the successor design composes with
+> ([`UPSTREAM-DELTA.md`](../loops-v2/UPSTREAM-DELTA.md) §2), and #3638 was re-confirmed as **still
+> not on `upstream/main`** (§1), which is why a fork-local scheduler is not a parallel path.
+>
+> The three premises that actually moved are in
+> [`loops-v2/FINDINGS.md`](../loops-v2/FINDINGS.md) §A:
+>
+> - **§A1** — upstream shipped **thread pinning** two days after this design froze, so the sidebar
+>   affordance this document argues at length against building already exists.
+> - **§A2** — `Sidebar.tsx` / `Sidebar.logic.ts` are **not** seam rows, which cuts both ways: a
+>   pinned thread is free, a bespoke row type is the most expensive kind of row this fork can take.
+> - **§A3** — the settings mount this design targets (`BetaSettingsPanel.tsx`) **no longer exists**,
+>   so its "+2 lines, risk 6" costing is void.
+>
+> A fourth has moved since: upstream **inverted pin-vs-settle** (`f70eeeeb0`), so a pin no longer
+> outranks settlement — see `UPSTREAM-DELTA.md` §9.1.
+>
+> The codebase line numbers cited throughout were measured against the 2026-08-02 merge-base and
+> have since drifted through many upstream syncs — re-verify each one rather than trusting it.
 
 _Chosen 2026-08-02 from a 4-design / 12-judgement panel. Full alternatives in [OPTIONS.md](OPTIONS.md); codebase evidence in [RESEARCH.md](RESEARCH.md)._
 
@@ -26,7 +40,7 @@ _Chosen 2026-08-02 from a 4-design / 12-judgement panel. Full alternatives in [O
 | --------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | quiescence (Deadman)        | 7.67 | WINNER. The only design with zero fatal flaws across all three lenses. Its trigger — `now - projection_threads.updated_at` — is the one signal every one of the twelve judgements independently named as the best idea worth stealing. I re-verified it: ProjectionPipeline.ts:794-808 groups `thread.activity-appended` with `thread.message-sent` and rewrites the row with `updatedAt: event.occurredAt`, and |
 | budget (RUNWAY)             | 6.33 | Headline mechanism is dead; its product instinct survives. I confirmed the SRE's kill shot: `stopSessionInternal` calls `completeTurn(context, "interrupted", "Session stopped.")` at ClaudeAdapter.ts:3057, emitting a real-turnId `turn.completed`, so arming on any non-synthetic turn.completed restarts exactly the work the user just hit Stop on. I also confirmed the second hole at ClaudeAdapter.ts:19 |
-| observability (Night Watch) | 6.33 | Right diagnosis, two mechanisms that do not exist. I read the user's own template at /Users/rajdholakia/.claude/skills/auto-loop-bootstrap/assets/templates/.loop/state.json: it is `{stage, iter, pr_mode, pr_size_policy, base_branch, backlog_source}` — there is no `status` key and no `remaining`/`backlog` array, and the companion CLAUDE.md:50 says outright `The loop NEVER halts on a semantic event` |
+| observability (Night Watch) | 6.33 | Right diagnosis, two mechanisms that do not exist. I read the user's own template at `~/.claude/skills/auto-loop-bootstrap/assets/templates/.loop/state.json`: it is `{stage, iter, pr_mode, pr_size_policy, base_branch, backlog_source}` — there is no `status` key and no `remaining`/`backlog` array, and the companion CLAUDE.md:50 says outright `The loop NEVER halts on a semantic event`                |
 | contract (BATON)            | 6    | Loses on three independently-verified defects, all in the load-bearing mechanism. (1) The contract is read from the wrong directory on most threads: `resolveThreadWorkspaceCwd` (checkpointing/Utils.ts:21-27) returns `worktreePath` FIRST and only falls back to the project root, so on any worktree-backed thread the agent writes into the worktree while the supervisor stats the project root — three fa |
 
 # Loop Watch — `apps/server/src/coil/loop/`

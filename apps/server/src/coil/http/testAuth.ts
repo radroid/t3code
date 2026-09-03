@@ -88,6 +88,24 @@ export const postJson = (pathname: string, body: unknown) =>
     return yield* client.execute(request);
   });
 
+/**
+ * A POST whose body is **not** JSON, sent with a JSON content type.
+ *
+ * This is the shape a broken client, a proxy that rewrote a body, or a mistyped `curl`
+ * produces, and it is the one path that never reaches a route's own decoder — so it is also
+ * the one that quietly returns a bare, uncoded 400 unless the route handles it.
+ */
+export const postText = (pathname: string, body: string) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient;
+    const request = HttpClientRequest.bodyText(
+      HttpClientRequest.post(yield* baseUrl(pathname)),
+      body,
+      "application/json",
+    );
+    return yield* client.execute(request);
+  });
+
 /** Reads a JSON response body as a plain record, for field-by-field assertions. */
 export const jsonBody = (response: HttpClientResponse.HttpClientResponse) =>
   Effect.map(response.json, (value) => value as Record<string, unknown>);

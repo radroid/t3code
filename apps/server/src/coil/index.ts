@@ -22,6 +22,9 @@ import { ServerConfig } from "../config.ts";
 import { autoResumeRouteLayer } from "./autoResume/http.ts";
 import { AutoResumeReactorLive } from "./autoResume/Reactor.ts";
 import { AutoResumeStore, makeAutoResumeStore } from "./autoResume/state.ts";
+import { loopRouteLayer } from "./loop/http.ts";
+import { LoopStoreLive } from "./loop/layer.ts";
+import { LoopReactorLive } from "./loop/Reactor.ts";
 import { resolveConfig as resolveWebPushConfig } from "./webPush/config.ts";
 import { webPushRouteLayer } from "./webPush/http.ts";
 import { WebPushReactorLive } from "./webPush/Reactor.ts";
@@ -51,6 +54,20 @@ const PushSubscriptionStoreLive = Layer.effect(
   }),
 );
 
+/**
+ * The loops record is IMPORTED, not declared here.
+ *
+ * Same shared-identity rule as `AutoResumeStoreLive` above — Effect memoises layer
+ * construction by layer identity, so every consumer that `Layer.provide`s this one value gets
+ * one store over one file — but loops has a third consumer the other two do not: the MCP
+ * toolkit, which registers off `mcp/McpHttpServer.ts`, on the far side of the layer graph
+ * from this aggregator. It cannot import from here without a cycle, so the value lives in
+ * `loop/layer.ts` and all three import it. Re-declaring it here would hand the reactor and
+ * the routes a *different* instance from the toolkit's, and the failure is silent: the agent
+ * would call `loop_done`, the tool would report success, and the supervisor would keep
+ * checking in against a record that never saw the write.
+ */
+
 /** VAPID keypair (env override, else generated + persisted in the secret store). */
 const WebPushVapidLive = Layer.effect(WebPushVapid, makeWebPushVapid(resolveWebPushConfig()));
 
@@ -71,6 +88,10 @@ const WebPushDepsLive = Layer.mergeAll(PushSubscriptionStoreLive, WebPushVapidLi
 export const CoilLayerLive = Layer.mergeAll(
   AutoResumeReactorLive.pipe(Layer.provide(AutoResumeStoreLive)),
   WebPushReactorLive.pipe(Layer.provide(WebPushDepsLive)),
+  // The loop supervisor reads the auto-resume record for guard 9 (two reactors must never
+  // both nudge one thread), so it takes the SAME `AutoResumeStoreLive` value the auto-resume
+  // reactor and route already share.
+  LoopReactorLive.pipe(Layer.provide(Layer.merge(LoopStoreLive, AutoResumeStoreLive))),
 );
 
 /**
@@ -100,4 +121,5 @@ export const CoilLayerLive = Layer.mergeAll(
 export const CoilRoutesLive = Layer.mergeAll(
   autoResumeRouteLayer.pipe(Layer.provide(AutoResumeStoreLive)),
   webPushRouteLayer.pipe(Layer.provide(WebPushDepsLive)),
+  loopRouteLayer.pipe(Layer.provide(LoopStoreLive)),
 );

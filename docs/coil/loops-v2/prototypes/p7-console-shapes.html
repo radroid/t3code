@@ -293,6 +293,19 @@
           reading of "at any time I open the chat there should be a page where I have a
           questionnaire ready".
         </p>
+        <p class="shape-d">
+          <b>Not the decision.</b> The plan takes the console as an
+          <b>overlay on the thread route</b>
+          instead, so the transcript stays the default view — a declared divergence from the stated
+          requirement, not an oversight (PLAN &sect;3). The reason is #38's: an overlay has
+          <i>nothing to toggle back from</i>. A second default view needs a sticky per-thread toggle
+          that has to survive reload, agree across two windows, agree on mobile, and be discoverable
+          when it is wrong; and choosing the view means owning the thread route's render decision,
+          which is <code>ChatView.tsx</code> territory (an existing seam row at churn 83) rather
+          than the delta-zero overlay row. What is given up is one interaction. Shape A stays priced
+          here because it is the fallback if the night's tail turns out to be what sends people back
+          to typing "are you still working on it?".
+        </p>
 
         <div class="mock">
           <div class="sb">

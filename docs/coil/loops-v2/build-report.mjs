@@ -74,7 +74,32 @@ const out = src.replace(
   },
 );
 
-if (embedded === 0) throw new Error("no EMBED markers matched — the marker syntax has drifted");
+/**
+ * Assert the COUNT, not merely "at least one".
+ *
+ * The old guard only fired when *zero* markers matched, so a single drifted marker — the hint
+ * regex terminates on `>` and splits on `|`, both of which are easy to type into a caption —
+ * silently emitted a report missing that frame. Invisible in the browser and invisible in a
+ * 15k-line diff. Reproduced with 7 of 8 inlined and no error (issue #125 §C11).
+ *
+ * Two directions, because they catch different mistakes: a marker that stopped matching, and a
+ * prototype nobody referenced.
+ */
+const prototypeFiles = NodeFS.readdirSync(protoDir)
+  .filter((name) => name.endsWith(".html") && !name.startsWith("_"))
+  .sort();
+
+if (embedded !== prototypeFiles.length) {
+  throw new Error(
+    `inlined ${embedded} prototypes but prototypes/ holds ${prototypeFiles.length} ` +
+      `(${prototypeFiles.join(", ")}) — a marker has drifted, or a prototype was added without one`,
+  );
+}
+
+const unreferenced = prototypeFiles.filter((name) => !src.includes(`<!--EMBED:${name}|`));
+if (unreferenced.length > 0) {
+  throw new Error(`prototypes never referenced by report.src.html: ${unreferenced.join(", ")}`);
+}
 
 const doctype = "<!doctype html>";
 if (!out.startsWith(doctype)) throw new Error("report.src.html no longer starts with a doctype");

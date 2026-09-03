@@ -283,8 +283,9 @@
                 <div>
                   <div class="gate-t">Let threads run as loops</div>
                   <div class="gate-d" id="gateDesc">
-                    When this is off, no thread can be armed, nothing is scheduled, and the loop
-                    supervisor never starts. Existing loops stop at their next check-in.
+                    When this is off, nothing fires and no thread can be armed. Loops that are
+                    already armed stand down — they keep their budget and their deadline, and resume
+                    when you switch this back on. Nothing is disarmed and nothing is stopped.
                   </div>
                 </div>
                 <button
@@ -627,8 +628,8 @@ T3 checked in because no wake of yours landed. Keep scheduling your own wake-ups
         gate.classList.toggle("off", !on);
         body.classList.toggle("disabled", !on);
         gateDesc.textContent = on
-          ? "When this is off, no thread can be armed, nothing is scheduled, and the loop supervisor never starts. Existing loops stop at their next check-in."
-          : "Loops are off. Nothing is armed, nothing is scheduled, and the supervisor is not running. Three armed loops were stood down.";
+          ? "When this is off, nothing fires and no thread can be armed. Loops that are already armed stand down — they keep their budget and their deadline, and resume when you switch this back on. Nothing is disarmed and nothing is stopped."
+          : "Loops are off. Three armed loops are standing down. They keep their budgets and deadlines and will resume where they left off when you switch this back on.";
       });
       document.querySelectorAll(".switch:not(#master):not([disabled])").forEach((s) =>
         s.addEventListener("click", () => {
