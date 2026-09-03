@@ -552,28 +552,45 @@ export const makeLoopStore = (
     };
 
     /**
-     * Every write goes through here, which is also where the file is bounded: the state is
-     * pruned inside the same critical section that persists it, so memory and disk can never
-     * disagree about what was dropped. `threadId` is the thread the write is about and is
-     * exempt from the prune.
+     * Every write goes through here. Deliberately as thin as it was before pruning existed:
+     * one function call, one persist, and nothing that reads a clock or walks the table.
+     *
+     * The tick writes through this path several times per check-in, forever, and the reactor
+     * tests measure it — an extra generator frame and a clock read per write was enough to
+     * move the whole suite onto a cliff, where whether a scenario passed depended on how busy
+     * the machine was. Housekeeping does not belong on the path the product uses most.
      */
-    const modify = <A>(threadId: string | null, f: (state: LoopState) => readonly [A, LoopState]) =>
-      SynchronizedRef.modifyEffect(ref, (state) =>
-        Effect.gen(function* () {
-          const [value, next] = f(state);
-          const nowMs = yield* Clock.currentTimeMillis;
-          const pruned = pruneThreads(next, nowMs, threadId);
-          yield* persist(pruned);
-          return [value, pruned] as const;
+    const modify = <A>(f: (state: LoopState) => readonly [A, LoopState]) =>
+      SynchronizedRef.modifyEffect(ref, (state) => {
+        const [value, next] = f(state);
+        return persist(next).pipe(Effect.as([value, next] as const));
+      });
+
+    const mutate = (f: (state: LoopState) => LoopState) =>
+      SynchronizedRef.updateEffect(ref, (state) =>
+        Effect.suspend(() => {
+          const next = f(state);
+          return persist(next).pipe(Effect.as(next));
         }),
       );
 
-    const mutate = (threadId: string | null, f: (state: LoopState) => LoopState) =>
+    /**
+     * A write that also sweeps the table.
+     *
+     * Pruning runs where records *become* prunable — a run reaching its terminal state, a
+     * disarm, a clear, or a settings write — rather than on every write. Each of those sweeps
+     * the whole table, so a stopped record that aged out months ago is dropped by the next
+     * loop that ends or the next setting anyone changes; nothing accumulates, and the paths
+     * the supervisor runs every minute pay nothing for it. `keepThreadId` is the thread this
+     * write is about, exempt so that a write followed by a read cannot look like it never
+     * happened.
+     */
+    const mutatePruned = (keepThreadId: string | null, f: (state: LoopState) => LoopState) =>
       SynchronizedRef.updateEffect(ref, (state) =>
         Effect.gen(function* () {
           const next = f(state);
           const nowMs = yield* Clock.currentTimeMillis;
-          const pruned = pruneThreads(next, nowMs, threadId);
+          const pruned = pruneThreads(next, nowMs, keepThreadId);
           yield* persist(pruned);
           return pruned;
         }),
@@ -597,7 +614,7 @@ export const makeLoopStore = (
     });
 
     const updateRecord = (threadId: string, f: (record: LoopRecord) => LoopRecord) =>
-      modify(threadId, (state) => {
+      modify((state) => {
         const next = f(recordFor(state, threadId));
         return [next, withRecord(state, threadId, next)] as const;
       });
@@ -608,11 +625,18 @@ export const makeLoopStore = (
     return {
       getGlobal: SynchronizedRef.get(ref).pipe(Effect.map((state) => state.global)),
 
+      // Pruned: a settings write is a human at the console, the cheapest possible moment to
+      // sweep a table that only grows between terminal states.
       setGlobal: (patch) =>
-        modify(null, (state) => {
-          const global = { ...state.global, ...patch };
-          return [global, { ...state, global }] as const;
-        }),
+        SynchronizedRef.modifyEffect(ref, (state) =>
+          Effect.gen(function* () {
+            const global = { ...state.global, ...patch };
+            const nowMs = yield* Clock.currentTimeMillis;
+            const pruned = pruneThreads({ ...state, global }, nowMs, null);
+            yield* persist(pruned);
+            return [global, pruned] as const;
+          }),
+        ),
 
       getThread: (threadId) => readRecord(threadId, (record) => record),
 
@@ -637,7 +661,7 @@ export const makeLoopStore = (
       ),
 
       arm: (input) =>
-        modify(input.threadId, (state) => {
+        modify((state) => {
           const previous = recordFor(state, input.threadId);
           const next: LoopRecord = {
             ...previous,
@@ -664,24 +688,24 @@ export const makeLoopStore = (
         }),
 
       disarm: (threadId) =>
-        mutate(threadId, (state) =>
+        mutatePruned(threadId, (state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), armed: false }),
         ),
 
       stop: (threadId, stopped) =>
-        mutate(threadId, (state) =>
+        mutatePruned(threadId, (state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), armed: false, stopped }),
         ),
 
       clearThread: (threadId) =>
-        mutate(null, (state) => {
+        mutatePruned(null, (state) => {
           if (!Object.hasOwn(state.threads, threadId)) return state;
           const { [threadId]: _removed, ...threads } = state.threads;
           return { ...state, threads };
         }),
 
       requestSessionStop: (threadId, atMs) =>
-        mutate(threadId, (state) =>
+        mutate((state) =>
           withRecord(state, threadId, {
             ...recordFor(state, threadId),
             stopRequestedAtMs: atMs,
@@ -691,14 +715,14 @@ export const makeLoopStore = (
       // `null`, not this thread: clearing the last thing a spent record carried is exactly
       // when it becomes prunable.
       clearSessionStopRequest: (threadId) =>
-        mutate(null, (state) =>
+        mutatePruned(null, (state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), stopRequestedAtMs: 0 }),
         ),
 
       update: (threadId, f) => updateRecord(threadId, f),
 
       recordCheckIn: (input) =>
-        modify(input.threadId, (state) => {
+        modify((state) => {
           const previous = recordFor(state, input.threadId);
           const n = previous.checkInsUsed + 1;
           const row: CheckInRow = {
@@ -718,7 +742,7 @@ export const makeLoopStore = (
         }),
 
       setRateLimitedUntil: (threadId, untilMs) =>
-        mutate(threadId, (state) =>
+        mutate((state) =>
           withRecord(state, threadId, {
             ...recordFor(state, threadId),
             rateLimitedUntilMs: untilMs,
@@ -726,22 +750,18 @@ export const makeLoopStore = (
         ),
 
       setCrons: (threadId, crons) =>
-        mutate(threadId, (state) =>
-          withRecord(state, threadId, { ...recordFor(state, threadId), crons }),
-        ),
+        mutate((state) => withRecord(state, threadId, { ...recordFor(state, threadId), crons })),
 
       setDegraded: (threadId, degraded) =>
-        mutate(threadId, (state) =>
-          withRecord(state, threadId, { ...recordFor(state, threadId), degraded }),
-        ),
+        mutate((state) => withRecord(state, threadId, { ...recordFor(state, threadId), degraded })),
 
       setOverridePrompt: (threadId, overridePrompt) =>
-        mutate(threadId, (state) =>
+        mutate((state) =>
           withRecord(state, threadId, { ...recordFor(state, threadId), overridePrompt }),
         ),
 
       recordUserInput: (threadId, input) =>
-        mutate(threadId, (state) => {
+        mutate((state) => {
           const previous = recordFor(state, threadId);
           if (previous.userInputs.some((entry) => entry.requestId === input.requestId)) {
             return state;
@@ -753,7 +773,7 @@ export const makeLoopStore = (
         }),
 
       resolveUserInput: (threadId, requestId, resolution, resolvedAtMs) =>
-        mutate(threadId, (state) => {
+        mutate((state) => {
           const previous = recordFor(state, threadId);
           let changed = false;
           const userInputs = previous.userInputs.map((entry) => {
@@ -765,7 +785,7 @@ export const makeLoopStore = (
         }),
 
       addBlocker: (threadId, blocker) =>
-        modify(threadId, (state) => {
+        modify((state) => {
           const previous = recordFor(state, threadId);
           const existing = previous.blockers.find((entry) => entry.id === blocker.id);
           if (existing) return [existing, state] as const;
@@ -779,7 +799,7 @@ export const makeLoopStore = (
         }),
 
       answerBlocker: (threadId, blockerId, answer, answeredAtMs) =>
-        modify(threadId, (state) => {
+        modify((state) => {
           const previous = recordFor(state, threadId);
           const target = previous.blockers.find((entry) => entry.id === blockerId);
           if (!target) return [null, state] as const;
@@ -807,7 +827,7 @@ export const makeLoopStore = (
         ),
 
       markBlockersDelivered: (threadId, blockerIds) =>
-        mutate(threadId, (state) => {
+        mutate((state) => {
           const previous = recordFor(state, threadId);
           const ids = new Set(blockerIds);
           if (ids.size === 0) return state;
