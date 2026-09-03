@@ -468,58 +468,64 @@ export const advancePolls = (polls: number) =>
   });
 
 /**
- * How many extra polls the drain below is allowed, once the caller's budget is spent.
- *
- * Small on purpose: it is there to let work that is already in flight finish, not to widen
- * what the caller asked for. A condition that is genuinely never going to hold still fails,
- * just after a bounded number of additional turns rather than in the middle of a write.
- */
-const DRAIN_POLLS = 5;
-
-/**
  * Advance the clock in poll-sized steps until `condition` holds.
  *
  * Same reasoning as `settleUntil`, one layer out: the tick fiber's work also ends in a store
  * write, so "advance N times and look" has the same race.
  *
- * ## Why there are two phases
+ * ## The clock stops at the instant that satisfied the condition
  *
- * Phase one is the fast path, and its per-poll `settleQuiet` is a **guess**: ten scheduler
- * turns, on the assumption that ten turns buys enough real progress for the tick to land.
- * The tick persists through real filesystem I/O, so on a loaded machine a turn buys less —
- * the simulated clock then races ahead of a tick that is still in flight, the caller's poll
- * budget is spent, and the harness declares failure while the answer is one turn away. That
- * is a test whose outcome depends on how busy the machine is, which is precisely what a
- * TestClock is for avoiding: it cost CI one red run on `136c`, where the tightest budget in
- * the suite meets the heaviest tick.
+ * This is the whole contract, and everything below is in service of it. Each iteration looks,
+ * advances **one** poll, and then spends scheduler turns on that instant until the condition
+ * holds — returning the moment it does. So the clock ends where the answer was, and where the
+ * answer was does not depend on how busy the machine is.
  *
- * So when the budget is spent, phase two stops guessing and waits on the **condition**,
- * pumping both schedulers and only nudging the clock between drains. Both phases are bounded
- * by iteration counts and neither waits on wall-clock time, so a slow machine costs seconds
- * and never an outcome. Nothing here loosens what a caller asked for: phase one still decides
- * every passing run, and its `maxPolls` still says how promptly the thing must happen.
+ * Getting this wrong does not produce a flake that looks like a flake. The tick persists
+ * through real filesystem I/O, so on a loaded runner a scheduler turn buys less real
+ * progress; with a fixed handful of turns per poll, "the condition is still false" stops
+ * meaning "nothing has happened yet" and starts meaning "the write has not landed yet". The
+ * loop then advances anyway, and every simulated minute it borrows lands in the assertions:
+ * CI reported `136c` covering one wake **twice** — the borrowed minutes carried the following
+ * `advancePolls(10)` over the loop's 15-minute check-in floor — and `128` reporting a fire
+ * five simulated minutes late. Both are assertion failures about the product, produced
+ * entirely by the harness. `PER_POLL_TURNS` is what buys the headroom, and it costs nothing on
+ * the happy path because the loop exits on the condition, not on the budget.
+ *
+ * Simulated time may therefore only move where a test says it moves: `advancePolls`, the
+ * polls counted here, and explicit `TestClock.adjust` calls. When the poll budget runs out,
+ * `settleUntil` waits on the condition with turns and **nothing else** — an earlier version
+ * that nudged the clock between drain rounds is exactly how `128` lost its five minutes.
+ * `reactorHarness.test.ts` pins all of this, including on the give-up path.
  */
+
+/**
+ * Scheduler turns one simulated instant may be given before the clock moves on.
+ *
+ * Six times what a fixed settle used to spend, and paid only while the condition is false:
+ * the inner loop returns on the condition, so a run where the tick lands promptly spends two
+ * or three turns here, not sixty. It is a bound on how slow a machine may be before the
+ * harness starts inventing simulated time, and nothing else.
+ */
+export const PER_POLL_TURNS = 60;
 export const advanceUntil = (
   condition: Effect.Effect<boolean>,
   description: string,
   maxPolls = 600,
 ) =>
   Effect.gen(function* () {
-    for (let i = 0; i < maxPolls; i++) {
+    for (let poll = 0; poll < maxPolls; poll++) {
       if (yield* condition) return;
       yield* TestClock.adjust(Duration.millis(POLL_MS));
-      yield* settleQuiet;
-    }
-    for (let poll = 0; poll < DRAIN_POLLS; poll++) {
-      for (let i = 0; i < MAX_SETTLE_PUMPS; i++) {
+      // Settle THIS instant before considering the next one, and stop the moment the
+      // condition holds: that is what keeps the clock's resting place a property of the
+      // scenario rather than of the machine.
+      for (let turn = 0; turn < PER_POLL_TURNS; turn++) {
         if (yield* condition) return;
         yield* pump;
       }
-      // A tick that finished while the clock was racing ahead is now asleep until the next
-      // poll, so the drain needs the clock to move for it to run at all.
-      yield* TestClock.adjust(Duration.millis(POLL_MS));
     }
-    return yield* Effect.die(new Error(`timed out waiting for ${description}`));
+    // Turns, not time. `settleUntil` dies with its own message if the condition never holds.
+    return yield* settleUntil(condition, description);
   });
 
 /** `true` once at least `n` turn starts have been dispatched. */
