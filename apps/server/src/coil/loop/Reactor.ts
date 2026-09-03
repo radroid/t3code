@@ -70,6 +70,7 @@ import { composeCheckInPrompt, resolveConfig } from "./config.ts";
 import { decide, resolveWake } from "./decide.ts";
 import { hasPendingCrons } from "./guards.ts";
 import { installLoopStore } from "./hooksRegistry.ts";
+import { receiptEmitter } from "./receipts.ts";
 import { readSentinel } from "./sentinel.ts";
 import { LoopStore, type LoopGlobalSettings, type LoopRecord, type StopRecord } from "./state.ts";
 import type {
@@ -150,6 +151,8 @@ const makeSupervisor = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const fs = yield* FileSystem.FileSystem;
   const config = resolveConfig();
+  // Optional, and absent in every production graph. See `receipts.ts`.
+  const receipts = yield* receiptEmitter;
 
   /**
    * The boot-grace floor, captured once.
@@ -373,6 +376,7 @@ const makeSupervisor = Effect.gen(function* () {
           of: record.maxCheckIns,
         },
       );
+      yield* receipts.emit({ type: "stopped", threadId, outcome: action.outcome });
     });
 
   /**
@@ -393,7 +397,12 @@ const makeSupervisor = Effect.gen(function* () {
         // every minute for the rest of the night.
         store
           .clearSessionStopRequest(entry.threadId)
-          .pipe(Effect.andThen(stopProviderSession(entry.threadId))),
+          .pipe(
+            Effect.andThen(stopProviderSession(entry.threadId)),
+            Effect.andThen(
+              receipts.emit({ type: "stopRequest.serviced", threadId: entry.threadId }),
+            ),
+          ),
       { discard: true },
     );
 
@@ -412,6 +421,7 @@ const makeSupervisor = Effect.gen(function* () {
         `Loop disarmed: ${action.reason.replaceAll("_", " ")}.`,
         { reason: action.reason },
       );
+      yield* receipts.emit({ type: "disarmed", threadId });
     });
 
   /**
@@ -516,6 +526,7 @@ const makeSupervisor = Effect.gen(function* () {
         ),
       }));
       lastSkipReason.delete(threadId);
+      yield* receipts.emit({ type: "checkIn.reserved", threadId, n: reserved.n });
 
       // 2. RE-READ, and re-decide. Guard 2 comes back with a fresh `global` here too, so the
       //    master toggle is never one tick stale at the moment money is spent.
@@ -535,6 +546,11 @@ const makeSupervisor = Effect.gen(function* () {
           "Loop check-in aborted: the thread index did not answer in time.",
           { reason: "aborted_pre_dispatch", verdict: "projection_unavailable", n: reserved.n },
         );
+        yield* receipts.emit({
+          type: "checkIn.aborted",
+          threadId,
+          reason: "projection_unavailable",
+        });
         return;
       }
       // A `null` shell here is a thread that really is gone; `decide` answers it with a
@@ -560,6 +576,7 @@ const makeSupervisor = Effect.gen(function* () {
         // would leave a pin the loop owns in place for another poll interval.
         if (verdict.type === "stop") yield* onStop(threadId, record, verdict, input.nowMs);
         if (verdict.type === "disarm") yield* onDisarm(threadId, record, verdict, input.nowMs);
+        yield* receipts.emit({ type: "checkIn.aborted", threadId, reason: verdict.type });
         return;
       }
 
@@ -594,9 +611,17 @@ const makeSupervisor = Effect.gen(function* () {
           }).pipe(Effect.as(false)),
         ),
       );
-      if (!sent) return;
+      if (!sent) {
+        yield* receipts.emit({ type: "checkIn.aborted", threadId, reason: "dispatch_failed" });
+        return;
+      }
 
       yield* store.markBlockersDelivered(threadId, prompt.deliveredBlockerIds);
+      yield* receipts.emit({
+        type: "blockers.delivered",
+        threadId,
+        ids: prompt.deliveredBlockerIds,
+      });
 
       // 5. REPAIR, only when the pin was already there.
       if (shell.settledOverride === "active") yield* repairPin(threadId);
@@ -625,6 +650,7 @@ const makeSupervisor = Effect.gen(function* () {
         `Loop check-in ${reserved.n} of ${record.maxCheckIns}.`,
         { n: reserved.n, of: record.maxCheckIns, firedAtMs: input.nowMs, source: prompt.source },
       );
+      yield* receipts.emit({ type: "checkIn.dispatched", threadId });
     });
 
   // --- the tick -------------------------------------------------------------
@@ -681,6 +707,21 @@ const makeSupervisor = Effect.gen(function* () {
       ),
     );
 
+  /**
+   * The end-of-tick receipt.
+   *
+   * Assembled only when someone is listening: the empty-armed path has no `nowMs` in hand,
+   * and reading one there would put a clock read on every poll of every install for a
+   * subscriber that exists in tests alone.
+   */
+  const emitTickCompleted = (armedCount: number, nowMs: number | null) =>
+    receipts.enabled
+      ? Effect.gen(function* () {
+          const at = nowMs ?? (yield* Clock.currentTimeMillis);
+          yield* receipts.emit({ type: "tick.completed", armedCount, nowMs: at });
+        })
+      : Effect.void;
+
   const tick = Effect.gen(function* () {
     // ONE read of the store per tick, for both work lists. Two reads would be one more
     // scheduler turn every minute forever, for a stop-request list that is nearly always
@@ -689,12 +730,13 @@ const makeSupervisor = Effect.gen(function* () {
     if (stopRequested.length > 0) yield* serviceStopRequests(stopRequested);
     // Zero SQL and zero filesystem work when nothing is armed. This is the whole reason the
     // by-id reads replaced `getSnapshot()`.
-    if (armed.length === 0) return;
+    if (armed.length === 0) return yield* emitTickCompleted(0, null);
     const global = yield* store.getGlobal;
     const nowMs = yield* Clock.currentTimeMillis;
     yield* Effect.forEach(armed, (entry) => evaluateOne(entry, global, armed.length, nowMs), {
       discard: true,
     });
+    yield* emitTickCompleted(armed.length, nowMs);
   });
 
   // --- the rate-limit tap ---------------------------------------------------
@@ -720,10 +762,13 @@ const makeSupervisor = Effect.gen(function* () {
       // The longer of the two wins. Two limits can be live at once (a five-hour and a
       // seven-day), and holding is a non-consuming skip: over-holding costs deference time,
       // under-holding burns a check-in against a wall.
-      yield* store.setRateLimitedUntil(
-        event.threadId,
-        Math.max(record.rateLimitedUntilMs, untilMs),
-      );
+      const heldUntilMs = Math.max(record.rateLimitedUntilMs, untilMs);
+      yield* store.setRateLimitedUntil(event.threadId, heldUntilMs);
+      yield* receipts.emit({
+        type: "rateLimit.recorded",
+        threadId: event.threadId,
+        untilMs: heldUntilMs,
+      });
     });
 
   // --- lifecycle ------------------------------------------------------------
@@ -737,6 +782,7 @@ const makeSupervisor = Effect.gen(function* () {
   // layer graph where `LoopStore` has already been discharged — so it cannot reach the store
   // through the context. Publish it for the life of this layer's scope. See `hooksRegistry.ts`.
   yield* installLoopStore(store);
+  yield* receipts.emit({ type: "hooks.installed" });
 
   yield* Effect.forkScoped(
     Stream.runForEach(providerService.streamEvents, (event) =>
@@ -751,7 +797,7 @@ const makeSupervisor = Effect.gen(function* () {
     ),
   );
 
-  yield* Effect.forkScoped(recordUserInputs(store, providerService));
+  yield* Effect.forkScoped(recordUserInputs(store, providerService, receipts));
 
   yield* Effect.forkScoped(
     Effect.gen(function* () {

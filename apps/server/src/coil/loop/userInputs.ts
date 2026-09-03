@@ -39,14 +39,19 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 
 import type { ProviderServiceShape } from "../../provider/Services/ProviderService.ts";
+import type { LoopReceiptEmitter } from "./receipts.ts";
 import type { LoopStoreShape } from "./state.ts";
 
 /** The upstream #8144 dialog, recorded as itself so the console can name it. */
 const RESUME_DIALOG_KIND = "resume_return";
 
+/** No listener. The reactor always passes its own emitter; unit callers do not care. */
+const SILENT: LoopReceiptEmitter = { enabled: false, emit: () => Effect.void };
+
 const onRequested = (
   store: LoopStoreShape,
   event: Extract<ProviderRuntimeEvent, { readonly type: "user-input.requested" }>,
+  receipts: LoopReceiptEmitter,
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     const requestId = event.requestId;
@@ -72,6 +77,7 @@ const onRequested = (
       resolution: null,
       resolvedAtMs: null,
     });
+    yield* receipts.emit({ type: "userInput.recorded", threadId: event.threadId, requestId });
   });
 
 const onResolved = (
@@ -97,8 +103,9 @@ const onResolved = (
 export const recordUserInputEvent = (
   store: LoopStoreShape,
   event: ProviderRuntimeEvent,
+  receipts: LoopReceiptEmitter = SILENT,
 ): Effect.Effect<void> => {
-  if (event.type === "user-input.requested") return onRequested(store, event);
+  if (event.type === "user-input.requested") return onRequested(store, event, receipts);
   if (event.type === "user-input.resolved") return onResolved(store, event);
   return Effect.void;
 };
@@ -110,9 +117,10 @@ export const recordUserInputEvent = (
 export const recordUserInputs = (
   store: LoopStoreShape,
   providerService: Pick<ProviderServiceShape, "streamEvents">,
+  receipts: LoopReceiptEmitter = SILENT,
 ): Effect.Effect<void> =>
   Stream.runForEach(providerService.streamEvents, (event) =>
-    recordUserInputEvent(store, event).pipe(
+    recordUserInputEvent(store, event, receipts).pipe(
       Effect.catchCause((cause) =>
         Effect.logDebug("coil loop: user-input recording failed", {
           eventType: event.type,
