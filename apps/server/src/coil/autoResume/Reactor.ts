@@ -46,6 +46,7 @@ import {
   isClaudeThread,
   threadIsGone,
 } from "./guards.ts";
+import { receiptEmitter } from "./receipts.ts";
 import { AutoResumeStore, type PendingResume } from "./state.ts";
 
 const HOUR_MS = 60 * 60_000;
@@ -61,6 +62,8 @@ const makeSupervisor = Effect.gen(function* () {
   const store = yield* AutoResumeStore;
   const crypto = yield* Crypto.Crypto;
   const config = resolveConfig();
+  // Optional, and absent in every production graph. See `receipts.ts`.
+  const receipts = yield* receiptEmitter;
 
   const isoNow = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
@@ -145,7 +148,10 @@ const makeSupervisor = Effect.gen(function* () {
       const record = yield* store.getThread(threadId);
       // Per-thread switch. A thread the user turned off never schedules, and posts no
       // timeline note: they disabled it deliberately, so an activity row would be noise.
-      if (!record.enabled) return;
+      if (!record.enabled) {
+        yield* receipts.emit({ type: "resume.skipped", threadId, reason: "disabled" });
+        return;
+      }
       const nowMs = yield* Clock.currentTimeMillis;
       const firedRecently = yield* store.countFiredSince(threadId, nowMs - BACKOFF_LOOKBACK_MS);
       const firedInCapWindow = yield* store.countFiredSince(threadId, nowMs - CAP_WINDOW_MS);
@@ -160,11 +166,17 @@ const makeSupervisor = Effect.gen(function* () {
       });
       // A capped-out thread stops scheduling here (and stops posting "scheduled" notes)
       // until its fires age out of the 24h window; all other skips are dedupe/no-op.
-      if (plan.kind === "skip") return;
+      if (plan.kind === "skip") {
+        yield* receipts.emit({ type: "resume.skipped", threadId, reason: plan.reason });
+        return;
+      }
 
       const snapshot = yield* snapshotQuery.getSnapshot();
       const thread = snapshot.threads.find((t) => t.id === threadId);
-      if (!thread || threadIsGone(thread) || !isClaudeThread(thread)) return;
+      if (!thread || threadIsGone(thread) || !isClaudeThread(thread)) {
+        yield* receipts.emit({ type: "resume.skipped", threadId, reason: "thread-ineligible" });
+        return;
+      }
 
       // Replacing an existing arm (a later window superseded it — see decide.ts). The
       // fresh `captureBaseline` below is what re-baselines the resume onto whatever the
@@ -189,6 +201,12 @@ const makeSupervisor = Effect.gen(function* () {
           ? `Usage limit window pushed back (${limitType}). Auto-resume rescheduled to ~${waitMinutes} min from now.`
           : `Usage limit reached (${limitType}). Auto-resume scheduled in ~${waitMinutes} min.`,
       );
+      yield* receipts.emit({
+        type: "resume.scheduled",
+        threadId,
+        resumeAtMs: plan.resumeAtMs,
+        superseded,
+      });
     });
 
   // --- wake -----------------------------------------------------------------
@@ -201,6 +219,11 @@ const makeSupervisor = Effect.gen(function* () {
       const thread = snapshot.threads.find((t) => t.id === pending.threadId);
       if (!thread) {
         yield* store.clearPending(pending.threadId);
+        yield* receipts.emit({
+          type: "resume.cancelled",
+          threadId: pending.threadId,
+          reason: "thread-missing",
+        });
         return;
       }
 
@@ -216,6 +239,11 @@ const makeSupervisor = Effect.gen(function* () {
           "coil.auto-resume.cancelled",
           "Auto-resume cancelled: turned off for this thread.",
         );
+        yield* receipts.emit({
+          type: "resume.cancelled",
+          threadId: pending.threadId,
+          reason: "disabled",
+        });
         return;
       }
 
@@ -240,6 +268,7 @@ const makeSupervisor = Effect.gen(function* () {
             observedTurnCompletedAt: thread.latestTurn?.completedAt ?? null,
           },
         );
+        yield* receipts.emit({ type: "resume.cancelled", threadId: pending.threadId, reason });
         return;
       }
 
@@ -252,6 +281,11 @@ const makeSupervisor = Effect.gen(function* () {
           "coil.auto-resume.capped",
           `Auto-resume stopped after ${config.maxResumesPer24h} attempts in 24h.`,
         );
+        yield* receipts.emit({
+          type: "resume.cancelled",
+          threadId: pending.threadId,
+          reason: "capped",
+        });
         return;
       }
 
@@ -279,6 +313,13 @@ const makeSupervisor = Effect.gen(function* () {
           }),
         ),
       );
+      // After the dispatch attempt, not before: a failed dispatch still burned the attempt,
+      // and the test that asserts exactly that needs to be told when the attempt is over.
+      yield* receipts.emit({
+        type: "resume.fired",
+        threadId: pending.threadId,
+        attempt: firedIn24h + 1,
+      });
     });
 
   const processDue = Effect.gen(function* () {
@@ -286,6 +327,12 @@ const makeSupervisor = Effect.gen(function* () {
     const pending = yield* store.listPending;
     const due = pending.filter((p) => p.resumeAtMs <= nowMs);
     yield* Effect.forEach(due, (p) => fireOne(p, nowMs), { discard: true });
+    // The end-of-pass receipt, published on the empty path too: it is what makes "advance one
+    // poll and let the reactor finish" an exact await instead of a budget of scheduler turns.
+    // Assembled only when someone is listening — this runs every poll of every install.
+    if (receipts.enabled) {
+      yield* receipts.emit({ type: "tick.completed", dueCount: due.length, nowMs });
+    }
   });
 
   /**
