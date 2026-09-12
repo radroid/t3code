@@ -27,17 +27,21 @@ import {
   shouldArmAutoRestart,
   shouldAutoRestartNow,
   shouldSendRestart,
+  shouldTickClock,
   type AutoRestartArmed,
   type UpdateToastView,
 } from "./updateToast.logic";
 
 /**
- * How often the armed view re-evaluates its ceiling.
+ * How often a visible toast re-reads the clock.
  *
- * The ceiling is two hours, so a minute of slack is invisible to the user and costs one render.
- * Only ticks while something is armed — an idle app should not wake up for this.
+ * Coarse on purpose. It feeds the build age and the armed view's ceiling, and a minute is enough
+ * for both — `formatBuiltAgo`'s finest bucket is a minute, and the ceiling is two hours. A tick
+ * that does not move the age bucket produces an identical `viewKey` and so writes no toast payload;
+ * it costs one render of this component, which renders nothing. Runs only while a toast is up:
+ * an idle app should not wake for this.
  */
-const CEILING_TICK_MS = 60_000;
+const CLOCK_TICK_MS = 60_000;
 
 const IDLE_STATE: CoilUpdateState = { status: { kind: "idle" }, hasUpdatedBefore: false };
 
@@ -65,38 +69,33 @@ export function CoilUpdateToast() {
   const [now, setNow] = useState(() => Date.now());
   const toastId = useRef<ToastId | undefined>(undefined);
 
-  // Only runs while armed: the ceiling has to be able to fire without a user interaction, or the
-  // stand-down would wait for a render that never comes.
-  useEffect(() => {
-    if (autoRestart === undefined) return;
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, CEILING_TICK_MS);
-    return () => {
-      clearInterval(timer);
-    };
-  }, [autoRestart]);
-
   useEffect(() => {
     const bridge = updateBridge();
     if (bridge === undefined) return;
 
     let cancelled = false;
+    // Re-seeds the clock alongside the state, so the toast's first paint is not aged against
+    // whenever this window happened to mount. A build normally arrives hours after mount, which
+    // puts `builtAt` in the FUTURE relative to a mount-time clock — and `formatBuiltAgo` clamps a
+    // future age to "just now", laundering a stale clock into the most reassuring string it has.
+    const receive = (next: CoilUpdateState) => {
+      setNow(Date.now());
+      setState(next);
+    };
+
     // Read once as well as subscribing: the main process may already be holding a ready build from
     // before this window existed, and a subscription alone would only see the NEXT change — which
     // for an app that updates on merge could be hours away.
     void bridge
       .getState()
       .then((initial) => {
-        if (!cancelled) setState(initial);
+        if (!cancelled) receive(initial);
       })
       .catch(() => {
         // An older desktop shell hosting this bundle. Staying idle is the correct fallback.
       });
 
-    const unsubscribe = bridge.onState((next) => {
-      setState(next);
-    });
+    const unsubscribe = bridge.onState(receive);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -118,6 +117,19 @@ export function CoilUpdateToast() {
       }),
     [state, dismissedShortSha, autoRestart, now],
   );
+
+  // Depends on the boolean, not on the view: the interval is torn down and rebuilt only when the
+  // toast appears or disappears, not on every tick it causes.
+  const clockTicks = shouldTickClock(view);
+  useEffect(() => {
+    if (!clockTicks) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, CLOCK_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [clockTicks]);
 
   // The idle signal. Read unconditionally — hooks cannot be called behind a condition — but only
   // consulted while something is armed.
