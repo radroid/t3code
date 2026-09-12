@@ -124,7 +124,7 @@ describe("TRANSIENT_CANONICAL_EVENT_TYPES", () => {
   });
 
   it("does not drop any event auto-resume depends on", () => {
-    for (const type of ["account.rate-limits.updated", "session.exited", "turn.completed"]) {
+    for (const type of ["runtime.warning", "session.exited", "turn.completed"]) {
       expect(TRANSIENT_CANONICAL_EVENT_TYPES.has(type)).toBe(false);
     }
   });

@@ -88,6 +88,7 @@ const makeThread = (
   hasPendingApprovals: false,
   hasPendingUserInput: false,
   hasActionableProposedPlan: false,
+  pullRequests: [],
   ...overrides,
 });
 
