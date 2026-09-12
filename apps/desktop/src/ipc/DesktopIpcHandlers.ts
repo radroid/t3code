@@ -26,11 +26,7 @@ import {
 } from "./methods/sshEnvironment.ts";
 import { showNotification } from "./methods/notifications.ts";
 // coil: fork-owned update delivery.
-import {
-  dismissCoilUpdate,
-  getCoilUpdateState,
-  restartIntoUpdate,
-} from "./methods/coilUpdate.ts";
+import { dismissCoilUpdate, getCoilUpdateState, restartIntoUpdate } from "./methods/coilUpdate.ts";
 import {
   checkForUpdate,
   downloadUpdate,

@@ -29,7 +29,7 @@ import { parseSseChunk } from "./sseParser.ts";
  */
 const WATCHDOG_POLL_INTERVAL = Duration.millis(WATCHDOG_TIMEOUT_MS / 2);
 
-export class RelayError extends Schema.TaggedErrorClass<RelayError>()("CoilRelayError", {
+export class RelayError extends Schema.TaggedError<RelayError>()("CoilRelayError", {
   reason: Schema.Literals([
     "request-failed",
     "bad-status",
@@ -58,7 +58,9 @@ export const fetchLatestManifest = Effect.fn("coil.updateDelivery.fetchLatest")(
   const response = yield* client
     .get(latestUrl, { headers: { accept: "application/json" } })
     .pipe(
-      Effect.mapError((cause) => new RelayError({ reason: "request-failed", detail: cause.message })),
+      Effect.mapError(
+        (cause) => new RelayError({ reason: "request-failed", detail: cause.message }),
+      ),
     );
 
   if (response.status < 200 || response.status >= 300) {
@@ -94,7 +96,9 @@ export const streamRelayEvents = Effect.fn("coil.updateDelivery.stream")(functio
   const response = yield* client
     .get(args.eventsUrl, { headers: { accept: "text/event-stream" } })
     .pipe(
-      Effect.mapError((cause) => new RelayError({ reason: "request-failed", detail: cause.message })),
+      Effect.mapError(
+        (cause) => new RelayError({ reason: "request-failed", detail: cause.message }),
+      ),
     );
 
   if (response.status < 200 || response.status >= 300) {
@@ -120,9 +124,9 @@ export const streamRelayEvents = Effect.fn("coil.updateDelivery.stream")(functio
           // schema-blind so a newer release can add fields, and an older app has to keep running.
           const manifest = yield* decodeUpdateManifestJson(event.data).pipe(
             Effect.catch((cause) =>
-              Effect.logWarning(`coil: ignoring an undecodable update frame: ${String(cause)}`).pipe(
-                Effect.as(undefined),
-              ),
+              Effect.logWarning(
+                `coil: ignoring an undecodable update frame: ${String(cause)}`,
+              ).pipe(Effect.as(undefined)),
             ),
           );
           if (manifest !== undefined) yield* args.onManifest(manifest);
