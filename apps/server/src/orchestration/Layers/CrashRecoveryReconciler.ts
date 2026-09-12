@@ -35,16 +35,25 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 
 /**
  * A thread carries a leftover in-flight turn when the read model still reports
- * an active turn — a running latest turn, a live (`running`/`starting`) session,
- * or a non-null `activeTurnId`. At fresh boot none of these can reflect a truly
- * live turn, so each is a crash leftover to settle.
+ * an active turn — a running latest turn, a running session, or a non-null
+ * `activeTurnId`. At fresh boot none of these can reflect a truly live turn, so
+ * each is a crash leftover to settle.
+ *
+ * A `starting` session is the one exception. Nothing survives a restart in that
+ * state except what upstream's restart continuation (#9167, #9803, #10421) has
+ * just prepared, one startup phase earlier: it re-marks the session `starting`
+ * with no active turn and parks a `sendTurn` that resumes the turn the projection
+ * still shows as running. Settling that thread here would flip its turn to
+ * `interrupted`, drop any queued turn start, and race the resume about to land.
+ * Upstream's own pass settles every other `starting` session to `error` before
+ * this runs, so by now `starting` means "continuation in flight", not "crashed".
  */
 export function threadHasLeftoverInFlightTurn(thread: OrchestrationThread): boolean {
   const status = thread.session?.status;
+  if (status === "starting") return false;
   return (
     thread.latestTurn?.state === "running" ||
     status === "running" ||
-    status === "starting" ||
     (thread.session?.activeTurnId ?? null) !== null
   );
 }

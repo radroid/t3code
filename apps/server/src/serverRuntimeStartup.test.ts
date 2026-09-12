@@ -570,6 +570,7 @@ const driveStartupMake = (dispatchFails: boolean) =>
           Effect.provideService(Keybindings.Keybindings, { start: Effect.void } as never),
           Effect.provideService(ServerSettings.ServerSettingsService, {
             start: Effect.void,
+            getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
           } as never),
           Effect.provideService(OrchestrationReactor.OrchestrationReactor, {
             start: () =>
@@ -586,7 +587,11 @@ const driveStartupMake = (dispatchFails: boolean) =>
           } as never),
           Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
             getSnapshot: () => Effect.succeed(crashedReadModel()),
+            // Upstream's `projects.auto-pull` phase reads the shell snapshot after reactors
+            // start; no projects means it never touches git.
+            getShellSnapshot: () => Effect.succeed({ ...crashedReadModel(), projects: [] }),
           } as never),
+          Effect.provideService(GitVcsDriver.GitVcsDriver, {} as never),
           Effect.provideService(
             OrchestrationEngine.OrchestrationEngineService,
             engineDouble as never,
