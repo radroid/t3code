@@ -237,11 +237,15 @@ import {
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { resolveComposerSendLabel } from "~/outbox/composerSendLabel.logic";
-import { enqueueThreadOutboxMessage, useThreadOutboxQueue } from "~/outbox/threadOutbox";
+import {
+  enqueueThreadOutboxMessage,
+  newCommandId,
+  useThreadOutboxQueue,
+} from "~/outbox/threadOutbox";
 import { canSteerActiveThread, steerProviderBinding } from "~/outbox/composerSteering.logic";
 import { logComposerDispatch } from "~/outbox/outboxDiagnostics";
 import { ThreadOutboxQueueList } from "./chat/ThreadOutboxQueueList";
@@ -6743,9 +6747,10 @@ export default function ChatView(props: ChatViewProps) {
   ]);
 
   // Enqueue the current composer content into the thread outbox. Text-only:
-  // terminal/element/preview/review contexts are folded into the prompt like a
-  // normal send, but image attachments cannot survive a reload through
-  // localStorage and are not carried on a queued message.
+  // terminal/preview/review contexts ride along as the same structured
+  // `context` records a normal send carries, but image and file attachments
+  // cannot survive a reload through localStorage and are not carried on a
+  // queued message.
   const handleQueueComposerSubmission = useCallback(async () => {
     if (!activeThread || !activeProject) return;
     const sendCtx = composerRef.current?.getSendContext();
@@ -6754,7 +6759,6 @@ export default function ChatView(props: ChatViewProps) {
       images: composerImages,
       files: composerFiles,
       terminalContexts: composerTerminalContexts,
-      elementContexts: composerElementContexts,
       previewAnnotations: composerPreviewAnnotations,
       reviewComments: composerReviewComments,
       selectedProvider: ctxSelectedProvider,
@@ -6780,32 +6784,35 @@ export default function ChatView(props: ChatViewProps) {
       prompt: promptForSend,
       imageCount: queuedAttachmentCount,
       terminalContexts: composerTerminalContexts,
-      elementContextCount:
-        composerElementContexts.length +
-        composerPreviewAnnotations.length +
-        composerReviewComments.length,
+      elementContextCount: composerPreviewAnnotations.length + composerReviewComments.length,
     });
     if (!hasSendableContent) return;
 
-    const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, sendableTerminalContexts),
-      composerElementContexts,
-    );
-    const messageTextWithPreviewAnnotations = composerPreviewAnnotations.reduce(
-      (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
-      messageTextWithContexts,
-    );
-    const messageTextForSend = appendReviewCommentsToPrompt(
-      messageTextWithPreviewAnnotations,
-      composerReviewComments,
-    );
+    // Mirrors upstream's `onSend`: expired terminal excerpts are not sent, and
+    // their inline chips leave the text with them. Everything else stays in the
+    // text as inline references, resolved by the `context` records below.
+    const messageTextForSend = composerTerminalContexts
+      .filter((context) => !sendableTerminalContexts.includes(context))
+      .reduce(
+        (text, context) =>
+          removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
+        promptForSend,
+      )
+      .trim();
+    // No attachments: an annotation's screenshot travels as an image attachment,
+    // and the queue carries none, so its record is built without one.
+    const queuedContext = buildMessageContext({
+      terminalContexts: sendableTerminalContexts,
+      reviewComments: composerReviewComments,
+      previewAnnotations: composerPreviewAnnotations,
+    });
     // The queue is text-only. If the composer holds nothing but attachments (no
-    // text and no non-attachment context survived), there is nothing we can
-    // faithfully queue: enqueuing the attachment-only bootstrap prompt would
-    // deliver a message claiming attachments while carrying none, and clearing
-    // the draft would destroy them. Warn and leave the composer intact so the
-    // user can add text, or wait for the thread to idle and send.
-    if (messageTextForSend.trim().length === 0) {
+    // text and no context survived), there is nothing we can faithfully queue:
+    // enqueuing the attachment-only bootstrap prompt would deliver a message
+    // claiming attachments while carrying none, and clearing the draft would
+    // destroy them. Warn and leave the composer intact so the user can add
+    // text, or wait for the thread to idle and send.
+    if (messageTextForSend.length === 0 && queuedContext === undefined) {
       if (queuedAttachmentCount > 0) {
         toastManager.add(
           stackedThreadToast({
@@ -6824,7 +6831,7 @@ export default function ChatView(props: ChatViewProps) {
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend,
+      text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
 
     logComposerDispatchNow();
@@ -6835,6 +6842,7 @@ export default function ChatView(props: ChatViewProps) {
         messageId: newMessageId(),
         commandId: newCommandId(),
         text: queuedText,
+        ...(queuedContext ? { context: queuedContext } : {}),
         modelSelection: ctxSelectedModelSelection,
         runtimeMode,
         interactionMode,

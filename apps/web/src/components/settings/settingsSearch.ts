@@ -714,6 +714,8 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
   "/settings/connections": "connections",
+  // coil: loops are per-environment settings, like the general panel.
+  "/settings/loops": null,
   "/settings/archived": "project-defaults",
 };
 
