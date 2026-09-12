@@ -40,7 +40,7 @@ import {
   type MacSignatureVerdict,
 } from "./mac-signature.ts";
 
-export class MacSignatureVerificationError extends Schema.TaggedErrorClass<MacSignatureVerificationError>()(
+export class MacSignatureVerificationError extends Schema.TaggedError<MacSignatureVerificationError>()(
   "MacSignatureVerificationError",
   {
     artifactPath: Schema.String,
@@ -59,7 +59,7 @@ export class MacSignatureVerificationError extends Schema.TaggedErrorClass<MacSi
   }
 }
 
-export class MacArtifactNotFoundError extends Schema.TaggedErrorClass<MacArtifactNotFoundError>()(
+export class MacArtifactNotFoundError extends Schema.TaggedError<MacArtifactNotFoundError>()(
   "MacArtifactNotFoundError",
   { artifactPath: Schema.String },
 ) {
@@ -68,7 +68,7 @@ export class MacArtifactNotFoundError extends Schema.TaggedErrorClass<MacArtifac
   }
 }
 
-export class MacAppNotFoundInDmgError extends Schema.TaggedErrorClass<MacAppNotFoundInDmgError>()(
+export class MacAppNotFoundInDmgError extends Schema.TaggedError<MacAppNotFoundInDmgError>()(
   "MacAppNotFoundInDmgError",
   { dmgPath: Schema.String, mountPoint: Schema.String },
 ) {

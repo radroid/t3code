@@ -44,6 +44,8 @@ const episode = loadFixture("macos-hard-block-a");
  */
 const rateLimitEvents: ReadonlyArray<ProviderRuntimeEvent> = rebaseRateLimitEvents(
   episode.canonical
+    // The capture predates upstream #9507; `rebaseRateLimitEvents` converts its recorded
+    // `account.rate-limits.updated` rows into the `runtime.warning` the reactor taps now.
     .filter((entry) => entry.type === "account.rate-limits.updated")
     .map((entry) => entry.event as ProviderRuntimeEvent),
   Date.parse(episode.provenance.firstObservedAt),

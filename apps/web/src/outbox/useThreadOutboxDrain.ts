@@ -2,12 +2,19 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import { CommandId, type EnvironmentId, type MessageId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type EnvironmentId,
+  type MessageId,
+  type OrchestrationMessageContext,
+} from "@t3tools/contracts";
+import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentServerConfigsAtom } from "../state/server";
 import { useThreadShells } from "../state/entities";
 import { useEnvironments } from "../state/environments";
 import { threadEnvironment } from "../state/threads";
@@ -155,6 +162,18 @@ export function useThreadOutboxDrain(): void {
     return { reportFailure, completeDelivery };
   }, []);
 
+  // Mirrors upstream's immediate-send path and the mobile outbox: servers from
+  // before inline context drop the records and forward the links as literal
+  // text, so their turns carry the payload the legacy way.
+  const serializeQueuedMessageForServer = (
+    text: string,
+    context: OrchestrationMessageContext | undefined,
+    supportsInlineMessageContext: boolean,
+  ): { text: string; context?: OrchestrationMessageContext } =>
+    supportsInlineMessageContext
+      ? { text, ...(context ? { context } : {}) }
+      : { text: serializeLegacyContextMessage({ text, records: context?.records ?? [] }) };
+
   const sendQueuedMessage = useCallback(
     async (queuedMessage: QueuedThreadMessage, thread: EnvironmentThreadShell) => {
       const settings = resolveQueuedThreadSettings(queuedMessage, thread);
@@ -233,7 +252,14 @@ export function useThreadOutboxDrain(): void {
           message: {
             messageId: queuedMessage.messageId,
             role: "user",
-            text: queuedMessage.text,
+            ...serializeQueuedMessageForServer(
+              queuedMessage.text,
+              queuedMessage.context,
+              // Read at dispatch, not enqueue: the message may have waited across
+              // a server upgrade or a reconnect to a different environment build.
+              appAtomRegistry.get(environmentServerConfigsAtom).get(queuedMessage.environmentId)
+                ?.environment.capabilities.inlineMessageContext === true,
+            ),
             attachments: [],
           },
           modelSelection: settings.modelSelection,

@@ -711,8 +711,9 @@ only arms when _its_ per-thread `enabled` is true — so on a thread where the u
 off, a rate limit produces no pending, guard 9 passes, and the loop nudges straight into a live
 5-hour limit.
 
-So the loop runs a **second scoped fiber** tapping `providerService.streamEvents` for
-`account.rate-limits.updated`, reusing the fork's own `classifyRateLimit` (imported, not
+So the loop runs a **second scoped fiber** tapping `providerService.streamEvents` for the Claude
+`runtime.warning` that carries the raw rate-limit info as `detail` (upstream #9507 retired the
+status on `account.rate-limits.updated`), reusing the fork's own `classifyRateLimit` (imported, not
 re-mirrored), and on a rejected verdict writes `rateLimitedUntilMs` to the **durable** store —
 durable, not in-memory, so it survives the restart that would otherwise reopen the hole.
 `streamEvents` is PubSub-backed, so a second subscriber does not steal auto-resume's events.
