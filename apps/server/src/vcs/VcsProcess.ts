@@ -57,6 +57,14 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
   const normalized = stderr.toLowerCase();
 
   if (
+    // Azure DevOps phrases authorization failures as "is not authorized" and stamps them with
+    // TF400813 / VS30063 / "Client authentication required", none of which contain the bare
+    // "unauthorized" substring matched below, so they would otherwise fall through to
+    // "command-failed" and lose the actionable `az devops login` hint.
+    normalized.includes("is not authorized") ||
+    normalized.includes("tf400813") ||
+    normalized.includes("vs30063") ||
+    normalized.includes("client authentication required") ||
     normalized.includes("authentication failed") ||
     normalized.includes("not logged in") ||
     normalized.includes("gh auth login") ||

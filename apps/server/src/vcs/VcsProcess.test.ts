@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   VcsProcessExitError,
@@ -313,5 +314,105 @@ describe("VcsProcess.run", () => {
 
       expect(error).toBeInstanceOf(VcsProcessTimeoutError);
     }).pipe(provideLive),
+  );
+});
+
+// Issue #122: Azure DevOps reports authorization failures with vocabulary the classifier did not
+// know ("is not authorized", TF400813, VS30063), so every one of them fell through to
+// "command-failed" and the actionable `az devops login` hint was unreachable.
+describe("VcsProcess.run non-zero exit classification", () => {
+  const classifyStderr = (command: string, stderr: string) =>
+    VcsProcess.make.pipe(
+      Effect.provideService(
+        ProcessRunner.ProcessRunner,
+        ProcessRunner.ProcessRunner.of({
+          run: () =>
+            Effect.succeed({
+              stdout: "",
+              stderr,
+              code: ChildProcessSpawner.ExitCode(1),
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            }),
+        }),
+      ),
+      Effect.flatMap((service) =>
+        service.run({ ...baseInput, command, operation: "test.classification" }),
+      ),
+      Effect.flip,
+    );
+
+  const cases = [
+    {
+      label: "Azure DevOps TF400813 authorization failure",
+      command: "az",
+      stderr:
+        "ERROR: TF400813: The user '11111111-2222-3333-4444-555555555555' is not authorized to access this resource.",
+      failureKind: "authentication",
+    },
+    {
+      label: "Azure DevOps VS30063 authorization failure",
+      command: "az",
+      stderr: "ERROR: VS30063: You are not authorized to access https://dev.azure.com.",
+      failureKind: "authentication",
+    },
+    {
+      label: "Azure DevOps anonymous-access failure",
+      command: "az",
+      stderr:
+        "ERROR: TF400813: Resource not available for anonymous access. Client authentication required.",
+      failureKind: "authentication",
+    },
+    {
+      label: "GitHub CLI logged-out control",
+      command: "gh",
+      stderr: "error: not logged in to any GitHub hosts",
+      failureKind: "authentication",
+    },
+    {
+      label: "Azure DevOps missing pull request still resolves to not-found",
+      command: "az",
+      stderr: "ERROR: The pull request was not found.",
+      failureKind: "not-found",
+    },
+    {
+      label: "ordinary git failure is not mistaken for an auth failure",
+      command: "git",
+      stderr: "error: failed to push some refs to 'origin'",
+      failureKind: "command-failed",
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    it.effect(`classifies ${testCase.label} as ${testCase.failureKind}`, () =>
+      Effect.gen(function* () {
+        const error = yield* classifyStderr(testCase.command, testCase.stderr);
+
+        expect(error).toBeInstanceOf(VcsProcessExitError);
+        expect(error).toMatchObject({
+          command: testCase.command,
+          failureKind: testCase.failureKind,
+        });
+      }),
+    );
+  }
+
+  it.effect("keeps Azure DevOps stderr out of the classified error", () =>
+    Effect.gen(function* () {
+      const stderr =
+        "ERROR: TF400813: The user 'contractor@example.com' is not authorized to access this resource.";
+      const error = yield* classifyStderr("az", stderr);
+
+      expect(error).toMatchObject({
+        detail: "Authentication failed.",
+        failureKind: "authentication",
+        stderrLength: stderr.length,
+      });
+      expect(error.message).not.toContain(stderr);
+      expect(error.message).not.toContain("contractor@example.com");
+    }),
   );
 });
