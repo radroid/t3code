@@ -34,9 +34,12 @@ import { AutoResumeStore, makeAutoResumeStore } from "./state.ts";
 // Defaults: safetyMargin 60s, pollMs 30s. With resetsAt=100s the resume is due at
 // 100_000 + 60_000 = 160_000ms, so advancing past that (with 30s wake ticks) fires it.
 
-// A one-Claude-thread read model. Cast because building every branded field is noise for
-// this test — the reactor only reads the fields set here.
+// A Claude-thread read model, one row per id (one row unless a scenario asks for more).
+// Cast because building every branded field is noise for this test — the reactor only reads
+// the fields set here.
 const readModel = (o: {
+  /** Ids to build rows for, in order. Every row is otherwise identical. */
+  threadIds?: ReadonlyArray<string>;
   messages?: Array<{ id: string; role: string }>;
   status?: string;
   latestTurnId?: string;
@@ -50,33 +53,35 @@ const readModel = (o: {
     snapshotSequence: 1,
     updatedAt: "2026-01-01T00:00:00.000Z",
     projects: [{ id: "project-1", workspaceRoot: "/tmp/coil-nonexistent-workspace" }],
-    threads: [
-      {
-        id: "thread-1",
-        projectId: "project-1",
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        worktreePath: null,
-        deletedAt: null,
-        archivedAt: null,
-        settledOverride: null,
-        messages: o.messages ?? [{ id: "u1", role: "user" }],
-        activities: [],
-        latestTurn:
-          o.latestTurn !== undefined
-            ? o.latestTurn
-            : { turnId: o.latestTurnId ?? "turn-1", state: "completed" },
-        session: { status: o.status ?? "ready", providerName: "claudeAgent" },
-      },
-    ],
+    threads: (o.threadIds ?? ["thread-1"]).map((id) => ({
+      id,
+      projectId: "project-1",
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      worktreePath: null,
+      deletedAt: null,
+      archivedAt: null,
+      settledOverride: null,
+      messages: o.messages ?? [{ id: "u1", role: "user" }],
+      activities: [],
+      latestTurn:
+        o.latestTurn !== undefined
+          ? o.latestTurn
+          : { turnId: o.latestTurnId ?? "turn-1", state: "completed" },
+      session: { status: o.status ?? "ready", providerName: "claudeAgent" },
+    })),
   }) as unknown as OrchestrationReadModel;
 
-const rejectedEvent = (resetsAtSeconds: number): ProviderRuntimeEvent =>
+const rejectedEvent = (
+  resetsAtSeconds: number,
+  threadId = "thread-1",
+  eventId = "evt-1",
+): ProviderRuntimeEvent =>
   ({
     type: "account.rate-limits.updated",
-    eventId: "evt-1",
+    eventId,
     provider: "claudeAgent",
-    threadId: "thread-1",
+    threadId,
     createdAt: "2026-01-01T00:00:00.000Z",
     payload: {
       rateLimits: {
@@ -118,9 +123,19 @@ const harness = (initialModel: OrchestrationReadModel, events: ProviderRuntimeEv
     } as unknown as typeof OrchestrationEngineService.Service);
 
     const snapshotCalls = yield* Ref.make(0);
+    // One-shot: the NEXT snapshot read fails and the flag clears itself. `getSnapshot` has a
+    // typed `ProjectionRepositoryError` channel in production; the shape of the error does
+    // not matter here, only that the read fails where the reactor expects it can.
+    const failNextSnapshot = yield* Ref.make(false);
     const SnapshotStub = Layer.succeed(ProjectionSnapshotQuery, {
       getSnapshot: () =>
-        Ref.update(snapshotCalls, (n) => n + 1).pipe(Effect.andThen(Ref.get(modelRef))),
+        Effect.gen(function* () {
+          yield* Ref.update(snapshotCalls, (n) => n + 1);
+          if (yield* Ref.getAndSet(failNextSnapshot, false)) {
+            return yield* Effect.fail(new Error("simulated snapshot read failure"));
+          }
+          return yield* Ref.get(modelRef);
+        }),
     } as unknown as typeof ProjectionSnapshotQuery.Service);
 
     const ProviderStub = Layer.succeed(ProviderService, {
@@ -158,7 +173,7 @@ const harness = (initialModel: OrchestrationReadModel, events: ProviderRuntimeEv
       // it, so the reactor's emitter resolves to a no-op there. See `receipts.ts`.
       AutoResumeReactorReceiptsLive,
     );
-    return { dispatched, modelRef, deps, store, snapshotCalls, failTurnStart };
+    return { dispatched, modelRef, deps, store, snapshotCalls, failTurnStart, failNextSnapshot };
   });
 
 const types = (commands: ReadonlyArray<OrchestrationCommand>) => commands.map((c) => c.type);
@@ -194,6 +209,16 @@ const scheduled =
 
 /** A resume attempt is over. Published after the dispatch, which may itself have failed. */
 const fired: ReceiptMatcher = (receipt) => receipt.type === "resume.fired";
+
+const firedFor =
+  (threadId: string): ReceiptMatcher =>
+  (receipt) =>
+    receipt.type === "resume.fired" && receipt.threadId === threadId;
+
+const scheduledFor =
+  (threadId: string): ReceiptMatcher =>
+  (receipt) =>
+    receipt.type === "resume.scheduled" && receipt.threadId === threadId;
 
 const cancelledFor =
   (reason: string): ReceiptMatcher =>
@@ -635,6 +660,63 @@ describe("AutoResumeReactor (integration)", () => {
           yield* store.countFiredSince("thread-1", 0),
           0,
           "a cancellation must not burn one of the 24h attempts",
+        );
+      }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),
+  );
+
+  // `fireOne` reads a fresh snapshot per arm and `getSnapshot` has a typed
+  // `ProjectionRepositoryError` channel, so one arm failing mid-pass is an expected event,
+  // not a defect. Two things must survive it: the rest of the batch, and the end-of-pass
+  // receipt — a pass that dies before `tick.completed` leaves anything awaiting that receipt
+  // waiting for one that will never come.
+  it.effect("one failed fire neither aborts the batch nor suppresses the completed pass", () =>
+    Effect.gen(function* () {
+      const { dispatched, deps, store, failNextSnapshot } = yield* harness(
+        readModel({ threadIds: ["thread-1", "thread-2"] }),
+        [rejectedEvent(100, "thread-1"), rejectedEvent(100, "thread-2", "evt-2")],
+      );
+
+      yield* Effect.gen(function* () {
+        yield* untilReceipt(scheduledFor("thread-1"));
+        yield* untilReceipt(scheduledFor("thread-2"));
+        // Both due at 160_000, and in this order: the pass walks `listPending`, so the
+        // failure below lands on thread-1 and thread-2 is the rest of the batch.
+        assert.deepStrictEqual(
+          (yield* store.listPending).map((p) => p.threadId),
+          ["thread-1", "thread-2"],
+        );
+
+        // The next snapshot read — the first `fireOne` of the coming pass — fails.
+        yield* Ref.set(failNextSnapshot, true);
+
+        // Both assertions at once: thread-2 fired despite thread-1 failing, and the pass
+        // reached `tick.completed` at all (without it `advanceUntilReceipt` could not return,
+        // because it drains to the tick receipt on every step).
+        yield* advanceUntilReceipt(firedFor("thread-2"), "the rest of the batch to fire anyway");
+
+        // Existing behaviour, pinned rather than changed: the failed fire reserved nothing and
+        // cleared nothing, so the arm is untouched and the next pass tries it again.
+        assert.deepStrictEqual(
+          (yield* store.listPending).map((p) => p.threadId),
+          ["thread-1"],
+          "a failed fire must leave the arm alone, not drop it",
+        );
+        assert.strictEqual(
+          yield* store.countFiredSince("thread-1", 0),
+          0,
+          "a failed fire must not burn one of the 24h attempts",
+        );
+
+        yield* advanceUntilReceipt(firedFor("thread-1"), "the failed arm to be retried");
+
+        const turnStarts = (yield* Ref.get(dispatched)).filter(
+          (c) => c.type === "thread.turn.start",
+        );
+        assert.deepStrictEqual(
+          turnStarts.map((c) => c.threadId),
+          ["thread-2", "thread-1"],
+          "both threads resume: the healthy one first, the failed one on the next pass",
         );
       }).pipe(Effect.provide(AutoResumeReactorLive.pipe(Layer.provideMerge(deps))));
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer()))),

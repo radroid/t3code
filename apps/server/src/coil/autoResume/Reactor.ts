@@ -326,7 +326,24 @@ const makeSupervisor = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
     const pending = yield* store.listPending;
     const due = pending.filter((p) => p.resumeAtMs <= nowMs);
-    yield* Effect.forEach(due, (p) => fireOne(p, nowMs), { discard: true });
+    yield* Effect.forEach(
+      due,
+      (p) =>
+        fireOne(p, nowMs).pipe(
+          // Per arm, so one bad record cannot abort the rest of the batch — and cannot skip
+          // the end-of-pass receipt below. `fireOne` reads a fresh snapshot per item and
+          // `getSnapshot` has a typed `ProjectionRepositoryError` channel, so this is an
+          // expected failure, not just a defect. The arm is left as it was: nothing was
+          // reserved and nothing was cleared, so the next pass tries it again.
+          Effect.catchCause((cause) =>
+            Effect.logWarning("coil auto-resume: fire failed", {
+              threadId: p.threadId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        ),
+      { discard: true },
+    );
     // The end-of-pass receipt, published on the empty path too: it is what makes "advance one
     // poll and let the reactor finish" an exact await instead of a budget of scheduler turns.
     // Assembled only when someone is listening — this runs every poll of every install.
