@@ -223,9 +223,13 @@ node scripts/coil/desktop-bundle-reachability.mjs --stage /path/to/t3code-deskto
 the packed artifact and fails when anything the packaged bundles import is not loadable from it. It is
 _stricter_ than the analyzer in the one way that matters: it blanks comments first, because
 `@noble/hashes`'s bundled JSDoc contains `import { hmac } from '@noble/hashes/hmac'` inside an
-`@example` block, and failing a good release over a comment is worse than useless. It also merges
-`app.asar` with `app.asar.unpacked/`, without which every Windows release would fail — that platform
-unpacks all of `node_modules`.
+`@example` block, and failing a good release over a comment is worse than useless. The blanking has to
+know regex literals for that to hold: after the 2026-09-12 sync, Effect's bash completions put
+`s.replace(/'/g, …)` ahead of that JSDoc, the scanner read the `'` as an unterminated string, and the
+same false failure came back (release run 34734448410). The import patterns also ignore member calls,
+because upstream's macOS helpers embed JXA that does `ObjC.import("AppKit")` and a framework name is
+not a package. It also merges `app.asar` with `app.asar.unpacked/`, without which every Windows
+release would fail — that platform unpacks all of `node_modules`.
 
 Two bugs found by testing the gate rather than trusting it, both recorded in its header:
 

@@ -145,6 +145,30 @@ describe("collectSpecifiers", () => {
     assert.ok(imports.has("pkg-a"));
     assert.isFalse(mentions.has("pkg-a"));
   });
+
+  /*
+   * Upstream's macOS helpers (snapShot/ActiveWindow.ts, permissions/MacSettingsWindow.ts) embed JXA
+   * scripts as strings, and JXA imports Objective-C frameworks with `ObjC.import("AppKit")`. Release
+   * run 34734448410 reported AppKit, CoreGraphics and unistd as packages missing from the asar.
+   */
+  it("does not read a member call such as ObjC.import as a package import", () => {
+    const { imports, mentions } = collectSpecifiers(
+      [
+        'const script = `ObjC.import("CoreGraphics"); ObjC.import("AppKit"); ObjC.import("unistd");`;',
+        "const loader = { require(name) {} };",
+        'loader.require("not-a-package");',
+        '$import("nope");',
+        'const real = require("effect");',
+        'const lazy = await import("pkg-c");',
+      ].join("\n"),
+    );
+    for (const name of ["CoreGraphics", "AppKit", "unistd", "not-a-package", "nope"]) {
+      assert.isFalse(imports.has(name), `${name} is not an import edge`);
+    }
+    assert.ok(mentions.has("AppKit"), "it stays a mention, which is the safe direction");
+    assert.ok(imports.has("effect"));
+    assert.ok(imports.has("pkg-c"));
+  });
 });
 
 describe("blankComments", () => {
@@ -190,6 +214,32 @@ describe("blankComments", () => {
     assert.ok(blanked.includes("/* not a comment */"));
     assert.ok(blanked.includes("// also not a comment"));
     assert.ok(collectSpecifiers(blanked).imports.has("effect"));
+  });
+
+  /*
+   * Effect's bash completion generator does `s.replace(/'/g, "'\\''")`. A scanner that does not know
+   * regex literals reads that `'` as opening a string, never closes it, and leaves every later comment
+   * standing — which resurrected the @noble/hashes @example failure in release run 34734448410.
+   */
+  it("does not let a quote inside a regex literal swallow the comments after it", () => {
+    const source = [
+      "const escapeForBash = (s) => s.replace(/'/g, \"'\\\\''\");",
+      "const sanitize = (s) => s.replace(/[^a-zA-Z0-9_\"']/g, '_');",
+      "const ratio = total / count / 2;",
+      "const half = (total) / 2;",
+      "/**",
+      "* @example",
+      "* import { hmac } from '@noble/hashes/hmac';",
+      "*/",
+      'const real = require("effect");',
+    ].join("\n");
+    const blanked = blankComments(source);
+    assert.isFalse(blanked.includes("@noble/hashes"), "the JSDoc after the regex must be blanked");
+    assert.ok(blanked.includes("s.replace(/'/g"), "the regex itself is left in place");
+    assert.ok(blanked.includes("total / count / 2"), "division is not mistaken for a regex");
+    const { imports } = collectSpecifiers(blanked);
+    assert.isFalse(imports.has("@noble/hashes"));
+    assert.ok(imports.has("effect"));
   });
 
   it("handles an escaped quote without falling out of the string", () => {
