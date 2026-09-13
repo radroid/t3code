@@ -35,9 +35,14 @@ import {
   stagedBundlePath,
 } from "./installTarget.ts";
 import type { UpdateAsset, UpdateManifest } from "./manifest.ts";
-import { checkDiskSpace, partialDownloadName, selectStagingSweep, verifyChecksum } from "./staging.ts";
+import {
+  checkDiskSpace,
+  partialDownloadName,
+  selectStagingSweep,
+  verifyChecksum,
+} from "./staging.ts";
 
-export class StagingError extends Schema.TaggedErrorClass<StagingError>()("CoilStagingError", {
+export class StagingError extends Schema.TaggedError<StagingError>()("CoilStagingError", {
   step: Schema.Literals([
     "disk-space",
     "download",
@@ -91,7 +96,9 @@ const runCommand = Effect.fn("coil.updateDelivery.run")(function* (
  * staging run; treating "there was nothing to remove" as an error would fail every clean install.
  */
 const runOptionalXattr = (command: Command, step: StagingError["step"]) =>
-  command.bin === "xattr" ? runCommand(command, step).pipe(Effect.ignore) : runCommand(command, step);
+  command.bin === "xattr"
+    ? runCommand(command, step).pipe(Effect.ignore)
+    : runCommand(command, step);
 
 /**
  * Free bytes, parsed out of `df -Pk`.
@@ -216,7 +223,9 @@ const sweepStagingDir = Effect.fn("coil.updateDelivery.sweep")(function* (args: 
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
 
-  const names = yield* fileSystem.readDirectory(args.stagingDir).pipe(Effect.orElseSucceed(() => []));
+  const names = yield* fileSystem
+    .readDirectory(args.stagingDir)
+    .pipe(Effect.orElseSucceed(() => []));
   const sweep = selectStagingSweep({
     entries: names.map((name) => ({ name, shortSha: shortShaFromName(name) })),
     targetShortSha: args.keepShortSha,

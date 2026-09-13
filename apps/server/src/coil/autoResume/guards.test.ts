@@ -165,6 +165,7 @@ describe("simple predicates", () => {
       hasPendingApprovals: false,
       hasPendingUserInput: false,
       hasActionableProposedPlan: false,
+      pullRequests: [],
     };
 
     expect(isClaudeThread(shell)).toBe(true);

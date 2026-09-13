@@ -162,26 +162,29 @@ export const projectShell = (workspaceRoot: string): OrchestrationProjectShell =
     updatedAt: msToIso(0),
   }) as unknown as OrchestrationProjectShell;
 
-/** A Claude `account.rate-limits.updated` runtime event. */
+/**
+ * The Claude `runtime.warning` the adapter raises for a rate-limited window, carrying the raw
+ * `SDKRateLimitInfo` as `detail` (upstream #9507 made `account.rate-limits.updated` a
+ * status-less window list, so this is the event the reactor taps). The adapter only raises
+ * it for `rejected`; the other statuses are kept so the tests can prove the tap ignores them.
+ */
 export const rateLimitEvent = (o: {
   readonly status: "allowed" | "allowed_warning" | "rejected";
   readonly resetsAtSeconds?: number;
   readonly threadId?: string;
 }): ProviderRuntimeEvent =>
   ({
-    type: "account.rate-limits.updated",
+    type: "runtime.warning",
     eventId: `evt-rl-${o.status}-${o.resetsAtSeconds ?? 0}`,
     provider: "claudeAgent",
     threadId: o.threadId ?? LOOP_THREAD_ID,
     createdAt: msToIso(0),
     payload: {
-      rateLimits: {
-        type: "rate_limit_event",
-        rate_limit_info: {
-          status: o.status,
-          rateLimitType: "five_hour",
-          ...(o.resetsAtSeconds === undefined ? {} : { resetsAt: o.resetsAtSeconds }),
-        },
+      message: "Claude usage limit reached",
+      detail: {
+        status: o.status,
+        rateLimitType: "five_hour",
+        ...(o.resetsAtSeconds === undefined ? {} : { resetsAt: o.resetsAtSeconds }),
       },
     },
   }) as unknown as ProviderRuntimeEvent;

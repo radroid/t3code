@@ -415,15 +415,27 @@ jobs:
       # Installed unconditionally by upstream for Windows, separate from the signing block — the
       # staged `vp install --prod` still runs native lifecycle scripts (node-pty, sharp,
       # msgpackr-extract) and recent MSVC + node-gyp wants the Spectre-mitigated libs.
+      #
+      # Mirrors upstream release.yml: the component is `VC.Runtimes.x86.x64.Spectre` (upstream
+      # 1665d81bb5 — the old `VC.Tools…` id was a silent no-op), and the installer's exit code is
+      # checked because `build-desktop-artifact.ts` now preflights the Spectre lib directory
+      # (082358f9ef, 4ba39a6f40) and hard-fails when it is missing.
       - name: Install Spectre-mitigated MSVC libs
         if: ${{ matrix.platform == 'win' }}
         shell: pwsh
         run: |
-          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          & $installer modify --installPath $vsPath `
-            --add "Microsoft.VisualStudio.Component.VC.Tools.x86.x64.Spectre" `
-            --quiet --norestart | Out-Null
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $proc = Start-Process -FilePath $setupExe `
+            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
+            "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre", "--quiet", "--norestart" `
+            -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
+            Write-Error "Visual Studio Installer failed with exit code $code"
+            exit $code
+          }
 
       # Issue #47: the desktop build task intermittently dies with STATUS_DLL_INIT_FAILED
       # (0xC0000142) when three vp tasks spawn concurrently. Running it alone is the mitigation,

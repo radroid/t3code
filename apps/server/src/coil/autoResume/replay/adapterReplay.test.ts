@@ -15,27 +15,30 @@ function loadFixture(name: string): Episode {
 }
 
 describe("replayThroughAdapter — captured macOS hard block", () => {
-  it.live("forwards the rate-limit payload through the real adapter intact", () =>
+  it.live("forwards the rejected rate-limit info through the real adapter intact", () =>
     Effect.gen(function* () {
       const episode = loadFixture("macos-hard-block-a");
       const result = yield* replayThroughAdapter(episode);
 
-      const rateLimitEvents = eventsOfType(result, "account.rate-limits.updated");
-      expect(rateLimitEvents.length).toBeGreaterThan(0);
+      // Upstream #9507 turned `account.rate-limits.updated` into a normalised window list
+      // with no `status`; the raw `SDKRateLimitInfo` of a rejected window now rides on the
+      // `runtime.warning` the adapter raises for it. The adapter must not reshape, filter
+      // or summarise that detail: auto-resume's whole detection path reads these fields,
+      // and #118 turned on whether an overage-carrying payload survived the trip.
+      const rateLimitWarnings = eventsOfType(result, "runtime.warning").filter(
+        (event) =>
+          classifyRateLimit((event as { payload: { detail?: unknown } }).payload.detail) !==
+          undefined,
+      );
+      expect(rateLimitWarnings.length).toBeGreaterThan(0);
 
-      // The adapter must not reshape, filter or summarise the payload: auto-resume's whole
-      // detection path reads these fields, and #118 turned on whether an overage-carrying
-      // payload survived the trip.
-      const payload = (rateLimitEvents[0] as { payload: { rateLimits: unknown } }).payload;
-      expect(payload.rateLimits).toMatchObject({
-        type: "rate_limit_event",
-        rate_limit_info: {
-          status: "rejected",
-          overageStatus: "rejected",
-          overageDisabledReason: "org_level_disabled",
-          rateLimitType: "five_hour",
-          isUsingOverage: false,
-        },
+      const payload = (rateLimitWarnings[0] as { payload: { detail: unknown } }).payload;
+      expect(payload.detail).toMatchObject({
+        status: "rejected",
+        overageStatus: "rejected",
+        overageDisabledReason: "org_level_disabled",
+        rateLimitType: "five_hour",
+        isUsingOverage: false,
       });
     }),
   );
@@ -44,17 +47,20 @@ describe("replayThroughAdapter — captured macOS hard block", () => {
     Effect.gen(function* () {
       // The end-to-end claim hypothesis 2 disputes: captured bytes -> real adapter ->
       // real classifier -> `rejected`. Asserting it here means a future SDK field rename
-      // fails this test instead of silently disarming auto-resume in production.
+      // (or upstream moving the info off `runtime.warning`) fails this test instead of
+      // silently disarming auto-resume in production.
       const episode = loadFixture("macos-hard-block-a");
       const result = yield* replayThroughAdapter(episode);
-      const event = eventsOfType(result, "account.rate-limits.updated")[0];
+      const verdicts = eventsOfType(result, "runtime.warning")
+        .map((event) =>
+          classifyRateLimit((event as { payload: { detail?: unknown } }).payload.detail),
+        )
+        .filter((verdict) => verdict !== undefined);
 
-      const verdict = classifyRateLimit(
-        (event as { payload: { rateLimits: unknown } }).payload.rateLimits,
-      );
-      expect(verdict?.rejected).toBe(true);
-      expect(verdict?.rateLimitType).toBe("five_hour");
-      expect(verdict?.resetsAtMs).toBeGreaterThan(0);
+      expect(verdicts.length).toBeGreaterThan(0);
+      expect(verdicts[0]?.rejected).toBe(true);
+      expect(verdicts[0]?.rateLimitType).toBe("five_hour");
+      expect(verdicts[0]?.resetsAtMs).toBeGreaterThan(0);
     }),
   );
 

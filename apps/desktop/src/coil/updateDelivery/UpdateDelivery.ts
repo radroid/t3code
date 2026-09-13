@@ -496,7 +496,7 @@ export const layer = Layer.effect(CoilUpdateDelivery, make);
 // Kept at the bottom and deliberately small: the interesting logic above should not be interleaved
 // with spawn plumbing.
 
-export class CoilInstallCommandError extends Schema.TaggedErrorClass<CoilInstallCommandError>()(
+export class CoilInstallCommandError extends Schema.TaggedError<CoilInstallCommandError>()(
   "CoilInstallCommandError",
   { bin: Schema.String, detail: Schema.String },
 ) {
