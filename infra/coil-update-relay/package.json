@@ -9,7 +9,7 @@
     "deploy:legacy": "pnpm dlx wrangler@4 deploy --config wrangler.legacy.jsonc",
     "dev": "pnpm dlx wrangler@4 dev",
     "test": "vp test run",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "effect": "catalog:"

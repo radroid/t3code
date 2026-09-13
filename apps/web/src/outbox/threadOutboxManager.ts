@@ -20,7 +20,7 @@ import type { ThreadOutboxStorage } from "./threadOutboxStorage";
  * Serialized (FIFO promise chain) mutations with storage write-through,
  * ported from apps/mobile/src/state/thread-outbox-manager.ts.
  */
-export class ThreadOutboxManagerError extends Schema.TaggedErrorClass<ThreadOutboxManagerError>()(
+export class ThreadOutboxManagerError extends Schema.TaggedError<ThreadOutboxManagerError>()(
   "ThreadOutboxManagerError",
   {
     operation: Schema.Literals([

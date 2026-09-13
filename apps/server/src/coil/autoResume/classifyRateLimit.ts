@@ -3,7 +3,7 @@
  *
  * The single place that knows the vendor's rate-limit shape, isolated so it is the one
  * thing to update if the SDK changes. Structured (not string matching): reads the
- * `SDKRateLimitInfo` carried by an `account.rate-limits.updated` runtime event.
+ * `SDKRateLimitInfo` carried as the `detail` of a `runtime.warning` runtime event.
  *
  * Ground truth (@anthropic-ai/claude-agent-sdk):
  *   SDKRateLimitEvent = { type: "rate_limit_event"; rate_limit_info: SDKRateLimitInfo; ... }
@@ -15,9 +15,11 @@
  *     ...
  *   }
  *
- * ClaudeAdapter emits this as `payload.rateLimits = <SDKRateLimitEvent>`
- * (ClaudeAdapter.ts:2906-2915). This function is provider-agnostic in its parsing but is
- * only ever fed Claude payloads by the reactor (which gates on `provider === "claude"`).
+ * ClaudeAdapter forwards the `SDKRateLimitInfo` of a rejected window as the `detail` of a
+ * `runtime.warning` event (upstream #9507; before that the whole `SDKRateLimitEvent` rode on
+ * `account.rate-limits.updated`, which is now a normalised, status-less window list). Both
+ * shapes decode here. This function is provider-agnostic in its parsing but is only ever fed
+ * Claude payloads by the auto-resume reactor (which gates on `provider === "claude"`).
  *
  * @module coil/autoResume/classifyRateLimit
  */

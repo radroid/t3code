@@ -57,22 +57,20 @@ import {
 /** The rejection shape the incident carried, verbatim from the provider log. */
 const rejection = (resetsAtSeconds: number): ProviderRuntimeEvent =>
   ({
-    type: "account.rate-limits.updated",
+    type: "runtime.warning",
     eventId: "evt-five-hour-rejected",
     provider: "claudeAgent",
     threadId: REPLAY_THREAD_ID,
     createdAt: "2026-08-18T19:33:00.698Z",
     payload: {
-      rateLimits: {
-        type: "rate_limit_event",
-        rate_limit_info: {
-          status: "rejected",
-          resetsAt: resetsAtSeconds,
-          rateLimitType: "five_hour",
-          overageStatus: "rejected",
-          overageDisabledReason: "org_level_disabled",
-          isUsingOverage: false,
-        },
+      message: "Claude usage limit reached",
+      detail: {
+        status: "rejected",
+        resetsAt: resetsAtSeconds,
+        rateLimitType: "five_hour",
+        overageStatus: "rejected",
+        overageDisabledReason: "org_level_disabled",
+        isUsingOverage: false,
       },
     },
   }) as unknown as ProviderRuntimeEvent;

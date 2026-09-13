@@ -285,13 +285,28 @@ export function rebaseRateLimitEvents(
   events: ReadonlyArray<ProviderRuntimeEvent>,
   captureStartMs: number,
 ): ReadonlyArray<ProviderRuntimeEvent> {
-  return events.map((event) => {
-    if (event.type !== "account.rate-limits.updated") return event;
-    const payload = (event as unknown as { payload?: { rateLimits?: unknown } }).payload;
-    const rateLimits = payload?.rateLimits;
-    if (typeof rateLimits !== "object" || rateLimits === null) return event;
-    const info = (rateLimits as { rate_limit_info?: unknown }).rate_limit_info;
-    if (typeof info !== "object" || info === null) return event;
+  return events.flatMap((event) => {
+    // Two shapes decode here. Captures taken before upstream #9507 recorded the whole
+    // `SDKRateLimitEvent` on `account.rate-limits.updated`; since then the adapter raises a
+    // `runtime.warning` whose `detail` is the `SDKRateLimitInfo` of a rejected window, and
+    // that is the event the reactor now taps. Older captures are converted on the way in so
+    // the fixture stays verbatim and the reactor is exercised on the shape it reads today.
+    let info: unknown;
+    if (event.type === "runtime.warning") {
+      info = (event as unknown as { payload?: { detail?: unknown } }).payload?.detail;
+    } else if (event.type === "account.rate-limits.updated") {
+      const rateLimits = (event as unknown as { payload?: { rateLimits?: unknown } }).payload
+        ?.rateLimits;
+      info =
+        typeof rateLimits === "object" && rateLimits !== null
+          ? (rateLimits as { rate_limit_info?: unknown }).rate_limit_info
+          : undefined;
+    } else {
+      return [event];
+    }
+    if (typeof info !== "object" || info === null) {
+      return event.type === "runtime.warning" ? [event] : [];
+    }
 
     const shift = (value: unknown): unknown => {
       if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return value;
@@ -307,13 +322,13 @@ export function rebaseRateLimitEvents(
         : {}),
     };
 
-    return {
-      ...event,
-      payload: {
-        ...payload,
-        rateLimits: { ...(rateLimits as Record<string, unknown>), rate_limit_info: rebasedInfo },
-      },
-    } as unknown as ProviderRuntimeEvent;
+    return [
+      {
+        ...event,
+        type: "runtime.warning",
+        payload: { message: "Claude usage limit reached", detail: rebasedInfo },
+      } as unknown as ProviderRuntimeEvent,
+    ];
   });
 }
 

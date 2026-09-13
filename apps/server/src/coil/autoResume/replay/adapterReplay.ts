@@ -231,8 +231,21 @@ export const CALLBACK_DERIVED_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Canonical event types the adapter deliberately stopped deriving from the recorded messages,
+ * each with the upstream change that retired it. Listed here so the drift check below stays a
+ * drift check: a type in this set is a known, reviewed change, not silent decay.
+ *
+ * - `account.rate-limits.updated`: upstream #9507 emits it only when the SDK reports a
+ *   `utilization`, which the capture's rejected window did not carry. The rejection now
+ *   reaches the reactor as the `runtime.warning` asserted in `adapterReplay.test.ts`.
+ */
+export const RETIRED_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "account.rate-limits.updated",
+]);
+
+/**
  * Canonical event types the capture recorded that this replay did not reproduce,
- * excluding the ones no replay could.
+ * excluding the ones no replay could and the ones upstream knowingly retired.
  *
  * A non-empty result means the adapter's behaviour has drifted since the capture: it used
  * to turn these messages into an event and no longer does.
@@ -244,5 +257,6 @@ export function missingRecordedEventTypes(
   const produced = new Set<string>(result.events.map((event) => event.type));
   return [...new Set(episode.canonical.map((entry) => entry.type))]
     .filter((type) => !CALLBACK_DERIVED_EVENT_TYPES.has(type))
+    .filter((type) => !RETIRED_RECORDED_EVENT_TYPES.has(type))
     .filter((type) => !produced.has(type));
 }

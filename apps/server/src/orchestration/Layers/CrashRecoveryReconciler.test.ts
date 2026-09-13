@@ -123,7 +123,7 @@ async function seedThread(system: ReconcilerSystem, projectId: string, threadId:
 async function setSession(
   system: ReconcilerSystem,
   threadId: string,
-  status: "running" | "stopped",
+  status: "running" | "starting" | "stopped",
   activeTurnId: string | null,
   updatedAt: string,
 ) {
@@ -199,6 +199,38 @@ describe("reconcileInterruptedTurnsOnBoot", () => {
       if (turn._tag === "Some") {
         expect(turn.value.state).toBe("interrupted");
         expect(turn.value.completedAt).not.toBeNull();
+      }
+    } finally {
+      await system.dispose();
+    }
+  });
+
+  it("leaves a prepared restart continuation alone (session starting, turn still running)", async () => {
+    // Upstream's `provider-sessions.reconcile` phase runs first and, for a thread opted into
+    // continuing across restarts, re-marks the session `starting` with no active turn while
+    // the projection keeps the turn `running` for the parked resume to adopt. That is not a
+    // crash leftover, and settling it would interrupt the turn the resume is about to continue.
+    const system = await createReconcilerSystem();
+    try {
+      await seedProject(system, "project-1");
+      await seedCrashedThread(system, "project-1", "thread-1", "turn-1");
+      await setSession(system, "thread-1", "starting", null, "2026-01-01T00:00:03.000Z");
+
+      const before = await system.readModel();
+      const prepared = before.threads.find((entry) => entry.id === "thread-1");
+      expect(prepared?.session?.status).toBe("starting");
+      expect(prepared?.latestTurn?.state).toBe("running");
+
+      const result = await system.reconcile();
+      expect(result.reconciledCount).toBe(0);
+
+      const after = await system.readModel();
+      const thread = after.threads.find((entry) => entry.id === "thread-1");
+      expect(thread?.session?.status).toBe("starting");
+      const turn = await system.getTurn("thread-1", "turn-1");
+      expect(turn._tag).toBe("Some");
+      if (turn._tag === "Some") {
+        expect(turn.value.state).toBe("running");
       }
     } finally {
       await system.dispose();
