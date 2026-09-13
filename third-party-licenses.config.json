@@ -445,6 +445,14 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2025 opencode"]
       }
+    },
+    {
+      "name": "http_ece",
+      "sourceUrl": "https://github.com/martinthomson/encrypted-content-encoding",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2015 Martin Thomson"]
+      }
     }
   ]
 }
