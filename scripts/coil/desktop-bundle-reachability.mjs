@@ -67,13 +67,18 @@ const RUNTIME_PROVIDED = new Set(["electron"]);
  * Written against the *shapes* rather than a grammar: bundlers emit all of these forms and
  * minifiers drop whitespace unpredictably. It over-matches — a specifier inside a comment counts —
  * which is the correct direction to be wrong in.
+ *
+ * A member call is not an import, though: upstream's macOS helpers embed JXA scripts as strings and
+ * those call `ObjC.import("AppKit")`, `ObjC.import("CoreGraphics")`, `ObjC.import("unistd")` —
+ * framework names Node could never resolve. Release run 34734448410 failed on exactly those three.
+ * Hence the lookbehind: `import(` and `require(` count only when they are not a property of something.
  */
 const IMPORT_PATTERNS = [
-  /\brequire\(\s*["']([^"'\n]+)["']\s*\)/g,
-  /\brequire\.resolve\(\s*["']([^"'\n]+)["']\s*\)/g,
-  /\bimport\(\s*["']([^"'\n]+)["']\s*\)/g,
+  /(?<![.\w$])require\(\s*["']([^"'\n]+)["']\s*\)/g,
+  /(?<![.\w$])require\.resolve\(\s*["']([^"'\n]+)["']\s*\)/g,
+  /(?<![.\w$])import\(\s*["']([^"'\n]+)["']\s*\)/g,
   /\bfrom\s*["']([^"'\n]+)["']/g,
-  /\bimport\s*["']([^"'\n]+)["']/g,
+  /(?<![.\w$])import\s*["']([^"'\n]+)["']/g,
 ];
 
 /** Any single- or double-quoted string with no newline in it. The `mention` edge source. */
@@ -96,6 +101,85 @@ const DYNAMIC_PATTERNS = [
 const PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/u;
 
 /**
+ * Keywords after which a `/` begins a regex literal rather than a division. After an identifier,
+ * a number, or a closing bracket it divides; after an operator, an opening bracket, or one of these
+ * it cannot.
+ */
+const REGEX_PRECEDING_KEYWORDS = new Set([
+  "return",
+  "typeof",
+  "instanceof",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "case",
+  "do",
+  "else",
+  "yield",
+  "await",
+]);
+
+/**
+ * Whether the `/` at `index` opens a regex literal, judged by the previous significant token.
+ *
+ * @param {string} source
+ * @param {number} index
+ * @returns {boolean}
+ */
+function regexLiteralCanStartAt(source, index) {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/u.test(source[cursor])) cursor -= 1;
+  if (cursor < 0) return true;
+  const previous = source[cursor];
+  if (/[\w$]/u.test(previous)) {
+    let start = cursor;
+    while (start > 0 && /[\w$]/u.test(source[start - 1])) start -= 1;
+    const word = source.slice(start, cursor + 1);
+    if (/^\d/u.test(word)) return false;
+    return REGEX_PRECEDING_KEYWORDS.has(word);
+  }
+  // `)` and `]` end an expression, so a `/` after them divides. Everything else — operators,
+  // punctuation, an opening bracket — can only be followed by an operand.
+  return previous !== ")" && previous !== "]";
+}
+
+/**
+ * Index just past the regex literal (and its flags) that starts at `index`. The body is left in
+ * place; only the scanner's position moves, so a quote inside a character class cannot open a
+ * string.
+ *
+ * @param {string} source
+ * @param {number} index
+ * @returns {number}
+ */
+function skipRegexLiteral(source, index) {
+  let cursor = index + 1;
+  let inClass = false;
+  while (cursor < source.length) {
+    const char = source[cursor];
+    if (char === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (char === "\n") return cursor;
+    if (inClass) {
+      if (char === "]") inClass = false;
+    } else if (char === "[") {
+      inClass = true;
+    } else if (char === "/") {
+      cursor += 1;
+      while (cursor < source.length && /[a-z]/u.test(source[cursor])) cursor += 1;
+      return cursor;
+    }
+    cursor += 1;
+  }
+  return cursor;
+}
+
+/**
  * Blanks out comments, leaving everything else byte-for-byte in place.
  *
  * The reachability closure WANTS to read comments — over-matching there keeps a package in the
@@ -106,6 +190,12 @@ const PACKAGE_NAME_PATTERN = /^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\/)?[A-Za-z0-9][A-Z
  *
  * Replacing comment bytes with spaces rather than deleting them keeps every character offset intact,
  * so a match's index still points at the right place in the original file.
+ *
+ * Regex literals have to be recognised too, or a `'` inside one — Effect's bash completions do
+ * `s.replace(/'/g, "'\\''")` — opens a string that never closes and every comment after it is left
+ * standing, which is how the @noble/hashes @example came back in release run 34734448410. Whether a
+ * `/` starts a regex or divides is decided the way tokenizers do: by what the previous significant
+ * token was.
  *
  * @param {string} source
  * @returns {string}
@@ -134,6 +224,10 @@ export function blankComments(source) {
         out[index] = " ";
         out[index + 1] = " ";
         index += 2;
+        continue;
+      }
+      if (char === "/" && regexLiteralCanStartAt(source, index)) {
+        index = skipRegexLiteral(source, index);
         continue;
       }
       if (char === "'") state = "single";
