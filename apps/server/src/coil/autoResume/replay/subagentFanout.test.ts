@@ -46,22 +46,20 @@ const rejection = (options: {
   readonly eventId: string;
 }): ProviderRuntimeEvent =>
   ({
-    type: "account.rate-limits.updated",
+    type: "runtime.warning",
     eventId: options.eventId,
     provider: "claudeAgent",
     threadId: REPLAY_THREAD_ID,
     createdAt: "2026-01-01T00:00:00.000Z",
     payload: {
-      rateLimits: {
-        type: "rate_limit_event",
-        rate_limit_info: {
-          status: "rejected",
-          rateLimitType: "five_hour",
-          resetsAt: options.resetsAtSeconds,
-          overageStatus: "rejected",
-          overageDisabledReason: "org_level_disabled",
-          isUsingOverage: false,
-        },
+      message: "Claude usage limit reached",
+      detail: {
+        status: "rejected",
+        rateLimitType: "five_hour",
+        resetsAt: options.resetsAtSeconds,
+        overageStatus: "rejected",
+        overageDisabledReason: "org_level_disabled",
+        isUsingOverage: false,
       },
     },
   }) as unknown as ProviderRuntimeEvent;

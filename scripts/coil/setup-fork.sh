@@ -110,14 +110,21 @@ fi
 if [[ "$DISABLE_WORKFLOWS" == 1 ]]; then
   if ! command -v gh >/dev/null; then
     warn "gh not found; skipping workflow disable. Run manually:"
-    echo "    for f in ci.yml deploy-relay.yml issue-labels.yml mobile-eas-preview.yml \\"
-    echo "             mobile-eas-production.yml mobile-showcase-screenshots.yml pr-size.yml \\"
-    echo "             pr-vouch.yml release.yml; do gh workflow disable \"\$f\" -R $FORK_SLUG; done"
+    echo "    for f in ci.yml cursor-hygiene-webhook.yml deploy-relay.yml desktop-macos-preview.yml \\"
+    echo "             issue-labels.yml mobile-eas-preview.yml mobile-eas-production.yml \\"
+    echo "             mobile-fingerprint-check.yml mobile-showcase-screenshots.yml pr-size.yml \\"
+    echo "             pr-vouch.yml publish-aur.yml release.yml thread-transfer-report.yml \\"
+    echo "             web-preview.yml; do gh workflow disable \"\$f\" -R $FORK_SLUG; done"
   else
     info "Disabling inherited upstream workflows on $FORK_SLUG ..."
-    for f in ci.yml deploy-relay.yml issue-labels.yml mobile-eas-preview.yml \
-             mobile-eas-production.yml mobile-showcase-screenshots.yml pr-size.yml \
-             pr-vouch.yml release.yml; do
+    # Every upstream workflow arrives ACTIVE on the fork with each sync, so this list grows
+    # as upstream adds them. cursor-hygiene-webhook.yml (2026-09) would forward the fork's
+    # issue and PR payloads to Cursor the moment its secrets were set.
+    for f in ci.yml cursor-hygiene-webhook.yml deploy-relay.yml desktop-macos-preview.yml \
+             issue-labels.yml mobile-eas-preview.yml mobile-eas-production.yml \
+             mobile-fingerprint-check.yml mobile-showcase-screenshots.yml pr-size.yml \
+             pr-vouch.yml publish-aur.yml release.yml thread-transfer-report.yml \
+             web-preview.yml; do
       gh workflow disable "$f" -R "$FORK_SLUG" 2>/dev/null && ok "disabled $f" || warn "could not disable $f (already disabled or absent)"
     done
     warn "The two coil workflows are intentionally left enabled."

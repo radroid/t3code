@@ -1,10 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { CommandId, type EnvironmentId, type MessageId, type ThreadId } from "@t3tools/contracts";
 import { useMemo } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
+import { randomUUID } from "../lib/utils";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentShell } from "../state/shell";
 import { createThreadOutboxManager } from "./threadOutboxManager";
@@ -25,6 +26,13 @@ export const threadOutboxManager = createThreadOutboxManager({
 export function ensureThreadOutboxLoaded(): Promise<void> {
   return threadOutboxManager.load();
 }
+
+/**
+ * A queued message owns its command id from enqueue time so a retried delivery
+ * is idempotent on the server. Upstream removed its own helper once nothing
+ * else on the web client minted command ids client-side (#9150).
+ */
+export const newCommandId = (): CommandId => CommandId.make(randomUUID());
 
 export function enqueueThreadOutboxMessage(message: QueuedThreadMessage): Promise<void> {
   return threadOutboxManager.enqueue(message);

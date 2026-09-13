@@ -233,8 +233,9 @@ rate-limit recovery. Guard #9 prevents that. But `autoResume`'s scheduler only a
 `record.enabled` is true, so on a thread where the user turned auto-resume _off_, a rate limit produces
 no pending, guard #9 passes, and the loop nudges straight into a live 5-hour limit.
 
-So the loop runs a **second scoped fiber** that taps `providerService.streamEvents` for
-`account.rate-limits.updated`, reuses the fork-owned `classifyRateLimit`
+So the loop runs a **second scoped fiber** that taps `providerService.streamEvents` for the Claude
+`runtime.warning` whose `detail` is the raw rate-limit info (since the 2026-09-12 sync; upstream
+#9507 made `account.rate-limits.updated` a status-less window list), reuses the fork-owned `classifyRateLimit`
 (`apps/server/src/coil/autoResume/classifyRateLimit.ts:56` — imported, not re-mirrored), and on a rejected
 verdict writes `record.rateLimitedUntilMs = verdict.resetAtMs` to the **durable** store. Durable, not
 in-memory, so it survives the restart that would otherwise reopen the hole. `providerService.streamEvents`

@@ -4,9 +4,10 @@
  * Self-starts two scoped fibers at layer construction (no external `.start()`, so the
  * only upstream seam stays the 2 lines in server.ts):
  *
- *   1. Detection: subscribes once to `providerService.streamEvents` and, on a Claude
- *      `account.rate-limits.updated` event with `status:"rejected"`, schedules a resume
- *      at the structured `resetsAt` (+ margin), or on a backoff ladder when absent.
+ *   1. Detection: subscribes once to `providerService.streamEvents` and, on the Claude
+ *      `runtime.warning` whose `detail` is a rate-limit info with `status:"rejected"`,
+ *      schedules a resume at the structured `resetsAt` (+ margin), or on a backoff ladder
+ *      when absent.
  *   2. Wake: sleeps until the earliest armed resume comes due (capped at `pollMs`) and
  *      fires it — re-reading a fresh snapshot to re-check every guard immediately before
  *      dispatch (closing the wake race).
@@ -138,10 +139,15 @@ const makeSupervisor = Effect.gen(function* () {
   // --- detection ------------------------------------------------------------
   const onRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
-      if (event.type !== "account.rate-limits.updated") return;
+      // Upstream #9507 normalises `account.rate-limits.updated` into utilisation windows
+      // with no `status`, and drops the event entirely when the SDK omits `utilization`.
+      // The raw `SDKRateLimitInfo` now travels as the `detail` of the `runtime.warning`
+      // the adapter raises for a rejected window that overage does not cover — which is
+      // exactly the case this tap acts on. `adapterReplay.test.ts` pins that route.
+      if (event.type !== "runtime.warning") return;
       if (event.provider !== CLAUDE_DRIVER_KIND) return;
 
-      const verdict = classifyRateLimit(event.payload.rateLimits);
+      const verdict = classifyRateLimit(event.payload.detail);
       if (!verdict || !verdict.rejected) return;
 
       const threadId = event.threadId;

@@ -56,6 +56,12 @@ function isPhaseRelevantEvent(event: OrchestrationEvent): boolean {
     case "thread.runtime-mode-set":
     case "thread.interaction-mode-set":
     case "thread.proposed-plan-upserted":
+    // Upstream's PullRequestSyncReactor re-polls every linked review each minute and emits a
+    // sync event whenever a check or review field moves; none of that changes whether the
+    // thread needs the user, and each one would otherwise cost a shell fetch.
+    case "thread.pull-request-linked":
+    case "thread.pull-request-unlinked":
+    case "thread.pull-request-synced":
       return false;
     default:
       return true;

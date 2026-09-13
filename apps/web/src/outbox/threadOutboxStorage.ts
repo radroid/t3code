@@ -16,7 +16,7 @@ import {
 
 const THREAD_OUTBOX_KEY_PREFIX = "t3code:thread-outbox:v1:";
 
-export class ThreadOutboxStorageError extends Schema.TaggedErrorClass<ThreadOutboxStorageError>()(
+export class ThreadOutboxStorageError extends Schema.TaggedError<ThreadOutboxStorageError>()(
   "ThreadOutboxStorageError",
   {
     operation: Schema.Literals(["load", "read-message", "write", "remove"]),

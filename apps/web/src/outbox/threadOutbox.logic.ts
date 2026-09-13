@@ -11,6 +11,7 @@ import {
   IsoDateTime,
   MessageId,
   ModelSelection,
+  OrchestrationMessageContext,
   ProviderInteractionMode,
   RuntimeMode,
   ThreadId,
@@ -28,7 +29,8 @@ import * as Schema from "effect/Schema";
  * "pending new-thread task" (offline thread creation) shape is intentionally
  * omitted, so there is no `creation` payload here. Image attachments are also
  * omitted because their blob-backed previews cannot survive a reload through
- * localStorage; queued web messages carry text plus a settings snapshot only.
+ * localStorage; queued web messages carry text, its context records, and a
+ * settings snapshot only.
  */
 
 const THREAD_OUTBOX_SCHEMA_VERSION = 1;
@@ -41,6 +43,13 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   messageId: MessageId,
   commandId: CommandId,
   text: Schema.String,
+  /**
+   * Structured context records (terminal excerpts, review comments, preview
+   * annotations) the text's inline references resolve against — the same
+   * `OrchestrationMessageContext` an immediate send carries. Optional so a
+   * record persisted before contexts were structured still decodes.
+   */
+  context: Schema.optional(OrchestrationMessageContext),
   modelSelection: Schema.optional(ModelSelection),
   runtimeMode: Schema.optional(RuntimeMode),
   interactionMode: Schema.optional(ProviderInteractionMode),
