@@ -9,6 +9,7 @@ import {
   shouldArmAutoRestart,
   shouldAutoRestartNow,
   shouldSendRestart,
+  shouldTickClock,
   type ProgressCandidateThread,
   type UpdateToastInput,
 } from "./updateToast.logic.ts";
@@ -414,6 +415,44 @@ describe("shouldSendRestart", () => {
     // Two windows each render this toast, so a second click can arrive while the first restart is
     // already in flight.
     expect(shouldSendRestart(selectUpdateToastView(input({ status })))).toBe(false);
+  });
+});
+
+describe("the toast's clock", () => {
+  it("keeps ticking on a ready toast with nothing armed", () => {
+    // #127: the age was pinned to renderer mount, so a build offered overnight still read "built
+    // just now" — and since the app is usually launched BEFORE the build exists, the pinned clock
+    // made the age negative, which the skew clamp turns into exactly that string.
+    expect(shouldTickClock(selectUpdateToastView(input()))).toBe(true);
+  });
+
+  it("keeps ticking while an auto-restart is armed", () => {
+    // The ceiling has to be able to fire without a user interaction, or the stand-down waits for a
+    // render that never comes.
+    const view = selectUpdateToastView(
+      input({ autoRestart: { armedAt: ARMED_AT }, now: ARMED_AT + 60_000 }),
+    );
+    expect(view.kind).toBe("armed");
+    expect(shouldTickClock(view)).toBe(true);
+  });
+
+  it("stops once the user dismisses the build", () => {
+    // Main keeps reporting `ready` for a dismissed build. Waking once a minute for a toast nobody
+    // can see is the cost this predicate exists to avoid.
+    const view = selectUpdateToastView(input({ dismissedShortSha: "abc123def456" }));
+    expect(view.kind).toBe("hidden");
+    expect(shouldTickClock(view)).toBe(false);
+  });
+
+  it.each([
+    ["idle", { kind: "idle" as const }],
+    ["staging", { kind: "staging" as const, shortSha: "abc123def456" }],
+    ["restarting", { kind: "restarting" as const }],
+    ["updated", { kind: "updated" as const, shortSha: "abc123def456", version: "0.0.31-coil.7" }],
+    ["failed", { kind: "failed" as const, message: "Install failed." }],
+  ])("does not tick in the %s state", (_label, status) => {
+    // Nothing in these views ages, so a clock is pure wake-ups.
+    expect(shouldTickClock(selectUpdateToastView(input({ status })))).toBe(false);
   });
 });
 

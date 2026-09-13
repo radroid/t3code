@@ -383,6 +383,23 @@ export function shouldArmAutoRestart(view: UpdateToastView): boolean {
 }
 
 /**
+ * Whether the toast's clock should keep ticking.
+ *
+ * Two consumers, one cadence. `ready` renders a build age that has to advance while the toast sits
+ * on screen — pinned to whenever the renderer mounted, it reads "built just now" on a build that
+ * landed eight hours ago, which is worse than showing nothing. `armed` needs a render to notice its
+ * ceiling has passed, or the stand-down waits for a user interaction that may never come. A minute
+ * serves both: it is the finest bucket `formatBuiltAgo` has, and the ceiling has two hours of slack.
+ *
+ * Keyed on the view rather than on the raw status, so the clock stops whenever the toast is off
+ * screen. A dismissed build still reports `ready` from the main process, and waking once a minute
+ * for a toast nobody can see is exactly the cost this predicate exists to avoid.
+ */
+export function shouldTickClock(view: UpdateToastView): boolean {
+  return view.kind === "ready" || view.kind === "armed";
+}
+
+/**
  * The shape this module needs from a thread. Structural on purpose, so the logic stays testable
  * without constructing a full `EnvironmentThreadShell`.
  */
