@@ -141,6 +141,16 @@ describe("incident 2026-08-18: doomed turn destroys the pending resume", () => {
 
         // 19:51:00 — the window has reopened and the resume is due.
         yield* advanceSteps(10);
+        // The clock is where it needs to be; now wait for the verdict rather than assuming
+        // ten quiet spins were enough for it to land (see `settleUntil`).
+        yield* settleUntil(
+          Ref.get(harness.dispatched).pipe(
+            Effect.map((commands) =>
+              appendedActivityKinds(commands).includes("coil.auto-resume.resumed"),
+            ),
+          ),
+          "the reopened window to fire the resume",
+        );
 
         const commands = yield* Ref.get(harness.dispatched);
 
@@ -190,6 +200,16 @@ describe("incident 2026-08-18: doomed turn destroys the pending resume", () => {
           ]),
         );
         yield* advanceSteps(10);
+        // Same rule as above: the cancellation is something that must APPEAR, so wait for it.
+        // A fixed spin looked too early on a loaded runner (PR #143's CI run 34734274701).
+        yield* settleUntil(
+          Ref.get(harness.dispatched).pipe(
+            Effect.map((commands) =>
+              appendedActivityKinds(commands).includes("coil.auto-resume.cancelled"),
+            ),
+          ),
+          "the takeover to cancel the pending resume",
+        );
 
         const commands = yield* Ref.get(harness.dispatched);
         expect(appendedActivitySummaries(commands)).toContain(
