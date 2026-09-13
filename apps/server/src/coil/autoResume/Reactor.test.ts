@@ -67,19 +67,17 @@ const readModel = (o: {
 
 const rejectedEvent = (resetsAtSeconds: number): ProviderRuntimeEvent =>
   ({
-    type: "account.rate-limits.updated",
+    type: "runtime.warning",
     eventId: "evt-1",
     provider: "claudeAgent",
     threadId: "thread-1",
     createdAt: "2026-01-01T00:00:00.000Z",
     payload: {
-      rateLimits: {
-        type: "rate_limit_event",
-        rate_limit_info: {
-          status: "rejected",
-          rateLimitType: "five_hour",
-          resetsAt: resetsAtSeconds,
-        },
+      message: "Claude usage limit reached",
+      detail: {
+        status: "rejected",
+        rateLimitType: "five_hour",
+        resetsAt: resetsAtSeconds,
       },
     },
   }) as unknown as ProviderRuntimeEvent;

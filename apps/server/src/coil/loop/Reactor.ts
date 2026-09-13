@@ -743,11 +743,14 @@ const makeSupervisor = Effect.gen(function* () {
 
   const onRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
-      if (event.type !== "account.rate-limits.updated") return;
+      // The raw `SDKRateLimitInfo` rides on the `runtime.warning` the adapter raises for a
+      // rejected window (upstream #9507 normalised `account.rate-limits.updated` into
+      // status-less utilisation windows). See `autoResume/Reactor.ts` for the full note.
+      if (event.type !== "runtime.warning") return;
       // No provider gate: `classifyRateLimit` refuses anything that is not a recognisable
       // rate-limit info object, which is the real discriminator, and any adapter forwarding
       // that shape is reporting a genuine account limit.
-      const verdict = classifyRateLimit(event.payload.rateLimits);
+      const verdict = classifyRateLimit(event.payload.detail);
       if (!verdict?.rejected) return;
 
       // Only armed threads accrue a record. `coil-loop.json` is rewritten atomically on every

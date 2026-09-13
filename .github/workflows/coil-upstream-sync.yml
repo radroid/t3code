@@ -72,6 +72,13 @@ jobs:
           cache: true
           run-install: true
 
+      # Upstream #10021 (498ab9c399) builds a native browser-secret helper against libsecret; its
+      # test (`apps/desktop/scripts/browser-secret-native.test.mjs`) and the desktop artifact build
+      # both hard-fail on Linux without the headers. Upstream installs them in ci.yml (plus a
+      # Blacksmith mirror rewrite this runner does not have).
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
       - name: Tag pre-merge last-good state
         # A rollback point, not a landing mechanism. The sync only fast-forwards `main`, so the
         # normal way to undo a bad sync is `git revert -m 1 <merge sha>` — an ordinary commit that

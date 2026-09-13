@@ -10,7 +10,7 @@ import * as Electron from "electron";
 import { NOTIFICATION_ACTIVATED_CHANNEL } from "../ipc/channels.ts";
 import * as ElectronWindow from "./ElectronWindow.ts";
 
-export class ElectronNotificationShowError extends Schema.TaggedErrorClass<ElectronNotificationShowError>()(
+export class ElectronNotificationShowError extends Schema.TaggedError<ElectronNotificationShowError>()(
   "ElectronNotificationShowError",
   {
     notificationId: Schema.String,
