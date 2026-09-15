@@ -146,16 +146,20 @@ docs/coil/SEAMS.md             ← authoritative list of every upstream line tou
 - `SEAMS.md` makes the seam set auditable. If it grows past a handful of lines, that's
   the signal to re-isolate, not to accept more daily pain.
 
-## A3. Inherited-workflow neutralization
+## A3. Inherited-workflow retirement
 
-The fork inherited all 9 upstream GitHub workflows, all `active`, including
-schedule-triggered `Release` and two `Mobile EAS` jobs that fail for want of secrets.
-Left alone they burn Actions minutes and email failures on every push.
+The fork inherits upstream GitHub workflows, including schedule-triggered release and deployment
+jobs that either require unavailable infrastructure or publish upstream products. Left alone they
+burn Actions minutes, fail for want of secrets, or expose actions the fork will never use.
 
-- Disable all inherited workflows on the fork via `gh workflow disable` (reversible
-  with `gh workflow enable`). This is a fork-account setting, not a code change, so it
-  never conflicts and never rebases away.
-- The two new t3x workflows (A4, A5) are the only ones that should run on the fork.
+- Remove inherited workflows that the fork will not use. Keeping the files disabled still leaves
+  stale actions in the repository and requires every newly inherited workflow to be disabled by
+  hand.
+- Keep `windows-tests.yml` as the one inherited exception: it is a manual, credential-free lane
+  used for future Windows investigations.
+- The daily merge preserves these deletions automatically, including modify/delete conflicts and
+  an upstream delete-then-readd of the same path.
+- New upstream workflows are reviewed when they arrive rather than assumed useful or harmless.
 
 ## A4. Daily sync job — `.github/workflows/coil-upstream-sync.yml`
 
@@ -218,23 +222,25 @@ open GitHub issue labelled `coil-sync`, discriminated by a `kind` field
 
 ## A7. Setup script — `scripts/coil/setup-fork.sh`
 
-Idempotent, reversible, documents every action. Performs A1 (remotes + rerere) and
-prints the `gh` commands for A3 (or runs them behind a `--disable-workflows` flag).
-Safe to re-run; detects already-applied state.
+Idempotent, reversible, documents every action. Performs A1 (remotes + rerere).
+Safe to re-run; detects already-applied state. Workflow retirement is represented by the
+repository tree itself and needs no account-level setup step.
 
 ---
 
 ## Deliverables
 
-| Artifact               | Path                                       | Upstream conflict risk |
-| ---------------------- | ------------------------------------------ | ---------------------- |
-| Remote/rerere setup    | `scripts/coil/setup-fork.sh`               | none (new file)        |
-| Daily sync workflow    | `.github/workflows/coil-upstream-sync.yml` | none (new file)        |
-| Weekly verify workflow | `.github/workflows/coil-weekly-verify.yml` | none (new file)        |
-| Seam ledger            | `docs/coil/SEAMS.md`                       | none (new file)        |
-| Sync-agent runbook     | `docs/coil/sync-agent-runbook.md`          | none (new file)        |
+| Artifact               | Path                                       | Upstream conflict risk                 |
+| ---------------------- | ------------------------------------------ | -------------------------------------- |
+| Remote/rerere setup    | `scripts/coil/setup-fork.sh`               | none (new file)                        |
+| Retired workflows      | `.github/workflows/*.yml`                  | modify/delete; preserved automatically |
+| Daily sync workflow    | `.github/workflows/coil-upstream-sync.yml` | none (new file)                        |
+| Weekly verify workflow | `.github/workflows/coil-weekly-verify.yml` | none (new file)                        |
+| Seam ledger            | `docs/coil/SEAMS.md`                       | none (new file)                        |
+| Sync-agent runbook     | `docs/coil/sync-agent-runbook.md`          | none (new file)                        |
 
-**Total edits to upstream-owned files: zero.** (Project B adds the only 2-line seam.)
+The retired workflows are intentional full-file deletions. All new fork automation remains in
+fork-owned paths; Project B adds the feature's only in-place code seam.
 
 ## Verification depth summary
 
@@ -244,5 +250,5 @@ Safe to re-run; detects already-applied state.
 ## Rollback
 
 - Remotes/rerere: re-run setup script notes, or `git remote rename` back.
-- Workflows: `gh workflow enable <id>`.
+- Workflows: restore the retired file from upstream if the fork adopts that capability later.
 - A bad sync: `git reset --hard coil/last-good-<date>` (tag pushed pre-rebase).

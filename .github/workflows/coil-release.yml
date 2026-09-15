@@ -2,8 +2,8 @@
 #
 # Upstream's release.yml cannot be reused: it runs on blacksmith-12vcpu-macos-26 and
 # blacksmith-32vcpu-windows-2025, runners this fork has no access to (the same reason coil-ci.yml
-# exists alongside ci.yml). Every inherited upstream workflow, release.yml included, is
-# disabled_manually on this fork.
+# replaces ci.yml). The inherited upstream release workflow is intentionally absent from this
+# fork because it cannot run on the fork's infrastructure.
 #
 # Standard GitHub-hosted runners — macOS and Windows included — are free with unlimited minutes on
 # public repositories, and this fork is public. The build costs nothing.

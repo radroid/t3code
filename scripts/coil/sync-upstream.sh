@@ -62,6 +62,36 @@ write_status() {
 
 fail() { echo "ERROR: $*" >&2; }
 
+# These upstream workflows are intentionally absent from the fork. Keep this policy beside the
+# merge that can reintroduce them: a modify/delete conflict is resolved as deleted, and an
+# upstream delete-then-readd is removed before the merge commit is created.
+retire_upstream_workflows() {
+  local path
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if [[ -n "$(git ls-files -- "$path")" ]]; then
+      git rm -f -- "$path" >/dev/null
+      echo "→ preserving retired workflow deletion: $path"
+    fi
+  done <<'EOF'
+.github/workflows/ci.yml
+.github/workflows/cursor-hygiene-webhook.yml
+.github/workflows/deploy-relay.yml
+.github/workflows/desktop-macos-preview.yml
+.github/workflows/issue-labels.yml
+.github/workflows/mobile-eas-preview.yml
+.github/workflows/mobile-eas-production.yml
+.github/workflows/mobile-fingerprint-check.yml
+.github/workflows/mobile-showcase-screenshots.yml
+.github/workflows/pr-size.yml
+.github/workflows/pr-vouch.yml
+.github/workflows/publish-aur.yml
+.github/workflows/release.yml
+.github/workflows/thread-transfer-report.yml
+.github/workflows/web-preview.yml
+EOF
+}
+
 command -v git >/dev/null || { fail "git not found"; exit 1; }
 
 # --- fetch upstream ----------------------------------------------------------
@@ -103,28 +133,49 @@ git checkout -q "$LOCAL_BRANCH" || {
 
 # --no-ff so the sync is always one reviewable merge commit with a subject that names the
 # absorbed range, even in the degenerate case where the fork has nothing of its own left.
+# --no-commit leaves one policy step before the commit: retired upstream workflows stay deleted.
 MERGE_MSG="chore(coil): merge $UPSTREAM_REMOTE/$UPSTREAM_BRANCH $(git rev-parse --short "$UPSTREAM_HEAD") ($UPSTREAM_COUNT commits)"
 
-if ! git merge --no-ff -m "$MERGE_MSG" "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
-  CONFLICTED="$(git diff --name-only --diff-filter=U | sort -u | tr '\n' ' ')"
-  # Which upstream commits touched the conflicted files (the likely culprits).
-  if [[ -n "$CONFLICTED" ]]; then
-    # shellcheck disable=SC2086
-    CULPRITS="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" -- $CONFLICTED | head -40 || true)"
+if ! git merge --no-ff --no-commit "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
+  ORIGINAL_CONFLICTS="$(git diff --name-only --diff-filter=U | sort -u | tr '\n' ' ')"
+  if [[ ! -e "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+    fail "merge failed before starting: $ORIGINAL_CONFLICTS"
+    write_status daily error "merge failed before creating MERGE_HEAD"
+    exit 1
   fi
-  git merge --abort || true
-  fail "merge conflict in: $CONFLICTED"
-  # `git merge --abort` restores the pre-merge tree, but it can itself fail. Confirm the merge
-  # really is gone before claiming it: nothing pushes either way, but a half-aborted merge left
-  # in the checkout is the one outcome a human has to be told about. Only merge residue counts —
-  # an unrelated local edit is not this script's business to report or to clean up.
-  if [[ -n "$(git ls-files --unmerged)" ]] || [[ -e "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
-    fail "merge --abort did not restore the checkout; it is still mid-merge. Recover by hand ('git merge --abort', or 'git reset --hard $LOCAL_HEAD' if you have nothing else in the tree)"
-    write_status daily conflict "merge aborted but the checkout is still mid-merge; needs manual recovery to $LOCAL_HEAD"
+
+  retire_upstream_workflows
+  REMAINING_CONFLICTS="$(git diff --name-only --diff-filter=U | sort -u | tr '\n' ' ')"
+  CONFLICTED="$REMAINING_CONFLICTS"
+  if [[ -z "$REMAINING_CONFLICTS" ]]; then
+    echo "→ all merge conflicts were retired upstream workflows"
+  else
+    # Which upstream commits touched the conflicted files (the likely culprits).
+    if [[ -n "$REMAINING_CONFLICTS" ]]; then
+      # shellcheck disable=SC2086
+      CULPRITS="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" -- $REMAINING_CONFLICTS | head -40 || true)"
+    fi
+    git merge --abort || true
+    fail "merge conflict in: $REMAINING_CONFLICTS"
+    # `git merge --abort` restores the pre-merge tree, but it can itself fail. Confirm the merge
+    # really is gone before claiming it: nothing pushes either way, but a half-aborted merge left
+    # in the checkout is the one outcome a human has to be told about. Only merge residue counts —
+    # an unrelated local edit is not this script's business to report or to clean up.
+    if [[ -n "$(git ls-files --unmerged)" ]] || [[ -e "$(git rev-parse --git-path MERGE_HEAD)" ]]; then
+      fail "merge --abort did not restore the checkout; it is still mid-merge. Recover by hand ('git merge --abort', or 'git reset --hard $LOCAL_HEAD' if you have nothing else in the tree)"
+      write_status daily conflict "merge aborted but the checkout is still mid-merge; needs manual recovery to $LOCAL_HEAD"
+      exit 20
+    fi
+    write_status daily conflict "merge aborted; working tree restored"
     exit 20
   fi
-  write_status daily conflict "merge aborted; working tree restored"
-  exit 20
+fi
+
+retire_upstream_workflows
+if ! git commit -m "$MERGE_MSG"; then
+  FAILING_STEP="commit"
+  write_status daily error "merge resolved but the merge commit could not be created"
+  exit 1
 fi
 
 # --- verify ------------------------------------------------------------------

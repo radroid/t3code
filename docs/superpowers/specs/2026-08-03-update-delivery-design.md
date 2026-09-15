@@ -170,7 +170,7 @@ commit".** Keeping those two questions apart is the whole lesson of #47.
 `resolveDesktopUpdateChannel` only special-cases `-nightly.<d>.<d>` (`:1478`), so a `-t3x.`
 prerelease stays on the `latest` channel and the product name is unchanged.
 
-One cosmetic consequence, accepted: semver sorts any prerelease *below* the plain release, so
+One cosmetic consequence, accepted: semver sorts any prerelease _below_ the plain release, so
 `0.0.31-t3x.43` ranks below a bare `0.0.31`. Nothing in this design compares version strings, so it
 never affects behaviour — but it is why the About box shows a version that looks like a
 pre-release of upstream's.
@@ -268,11 +268,11 @@ A separate Worker, **not** a route in `infra/relay/`. `infra/relay/` is upstream
 fork edits today; adding routes there would open a new front on the seam ledger, whose own
 tripwire reads _"Before adding row 35, re-isolate something instead."_ It also has never
 deployed on this fork: `deploy-relay.yml` has exactly one run in fork history (cancelled,
-2026-07-23), is now `disabled_manually`, and needs six secrets plus twelve variables the fork
-does not have. There is nothing to piggyback on.
+2026-07-23), was retired from the fork, and needs six secrets plus twelve variables the fork does
+not have. There is nothing to piggyback on.
 
-Every inherited upstream workflow is `disabled_manually` on this fork, `release.yml` included —
-which is why a fork-owned release workflow is required rather than merely convenient.
+Unused inherited upstream workflows are removed from this fork, `release.yml` included — which is
+why a fork-owned release workflow is required rather than merely convenient.
 
 - `POST /notify` — verify HMAC over `X-Coil-Timestamp` + raw body, reject a timestamp skewed more
   than 5 minutes, reject non-monotonic payloads, store as latest, broadcast. The timestamp is an
@@ -596,7 +596,7 @@ wrong, and each would have produced a silent failure rather than a loud one:
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Fork builds set `T3CODE_DISABLE_AUTO_UPDATE` to silence the pill | It is a process env var with no delivery mechanism to a packaged app. Withhold `GITHUB_REPOSITORY` instead |
 | `resolveGitHubPublishConfig` makes publishing work for free      | electron-builder runs `--publish never`; worse, that config **enables** upstream's updater                 |
-| Trigger is `push` gated on `coil-ci`                              | `needs:` cannot cross workflows; `workflow_run` + `head_sha` pinning, or the wrong commit is built         |
+| Trigger is `push` gated on `coil-ci`                             | `needs:` cannot cross workflows; `workflow_run` + `head_sha` pinning, or the wrong commit is built         |
 | Inject `T3X_BUILD_SHA`, identity is the 40-char SHA              | `t3codeCommitHash` already ships at 12 chars; a 40-char comparison never matches                           |
 | The click is an instant restart                                  | Only if staging goes all the way to a swap-ready bundle                                                    |
 | `app.relaunch()` + `app.quit()` fixes #41                        | `DesktopLifecycle.relaunch` exists; and the unbounded shutdown wait reintroduces #41                       |
