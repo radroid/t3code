@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Runs the real sync-upstream.sh against disposable on-disk git repos.
 import { assert, it } from "@effect/vitest";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";

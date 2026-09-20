@@ -275,26 +275,26 @@ const verifyMacSignature = Effect.fn("verifyMacSignature")(function* (input: {
 export const verifyMacSignatureCommand = Command.make(
   "verify-mac-signature",
   {
-    artifact: Flag.string("artifact").pipe(
+    artifact: Flag.String("artifact").pipe(
       Flag.withDescription("Path to the built .dmg, or to a .app bundle."),
     ),
-    expectRequirementFile: Flag.string("expect-requirement-file").pipe(
+    expectRequirementFile: Flag.String("expect-requirement-file").pipe(
       Flag.withDescription(
         "File holding the designated requirement every release must match, byte for byte.",
       ),
       Flag.optional,
     ),
-    writeRequirementFile: Flag.string("write-requirement-file").pipe(
+    writeRequirementFile: Flag.String("write-requirement-file").pipe(
       Flag.withDescription(
         "Record this artifact's designated requirement to a file (only when the verdict is stable).",
       ),
       Flag.optional,
     ),
-    expectAuthority: Flag.string("expect-authority").pipe(
+    expectAuthority: Flag.String("expect-authority").pipe(
       Flag.withDescription("Signing identity name the leaf Authority must equal."),
       Flag.optional,
     ),
-    allowUnsigned: Flag.boolean("allow-unsigned").pipe(
+    allowUnsigned: Flag.Boolean("allow-unsigned").pipe(
       Flag.withDescription(
         "Warn instead of failing when no signing identity was used. Never allows a CHANGED identity.",
       ),
