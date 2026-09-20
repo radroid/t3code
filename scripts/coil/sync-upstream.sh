@@ -78,6 +78,7 @@ retire_upstream_workflows() {
 .github/workflows/cursor-hygiene-webhook.yml
 .github/workflows/deploy-relay.yml
 .github/workflows/desktop-macos-preview.yml
+.github/workflows/desktop-macos-preview-publish.yml
 .github/workflows/issue-labels.yml
 .github/workflows/mobile-eas-preview.yml
 .github/workflows/mobile-eas-production.yml
@@ -86,6 +87,7 @@ retire_upstream_workflows() {
 .github/workflows/pr-size.yml
 .github/workflows/pr-vouch.yml
 .github/workflows/publish-aur.yml
+.github/workflows/release-desktop.yml
 .github/workflows/release.yml
 .github/workflows/thread-transfer-report.yml
 .github/workflows/web-preview.yml

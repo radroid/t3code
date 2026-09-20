@@ -591,30 +591,35 @@ describe("verifyPackagedApp over a real asar", () => {
     });
   });
 
-  // The regression. `unrelated-pkg` is named by no glob at all, so the old code warned and passed.
+  // The regression. `node-pty` is a CLI external named by no glob at all, so the old code warned
+  // and passed. (Since upstream #11410 only a layer's native externals can be missing — anything
+  // else is inlined — so the fixture has to name one of those.)
   it("FAILS a missing import even when no glob can be blamed for it", () => {
     withTempDir((dir) => {
       const asarPath = writeAsar(dir, {
-        "apps/server/dist/bin.mjs": 'import x from "unrelated-pkg";\n',
+        "apps/server/dist/bin.mjs": 'import x from "node-pty";\n',
         "node_modules/effect/package.json": '{"name":"effect"}',
       });
       const result = verifyPackagedApp(asarPath);
       assert.isFalse(result.ok, "severity must not depend on attribution");
       assert.strictEqual(result.missing.length, 1);
-      assert.strictEqual(result.missing[0]?.name, "unrelated-pkg");
+      assert.strictEqual(result.missing[0]?.name, "node-pty");
       assert.strictEqual(result.missing[0]?.glob, undefined, "nothing should be blamed");
     });
   });
 
+  // No default glob names a native external today, so attribution is exercised with an explicit
+  // list — the same shape a glob passed through T3X_DESKTOP_FILE_EXCLUSIONS arrives in.
   it("names the fork's glob when the fork's list is what removed the package", () => {
-    withTempDir((dir) => {
-      const asarPath = writeAsar(dir, {
-        "apps/server/dist/bin.mjs": 'import s from "shiki";\n',
-      });
-      const result = verifyPackagedApp(asarPath);
-      assert.isFalse(result.ok);
-      assert.strictEqual(result.missing[0]?.glob, "!**/node_modules/shiki/**/*");
-    });
+    assert.strictEqual(
+      findExcludingGlob("node-pty", ["!**/node_modules/node-pty/**/*"]),
+      "!**/node_modules/node-pty/**/*",
+    );
+    assert.strictEqual(
+      findExcludingGlob("@yuuang/ffi-rs-darwin-arm64", ["!**/node_modules/@yuuang/*/**/*"]),
+      "!**/node_modules/@yuuang/*/**/*",
+    );
+    assert.strictEqual(findExcludingGlob("node-pty", ["!**/node_modules/shiki/**/*"]), undefined);
   });
 
   // A manifest with nothing behind it resolves and then throws, which is harder to diagnose than an
@@ -667,9 +672,10 @@ describe("verifyPackagedApp over a real asar", () => {
       writeAsar(
         dir,
         {
-          // The server bundle imports a package that exists nowhere: with the sidecar merged into
-          // the view this MUST fail, proving server bundles are scanned rather than merely stored.
-          "apps/server/dist/bin.mjs": 'import x from "not-shipped";\n',
+          // The server bundle imports a native external that exists nowhere: with the sidecar
+          // merged into the view this MUST fail, proving server bundles are scanned rather than
+          // merely stored.
+          "apps/server/dist/bin.mjs": 'import x from "ffi-rs";\n',
           "node_modules/node-pty/package.json": '{"name":"node-pty"}',
           "node_modules/node-pty/lib/index.js": "module.exports = {};",
         },
@@ -679,7 +685,7 @@ describe("verifyPackagedApp over a real asar", () => {
       assert.deepStrictEqual(result.uncoveredBundleDirs, [], "sidecar bundles must be visible");
       assert.deepStrictEqual(
         result.missing.map((entry) => entry.name),
-        ["not-shipped"],
+        ["ffi-rs"],
         "node-pty resolves from the sidecar; the sidecar's own broken import still fails",
       );
     });

@@ -45,6 +45,11 @@ private struct ComposerChipStyle {
   let textColor: UIColor
 }
 
+private enum ComposerEnterBehavior: String {
+  case send
+  case newline
+}
+
 private final class ComposerTextAttachment: NSTextAttachment {
   let source: String
   let label: String
@@ -86,10 +91,15 @@ private final class ComposerTextView: UITextView {
 
   var onPasteImages: (([String]) -> Void)?
   var onPasteContext: (([String: String]) -> Void)?
+  var onPasteText: ((String, NSRange) -> Void)?
   var clipboardFragment = ""
   var onAttributedMutation: (() -> Void)?
   var onSubmit: (() -> Void)?
   var isReadOnly = false
+  var textPasteThresholdBytes = 0
+  var maxInputChars = Int.max
+  var enterBehavior: ComposerEnterBehavior = .send
+  private var bypassTextPasteInterception = false
 
   // Set only while a Shift+Return hardware key command is programmatically
   // inserting a line break, so the delegate lets that "\n" through instead of
@@ -98,6 +108,7 @@ private final class ComposerTextView: UITextView {
 
   override var keyCommands: [UIKeyCommand]? {
     var commands = super.keyCommands ?? []
+    guard !isReadOnly, markedTextRange == nil else { return commands }
     let submit = UIKeyCommand(
       input: "\r",
       modifierFlags: .command,
@@ -106,31 +117,65 @@ private final class ComposerTextView: UITextView {
     submit.discoverabilityTitle = "Send Message"
     submit.wantsPriorityOverSystemBehavior = true
     commands.append(submit)
-    // Shift+Return inserts a newline on a hardware keyboard (mirrors Android and
-    // desktop Shift+Enter), since a bare Return now submits. Soft keyboards use
-    // the composer's line-break button instead.
-    let newline = UIKeyCommand(
-      input: "\r",
-      modifierFlags: .shift,
-      action: #selector(insertHardLineBreak(_:))
-    )
-    newline.discoverabilityTitle = "Insert Line Break"
-    newline.wantsPriorityOverSystemBehavior = true
-    commands.append(newline)
+    if enterBehavior == .send {
+      let submitOnReturn = UIKeyCommand(
+        input: "\r",
+        modifierFlags: [],
+        action: #selector(submitMessage(_:))
+      )
+      submitOnReturn.discoverabilityTitle = "Send Message"
+      submitOnReturn.wantsPriorityOverSystemBehavior = true
+      commands.append(submitOnReturn)
+
+      let newline = UIKeyCommand(
+        input: "\r",
+        modifierFlags: .shift,
+        action: #selector(insertNewline(_:))
+      )
+      newline.discoverabilityTitle = "New Line"
+      newline.wantsPriorityOverSystemBehavior = true
+      commands.append(newline)
+    }
+    if textPasteThresholdBytes > 0 {
+      let pasteAsText = UIKeyCommand(
+        input: "v",
+        modifierFlags: [.command, .shift],
+        action: #selector(pasteInline(_:))
+      )
+      pasteAsText.discoverabilityTitle = "Paste as Text"
+      pasteAsText.wantsPriorityOverSystemBehavior = true
+      commands.append(pasteAsText)
+    }
     return commands
   }
 
   @objc private func submitMessage(_ sender: UIKeyCommand) {
+    guard !isReadOnly, markedTextRange == nil else { return }
     onSubmit?()
   }
 
-  @objc private func insertHardLineBreak(_ sender: UIKeyCommand) {
+  // Shift+Return on a hardware keyboard. The flag lets the delegate tell this
+  // programmatic "\n" apart from a typed bare Return, which submits.
+  @objc private func insertNewline(_ sender: UIKeyCommand) {
+    guard !isReadOnly, markedTextRange == nil else { return }
     isInsertingHardLineBreak = true
     insertText("\n")
     isInsertingHardLineBreak = false
   }
 
+  @objc private func pasteInline(_ sender: UIKeyCommand) {
+    guard !isReadOnly else {
+      return
+    }
+    bypassTextPasteInterception = true
+    defer { bypassTextPasteInterception = false }
+    paste(sender)
+  }
+
   override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    if action == #selector(submitMessage(_:)) || action == #selector(insertNewline(_:)) {
+      return isEditable && !isReadOnly && markedTextRange == nil
+    }
     if isReadOnly && Self.readOnlyActions.contains(NSStringFromSelector(action)) {
       return false
     }
@@ -172,7 +217,26 @@ private final class ComposerTextView: UITextView {
         return
       }
     }
+    if !bypassTextPasteInterception,
+       let text = pasteboard.string, shouldInterceptTextPaste(text) {
+      onPasteText?(text, selectedRange)
+      return
+    }
     super.paste(sender)
+  }
+
+  private func shouldInterceptTextPaste(_ text: String) -> Bool {
+    guard textPasteThresholdBytes > 0, !text.isEmpty else { return false }
+    let pastedLength = (text as NSString).length
+    if pastedLength >= textPasteThresholdBytes || text.utf8.count >= textPasteThresholdBytes {
+      return true
+    }
+    // Chips occupy one display character but expand to their source in the
+    // submitted message. Measure that source, including the replaced selection.
+    let sourceLength = sourceOffset(forDisplayOffset: attributedText.length)
+    let selectedLength = sourceOffset(forDisplayOffset: NSMaxRange(selectedRange)) -
+      sourceOffset(forDisplayOffset: selectedRange.location)
+    return sourceLength - selectedLength + pastedLength > maxInputChars
   }
 
   override func deleteBackward() {
@@ -390,6 +454,7 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
   let onComposerPasteImages = EventDispatcher()
   let onComposerContextPress = EventDispatcher()
   let onComposerPasteContext = EventDispatcher()
+  let onComposerPasteText = EventDispatcher()
   let onComposerContentSizeChange = EventDispatcher()
 
   public required init(appContext: AppContext? = nil) {
@@ -409,7 +474,25 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
       self?.onComposerPasteImages(["uris": urls])
     }
     textView.onPasteContext = { [weak self] context in
-      self?.onComposerPasteContext(context)
+      guard let self else { return }
+      let selection = self.sourceSelection()
+      self.nativeEventCount += 1
+      var payload: [String: Any] = context
+      payload["value"] = self.textView.serializedText()
+      payload["eventCount"] = self.nativeEventCount
+      payload["selection"] = ["start": selection.start, "end": selection.end]
+      self.onComposerPasteContext(payload)
+    }
+    textView.onPasteText = { [weak self] text, _ in
+      guard let self else { return }
+      let selection = self.sourceSelection()
+      self.nativeEventCount += 1
+      self.onComposerPasteText([
+        "value": self.textView.serializedText(),
+        "eventCount": self.nativeEventCount,
+        "text": text,
+        "selection": ["start": selection.start, "end": selection.end],
+      ])
     }
     textView.onAttributedMutation = { [weak self] in
       self?.emitTextChange()
@@ -618,6 +701,18 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     textView.spellCheckingType = spellCheck ? .yes : .no
   }
 
+  func setEnterBehavior(_ behavior: String) {
+    textView.enterBehavior = ComposerEnterBehavior(rawValue: behavior) ?? .send
+  }
+
+  func setTextPasteThresholdBytes(_ threshold: Int) {
+    textView.textPasteThresholdBytes = threshold
+  }
+
+  func setMaxInputChars(_ maxInputChars: Int) {
+    textView.maxInputChars = maxInputChars
+  }
+
   func focusEditor() {
     textView.becomeFirstResponder()
   }
@@ -665,7 +760,11 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     // transcription settles, and a hardware Return must not submit a composer
     // the user has been told is frozen. Upstream's own guard is the `return
     // !isReadOnly` tail below, which this branch would otherwise jump.
-    if !isReadOnly, text == "\n", (textView as? ComposerTextView)?.isInsertingHardLineBreak != true {
+    // Upstream's `enterBehavior` setting (#11679) turns this off: with "newline"
+    // a bare Return inserts a line break and only Command-Return submits.
+    let composer = textView as? ComposerTextView
+    if !isReadOnly, text == "\n", composer?.enterBehavior == .send,
+      composer?.isInsertingHardLineBreak != true {
       onComposerSubmit([:])
       return false
     }
