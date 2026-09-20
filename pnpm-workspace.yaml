@@ -154,20 +154,27 @@ overrides:
   # t3x: transitive security bumps. Each key is major-scoped on purpose — a bare
   # `tar: ^7.5.21` would also rewrite a hypothetical tar@6, and crossing a major in a
   # dependency nobody in this repo imports directly is how an override breaks a build.
-  # Every entry below is a patch or minor bump inside the major already resolved.
+  # Every entry below is a patch or minor bump inside the major already resolved, except
+  # `dbus-next>xml2js`, which is parent-scoped because dbus-next's ^0.4 range has no
+  # patched release and the tree already carries xml2js 0.6 for expo-splash-screen.
   # Drop an entry once upstream's tree floats past it on its own; none of these are
   # load-bearing beyond the advisory they close.
+  "@xmldom/xmldom@0.8": ^0.8.15
+  "@xmldom/xmldom@0.9": ^0.9.12
+  "baseline-browser-mapping@2": ^2.11.0
   "brace-expansion@1": ^1.1.18
   "brace-expansion@2": ^2.1.4
   "brace-expansion@5": ^5.0.9
+  "browserslist@4": ^4.28.7
   "builder-util-runtime@9": ^9.7.0
+  "dbus-next>xml2js": ^0.6.2
   effect: "catalog:"
   expo-router: 57.0.17
   "expo-sharing>@expo/config-plugins": 57.0.9
   "expo-sharing>@expo/config-types": 57.0.2
-  "fast-uri@3": ^3.1.5
+  "fast-uri@3": ^3.1.6
   "form-data@4": ^4.0.6
-  "hono@4": ^4.12.34
+  "hono@4": ^4.13.5
   "ip-address@10": ^10.3.1
   # Added 2026-08-08, one commit after the sweep: astro 7.2.0 brought in a fixed
   # nanoid@3.3.17 but left the old 3.3.12 beside it, and the restructure flipped that
@@ -175,9 +182,11 @@ overrides:
   # GitHub's auto-dismiss rule and reopened them. This dedupes the two copies onto 3.3.17.
   "nanoid@3": ^3.3.17
   "path-to-regexp@6": ^6.3.0
+  "qs@6": ^6.16.0
   "shell-quote@1": ^1.9.0
   "tar@7": ^7.5.21
   "undici@6": ^6.28.0
+  "valibot@1": ^1.4.2
   node-abi: 4.33.0
   lightningcss: "catalog:"
   tailwindcss: "catalog:"
