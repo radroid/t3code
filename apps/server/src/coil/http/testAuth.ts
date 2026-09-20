@@ -26,6 +26,7 @@ import {
   HttpRouter,
   HttpServer,
 } from "effect/unstable/http";
+import type * as NetAddress from "effect/unstable/net/NetAddress";
 import * as NodeHttp from "node:http";
 
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
@@ -68,7 +69,9 @@ export const authFails = (
 export const baseUrl = (pathname: string) =>
   Effect.gen(function* () {
     const server = yield* HttpServer.HttpServer;
-    const address = server.address as HttpServer.TcpAddress;
+    // Effect rc.115 models the bound address as a `NetAddress.SocketAddress`; the
+    // test server always listens on TCP, so the inet variant is the only one seen.
+    const address = server.address as NetAddress.InetAddress;
     return `http://127.0.0.1:${address.port}${pathname}`;
   });
 

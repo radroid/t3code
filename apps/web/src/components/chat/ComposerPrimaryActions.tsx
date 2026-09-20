@@ -37,9 +37,6 @@ interface ComposerPrimaryActionsProps {
    */
   canQueue?: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
-   * be the only primary action and a running turn could not be steered. */
-  showSendWhileRunning?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -82,7 +79,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   sendLabel = "Send",
   canQueue = false,
   preserveComposerFocusOnPointerDown = false,
-  showSendWhileRunning = false,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
@@ -106,7 +102,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         "flex cursor-pointer items-center justify-center rounded-full transition-all duration-150",
         insidePendingAction
           ? "size-8 sm:size-7"
-          : showSendWhileRunning && hasSendableContent
+          : hasSendableContent
             ? "size-9 sm:size-8"
             : "size-8 sm:h-8 sm:w-8",
         emphasisClassName,
@@ -295,7 +291,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 : isSendBusy
                   ? "Sending"
                   : isRunning
-                    ? "Send message to the running turn"
+                    ? "Queue message"
                     : "Send message"
       }
     >
@@ -331,10 +327,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   // While the thread is busy the primary action moves beside Stop, which drops to a
   // secondary control. Which action it is depends on whether the message can go out
-  // now: "Queue" when it will be held, or the ordinary Send when the provider will
-  // steer it into the running turn. Rendering it matters beyond discoverability --
-  // Enter does not submit on a mobile viewport, so this button is the only mid-turn
-  // send affordance there, which is also upstream's showSendWhileRunning intent (#4781).
+  // now: the fork's "Queue" when the outbox will hold it (offline, or messages already
+  // waiting), else the ordinary Send, which upstream's client-side queue holds until
+  // the next tool boundary (#11673).
   if (canQueue) {
     return (
       <div className={cn("flex items-center justify-end", compact ? "gap-1.5" : "gap-2")}>
@@ -344,10 +339,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  // While a turn runs, a sendable draft queues for the next tool boundary, so
+  // the send button stays next to Stop on every viewport.
   return (
     <>
       {stopButton}
-      {showSendWhileRunning && hasSendableContent ? sendButton : null}
+      {hasSendableContent ? sendButton : null}
     </>
   );
 });

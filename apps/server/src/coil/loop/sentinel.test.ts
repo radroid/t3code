@@ -244,19 +244,21 @@ describe("coil/loop/sentinel", () => {
       }),
     ));
 
-  // 54
+  // 54. A whole second, not +1 ms: node's utimes takes seconds as a double, and
+  // effect rc.115 floors the nanoseconds it reads back, so a +1 ms fixture lands
+  // at exactly ARMED_AT_MS. Real done-files are written, not utimes'd.
   it("honours a done-file newer than armedAtMs", () =>
     withRoots(({ worktreePath, workspaceRoot, writeDone }) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        yield* writeDone(worktreePath, { mtimeMs: ARMED_AT_MS + 1 });
+        yield* writeDone(worktreePath, { mtimeMs: ARMED_AT_MS + 1_000 });
         const sentinel = yield* readSentinel(
           fs,
           { worktreePath, workspaceRoot },
           { armedAtMs: ARMED_AT_MS },
         );
         assert.strictEqual(sentinel.kind, "done");
-        assert.strictEqual(sentinel.kind === "done" ? sentinel.mtimeMs : 0, ARMED_AT_MS + 1);
+        assert.strictEqual(sentinel.kind === "done" ? sentinel.mtimeMs : 0, ARMED_AT_MS + 1_000);
       }),
     ));
 
