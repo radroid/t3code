@@ -58,6 +58,8 @@ import {
   packageNameFromSpecifier,
 } from "./desktop-bundle-reachability.mjs";
 import { T3X_DESKTOP_FILE_EXCLUSIONS } from "./desktop-file-exclusions.mjs";
+import { isRuntimeExternalCliDependency } from "../lib/cli-external-packages.ts";
+import { isDesktopRuntimeExternalDependency } from "../lib/desktop-external-packages.ts";
 
 /** Directories holding first-party bundles the app loads through Node. */
 export const FIRST_PARTY_BUNDLE_DIRS = ["apps/desktop/dist-electron", "apps/server/dist"];
@@ -267,9 +269,20 @@ export function collectRequiredPackages(files) {
     } catch {
       continue;
     }
+    // Both layers are inlined bundles that keep only native externals on disk, and since
+    // upstream #11410 the stage installs ONLY those (scripts/lib/desktop-external-packages.ts
+    // for the Electron main, scripts/lib/cli-external-packages.ts for the server). Anything else
+    // a bundle still names — a `require("x11")` left inside an inlined dependency, or a
+    // `from "effect"` in embedded prose the comment scanner did not blank — has no node_modules
+    // presence by construction. That is upstream's bundling decision, not a fork exclusion, so
+    // only a layer's externals can be missing and only they are required here.
+    const isExternal = filePath.startsWith("apps/desktop/dist-electron/")
+      ? isDesktopRuntimeExternalDependency
+      : isRuntimeExternalCliDependency;
     const { imports } = collectSpecifiers(blankComments(source));
     for (const name of imports) {
       if (!isPackagedSpecifier(name)) continue;
+      if (!isExternal(name)) continue;
       if (!required.has(name)) required.set(name, filePath);
     }
   }
