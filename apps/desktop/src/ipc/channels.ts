@@ -116,6 +116,8 @@ export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
 
 export const CHECK_SYSTEM_PERMISSION_CHANNEL = "desktop:check-system-permission";
 
+export const PREVIEW_RECORDING_INPUT_CHANNEL = "desktop:preview-recording-input";
+
 // coil: fork-owned update delivery. Distinct from the `desktop:update-*` channels above, which
 // belong to upstream's electron-updater surface — the two must never share a channel, or a build
 // with both enabled would have each answering the other's messages.
