@@ -94,7 +94,7 @@ overrides:
   form-data@4: ^4.0.6
   hono@4: ^4.13.5
   ip-address@10: ^10.3.1
-  nanoid@3: ^3.3.17
+  nanoid@3: ^3.3.18
   path-to-regexp@6: ^6.3.0
   qs@6: ^6.16.0
   shell-quote@1: ^1.9.0
@@ -8736,8 +8736,8 @@ packages:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
-  nanoid@3.3.17:
-    resolution: {integrity: sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==}
+  nanoid@3.3.19:
+    resolution: {integrity: sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -14583,7 +14583,7 @@ snapshots:
       '@react-navigation/routers': 7.6.4
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.17
+      nanoid: 3.3.19
       query-string: 7.1.3
       react: 19.2.3
       react-is: 19.2.7
@@ -14621,7 +14621,7 @@ snapshots:
       '@react-navigation/core': 7.21.13(react@19.2.3)
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.17
+      nanoid: 3.3.19
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6)
       standard-navigation: 0.0.7
@@ -14629,7 +14629,7 @@ snapshots:
 
   '@react-navigation/routers@7.6.4':
     dependencies:
-      nanoid: 3.3.17
+      nanoid: 3.3.19
 
   '@redis/bloom@6.2.1(@redis/client@6.2.1)':
     dependencies:
@@ -19622,7 +19622,7 @@ snapshots:
   mute-stream@2.0.0:
     optional: true
 
-  nanoid@3.3.17: {}
+  nanoid@3.3.19: {}
 
   negotiator@0.6.3: {}
 
@@ -20155,7 +20155,7 @@ snapshots:
 
   postcss@8.5.26:
     dependencies:
-      nanoid: 3.3.17
+      nanoid: 3.3.19
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
