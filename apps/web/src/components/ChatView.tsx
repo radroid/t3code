@@ -7307,6 +7307,9 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     promptRef.current = "";
+    // The queue drops the attachments, so their uploads must be released like
+    // any other draft discard; a failed upload otherwise retries on reconnect.
+    releaseDraftAttachments([...composerImages, ...composerFiles]);
     clearComposerDraftContent(composerDraftTarget);
     composerRef.current?.resetCursorState();
   }, [
