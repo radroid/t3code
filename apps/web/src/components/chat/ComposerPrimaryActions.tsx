@@ -253,12 +253,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  // Upstream hoisted this button to a variable itself in #4781, so the fork no longer
-  // carries its own copy of the styling -- the stale-hoist hazard this seam used to
-  // have (silently reverting an upstream restyle instead of conflicting) is gone.
-  // The only fork addition is the aria-label branch for a running turn: on a
-  // steer-capable driver this submit folds into the work in progress rather than
-  // starting a new turn, and that is invisible otherwise.
   const sendButton = (
     <button
       type="submit"

@@ -14,6 +14,7 @@ import {
   decodeQueuedThreadMessage,
   encodeQueuedThreadMessage,
   groupQueuedThreadMessages,
+  hasPendingUpstreamQueuedMessage,
   modelSelectionsEqual,
   parseQueuedThreadMessage,
   reorderQueuedThreadMessages,
@@ -650,5 +651,30 @@ describe("isThreadIdleForOutboxDrain", () => {
         { now: NOW },
       ),
     ).toBe(true);
+  });
+});
+
+describe("hasPendingUpstreamQueuedMessage", () => {
+  // Upstream #13764 sends its in-memory queue from the app root, so after a reconnect it and the
+  // outbox drain can both find the thread idle. The drain must yield to a message upstream will
+  // still send by itself, or an offline message overtakes one queued earlier in the running turn.
+  it("does not block when upstream has nothing queued for the thread", () => {
+    expect(hasPendingUpstreamQueuedMessage(undefined)).toBe(false);
+    expect(hasPendingUpstreamQueuedMessage([])).toBe(false);
+  });
+
+  it("blocks while a queued message is waiting to leave on its own", () => {
+    expect(hasPendingUpstreamQueuedMessage([{}])).toBe(true);
+  });
+
+  it("blocks while a queued message is being sent", () => {
+    expect(hasPendingUpstreamQueuedMessage([{ sending: "preparing" }])).toBe(true);
+    expect(
+      hasPendingUpstreamQueuedMessage([{ sending: "dispatching", holdUntilUserAction: true }]),
+    ).toBe(true);
+  });
+
+  it("does not block on a message held for the user after a failed send", () => {
+    expect(hasPendingUpstreamQueuedMessage([{ holdUntilUserAction: true }])).toBe(false);
   });
 });
