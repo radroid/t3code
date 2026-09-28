@@ -3,10 +3,11 @@
 **The authoritative list of every upstream-owned file this fork edits.**
 
 Measured, not asserted: **78 upstream-owned files, +2553 / -5111 lines**, against merge-base
-`ed57bed8e7` (the 2026-09-28 sync).
+`ba79610d16` (the 2026-09-28 sync).
 
-> **Re-baselined 2026-09-28** against `ed57bed8e7`, after a **191-commit** upstream range (issue
-> #159, five consecutive failed daily syncs). Nine conflicts: six retired-workflow modify/deletes
+> **Re-baselined 2026-09-28** against `ba79610d16`, after a **191-commit** upstream range (issue
+> #159, five consecutive failed daily syncs) and a one-commit second pass (T3 Connect removal copy,
+> no seam touched). Nine conflicts: six retired-workflow modify/deletes
 > (kept deleted), `channels.ts` (upstream's trackpad channel above the fork's notification
 > channels, still `+10/-0`), `__root.tsx` (upstream's `RunningThreadKeepAlive` import beside the
 > fork's, still `+9/-0`) and `ComposerPrimaryActions.tsx` (upstream's new inset-shadow tokens carried
@@ -653,14 +654,14 @@ the upstream workflow.
 
 | Upstream file                                         | fork Δ   | churn | risk      | Why the fork touches it                                                                                                |
 | ----------------------------------------------------- | -------- | ----- | --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/release.yml`                       | +0/-1258 | 28    | **35224** | Superseded by `coil-release.yml`; upstream publishing credentials and Blacksmith runners are unavailable here.         |
-| `.github/workflows/ci.yml`                            | +0/-349  | 16    | **5584**  | Superseded by `coil-ci.yml`; the upstream gate requires Blacksmith runners unavailable to the fork.                    |
-| `.github/workflows/mobile-eas-production.yml`         | +0/-319  | 6     | **1914**  | The fork does not publish the upstream iOS or Android apps or own their EAS credentials.                               |
+| `.github/workflows/release.yml`                       | +0/-1258 | 27    | **33966** | Superseded by `coil-release.yml`; upstream publishing credentials and Blacksmith runners are unavailable here.         |
+| `.github/workflows/ci.yml`                            | +0/-349  | 15    | **5235**  | Superseded by `coil-ci.yml`; the upstream gate requires Blacksmith runners unavailable to the fork.                    |
+| `.github/workflows/mobile-eas-production.yml`         | +0/-319  | 5     | **1595**  | The fork does not publish the upstream iOS or Android apps or own their EAS credentials.                               |
 | `.github/workflows/desktop-macos-preview.yml`         | +0/-94   | 3     | **282**   | The fork does not publish upstream preview DMGs and cannot use the configured Blacksmith runner.                       |
-| `.github/workflows/mobile-showcase-screenshots.yml`   | +0/-180  | 4     | **720**   | The fork does not maintain the upstream mobile store-listing screenshot pipeline.                                      |
+| `.github/workflows/mobile-showcase-screenshots.yml`   | +0/-180  | 3     | **540**   | The fork does not maintain the upstream mobile store-listing screenshot pipeline.                                      |
 | `.github/workflows/mobile-fingerprint-check.yml`      | +0/-220  | 2     | **440**   | Only gates the retired EAS production workflow.                                                                        |
-| `.github/workflows/mobile-eas-preview.yml`            | +0/-106  | 3     | **318**   | The fork does not publish upstream EAS preview builds or own their credentials.                                        |
-| `.github/workflows/deploy-relay.yml`                  | +0/-94   | 5     | **470**   | The fork does not deploy the upstream T3 Connect relay; Coil update delivery uses its own relay.                       |
+| `.github/workflows/mobile-eas-preview.yml`            | +0/-106  | 2     | **212**   | The fork does not publish upstream EAS preview builds or own their credentials.                                        |
+| `.github/workflows/deploy-relay.yml`                  | +0/-94   | 4     | **376**   | The fork does not deploy the upstream T3 Connect relay; Coil update delivery uses its own relay.                       |
 | `.github/workflows/web-preview.yml`                   | +0/-132  | 1     | **132**   | The fork does not deploy upstream Vercel previews or own that project's credentials.                                   |
 | `.github/workflows/thread-transfer-report.yml`        | +0/-75   | 1     | **75**    | Depends on the retired upstream CI workflow and has never run on the fork.                                             |
 | `.github/workflows/cursor-hygiene-webhook.yml`        | +0/-36   | 2     | **72**    | The fork does not forward repository events to Cursor hygiene.                                                         |
