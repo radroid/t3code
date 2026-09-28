@@ -32,10 +32,10 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="font-medium text-[11px] text-muted-foreground">{label}</span>
+      <span className="font-medium text-2xs text-muted-foreground">{label}</span>
       {children}
       {hint === undefined ? null : (
-        <span className="text-[10.5px] text-muted-foreground/80">{hint}</span>
+        <span className="text-3xs text-muted-foreground/80">{hint}</span>
       )}
     </label>
   );

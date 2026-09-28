@@ -83,7 +83,7 @@ const DEGRADED_COPY: Readonly<Record<"gate_off" | "wake_lost", string>> = {
 function Fact({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</dt>
+      <dt className="text-3xs text-muted-foreground uppercase tracking-wide">{label}</dt>
       <dd className="truncate text-xs">{value}</dd>
     </div>
   );
@@ -193,7 +193,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
       // Same measured box as the auto-resume capsule, so the two sit on one line above the
       // composer card; `items-start` keeps this one on the left and that one on the right.
       className={cn(
-        "pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30",
+        "pointer-events-none absolute inset-x-0 z-30 ps-(--workspace-gutter-start) pe-(--workspace-gutter-end)",
         !anchor.visible && "invisible",
       )}
       ref={setAnchorElement}
@@ -203,9 +203,9 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
         ...(anchor.width === null ? {} : { width: anchor.width }),
       }}
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col-reverse items-start gap-1.5">
+      <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col-reverse items-start gap-1.5">
         <Collapsible
-          className="flex max-w-full flex-col-reverse items-start gap-1.5"
+          className="flex max-w-full flex-col-reverse items-start"
           onOpenChange={setExpanded}
           open={expanded}
         >
@@ -219,12 +219,12 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
             />
             <span className={cn("font-medium", TONE_TEXT[state.tone])}>{state.label}</span>
             {hasLoop(view) ? (
-              <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+              <span className="font-mono text-2xs text-muted-foreground tabular-nums">
                 {summariseBounds(view.derived, nowMs)}
               </span>
             ) : null}
             {waiting > 0 ? (
-              <span className="rounded-full bg-primary/16 px-1.5 font-medium text-[10px] text-primary">
+              <span className="rounded-full bg-primary/16 px-1.5 font-medium text-3xs text-primary">
                 {waiting}
               </span>
             ) : null}
@@ -236,27 +236,25 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
             />
           </CollapsibleTrigger>
 
-          <CollapsiblePanel className="pointer-events-auto">
+          <CollapsiblePanel className="pointer-events-auto mb-1.5">
             <div className="max-h-[60vh] w-88 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-border/60 bg-card p-3 shadow-md">
               <div className="flex items-baseline justify-between gap-2">
                 <p className="min-w-0 truncate font-medium text-xs">{view.record.goal ?? "Loop"}</p>
                 {/* An honest staleness label, not a spinner. */}
-                <span className="shrink-0 text-[10px] text-muted-foreground">
+                <span className="shrink-0 text-3xs text-muted-foreground">
                   {loop.lastLoadedAtMs === null
                     ? ""
                     : `Updated ${formatClock(loop.lastLoadedAtMs)}`}
                 </span>
               </div>
-              <p className="mt-0.5 text-[11px]/4 text-muted-foreground">{state.detail}</p>
+              <p className="mt-0.5 text-2xs/4 text-muted-foreground">{state.detail}</p>
 
               {refusal === null ? null : (
                 <div className="mt-2 rounded-lg border border-destructive/30 bg-card p-2.5">
                   <p className="text-xs">{refusal.message}</p>
                   {/* The server's own code, carried verbatim: it is what makes an unrecognised
                       refusal reportable rather than a blank failure. */}
-                  <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                    {refusal.code}
-                  </p>
+                  <p className="mt-0.5 font-mono text-3xs text-muted-foreground">{refusal.code}</p>
                 </div>
               )}
 
@@ -273,7 +271,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
                 <div className="mt-3 rounded-lg border border-border/60 bg-card p-2.5">
                   <p className="font-medium text-xs">{empty.headline}</p>
                   {empty.lines.map((line) => (
-                    <p className="mt-0.5 text-[11px]/4 text-muted-foreground" key={line}>
+                    <p className="mt-0.5 text-2xs/4 text-muted-foreground" key={line}>
                       {line}
                     </p>
                   ))}
@@ -309,7 +307,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
                     />
                   </dl>
                   {view.record.degraded === null ? null : (
-                    <p className="mt-2 text-[11px]/4 text-muted-foreground">
+                    <p className="mt-2 text-2xs/4 text-muted-foreground">
                       {DEGRADED_COPY[view.record.degraded]}
                     </p>
                   )}
@@ -320,14 +318,14 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
                 <section className="mt-3">
                   <div className="mb-1.5 flex items-baseline gap-2">
                     <h3 className="font-medium text-foreground text-xs">Check-ins</h3>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-2xs text-muted-foreground">
                       what the loop did each time it woke
                     </span>
                   </div>
                   <ol className="flex flex-col gap-1">
                     {view.record.checkIns.toReversed().map((row) => (
                       <li
-                        className="flex items-baseline gap-2 rounded-md px-0.5 text-[11px]"
+                        className="flex items-baseline gap-2 rounded-md px-0.5 text-2xs"
                         key={`${row.n}-${row.firedAtMs}`}
                       >
                         <span className="font-mono text-muted-foreground tabular-nums">
@@ -353,7 +351,7 @@ export function LoopConsole({ threadRef }: LoopConsoleProps) {
               />
 
               {view.derived.globalEnabled ? null : (
-                <p className="mt-2 text-[11px]/4 text-muted-foreground">
+                <p className="mt-2 text-2xs/4 text-muted-foreground">
                   Loops are switched off in Settings → Loops. Arming still works; nothing will fire
                   until the master switch is on.
                 </p>

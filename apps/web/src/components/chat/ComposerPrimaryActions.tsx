@@ -134,11 +134,12 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     "border border-border/60 bg-background/40 text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive",
   );
 
+  // Queue is a labeled primary action like Submit and Refine, so it wears the same
+  // composer-owned message-action pill rather than a restyled Button.
   const queueButton = (
-    <Button
+    <button
       type="submit"
-      size="sm"
-      className={cn("rounded-full", compact ? "px-3" : "px-4")}
+      className={cn(messageActionPillClassName, "h-8 sm:h-7", compact ? "px-3" : "px-4")}
       {...pointerFocusProps}
       // Queuing is a submit like any other, so it honours the same disable
       // reason as Send — otherwise a thread whose detail is still loading
@@ -146,7 +147,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       disabled={!hasSendableContent || isSendDisabled}
     >
       Queue
-    </Button>
+    </button>
   );
 
   if (pendingAction) {

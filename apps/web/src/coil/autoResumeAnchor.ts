@@ -72,8 +72,9 @@ const UNMEASURED: ComposerAnchor = {
  * Places the capsule directly above the composer, in the capsule's own coordinate space.
  *
  * Mirrors the composer overlay's box rather than re-deriving it from the same utility classes: the
- * capsule's inner `chat-composer-horizontal-inset` + `mx-auto max-w-3xl` then reproduces the
- * composer card's box exactly, because it is running against the same width the composer had.
+ * capsule's inner `--workspace-gutter-*` padding + `mx-auto max-w-(--chat-max-width)` then
+ * reproduces the composer card's box exactly, because it is running against the same width the
+ * composer had.
  */
 export function resolveComposerAnchor({
   composer,

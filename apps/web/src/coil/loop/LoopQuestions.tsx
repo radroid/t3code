@@ -44,7 +44,7 @@ function SectionHeading({ title, why }: { readonly title: string; readonly why: 
   return (
     <div className="mt-3 mb-1.5 flex items-baseline gap-2 first:mt-0">
       <h3 className="font-medium text-foreground text-xs">{title}</h3>
-      <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{why}</span>
+      <span className="min-w-0 flex-1 truncate text-2xs text-muted-foreground">{why}</span>
     </div>
   );
 }
@@ -74,13 +74,13 @@ function QuestionCard({
       <div className="flex items-baseline justify-between gap-2">
         <span
           className={cn(
-            "font-medium text-[10px] uppercase tracking-wide",
+            "font-medium text-3xs uppercase tracking-wide",
             labelClassName ?? "text-muted-foreground",
           )}
         >
           {label}
         </span>
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">
+        <span className="shrink-0 font-mono text-3xs text-muted-foreground tabular-nums">
           {formatAge(at, nowMs)}
         </span>
       </div>
@@ -108,11 +108,11 @@ function BlockingSection({ view, nowMs }: { readonly view: LoopView; readonly no
           labelClassName="text-foreground"
           nowMs={nowMs}
         >
-          <p className="mt-1 text-[12.5px] leading-snug">{entry.question}</p>
+          <p className="mt-1 text-xs leading-snug">{entry.question}</p>
         </QuestionCard>
       ))}
       {hint === null ? null : (
-        <p className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
+        <p className="flex items-center gap-1.5 px-0.5 text-2xs text-muted-foreground">
           {/* Pointing at the live control rather than cloning it — see the module note. The
               arrow only makes sense when the thing to do IS below; a snooze is undone
               elsewhere, so the copy says so and the arrow goes. */}
@@ -140,17 +140,17 @@ function BlockerAnswerForm({
     <div className="mt-2 flex flex-col gap-1.5">
       {blocker.options.map((option) => (
         <Button
-          className="h-auto w-full justify-start whitespace-normal px-2 py-1.5 text-left"
+          className="w-full justify-start"
           disabled={busy}
           key={option.label}
           onClick={() => onAnswer(option.label)}
-          size="sm"
+          size="sm-multiline"
           variant="outline"
         >
-          <span className="min-w-0">
+          <span className="min-w-0 text-left">
             <span className="block font-medium text-xs">{option.label}</span>
             {option.description === "" ? null : (
-              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              <span className="mt-0.5 block text-2xs text-muted-foreground">
                 {option.description}
               </span>
             )}
@@ -225,13 +225,10 @@ function DeferredSection({
       />
       {notice === null ? null : (
         <div className="mb-1.5 flex gap-2 rounded-lg border border-border/60 bg-card p-2.5">
-          <AlertTriangleIcon
-            aria-hidden="true"
-            className="mt-0.5 size-3.5 shrink-0 text-amber-500"
-          />
+          <AlertTriangleIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-warning" />
           <div className="min-w-0">
             <p className="font-medium text-xs">{notice.title}</p>
-            <p className="mt-0.5 text-[11px]/4 text-muted-foreground">{notice.detail}</p>
+            <p className="mt-0.5 text-2xs/4 text-muted-foreground">{notice.detail}</p>
           </div>
         </div>
       )}
@@ -243,9 +240,9 @@ function DeferredSection({
           labelClassName="text-foreground"
           nowMs={nowMs}
         >
-          <p className="mt-1 text-[12.5px] leading-snug">{blocker.question}</p>
+          <p className="mt-1 text-xs leading-snug">{blocker.question}</p>
           {blocker.context === null ? null : (
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{blocker.context}</p>
+            <p className="mt-0.5 text-2xs text-muted-foreground">{blocker.context}</p>
           )}
           <BlockerAnswerForm
             blocker={blocker}
@@ -261,12 +258,10 @@ function DeferredSection({
           label={blocker.deliveredToAgent ? "Answered · told the agent" : "Answered · not yet sent"}
           nowMs={nowMs}
         >
-          <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
-            {blocker.question}
-          </p>
-          <p className="mt-1 text-[12.5px] leading-snug">{blocker.answer}</p>
+          <p className="mt-1 text-xs leading-snug text-muted-foreground">{blocker.question}</p>
+          <p className="mt-1 text-xs leading-snug">{blocker.answer}</p>
           {blocker.deliveredToAgent ? null : (
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 text-2xs text-muted-foreground">
               Banked. The next check-in restates it to the agent.
             </p>
           )}
@@ -295,10 +290,10 @@ function VoidedSection({
       <SectionHeading title="Never answered" why="the session ended while they were open" />
       {voided.map((entry) => (
         <QuestionCard key={entry.requestId} at={entry.raisedAtMs} label="Voided" nowMs={nowMs}>
-          <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground line-through decoration-muted-foreground/40">
+          <p className="mt-1 text-xs leading-snug text-muted-foreground line-through decoration-muted-foreground/40">
             {entry.question}
           </p>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-2xs text-muted-foreground">
             Closed by the session ending, not by an answer.
           </p>
         </QuestionCard>
