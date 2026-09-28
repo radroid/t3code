@@ -26,7 +26,9 @@ import {
   useThreadOutboxMessages,
   useThreadOutboxShellStatuses,
 } from "./threadOutbox";
+import { useQueuedMessageStore } from "../queuedMessageStore";
 import {
+  hasPendingUpstreamQueuedMessage,
   modelSelectionsEqual,
   resolveQueuedThreadSettings,
   resolveThreadOutboxDeliveryAction,
@@ -96,6 +98,7 @@ export function useThreadOutboxDrain(): void {
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
   const editingQueuedMessageIds = useThreadOutboxEditingIds();
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
+  const upstreamQueuesByThreadKey = useQueuedMessageStore((state) => state.queuesByThreadKey);
   const shellStatuses = useThreadOutboxShellStatuses();
   const threads = useThreadShells();
   const { environments } = useEnvironments();
@@ -334,7 +337,10 @@ export function useThreadOutboxDrain(): void {
         shellStatus,
         environmentConnected: connectedEnvironmentIds.has(nextQueuedMessage.environmentId),
         threadBusy:
-          thread !== undefined ? !isThreadIdleForOutboxDrain(thread, { now: nowIso }) : true,
+          thread !== undefined
+            ? !isThreadIdleForOutboxDrain(thread, { now: nowIso }) ||
+              hasPendingUpstreamQueuedMessage(upstreamQueuesByThreadKey[threadKey])
+            : true,
       });
       if (deliveryAction === "wait") {
         continue;
@@ -401,6 +407,7 @@ export function useThreadOutboxDrain(): void {
     sendQueuedMessage,
     shellStatuses,
     threads,
+    upstreamQueuesByThreadKey,
   ]);
 }
 

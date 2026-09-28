@@ -44,7 +44,7 @@ export function ThreadOutboxQueueList({
 
   return (
     <div className="border-border/40 border-b px-2.5 pt-2.5 pb-1.5 sm:px-3 sm:pt-3">
-      <div className="flex items-baseline gap-1.5 px-1 pb-1 text-[11px] text-muted-foreground/70 leading-none">
+      <div className="flex items-baseline gap-1.5 px-1 pb-1 text-2xs text-muted-foreground/70 leading-none">
         <span className="font-medium">
           {queue.length} queued {queue.length === 1 ? "message" : "messages"}
         </span>
@@ -269,7 +269,7 @@ function QueuedMessageRow({
     >
       <span
         aria-hidden="true"
-        className="w-3 shrink-0 text-right text-[11px] text-muted-foreground/50 tabular-nums"
+        className="w-3 shrink-0 text-right text-2xs text-muted-foreground/50 tabular-nums"
       >
         {position}
       </span>

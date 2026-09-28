@@ -22,6 +22,8 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
+import type { QueuedComposerMessage } from "../queuedMessageStore";
+
 /**
  * Web thread outbox model, ported from apps/mobile/src/state/thread-outbox-model.ts.
  *
@@ -341,4 +343,19 @@ export function isThreadIdleForOutboxDrain(
   if (shell.session?.status === "starting" || shell.session?.status === "running") return false;
   if (hasQueuedTurnStart(shell, options)) return false;
   return true;
+}
+
+/**
+ * Whether upstream's in-memory queue still holds a message for this thread that will leave on its
+ * own. Since upstream #13764 that queue sends from the app root, so it and the outbox drain can both
+ * see an idle thread in the same tick after a reconnect. The drain waits, the same rule upstream's
+ * `onSend` applies to a new send, so an outbox message cannot overtake a message queued earlier
+ * during the running turn. A message held for the user (a failed send) does not block.
+ */
+export function hasPendingUpstreamQueuedMessage(
+  queue: ReadonlyArray<Pick<QueuedComposerMessage, "sending" | "holdUntilUserAction">> | undefined,
+): boolean {
+  return (queue ?? []).some(
+    (message) => message.sending !== undefined || !message.holdUntilUserAction,
+  );
 }

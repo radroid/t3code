@@ -328,7 +328,7 @@ export function LoopsSettingsPanel() {
           onRetry={loops.refresh}
         />
         {loops.lastLoadedAtMs === null ? null : (
-          <p className="px-3 text-[11px] text-muted-foreground/80 sm:px-4">
+          <p className="px-3 text-2xs text-muted-foreground/80 sm:px-4">
             Updated {formatClock(loops.lastLoadedAtMs)}
           </p>
         )}

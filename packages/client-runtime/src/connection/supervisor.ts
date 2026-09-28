@@ -450,8 +450,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   // surfaces as a reconnect.
   const runLivenessProbe = Effect.fnUntraced(function* (
     lease: ConnectionDriver.EnvironmentConnectionLease,
-    probeTimeout: typeof CONNECTION_PROBE_TIMEOUT | typeof MOBILE_CONNECTION_PROBE_TIMEOUT =
-      CONNECTION_PROBE_TIMEOUT,
+    probeTimeout:
+      | typeof CONNECTION_PROBE_TIMEOUT
+      | typeof MOBILE_CONNECTION_PROBE_TIMEOUT = CONNECTION_PROBE_TIMEOUT,
     // Upstream #5561 remembers a failed *wake* probe so the reconnect that
     // follows is treated as a server stall rather than a fresh failure. This
     // helper is shared with the heartbeat path, which upstream does not mark,
@@ -706,6 +707,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   }, Effect.ensuring(clearLease));
 
   const waitForRetrySignal = Effect.fnUntraced(function* (delayMs: number) {
+    // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - the sleep is the retry delay (false), not a timeout around the signal loop
     return yield* Effect.raceFirst(
       Effect.sleep(delayMs).pipe(Effect.as(false)),
       Effect.gen(function* () {

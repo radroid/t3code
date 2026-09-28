@@ -50,15 +50,15 @@ describe("SegmentedToggle", () => {
 
   it("moves the fill with a damped spring on the travel", () => {
     // The damping belongs to the translation — that is the thing the user perceives moving.
-    expect(renderToggle(true)).toContain("transform_320ms_cubic-bezier(0.34,1.56,0.64,1)");
+    expect(renderToggle(true)).toContain("transform 320ms cubic-bezier(0.34,1.56,0.64,1)");
   });
 
   it("runs colour for the same duration as the travel so the fill stays one object", () => {
     const html = renderToggle(true);
     // A shorter colour transition finishes the blue->grey change mid-flight and reads as the
     // colour flipping rather than the fill sliding across.
-    expect(html).toContain("background-color_320ms_ease-out");
-    expect(html).not.toContain("background-color_200ms");
+    expect(html).toContain("background-color 320ms ease-out");
+    expect(html).not.toContain("background-color 200ms");
   });
 
   it("carries the fill on a single element so it reads as one body of colour", () => {

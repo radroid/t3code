@@ -76,7 +76,7 @@ export function SegmentedToggle({ enabled, onChange }: SegmentedToggleProps) {
 
   const segmentClass = (active: boolean) =>
     cn(
-      "relative z-10 rounded-full px-2.5 py-0.5 text-center font-medium text-[11px]/4 transition-colors duration-150 hover:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
+      "relative z-10 rounded-full px-2.5 py-0.5 text-center font-medium text-2xs/4 transition-colors duration-150 hover:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none",
       active ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
     );
 
@@ -101,9 +101,15 @@ export function SegmentedToggle({ enabled, onChange }: SegmentedToggleProps) {
       <span
         aria-hidden="true"
         className={cn(
-          "absolute inset-y-0 left-0 w-1/2 rounded-full will-change-transform [transition:transform_320ms_cubic-bezier(0.34,1.56,0.64,1),background-color_320ms_ease-out] motion-reduce:transition-none",
+          "absolute inset-y-0 left-0 w-1/2 rounded-full will-change-transform motion-reduce:transition-none!",
           enabled ? "translate-x-full bg-primary" : "translate-x-0 bg-accent",
         )}
+        // Inline because the spring curve is this toggle's alone, not a theme token; the
+        // important `transition-none!` above still wins under reduced motion.
+        style={{
+          transition:
+            "transform 320ms cubic-bezier(0.34,1.56,0.64,1), background-color 320ms ease-out",
+        }}
       />
       <button
         aria-checked={!enabled}
@@ -210,12 +216,12 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
   return (
     <div
       // Occupies the composer overlay's measured box, then reproduces the composer's own inner
-      // layout inside it. That box is NOT the full content width: `chat-composer-horizontal-inset`
-      // supplies the outer padding (0.75rem, 1.25rem from 40rem up, plus
-      // `env(safe-area-inset-right)`), and inside it the visible card is `mx-auto w-full max-w-3xl`
-      // — centred and capped at 768px. Matching only the inset leaves the capsule hanging ~188px
-      // past the card on a wide window; matching only `max-w-3xl` drifts once the window is narrow
-      // enough for the padding to bite. Both are needed, in this order — and both are only correct
+      // layout inside it. That box is NOT the full content width: the `--workspace-gutter-*`
+      // padding (0.75rem, 1.25rem from 40rem up, plus the safe-area inset) comes first, and inside
+      // it the visible card is `mx-auto w-full max-w-(--chat-max-width)` — centred and capped by
+      // the Chat width setting. Matching only the gutter leaves the capsule hanging past the card
+      // on a wide window; matching only the max width drifts once the window is narrow enough for
+      // the padding to bite. Both are needed, in this order — and both are only correct
       // while this wrapper spans the same width the composer does, which is why `left`/`width` are
       // measured rather than left to `inset-x-0`.
       //
@@ -223,7 +229,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
       // `offsetParent`, so removing it would strand the capsule with no way to measure its way
       // back. `visibility` also keeps it out of the a11y tree and out of hit-testing.
       className={cn(
-        "pointer-events-none chat-composer-horizontal-inset absolute inset-x-0 z-30",
+        "pointer-events-none absolute inset-x-0 z-30 ps-(--workspace-gutter-start) pe-(--workspace-gutter-end)",
         !anchor.visible && "invisible",
       )}
       ref={setAnchorElement}
@@ -233,9 +239,9 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
         ...(anchor.width === null ? {} : { width: anchor.width }),
       }}
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col-reverse items-end gap-1.5">
+      <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col-reverse items-end gap-1.5">
         <Collapsible
-          className="flex flex-col-reverse items-end gap-1.5"
+          className="flex flex-col-reverse items-end"
           onOpenChange={setExpanded}
           open={expanded}
         >
@@ -270,7 +276,7 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
                 // feature, so `tabular-nums` computes but changes nothing and the digits stay
                 // proportional — "5:11:11" measures 36px against "5:00:00" at 60px, which resized
                 // the capsule under the cursor every second. JetBrains Mono pins the advance width.
-                <span className="font-medium font-mono text-[11px] text-foreground tabular-nums">
+                <span className="font-medium font-mono text-2xs text-foreground tabular-nums">
                   {countdown}
                 </span>
               )}
@@ -283,17 +289,16 @@ export function AutoResumeOverlay({ threadRef }: AutoResumeOverlayProps) {
             </CollapsibleTrigger>
           </div>
 
-          <CollapsiblePanel className="pointer-events-auto">
+          <CollapsiblePanel className="pointer-events-auto mb-1.5">
             <div className="w-72 max-w-full rounded-lg border border-border/60 bg-card p-3 shadow-md">
               <p className="font-medium text-xs">Resume after usage limits</p>
 
               {pending !== null ? (
                 <div className="mt-2 rounded-md border border-primary/20 bg-primary/6 p-2">
                   <p className="font-medium text-xs">
-                    Resuming in{" "}
-                    <span className="font-mono text-[11px] tabular-nums">{countdown}</span>
+                    Resuming in <span className="font-mono text-2xs tabular-nums">{countdown}</span>
                   </p>
-                  <p className="mt-0.5 text-[11px]/4 text-muted-foreground">
+                  <p className="mt-0.5 text-2xs/4 text-muted-foreground">
                     {describePendingReason(pending.reason)} · ~
                     {formatNextAttempt(pending.resumeAtMs)}
                   </p>
