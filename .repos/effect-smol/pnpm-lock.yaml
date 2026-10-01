@@ -225,8 +225,8 @@ importers:
         specifier: ^4.13.7
         version: 4.13.7
       nodemailer:
-        specifier: ^10.0.0
-        version: 10.0.0
+        specifier: ^10.0.9
+        version: 10.0.9
     devDependencies:
       '@types/nodemailer':
         specifier: ^8.0.1
@@ -933,66 +933,6 @@ importers:
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@edge-runtime/vm@5.0.0)(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.14.0)(jsdom@30.0.1)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0))
-
-  scratchpad:
-    dependencies:
-      '@effect/ai-anthropic':
-        specifier: workspace:*
-        version: link:../packages/ai/anthropic
-      '@effect/ai-openai':
-        specifier: workspace:*
-        version: link:../packages/ai/openai
-      '@effect/ai-openai-compat':
-        specifier: workspace:*
-        version: link:../packages/ai/openai-compat
-      '@effect/ai-openrouter':
-        specifier: workspace:*
-        version: link:../packages/ai/openrouter
-      '@effect/opentelemetry':
-        specifier: workspace:*
-        version: link:../packages/opentelemetry
-      '@effect/platform-bun':
-        specifier: workspace:*
-        version: link:../packages/platform/bun
-      '@effect/platform-node':
-        specifier: workspace:*
-        version: link:../packages/platform/node
-      '@effect/sql-clickhouse':
-        specifier: workspace:*
-        version: link:../packages/sql/clickhouse
-      '@effect/sql-d1':
-        specifier: workspace:*
-        version: link:../packages/sql/d1
-      '@effect/sql-libsql':
-        specifier: workspace:*
-        version: link:../packages/sql/libsql
-      '@effect/sql-mssql':
-        specifier: workspace:*
-        version: link:../packages/sql/mssql
-      '@effect/sql-mysql2':
-        specifier: workspace:*
-        version: link:../packages/sql/mysql2
-      '@effect/sql-pg':
-        specifier: workspace:*
-        version: link:../packages/sql/pg
-      '@effect/sql-sqlite-bun':
-        specifier: workspace:*
-        version: link:../packages/sql/sqlite-bun
-      '@effect/sql-sqlite-do':
-        specifier: workspace:*
-        version: link:../packages/sql/sqlite-do
-      '@effect/sql-sqlite-node':
-        specifier: workspace:*
-        version: link:../packages/sql/sqlite-node
-      '@effect/sql-sqlite-react-native':
-        specifier: workspace:*
-        version: link:../packages/sql/sqlite-react-native
-      '@effect/sql-sqlite-wasm':
-        specifier: workspace:*
-        version: link:../packages/sql/sqlite-wasm
-      effect:
-        specifier: workspace:*
-        version: link:../packages/effect
 
   scripts:
     dependencies:
@@ -5235,8 +5175,8 @@ packages:
     resolution: {integrity: sha512-71kFFjYaSshDTA8/a2HiTYPLdASWjLJxUyJxGE+ffxU+KhxSBtM9kiLUX+R2yooFdSFKMFpi4n3PFtDy6qXv8A==}
     engines: {node: '>=18'}
 
-  nodemailer@10.0.0:
-    resolution: {integrity: sha512-wdv+hXBg0iIPIOf108FaZyTxqjQpCvQeAJt9pHHTooPy/y3vQtI9eiImM9AIVKR3e/0FeMA1oueNfBjFJcaK+Q==}
+  nodemailer@10.0.9:
+    resolution: {integrity: sha512-BF0qcyplCwp+jMk6HCjFykBz/YhhZSsxrARhOldLwFWH+8kGjQsd2WIMIZhqEuyXRoGFi0ONbDeWDMDoL8MhLw==}
     engines: {node: '>=20.0.0'}
 
   normalize-path@3.0.0:
@@ -10855,7 +10795,7 @@ snapshots:
     dependencies:
       '@babel/parser': 7.29.8
 
-  nodemailer@10.0.0: {}
+  nodemailer@10.0.9: {}
 
   normalize-path@3.0.0: {}
 
