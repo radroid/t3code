@@ -122,6 +122,8 @@ export default defineConfig({
       "apps/mobile/android/**",
       "apps/mobile/ios/**",
       "apps/mobile/uniwind-types.d.ts",
+      // coil: fork features parked by the orchestration v2 sync; see coil-parked/README.md.
+      "coil-parked/**",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
     jsPlugins: ["./oxlint-plugin-t3code/index.ts", "@shadcn/lint"],
