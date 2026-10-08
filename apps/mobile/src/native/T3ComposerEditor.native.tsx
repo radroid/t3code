@@ -368,7 +368,7 @@ export function ComposerEditor({
         }}
         onComposerFocus={onFocus}
         onComposerBlur={onBlur}
-        onComposerSubmit={onSubmit}
+        onComposerSubmit={onSubmit === undefined ? undefined : () => onSubmit(false)}
       />
     </TextInputWrapper>
   );

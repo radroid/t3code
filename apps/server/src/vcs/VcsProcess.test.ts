@@ -652,19 +652,14 @@ describe("VcsProcess.run non-zero exit classification", () => {
     },
   ] as const;
 
-  for (const testCase of cases) {
-    it.effect(`classifies ${testCase.label} as ${testCase.failureKind}`, () =>
-      Effect.gen(function* () {
-        const error = yield* classifyStderr(testCase.command, testCase.stderr);
+  it.effect.each(cases)("classifies $label as $failureKind", ({ command, stderr, failureKind }) =>
+    Effect.gen(function* () {
+      const error = yield* classifyStderr(command, stderr);
 
-        expect(error).toBeInstanceOf(VcsProcessExitError);
-        expect(error).toMatchObject({
-          command: testCase.command,
-          failureKind: testCase.failureKind,
-        });
-      }),
-    );
-  }
+      expect(error).toBeInstanceOf(VcsProcessExitError);
+      expect(error).toMatchObject({ command, failureKind });
+    }),
+  );
 
   it.effect("keeps Azure DevOps stderr out of the classified error", () =>
     Effect.gen(function* () {

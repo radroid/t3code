@@ -1,3 +1,5 @@
+import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/models";
+import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -257,26 +259,42 @@ describe("formatBuiltAgo", () => {
 });
 
 describe("countProgressingThreads", () => {
+  const runtime = (status: ThreadRuntimeSummary["status"]): ThreadRuntimeSummary => ({
+    status,
+    activeRunId: null,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerName: null,
+    lastError: null,
+    updatedAt: "2026-08-01T00:00:00Z",
+  });
   const thread = (over: Partial<ProgressCandidateThread> = {}): ProgressCandidateThread => ({
     environmentId: "local",
-    latestTurn: { state: "running" },
+    runtime: runtime("running"),
     archivedAt: null,
     settledOverride: null,
     ...over,
   });
 
-  it("counts a running turn in the primary environment", () => {
+  it("counts a running run in the primary environment", () => {
     expect(countProgressingThreads([thread()], "local")).toBe(1);
   });
 
-  it("ignores finished turns", () => {
-    expect(countProgressingThreads([thread({ latestTurn: { state: "completed" } })], "local")).toBe(
-      0,
-    );
+  it("counts a run that is waiting on the user", () => {
+    // Restarting tears down the provider process that is holding the pending request.
+    expect(countProgressingThreads([thread({ runtime: runtime("waiting") })], "local")).toBe(1);
+  });
+
+  it("counts a thread parked at idle on background work that will wake it", () => {
+    // A restart would kill the subagent or monitor the agent is waiting on.
+    expect(countProgressingThreads([thread({ runtime: runtime("idle") })], "local")).toBe(1);
+  });
+
+  it("ignores finished runs", () => {
+    expect(countProgressingThreads([thread({ runtime: runtime("completed") })], "local")).toBe(0);
   });
 
   it("ignores threads that never ran", () => {
-    expect(countProgressingThreads([thread({ latestTurn: null })], "local")).toBe(0);
+    expect(countProgressingThreads([thread({ runtime: null })], "local")).toBe(0);
   });
 
   it("does not let a remote environment block the restart", () => {
@@ -304,7 +322,7 @@ describe("countProgressingThreads", () => {
   it("sums across threads", () => {
     expect(
       countProgressingThreads(
-        [thread(), thread(), thread({ latestTurn: { state: "completed" } })],
+        [thread(), thread(), thread({ runtime: runtime("completed") })],
         "local",
       ),
     ).toBe(2);
