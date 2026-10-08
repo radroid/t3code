@@ -36,9 +36,10 @@ The agent comments the PR link back on the issue when done.
 > gh workflow run "coil sync resolve (agent)" -R radroid/t3code -f issue=<n> -f model=claude-opus-5
 > ```
 
-**Check the budget before you pick a path.** The job is capped at `timeout-minutes: 45` and
+**Check the budget before you pick a path.** The job is capped at `timeout-minutes: 90` and
 `--max-turns 150`. The one successful resolve to date absorbed a 36-commit upstream range against
-37 fork commits and used 36m15s — 81% of the budget. A materially larger range will exhaust it, and
+37 fork commits and used 36m15s, but that was before the 2026-10-08 sync, after which the test verify
+alone takes about 30 minutes on one runner. A materially larger range will exhaust the budget, and
 a timeout mid-merge leaves an unpushed branch and a spent budget. Raising the caps needs a workflow
 edit; `workflow_dispatch` reads the workflow file from `--ref`, so you can carry raised limits on a
 scratch branch without merging it (the job still checks out `main` and merges upstream into it):
@@ -113,8 +114,8 @@ upstream-inherited and nothing the fork did caused it. Delete the branch afterwa
 
 Fix such failures in `.github/workflows/coil-ci.yml` (fork-owned) rather than by patching the upstream
 file — patching adds a row to `docs/coil/SEAMS.md` and permanent sync cost for a CI-environment
-problem. The `--testTimeout` override on the Test step exists for exactly this reason; its comment
-records the case.
+problem. The `--testTimeout`/`--hookTimeout` overrides and the separate web job exist for exactly
+this reason; the comment above the test jobs records the cases.
 
 ## What the agent does (and what a human doing it locally should do)
 
@@ -140,13 +141,20 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    really exists upstream, delete the fork's redundant copy as its own commit on the branch, and
    note it in the PR. (The old rebase-era "dropped patch" escalation is gone; nothing can vanish
    on its own any more.)
-6. Verify: `vp run typecheck && vp run lint && vp run test --testTimeout=120000`. Fix the fork's
-   code to match upstream's new internals until green.
+6. Verify: `vp run typecheck && vp run lint`, then the tests in two runs with web last and alone,
+   as `scripts/coil/sync-upstream.sh` does:
+
+   ```
+   vp run --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000
+   vp run --filter @t3tools/web test --testTimeout=120000 --hookTimeout=120000
+   ```
+
+   Fix the fork's code to match upstream's new internals until green.
 
    Two notes. **`AGENTS.md` says "do not run repo-wide checks" — an upstream sync is the sanctioned
    exception.** A sync can break any package, so the full suite is the point; that rule is about
-   routine feature work. And the `--testTimeout` flag is required (see the section above); it must
-   not follow a `--` separator or it is silently ignored.
+   routine feature work. And the timeout flags are required (see the section above); they must
+   not follow a `--` separator or they are silently ignored.
 
 7. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
    and **lands it with a merge commit — see
@@ -246,7 +254,7 @@ used to be the expensive one.
   the exact pre-sync tip if you want to diff against it or reset to it; if its push failed, the
   issue says `none`.
 - To re-gate locally before landing:
-  `git switch --detach origin/coil/sync-<id> && vp run typecheck && vp run lint && vp run test`.
+  `git switch --detach origin/coil/sync-<id>`, then the verify in step 6.
 
 ## One-time setup
 

@@ -61,7 +61,9 @@ jobs:
           contains(github.event.issue.labels.*.name, 't3x-sync') ) &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) )
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The verify below runs the whole suite on this one runner; the server suite alone takes about
+    # 25 minutes serially since the 2026-10-08 sync (coil-ci.yml shards it six ways).
+    timeout-minutes: 90
     steps:
       - name: Checkout fork main (full history)
         uses: actions/checkout@v6
@@ -138,12 +140,16 @@ jobs:
                changed the semantics of an API the fork hooks into. If upstream has absorbed a
                fork change, delete the fork's now-redundant version as a normal follow-up commit
                on this branch and say so — a merge never drops fork code for you.
-            4. Verify: run `vp run typecheck`, `vp run lint`, then
-               `vp run test --testTimeout=120000`. The --testTimeout flag is required: apps/web
-               pins 15s, which is too tight for this fork's 2-core runners, and 120s matches the
-               fork's CI gate without lowering any package's own budget. Note the flag must NOT
-               come after a `--` separator or it is silently ignored. Fix the fork's code until
-               all three pass.
+            4. Verify: run `vp run typecheck`, `vp run lint`, then the tests in two runs, web
+               last and alone:
+               `vp run --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000`
+               then `vp run --filter @t3tools/web test --testTimeout=120000 --hookTimeout=120000`.
+               The timeout flags are required: apps/web pins 15s, which is too tight for this
+               runner, and 120s matches the fork's CI gate without lowering any package's own
+               budget. Web runs alone because a web test's in-file 30s hook budget times out
+               when it shares this runner with mobile and desktop. Note the flags must NOT come
+               after a `--` separator or they are silently ignored. Fix the fork's code until
+               all three steps pass.
             5. Push the branch: `git push -u origin HEAD`.
             6. Open a PR into `main` with `gh pr create`, title "coil: resolve upstream sync
                (run ${{ github.run_id }})". In the body summarise: the upstream range merged,

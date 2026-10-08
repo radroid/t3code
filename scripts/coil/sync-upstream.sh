@@ -189,25 +189,37 @@ if [[ "$SKIP_VERIFY" == 1 ]]; then
   exit 0
 fi
 
-# Per-script extra args, so the daily verify matches the fork's CI gate exactly. `test` needs
-# --testTimeout because apps/web pins 15s (tuned for upstream's blacksmith runners) and this fork
-# runs on 2-core ubuntu-latest, where an upstream CPU-bound test reliably blows it. 120s is the
-# highest any package configures (apps/server), so it never LOWERS a package's own budget.
-# --hookTimeout is the same fix for the same reason and is NOT implied by --testTimeout: a
-# beforeAll/beforeEach carries its own budget, and an upstream web test timed out in one under
-# full-suite load at the 2026-08-02 sync while passing standalone.
+# Each verify script is one `$RUN <script>`, except `test`, which runs the web suite on its own
+# after everything else. coil-ci.yml gives web its own runner for the same reason: alongside
+# mobile and desktop on one ubuntu-latest runner, `MessagesTimeline.test.tsx` blows the 30s its
+# `beforeAll` pins in-file (3 of 3 runs at the 2026-10-08 sync), and `--hookTimeout` cannot
+# override an in-file value. `@t3tools/monorepo` is the root package, whose `test` is
+# `vp run -r test` and would re-run web.
+# --testTimeout because apps/web pins 15s (tuned for upstream's blacksmith runners), too tight
+# for an upstream CPU-bound test here. 120s is the highest any package configures
+# (apps/server), so it never LOWERS a package's own budget. --hookTimeout is NOT implied by
+# --testTimeout: a beforeAll/beforeEach carries its own budget.
 # Keep in sync with `.github/workflows/coil-ci.yml`.
+TEST_FLAGS="--testTimeout=120000 --hookTimeout=120000"
 for script in $VERIFY; do
-  EXTRA=""
-  if [[ "$script" == "test" ]]; then EXTRA="--testTimeout=120000 --hookTimeout=120000"; fi
-  echo "→ verify: $RUN $script $EXTRA"
-  # shellcheck disable=SC2086
-  if ! $RUN "$script" $EXTRA; then
-    FAILING_STEP="$script"
-    fail "verification step '$script' failed"
-    write_status daily verify-failed "merge clean but '$script' failed"
-    exit 30
+  if [[ "$script" == "test" ]]; then
+    commands=(
+      "$RUN --filter !@t3tools/monorepo --filter !@t3tools/web test $TEST_FLAGS"
+      "$RUN --filter @t3tools/web test $TEST_FLAGS"
+    )
+  else
+    commands=("$RUN $script")
   fi
+  for cmd in "${commands[@]}"; do
+    echo "→ verify: $cmd"
+    # shellcheck disable=SC2086
+    if ! $cmd; then
+      FAILING_STEP="$script"
+      fail "verification step '$script' failed"
+      write_status daily verify-failed "merge clean but '$script' failed"
+      exit 30
+    fi
+  done
 done
 
 write_status daily ok "merge clean and verification green"
