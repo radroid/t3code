@@ -79,6 +79,11 @@ jobs:
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
+      # Upstream's ServerBrowserPage.test.ts drives a real headless Chromium; upstream's ci.yml
+      # installs it the same way before its server tests.
+      - name: Install Chromium for server browser integration tests
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+
       - name: Tag pre-merge last-good state
         # A rollback point, not a landing mechanism. The sync only fast-forwards `main`, so the
         # normal way to undo a bad sync is `git revert -m 1 <merge sha>` — an ordinary commit that

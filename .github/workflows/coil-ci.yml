@@ -56,6 +56,11 @@ jobs:
         if: ${{ !cancelled() }}
         run: vp run lint
 
+      # Upstream's ServerBrowserPage.test.ts drives a real headless Chromium; upstream's ci.yml
+      # installs it the same way before its server tests.
+      - name: Install Chromium for server browser integration tests
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+
       # `--testTimeout` is raised because `apps/web/vite.config.ts` pins testTimeout to 15s, which is
       # tuned for upstream's blacksmith runners. This fork runs on 2-core ubuntu-latest, where
       # upstream's `stashImageCompression` worst-case test (~3s on an M-series Mac; 6x the next

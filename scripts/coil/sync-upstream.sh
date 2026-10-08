@@ -62,9 +62,10 @@ write_status() {
 
 fail() { echo "ERROR: $*" >&2; }
 
-# These upstream workflows are intentionally absent from the fork. Keep this policy beside the
-# merge that can reintroduce them: a modify/delete conflict is resolved as deleted, and an
-# upstream delete-then-readd is removed before the merge commit is created.
+# These upstream workflows, and the upstream tests that read them, are intentionally absent from
+# the fork. Keep this policy beside the merge that can reintroduce them: a modify/delete conflict
+# is resolved as deleted, and an upstream delete-then-readd is removed before the merge commit is
+# created.
 retire_upstream_workflows() {
   local path
   while IFS= read -r path; do
@@ -91,6 +92,7 @@ retire_upstream_workflows() {
 .github/workflows/release.yml
 .github/workflows/thread-transfer-report.yml
 .github/workflows/web-preview.yml
+scripts/notify-discord-release.test.ts
 EOF
 }
 
