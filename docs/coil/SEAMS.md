@@ -3,7 +3,8 @@
 **The authoritative list of every upstream-owned file this fork edits.**
 
 Measured, not asserted: **65 upstream-owned files, +1100 / -5774 lines**, against merge-base
-`cdd331b6c3` (the 2026-10-08 sync).
+`580948708b` (the 2026-10-08 sync, after a five-commit second pass of relay-client fixes that touch
+no seam).
 
 > **Re-baselined 2026-10-08** against `cdd331b6c3`, after a **547-commit** upstream range (issue
 > #161) that carried upstream's orchestration v2 (#2829), Effect 4.0.1 (#16138) and Expo SDK 58 /
