@@ -94,6 +94,11 @@ jobs:
           cache: true
           run-install: true
 
+      # Upstream's ServerBrowserPage.test.ts drives a real headless Chromium; upstream's ci.yml
+      # installs it the same way before its server tests.
+      - name: Install Chromium for server browser integration tests
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
+
       - name: Resolve the merge with Claude
         uses: anthropics/claude-code-action@v1
         env:

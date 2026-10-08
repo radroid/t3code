@@ -86,8 +86,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxWmClass: string;
     readonly linuxApplicationsDir: string;
     readonly appImagePath: Option.Option<string>;
-    readonly userDataDirName: string;
-    readonly legacyUserDataDirName: string;
     readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
@@ -101,8 +99,9 @@ export class DesktopEnvironment extends Context.Service<
 // every window title, the Linux .desktop entry, and — through `getAppBranding()` — the whole web
 // UI, which reads it rather than hardcoding one.
 //
-// `legacyUserDataDirName` below still says "T3 Code (Alpha)" and MUST keep saying it. It names a
-// directory that already exists on disk; it is not derived from this constant and never was.
+// The "T3 Code (Alpha)" profile names in `DesktopUserData.ts` and `DesktopLegacyLocalStorage.ts`
+// MUST keep saying "T3 Code". They name directories that already exist on disk; they are not
+// derived from this constant and never were.
 const APP_BASE_NAME = "T3 Coil";
 
 function resolveDesktopAppStageLabel(input: {
@@ -196,8 +195,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
-  const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -254,8 +251,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
     linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
-    userDataDirName,
-    legacyUserDataDirName,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,

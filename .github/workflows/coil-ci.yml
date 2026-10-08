@@ -29,7 +29,9 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The whole gate ran 13-17 minutes before the 2026-10-08 sync grew upstream's server suite
+    # from 354 to 524 test files (it took 28 minutes locally on an M-series Mac).
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -55,6 +57,11 @@ jobs:
       - name: Lint
         if: ${{ !cancelled() }}
         run: vp run lint
+
+      # Upstream's ServerBrowserPage.test.ts drives a real headless Chromium; upstream's ci.yml
+      # installs it the same way before its server tests.
+      - name: Install Chromium for server browser integration tests
+        run: node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium
 
       # `--testTimeout` is raised because `apps/web/vite.config.ts` pins testTimeout to 15s, which is
       # tuned for upstream's blacksmith runners. This fork runs on 2-core ubuntu-latest, where

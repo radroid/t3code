@@ -12,7 +12,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import {
   VcsProcessExitError,
@@ -30,10 +30,10 @@ const run = (input: VcsProcess.VcsProcessInput) =>
     return yield* process.run(input);
   });
 
-const liveLayer = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
+const layerLive = VcsProcess.layer.pipe(Layer.provide(NodeServices.layer));
 
 const provideLive = <A, E, R>(effect: Effect.Effect<A, E, R | VcsProcess.VcsProcess>) =>
-  effect.pipe(Effect.provide(liveLayer));
+  effect.pipe(Effect.provide(layerLive));
 
 const baseInput = {
   operation: "test.process-boundary",
@@ -652,19 +652,14 @@ describe("VcsProcess.run non-zero exit classification", () => {
     },
   ] as const;
 
-  for (const testCase of cases) {
-    it.effect(`classifies ${testCase.label} as ${testCase.failureKind}`, () =>
-      Effect.gen(function* () {
-        const error = yield* classifyStderr(testCase.command, testCase.stderr);
+  it.effect.each(cases)("classifies $label as $failureKind", ({ command, stderr, failureKind }) =>
+    Effect.gen(function* () {
+      const error = yield* classifyStderr(command, stderr);
 
-        expect(error).toBeInstanceOf(VcsProcessExitError);
-        expect(error).toMatchObject({
-          command: testCase.command,
-          failureKind: testCase.failureKind,
-        });
-      }),
-    );
-  }
+      expect(error).toBeInstanceOf(VcsProcessExitError);
+      expect(error).toMatchObject({ command, failureKind });
+    }),
+  );
 
   it.effect("keeps Azure DevOps stderr out of the classified error", () =>
     Effect.gen(function* () {

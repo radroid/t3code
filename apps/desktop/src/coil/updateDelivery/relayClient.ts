@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 
 import { assessConnection, WATCHDOG_TIMEOUT_MS } from "./connectionHealth.ts";
 import { decodeUpdateManifestJson, type UpdateManifest } from "./manifest.ts";

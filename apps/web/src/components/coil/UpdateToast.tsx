@@ -131,9 +131,9 @@ export function CoilUpdateToast() {
     };
   }, [clockTicks]);
 
-  // The idle signal. Read unconditionally — hooks cannot be called behind a condition — but only
-  // consulted while something is armed.
-  const threadShells = useThreadShells();
+  // The idle signal. Subscribed only while a restart is armed, so the always-mounted toast does
+  // not re-render on every thread change.
+  const threadShells = useThreadShells(autoRestart !== undefined);
   const primaryEnvironment = usePrimaryEnvironment();
   const progressingThreadCount = useMemo(
     () => countProgressingThreads(threadShells, primaryEnvironment?.environmentId ?? null),

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- The ~470 MB download is hashed incrementally as it streams; Effect Crypto only digests a whole buffer.
 /**
  * Getting the announced build onto this disk, swap-ready, before the user is told anything.
  *
@@ -16,9 +17,9 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as HttpClient from "effect/http/HttpClient";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import {

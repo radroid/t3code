@@ -70,10 +70,17 @@ export interface ComposerEditorProps {
    * hardware Return handling.
    */
   readonly enterBehavior?: ComposerEnterBehavior;
+  /** Shortcut-HUD title for the primary send chord. iOS only. */
+  readonly submitTitle?: string;
+  /** Shortcut-HUD title for the Command-modified send chord. iOS only. */
+  readonly alternateSubmitTitle?: string;
   /**
    * Invoked by the native editor when the composer should submit: hardware
    * Command-Return, plus any Return with no modifier (soft keyboard or hardware)
    * while `enterBehavior` is "send". Shift-Return inserts a newline instead.
+   * `alternate` is true for the Command-modified chord, which sends using the
+   * opposite of the configured follow-up behavior. Always false on Android,
+   * which has no Command chord.
    */
-  readonly onSubmit?: () => void;
+  readonly onSubmit?: (alternate: boolean) => void;
 }

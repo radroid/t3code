@@ -8,6 +8,10 @@
  */
 
 import type { CoilUpdateStatus } from "@t3tools/contracts";
+import {
+  threadRuntimeIsActive,
+  type ThreadRuntimeSummary,
+} from "@t3tools/client-runtime/state/models";
 
 import { isMacPlatform, isWindowsPlatform } from "../../lib/utils.ts";
 
@@ -21,12 +25,8 @@ export type UpdateDeliveryStatus = CoilUpdateStatus;
 /**
  * How long an armed auto-restart is allowed to wait for the app to go quiet.
  *
- * There has to be a ceiling. Idleness is derived from `threadIsProgressing` in
- * `apps/server/src/coil/autoResume/guards.ts`, which reads `session.status` and
- * `latestTurn.state` — and turns get wedged in `running`. "reconcile crash-frozen `running` turns
- * to interrupted on boot" has landed in this repo more than once, and the Loop Watch design (#38)
- * records the same rule from the other direction: never gate on `session.status`, because
- * synthetic turns deadlock it.
+ * There has to be a ceiling. Idleness is derived from each thread's run status (see
+ * `countProgressingThreads`), and a run status can wedge in an active state.
  *
  * Without this, an armed restart against one wedged thread waits forever while the user believes
  * the update is handled. That is issue #41's failure mode — a silent nothing — not a new one.
@@ -405,7 +405,7 @@ export function shouldTickClock(view: UpdateToastView): boolean {
  */
 export interface ProgressCandidateThread {
   readonly environmentId: string;
-  readonly latestTurn: { readonly state: string } | null;
+  readonly runtime: ThreadRuntimeSummary | null;
   readonly archivedAt: string | null;
   readonly settledOverride: "settled" | "active" | null;
 }
@@ -413,11 +413,10 @@ export interface ProgressCandidateThread {
 /**
  * How many threads are still working.
  *
- * Keyed on `latestTurn.state`, deliberately NOT on `session.status`. The server's
- * `threadIsProgressing` checks both, but the Loop Watch design (#38) records that `session.status`
- * deadlocks on synthetic turns — and here a stuck `session.status` would mean an armed restart
- * that never fires. The turn state is the narrower, more honest signal; the ceiling covers the
- * case where even that wedges.
+ * A thread is working while its run is active, or while its runtime is parked at `idle`: v2 parks
+ * it there when background work (a subagent, a monitor) will wake the agent again, and a restart
+ * would kill that work. Upstream's sidebar and working shelf read `idle` the same way. The ceiling
+ * covers the case where a run status wedges.
  *
  * Scoped to the primary environment. Restarting the desktop app tears down the server it hosts,
  * so remote-environment threads are not at risk from the restart and must not be able to block it
@@ -436,7 +435,7 @@ export function countProgressingThreads(
       thread.environmentId === primaryEnvironmentId &&
       thread.archivedAt === null &&
       thread.settledOverride !== "settled" &&
-      thread.latestTurn?.state === "running",
+      (threadRuntimeIsActive(thread.runtime) || thread.runtime?.status === "idle"),
   ).length;
 }
 
