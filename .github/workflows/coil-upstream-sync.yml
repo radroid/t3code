@@ -34,7 +34,8 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Merge plus the same verify as coil-ci.yml, which needs up to 40 minutes on its own.
+    timeout-minutes: 50
     steps:
       - name: Checkout fork main (full history)
         uses: actions/checkout@v6
