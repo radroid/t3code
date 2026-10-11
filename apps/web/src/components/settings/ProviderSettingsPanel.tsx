@@ -40,8 +40,9 @@ import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
 import {
   useEnvironmentSettings,
   usePersistEnvironmentProviderInstanceMutation,
-  useUpdateClientSettings,
   useUpdateEnvironmentSettings,
+  useUpdateEnvironmentModelPreferences,
+  useToggleEnvironmentModelFavorite,
 } from "../../hooks/useSettings";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
@@ -95,7 +96,7 @@ import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetup
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
-import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
+import { providerClients } from "./providerDriverMeta";
 import { searchableSetting } from "./settingsSearch";
 import {
   backgroundActivityOverrideSettings,
@@ -123,20 +124,12 @@ import {
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
 
-function withoutProviderInstanceKey<V>(
-  record: Readonly<Record<ProviderInstanceId, V>> | undefined,
-  key: ProviderInstanceId,
-): Record<ProviderInstanceId, V> {
-  const next = { ...record } as Record<ProviderInstanceId, V>;
-  delete next[key];
-  return next;
-}
-
-function withoutProviderInstanceFavorites(
-  favorites: ReadonlyArray<{ readonly provider: ProviderInstanceId; readonly model: string }>,
-  instanceId: ProviderInstanceId,
-) {
-  return favorites.filter((favorite) => favorite.provider !== instanceId);
+function modelListChanges(current: ReadonlyArray<string>, next: ReadonlyArray<string>) {
+  const currentSet = new Set(current);
+  const nextSet = new Set(next.map((model) => model.trim()).filter(Boolean));
+  return [...new Set([...currentSet, ...nextSet])]
+    .filter((model) => currentSet.has(model) !== nextSet.has(model))
+    .map((model) => ({ model, selected: nextSet.has(model) }));
 }
 
 function providerConfigString(config: unknown, key: string): string | null {
@@ -145,8 +138,9 @@ function providerConfigString(config: unknown, key: string): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
-  provider: definition.value,
+const PROVIDER_SETTINGS = providerClients.definitions.map((definition) => ({
+  provider: definition.driverKind,
+  hasDefaultInstance: definition.hasDefaultInstance !== false,
 }));
 
 function configuredBinaryPath(config: unknown): string {
@@ -289,7 +283,7 @@ interface ProviderSettingsTarget {
 
 export function ProviderSettingsPanel(target: ProviderSettingsTarget) {
   return (
-    <SettingsPageContainer width="wide" className="@container/providers gap-8">
+    <SettingsPageContainer className="@container/providers gap-8">
       <ProviderSettingsPanelContent
         key={`${target.environmentId ?? ""}:${target.instanceId ?? ""}`}
         {...target}
@@ -564,8 +558,9 @@ export function EnvironmentProviderSettings({
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const canRefreshProviders = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const updateModelPreferences = useUpdateEnvironmentModelPreferences(environmentId);
+  const toggleModelFavorite = useToggleEnvironmentModelFavorite(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
-  const updateClientSettings = useUpdateClientSettings();
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const projects = useProjects().filter((project) => project.environmentId === environmentId);
@@ -757,57 +752,29 @@ export function EnvironmentProviderSettings({
   );
 
   for (const providerSettings of visibleProviderSettings) {
-    type LegacyProviderSettings = (typeof settings.providers)[keyof typeof settings.providers];
-    const legacyProviders = settings.providers as Record<string, LegacyProviderSettings>;
-    const defaultLegacyProviders = DEFAULT_UNIFIED_SETTINGS.providers as Record<
-      string,
-      LegacyProviderSettings
-    >;
     const driver = providerSettings.provider;
     const defaultInstanceId = defaultInstanceIdForDriver(driver);
     const explicitInstance = settings.providerInstances?.[defaultInstanceId];
-    // A remote device may run a server version whose settings predate this
-    // driver, so the legacy mirror can be absent. Without either an explicit
-    // instance or a legacy blob there is nothing to render for the slot.
-    const legacyConfig = legacyProviders[providerSettings.provider];
-    const defaultLegacyConfig = defaultLegacyProviders[providerSettings.provider];
-    // The envelope is the single enabled flag: keep the legacy in-config
-    // flag out of the synthesized blob, or an explicit `enabled: false`
-    // would keep winning over the envelope and the Switch could never
-    // turn a default-off provider on.
-    const synthesizedInstance = (): ProviderInstanceConfig | undefined => {
-      if (legacyConfig === undefined) {
-        return undefined;
-      }
-      const { enabled: legacyEnabled, ...legacyConfigRest } = legacyConfig;
-      return {
-        driver,
-        enabled: legacyEnabled,
-        config: legacyConfigRest,
-      } satisfies ProviderInstanceConfig;
-    };
-    const effectiveInstance: ProviderInstanceConfig | undefined =
-      explicitInstance ?? synthesizedInstance();
-    // Only the default slot depends on the legacy blob; custom instances for
-    // the driver must still render even when the slot has nothing to show.
-    if (effectiveInstance !== undefined) {
-      const isDirty =
-        explicitInstance !== undefined || !Equal.equals(legacyConfig, defaultLegacyConfig);
-      if (
-        driver === "codex" ||
+    // An unconfigured default slot runs with the driver's default config.
+    const effectiveInstance: ProviderInstanceConfig = explicitInstance ?? { driver };
+    const isDirty = explicitInstance !== undefined;
+    // Drivers without a default instance list only their configured instances.
+    const hasDefaultSlot = providerSettings.hasDefaultInstance || explicitInstance !== undefined;
+    if (
+      hasDefaultSlot &&
+      (driver === "codex" ||
         driver === "claudeAgent" ||
         isDirty ||
         resolveProviderInstanceEnabled(effectiveInstance) ||
-        defaultInstanceId === targetInstanceId
-      ) {
-        rows.push({
-          instanceId: defaultInstanceId,
-          instance: effectiveInstance,
-          driver,
-          isDefault: true,
-          isDirty,
-        });
-      }
+        defaultInstanceId === targetInstanceId)
+    ) {
+      rows.push({
+        instanceId: defaultInstanceId,
+        instance: effectiveInstance,
+        driver,
+        isDefault: true,
+        isDirty,
+      });
     }
     for (const [id, instance] of instancesByDriver.get(providerSettings.provider) ?? []) {
       if (id === defaultInstanceId) continue;
@@ -847,8 +814,6 @@ export function EnvironmentProviderSettings({
       settings,
       instanceId: row.instanceId,
       instance: next,
-      driver: row.driver,
-      isDefault: row.isDefault,
       textGenerationModelSelection: options?.textGenerationModelSelection,
     });
     const result = await persistProviderInstance(
@@ -902,68 +867,11 @@ export function EnvironmentProviderSettings({
     }
   };
 
-  const updateProviderModelPreferences = (
-    instanceId: ProviderInstanceId,
-    next: {
-      readonly hiddenModels: ReadonlyArray<string>;
-      readonly modelOrder: ReadonlyArray<string>;
-    },
-  ) => {
-    const hiddenModels = [...new Set(next.hiddenModels.filter((slug) => slug.trim().length > 0))];
-    const modelOrder = [...new Set(next.modelOrder.filter((slug) => slug.trim().length > 0))];
-    const rest = withoutProviderInstanceKey(settings.providerModelPreferences, instanceId);
-    updateClientSettings({
-      providerModelPreferences:
-        hiddenModels.length === 0 && modelOrder.length === 0
-          ? rest
-          : {
-              ...rest,
-              [instanceId]: {
-                hiddenModels,
-                modelOrder,
-              },
-            },
-    });
-  };
-
-  const updateProviderFavoriteModels = (
-    instanceId: ProviderInstanceId,
-    nextFavoriteModels: ReadonlyArray<string>,
-  ) => {
-    const favoriteModels = [
-      ...new Set(
-        Arr.filterMap(nextFavoriteModels, (slug) => {
-          const trimmedSlug = slug.trim();
-          return trimmedSlug.length > 0 ? Result.succeed(trimmedSlug) : Result.failVoid;
-        }),
-      ),
-    ];
-    updateClientSettings({
-      favorites: [
-        ...withoutProviderInstanceFavorites(settings.favorites ?? [], instanceId),
-        ...favoriteModels.map((model) => ({ provider: instanceId, model })),
-      ],
-    });
-  };
-
   const resetDefaultInstance = async (driverKind: ProviderDriverKind) => {
-    type LegacyProviderSettings = (typeof settings.providers)[keyof typeof settings.providers];
-    const defaultLegacyProviders = DEFAULT_UNIFIED_SETTINGS.providers as Record<
-      string,
-      LegacyProviderSettings | undefined
-    >;
-    const defaultInstanceId = defaultInstanceIdForDriver(driverKind);
-    const defaultLegacyProvider = defaultLegacyProviders[driverKind];
-    if (defaultLegacyProvider === undefined) return;
-    const result = await persistProviderInstance(
-      { operation: "remove", instanceId: defaultInstanceId },
-      {
-        providers: {
-          ...settings.providers,
-          [driverKind]: defaultLegacyProvider,
-        } as typeof settings.providers,
-      },
-    );
+    const result = await persistProviderInstance({
+      operation: "remove",
+      instanceId: defaultInstanceIdForDriver(driverKind),
+    });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
@@ -975,7 +883,7 @@ export function EnvironmentProviderSettings({
   };
 
   const renderProviderInstance = (row: InstanceRow, mode: "list" | "editor") => {
-    const driverOption = getDriverOption(row.driver);
+    const driverOption = providerClients.get(row.driver);
     const liveProvider = serverProviders.find(
       (candidate) => candidate.instanceId === row.instanceId,
     );
@@ -1114,19 +1022,34 @@ export function EnvironmentProviderSettings({
         hiddenModels={modelPreferences.hiddenModels}
         favoriteModels={favoriteModels}
         modelOrder={modelPreferences.modelOrder}
-        onHiddenModelsChange={(hiddenModels) =>
-          updateProviderModelPreferences(row.instanceId, {
-            ...modelPreferences,
-            hiddenModels,
-          })
-        }
-        onFavoriteModelsChange={(next) => updateProviderFavoriteModels(row.instanceId, next)}
-        onModelOrderChange={(modelOrder) =>
-          updateProviderModelPreferences(row.instanceId, {
-            ...modelPreferences,
-            modelOrder,
-          })
-        }
+        onHiddenModelsChange={(next, affectedModels) => {
+          const hidden = new Set(next);
+          const models =
+            affectedModels ??
+            modelListChanges(modelPreferences.hiddenModels, next).map((change) => change.model);
+          void updateModelPreferences({
+            setModelsHidden: models.map((model) => ({
+              provider: row.instanceId,
+              model,
+              hidden: hidden.has(model),
+            })),
+          });
+        }}
+        onToggleFavorite={(model) => {
+          void toggleModelFavorite(row.instanceId, model);
+        }}
+        onFavoriteModelsChange={(next) => {
+          void updateModelPreferences({
+            setModelFavorites: modelListChanges(favoriteModels, next).map(
+              ({ model, selected }) => ({ provider: row.instanceId, model, favorite: selected }),
+            ),
+          });
+        }}
+        onModelOrderChange={(modelOrder) => {
+          void updateModelPreferences({
+            setProviderModelOrder: { provider: row.instanceId, modelOrder },
+          });
+        }}
         onInstallRecommended={
           !readOnly &&
           liveProvider?.compatibilityAdvisory?.message &&
