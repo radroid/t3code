@@ -10,8 +10,8 @@ import {
 } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as AzureDevOps from "./AzureDevOpsSourceControlProvider.ts";
-import { probeSourceControlProvider } from "./SourceControlProviderDiscovery.ts";
+import * as AzureDevOps from "@t3tools/source-control-azure-devops/server/AzureDevOpsSourceControlProvider";
+import { probeSourceControlProvider } from "@t3tools/source-control-core/server/discovery";
 
 const processOutput = (
   stdout: string,
