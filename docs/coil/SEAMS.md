@@ -3,7 +3,8 @@
 **The authoritative list of every upstream-owned file this fork edits.**
 
 Measured, not asserted: **65 upstream-owned files, +1106 / -5833 lines**, against merge-base
-`58d253231d` (the 2026-10-12 sync).
+`6524a8d437` (the 2026-10-12 sync, after a 35-commit second pass on 2026-10-13 that merged clean
+and moved no seam).
 
 > **Re-baselined 2026-10-12** against `58d253231d`, after a **371-commit** upstream range (issue
 > #168, three consecutive failed daily syncs: one red typecheck, then two conflicts). Five
