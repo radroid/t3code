@@ -2,9 +2,9 @@
 
 **The authoritative list of every upstream-owned file this fork edits.**
 
-Measured, not asserted: **65 upstream-owned files, +1106 / -5833 lines**, against merge-base
-`6524a8d437` (the 2026-10-12 sync, after a 35-commit second pass on 2026-10-13 that merged clean
-and moved no seam).
+Measured, not asserted: **65 upstream-owned files, +1106 / -5847 lines**, against merge-base
+`6002c5c68c` (the 2026-10-12 sync, plus second passes on 2026-10-13 and 2026-10-14; the only seam
+that moved is `cursor-hygiene-webhook.yml`, whose deletion grew when upstream edited it).
 
 > **Re-baselined 2026-10-12** against `58d253231d`, after a **371-commit** upstream range (issue
 > #168, three consecutive failed daily syncs: one red typecheck, then two conflicts). Five
@@ -717,7 +717,7 @@ the upstream workflow. The one upstream test that reads a retired workflow is li
 | `.github/workflows/mobile-eas-preview.yml`            | +0/-111  | 3     | **333**   | The fork does not publish upstream EAS preview builds or own their credentials.                                                                                                                    |
 | `.github/workflows/desktop-macos-preview.yml`         | +0/-94   | 3     | **282**   | The fork does not publish upstream preview DMGs and cannot use the configured Blacksmith runner.                                                                                                   |
 | `.github/workflows/mobile-fingerprint-check.yml`      | +0/-220  | 1     | **220**   | Only gates the retired EAS production workflow.                                                                                                                                                    |
-| `.github/workflows/cursor-hygiene-webhook.yml`        | +0/-36   | 2     | **72**    | The fork does not forward repository events to Cursor hygiene.                                                                                                                                     |
+| `.github/workflows/cursor-hygiene-webhook.yml`        | +0/-50   | 2     | **72**    | The fork does not forward repository events to Cursor hygiene.                                                                                                                                     |
 | `.github/workflows/publish-aur.yml`                   | +0/-65   | 1     | **65**    | Only publishes upstream's AUR package and was called by the retired upstream release workflow.                                                                                                     |
 | `.github/workflows/pr-size.yml`                       | +0/-295  | 0     | **0**     | The fork does not use upstream's PR-size labeling automation.                                                                                                                                      |
 | `.github/workflows/pr-vouch.yml`                      | +0/-199  | 0     | **0**     | The fork does not use upstream's contributor-vouch automation.                                                                                                                                     |
