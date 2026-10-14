@@ -3,8 +3,10 @@
 **The authoritative list of every upstream-owned file this fork edits.**
 
 Measured, not asserted: **65 upstream-owned files, +1106 / -5847 lines**, against merge-base
-`6002c5c68c` (the 2026-10-12 sync, plus second passes on 2026-10-13 and 2026-10-14; the only seam
-that moved is `cursor-hygiene-webhook.yml`, whose deletion grew when upstream edited it).
+`7ac952c630` (the 2026-10-12 sync, plus second passes on 2026-10-13 and twice on 2026-10-14; the
+only seam that moved is `cursor-hygiene-webhook.yml`, whose deletion grew when upstream edited it.
+The second 2026-10-14 pass, issue #172, conflicted only on additive lines in `__root.tsx`,
+`pnpm-workspace.yaml` and the lockfile, and moved no seam).
 
 > **Re-baselined 2026-10-12** against `58d253231d`, after a **371-commit** upstream range (issue
 > #168, three consecutive failed daily syncs: one red typecheck, then two conflicts). Five
