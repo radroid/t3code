@@ -1,6 +1,6 @@
 import type { SourceControlProviderInfo } from "@t3tools/contracts";
 
-import { transportSafeSourceControlErrorValue } from "./SourceControlProvider.ts";
+import { transportSafeSourceControlErrorValue } from "@t3tools/source-control-core/server/SourceControlProvider";
 
 /**
  * Environment for git commands the user has no console or window to answer.
