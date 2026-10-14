@@ -24,9 +24,8 @@ Upstream's glossary is authoritative for the product; the fork's is authoritativ
 fork adds. When a term appears in both, **upstream wins** — the fork inheriting a divergent
 definition is how a silent semantic drift starts.
 
-`docs/coil/CONTEXT.md` should therefore stay small: it defines things like the `t3x` seam, the thread
-outbox, auto-resume, needs-input notifications, and the sync agent — not `thread`, `turn`, or
-`checkpoint`.
+`docs/coil/CONTEXT.md` should therefore stay small: it defines things like the `t3x` seam, update
+delivery, and the sync agent — not `thread`, `turn`, or `checkpoint`.
 
 ## File structure
 

@@ -3,7 +3,7 @@
 **Date:** 2026-07-23
 **Status:** Approved (brainstorming)
 **Fork:** `radroid/t3code` (fork of `pingdotgg/t3code`, MIT-licensed)
-**Companion spec:** `2026-07-23-usage-limit-auto-resume-design.md` (Project B)
+**Companion spec:** `2026-07-23-usage-limit-auto-resume-design.md` (Project B; deleted 2026-10-14 with the feature, which upstream now ships as usage-limit recovery)
 
 ## Amendment 2026-09-02 — merge, not rebase
 
