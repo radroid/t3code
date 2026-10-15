@@ -28,6 +28,8 @@
 #   VERIFY            space-separated script names (default: "typecheck lint test")
 #   STATUS_FILE       (default: ./coil-sync-status.json)
 #   SKIP_VERIFY=1     merge only, skip verification (used by callers that verify separately)
+#   LOCKFILE_INSTALL  command that re-resolves pnpm-lock.yaml when it is the only conflict
+#                     (default: "vp i -- --no-frozen-lockfile --yes")
 #
 set -uo pipefail
 
@@ -38,6 +40,8 @@ RUN="${RUN:-vp run}"
 VERIFY="${VERIFY:-typecheck lint test}"
 STATUS_FILE="${STATUS_FILE:-./coil-sync-status.json}"
 SKIP_VERIFY="${SKIP_VERIFY:-0}"
+# CI defaults pnpm to --frozen-lockfile, which would refuse the very re-resolution this is for.
+LOCKFILE_INSTALL="${LOCKFILE_INSTALL:-vp i -- --no-frozen-lockfile --yes}"
 
 # --- json status helper (no jq dependency) ----------------------------------
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$1"; }
@@ -152,8 +156,21 @@ if ! git merge --no-ff --no-commit "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
   retire_upstream_workflows
   REMAINING_CONFLICTS="$(git diff --name-only --diff-filter=U | sort -u | tr '\n' ' ')"
   CONFLICTED="$REMAINING_CONFLICTS"
+  # The lockfile is never merged by hand: the fork's is upstream's plus its own importers and
+  # security pins, so when it is the only conflict, start from upstream's and re-resolve. Verify
+  # still runs on the result. Any other conflict escalates exactly as before.
+  if [[ "$REMAINING_CONFLICTS" == "pnpm-lock.yaml " ]]; then
+    echo "→ re-resolving pnpm-lock.yaml from upstream's: $LOCKFILE_INSTALL"
+    if git checkout --theirs -- pnpm-lock.yaml && bash -c "$LOCKFILE_INSTALL" &&
+      git add -- pnpm-lock.yaml; then
+      REMAINING_CONFLICTS=""
+      CONFLICTED=""
+    else
+      LOCKFILE_FAILED=" (re-resolving it failed)"
+    fi
+  fi
   if [[ -z "$REMAINING_CONFLICTS" ]]; then
-    echo "→ all merge conflicts were retired upstream workflows"
+    echo "→ all merge conflicts were retired upstream workflows or the lockfile"
   else
     # Which upstream commits touched the conflicted files (the likely culprits).
     if [[ -n "$REMAINING_CONFLICTS" ]]; then
@@ -161,7 +178,7 @@ if ! git merge --no-ff --no-commit "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
       CULPRITS="$(git log --oneline "$MERGE_BASE..$UPSTREAM_REMOTE/$UPSTREAM_BRANCH" -- $REMAINING_CONFLICTS | head -40 || true)"
     fi
     git merge --abort || true
-    fail "merge conflict in: $REMAINING_CONFLICTS"
+    fail "merge conflict in: $REMAINING_CONFLICTS${LOCKFILE_FAILED:-}"
     # `git merge --abort` restores the pre-merge tree, but it can itself fail. Confirm the merge
     # really is gone before claiming it: nothing pushes either way, but a half-aborted merge left
     # in the checkout is the one outcome a human has to be told about. Only merge residue counts —
@@ -171,7 +188,7 @@ if ! git merge --no-ff --no-commit "$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"; then
       write_status daily conflict "merge aborted but the checkout is still mid-merge; needs manual recovery to $LOCAL_HEAD"
       exit 20
     fi
-    write_status daily conflict "merge aborted; working tree restored"
+    write_status daily conflict "merge aborted; working tree restored${LOCKFILE_FAILED:-}"
     exit 20
   fi
 fi
