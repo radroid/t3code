@@ -106,11 +106,6 @@ private final class ComposerTextView: UITextView {
   var alternateSubmitTitle = "Send Message"
   private var bypassTextPasteInterception = false
 
-  // Set only while a Shift+Return hardware key command is programmatically
-  // inserting a line break, so the delegate lets that "\n" through instead of
-  // treating it as a submit. Reset synchronously after the insert.
-  private(set) var isInsertingHardLineBreak = false
-
   override var keyCommands: [UIKeyCommand]? {
     var commands = super.keyCommands ?? []
     guard !isReadOnly, markedTextRange == nil else { return commands }
@@ -186,13 +181,9 @@ private final class ComposerTextView: UITextView {
     onSubmit?(true)
   }
 
-  // Shift+Return on a hardware keyboard. The flag lets the delegate tell this
-  // programmatic "\n" apart from a typed bare Return, which submits.
   @objc private func insertNewline(_ sender: UIKeyCommand) {
     guard !isReadOnly, markedTextRange == nil else { return }
-    isInsertingHardLineBreak = true
     insertText("\n")
-    isInsertingHardLineBreak = false
   }
 
   @objc private func pasteInline(_ sender: UIKeyCommand) {
@@ -794,25 +785,6 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     shouldChangeTextIn range: NSRange,
     replacementText text: String
   ) -> Bool {
-    // A bare Return (soft keyboard or hardware) submits — matching desktop
-    // Enter=submit and the composer's queue-when-busy / send-when-idle outbox.
-    // Only an exact single "\n" is intercepted, so a multi-line paste like
-    // "a\nb" still inserts normally. The newline button inserts "\n" through
-    // the controlled value (setText), never this typing path. Hardware
-    // Command-Return keeps flowing through the UIKeyCommand above, and a
-    // Shift+Return line break is let through via isInsertingHardLineBreak.
-    // `!isReadOnly` leads: upstream #8614 freezes the editor while a dictation
-    // transcription settles, and a hardware Return must not submit a composer
-    // the user has been told is frozen. Upstream's own guard is the `return
-    // !isReadOnly` tail below, which this branch would otherwise jump.
-    // Upstream's `enterBehavior` setting (#11679) turns this off: with "newline"
-    // a bare Return inserts a line break and only Command-Return submits.
-    let composer = textView as? ComposerTextView
-    if !isReadOnly, text == "\n", composer?.enterBehavior == .send,
-      composer?.isInsertingHardLineBreak != true {
-      onComposerSubmit([:])
-      return false
-    }
     restoreBaseTypingAttributes()
     return !isReadOnly
   }

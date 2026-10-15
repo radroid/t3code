@@ -49,7 +49,6 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
   private val onComposerSelectionChange by EventDispatcher()
   private val onComposerFocus by EventDispatcher()
   private val onComposerBlur by EventDispatcher()
-  private val onComposerSubmit by EventDispatcher()
   private val onComposerPasteImages by EventDispatcher()
   private val onComposerContextPress by EventDispatcher()
   private val onComposerPasteContext by EventDispatcher()
@@ -91,11 +90,6 @@ class T3ComposerEditorView(context: Context, appContext: AppContext) : ExpoView(
     }
     editor.pasteImagesListener = { uris ->
       onComposerPasteImages(mapOf("uris" to uris))
-    }
-    // A bare Enter (no Shift) submits — mirrors iOS and desktop Enter=submit.
-    // Empty payload matches the iOS `onComposerSubmit([:])` contract.
-    editor.submitListener = {
-      onComposerSubmit(emptyMap<String, Any>())
     }
     editor.pasteContextListener = { payload ->
       nativeEventCount += 1
@@ -597,13 +591,6 @@ internal class SelectionAwareEditText(context: Context) : EditText(context) {
   var textPasteThresholdBytes = 0
   var maxInputChars = Int.MAX_VALUE
   var clipboardFragment = ""
-  var submitListener: (() -> Unit)? = null
-
-  private fun isPlainEnter(keyCode: Int, event: KeyEvent): Boolean {
-    val isEnter = keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-    // Shift+Enter still inserts a newline; only an unmodified Enter submits.
-    return isEnter && !event.isShiftPressed
-  }
 
   /**
    * Placeholder shown while the draft is empty. An editable TextView never ellipsizes its hint,
@@ -657,27 +644,13 @@ internal class SelectionAwareEditText(context: Context) : EditText(context) {
     return spans.isNotEmpty()
   }
 
-  // Hardware keyboards (and soft keyboards that route Enter as a key event)
-  // land here. A bare Enter fires submit on the down edge and both edges are
-  // consumed so the multi-line field never inserts the newline (coil fork).
   override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-    if (isPlainEnter(keyCode, event)) {
-      submitListener?.invoke()
-      return true
-    }
     val handled = when (keyCode) {
       KeyEvent.KEYCODE_DEL -> deleteChip(true)
       KeyEvent.KEYCODE_FORWARD_DEL -> deleteChip(false)
       else -> false
     }
     return handled || super.onKeyDown(keyCode, event)
-  }
-
-  override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-    if (isPlainEnter(keyCode, event)) {
-      return true
-    }
-    return super.onKeyUp(keyCode, event)
   }
 
   private fun deleteAdjacentChip(beforeLength: Int, afterLength: Int): Boolean = when {
@@ -689,16 +662,6 @@ internal class SelectionAwareEditText(context: Context) : EditText(context) {
   override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
     val connection = super.onCreateInputConnection(outAttrs) ?: return null
     return object : InputConnectionWrapper(connection, false) {
-      // Soft keyboards that commit the newline as text (rather than a key event)
-      // land here; an exact "\n" commit means a bare Return, so submit instead.
-      // A multi-line paste ("a\nb") is unaffected because it is not exactly "\n".
-      override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-        if (text?.toString() == "\n") {
-          submitListener?.invoke()
-          return true
-        }
-        return super.commitText(text, newCursorPosition)
-      }
       override fun deleteSurroundingText(
         beforeLength: Int,
         afterLength: Int

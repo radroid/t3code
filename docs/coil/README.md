@@ -10,15 +10,13 @@ unless [`SEAMS.md`](SEAMS.md) lists it.
   because upstream's updater points at upstream's releases.
 - **Its own name and bundle id** (#70, #71), so Coil and upstream's T3 Code can be installed side
   by side.
-- **Mobile Return-to-send** on the soft keyboard, with a line-break button. Upstream's
-  `enterBehavior` covers only hardware keyboards.
 - **Clone and source-control errors** that name the cause: auth, not found, timeout, and Azure
   DevOps authorization codes.
 - **Backend heap headroom** and a **smaller desktop bundle** (`scripts/coil/desktop-file-exclusions.mjs`).
 
-The fork used to carry auto-resume, Loops, needs-input notifications, Web Push, a web offline outbox
-and a crash-recovery reconciler. They were retired on 2026-10-14; see the note at the top of
-[`SEAMS.md`](SEAMS.md).
+The fork used to carry auto-resume, Loops, needs-input notifications, Web Push, a web offline
+outbox, a crash-recovery reconciler and mobile Return-to-send. They were retired in October 2026;
+see the notes at the top of [`SEAMS.md`](SEAMS.md).
 
 ## Pipelines
 
