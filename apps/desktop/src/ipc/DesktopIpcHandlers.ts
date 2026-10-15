@@ -30,7 +30,6 @@ import {
   resolveSshHost,
   resolveSshPasswordPrompt,
 } from "./methods/sshEnvironment.ts";
-import { showNotification } from "./methods/notifications.ts";
 // coil: fork-owned update delivery.
 import { dismissCoilUpdate, getCoilUpdateState, restartIntoUpdate } from "./methods/coilUpdate.ts";
 import {
@@ -154,7 +153,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(checkSystemPermission);
   yield* ipc.handle(pasteAsText);
   yield* ipc.handle(probeRemoteEditors);
-  yield* ipc.handle(showNotification);
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);

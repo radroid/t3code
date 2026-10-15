@@ -1,7 +1,7 @@
 /**
  * IPC surface for the fork's update delivery.
  *
- * A fork-owned file under an upstream directory, mirroring `notifications.ts`. The only upstream
+ * A fork-owned file under an upstream directory. The only upstream
  * edits it needs are the four channel constants and the three `ipc.handle` registrations — see
  * `docs/coil/SEAMS.md`.
  */

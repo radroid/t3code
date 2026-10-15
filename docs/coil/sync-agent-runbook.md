@@ -162,8 +162,8 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    `git revert -m 1 <merge sha>` — but that leaves the merge in `main`'s ancestry, so the sync will
    never re-offer the range (see the rollback note there). The `coil/last-good-*` tag from the
    Action names the exact pre-sync tip if you need the tree itself.
-8. **If genuinely blocked** (e.g. upstream refactored the orchestration engine in a way that
-   breaks auto-resume's detection): do NOT open a green PR. Push the branch, open a **draft**
+8. **If genuinely blocked** (e.g. upstream reworked the desktop shell in a way that breaks the
+   fork's update delivery): do NOT open a green PR. Push the branch, open a **draft**
    PR, and comment on the issue with exactly what is blocked and what decision is needed.
 
 ## Landing a sync PR (merge commit, never squash)

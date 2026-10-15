@@ -250,18 +250,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.QUIT_SHORTCUT_CHANNEL, wrappedListener);
     };
   },
-  showNotification: (request) => ipcRenderer.invoke(IpcChannels.SHOW_NOTIFICATION_CHANNEL, request),
-  onNotificationActivated: (listener) => {
-    const wrappedListener = (_event: Electron.IpcRendererEvent, activation: unknown) => {
-      if (typeof activation !== "object" || activation === null) return;
-      listener(activation as Parameters<typeof listener>[0]);
-    };
-
-    ipcRenderer.on(IpcChannels.NOTIFICATION_ACTIVATED_CHANNEL, wrappedListener);
-    return () => {
-      ipcRenderer.removeListener(IpcChannels.NOTIFICATION_ACTIVATED_CHANNEL, wrappedListener);
-    };
-  },
   // coil: fork-owned update delivery.
   coilUpdate: {
     getState: () => ipcRenderer.invoke(IpcChannels.COIL_UPDATE_GET_STATE_CHANNEL),

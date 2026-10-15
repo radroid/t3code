@@ -1132,20 +1132,6 @@ export const DesktopPreviewRecordingSaveInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
-export interface DesktopNotificationRequest {
-  /** Stable per thread, used to coalesce repeat notifications for one thread. */
-  readonly id: string;
-  readonly title: string;
-  readonly body: string;
-  readonly environmentId: string;
-  readonly threadId: string;
-}
-
-export interface DesktopNotificationActivation {
-  readonly environmentId: string;
-  readonly threadId: string;
-}
-
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
@@ -1291,23 +1277,9 @@ export interface DesktopBridge {
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
   };
   /**
-   * Native notification surface. Optional like `preview` because an older
-   * desktop shell may host a newer web bundle: callers must feature-detect
-   * and fall back to the web Notification API when these are undefined.
-   */
-  showNotification?: (request: DesktopNotificationRequest) => Promise<void>;
-  /**
-   * Fires when the user clicks a notification raised via `showNotification`.
-   * Returns an unsubscribe function. Present only in desktop shells that
-   * support native notifications.
-   */
-  onNotificationActivated?: (
-    listener: (activation: DesktopNotificationActivation) => void,
-  ) => () => void;
-  /**
-   * coil: fork-owned update delivery. Optional for the same reason as
-   * `showNotification` — an older desktop shell may host a newer web bundle,
-   * and the toast must simply not appear rather than throw.
+   * coil: fork-owned update delivery. Optional because an older desktop shell
+   * may host a newer web bundle, and the toast must simply not appear rather
+   * than throw.
    */
   coilUpdate?: CoilUpdateBridge;
   /**
