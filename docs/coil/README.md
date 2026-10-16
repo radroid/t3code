@@ -52,6 +52,7 @@ build.
 
 ## Staying in sync
 
-The daily job merges upstream on its own. When it can't, follow the
+The daily job merges upstream on its own, rebuilding the lockfile itself when that is the only
+conflict. When it can't, follow the
 [sync runbook](sync-agent-runbook.md). Land every sync PR as a **merge commit**, never a squash, or
 the same upstream range comes back the next day.
