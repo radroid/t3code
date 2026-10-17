@@ -42,10 +42,10 @@ describe("fillCommand", () => {
   it("substitutes the bundle name and the downloaded file", () => {
     assert.strictEqual(
       fillCommand('xattr -dr com.apple.quarantine "/Applications/{app}.app"', {
-        app: "T3 Coil (Alpha)",
+        app: "T3 Coil (Beta)",
         file: "ignored",
       }),
-      'xattr -dr com.apple.quarantine "/Applications/T3 Coil (Alpha).app"',
+      'xattr -dr com.apple.quarantine "/Applications/T3 Coil (Beta).app"',
     );
     assert.strictEqual(
       fillCommand("Unblock-File -Path .\\{file}", { app: "ignored", file: "T3Coil-abc-x64.exe" }),
