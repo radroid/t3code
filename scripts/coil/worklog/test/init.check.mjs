@@ -21,8 +21,6 @@ import { worklogPaths } from "../lib/paths.mjs";
 import { classify, loadRegistry } from "../lib/registry.mjs";
 import { closeDatabases, openT3Databases } from "../lib/t3db.mjs";
 
-// --- sandbox ------------------------------------------------------------------------------------
-
 const SANDBOX = NodeFS.realpathSync(NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "worklog-")));
 const SANDBOX_HOME = NodePath.join(SANDBOX, "home");
 NodeFS.mkdirSync(SANDBOX_HOME, { recursive: true });
@@ -87,8 +85,6 @@ function tempDir(name = "dir") {
   NodeFS.mkdirSync(dir, { recursive: true });
   return dir;
 }
-
-// --- git harness --------------------------------------------------------------------------------
 
 const GIT_AVAILABLE = (() => {
   try {
@@ -203,8 +199,6 @@ function repoRunner(map) {
   });
 }
 
-// --- T3code database fixtures ---------------------------------------------------------------
-
 // Verbatim from the shipping schema (the two tables discovery reads).
 const SCHEMA = [
   `CREATE TABLE projection_projects (
@@ -287,8 +281,6 @@ function session(cwd, extra = {}) {
   };
 }
 
-// --- helpers ------------------------------------------------------------------------------------
-
 /** Every path under `dir`, relative and sorted — enough to prove nothing appeared or vanished. */
 function treeOf(dir) {
   const out = [];
@@ -312,8 +304,6 @@ function treeOf(dir) {
 function byKey(discovered) {
   return new Map(discovered.map((project) => [project.key, project]));
 }
-
-// --- scaffold -----------------------------------------------------------------------------------
 
 NodeTest.test(
   "scaffold builds the whole tree, writes the config files, and states the privacy rules",
@@ -534,7 +524,6 @@ NodeTest.test("scaffold writes nothing outside the root it was given", () => {
   NodeAssert.deepEqual(treeOf(SANDBOX_HOME), homeBefore, "HOME must be untouched");
 });
 
-// --- discoverProjects ---------------------------------------------------------------------------
 //
 // Every fixture root below is mkdtemp'd, i.e. it sits in exactly the scratch space that
 // `isUnprojectableRoot` exists to refuse. `scratchRoots: []` is the option provided for that, and it
@@ -837,7 +826,6 @@ NodeTest.test("discovery resolves each directory once no matter how many session
   NodeAssert.equal(toplevelCalls.length, 1, "canonicalRepo is memoised per directory");
 });
 
-// --- scratch, home and the filesystem root (DEFAULT scratchRoots) --------------------------------
 //
 // Real session cwds include `~`, `/`, and scratch directories. An entry rooted at any of those wins
 // every `matchProjectByRoot` containment test, so it silently claims other projects' sessions — and
@@ -915,8 +903,6 @@ NodeTest.test("the home directory is rejected for being home, not for being scra
   NodeAssert.equal(discovered[0].evidence.ccSessions, 1);
 });
 
-// --- nested repositories -------------------------------------------------------------------------
-
 NodeTest.test(
   "a repo nested inside another repo's tree is its own project, while a linked worktree is not",
   { skip: !GIT_AVAILABLE },
@@ -969,8 +955,6 @@ NodeTest.test(
     NodeAssert.deepEqual(host.roots, [parent, worktree]);
   },
 );
-
-// --- init ---------------------------------------------------------------------------------------
 
 /**
  * `init` with a real git for the worklog repo; discovered roots are plain, non-repo directories.

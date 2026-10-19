@@ -222,8 +222,6 @@ export function splitByDay(intervals, days) {
   return byDay;
 }
 
-// --- internals -------------------------------------------------------------------------------
-
 function makeBlock(start, end, singleEventMs) {
   // A block whose events all share one instant has no measurable duration but is still real
   // activity, so it is treated exactly like a lone event.

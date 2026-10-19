@@ -104,7 +104,6 @@ export function discoverProjects({
     return group;
   };
 
-  // --- T3code projects. Their titles are the only human-authored names we get for free. -------
   const projectRows = attempt(() => [...readProjects(t3Handles)], []);
   const threadRows = attempt(() => [...readThreads(t3Handles, {})], []);
 
@@ -137,7 +136,6 @@ export function discoverProjects({
     else group.liveRows += 1;
   }
 
-  // --- Claude Code sessions. Only the cwd matters here. ---------------------------------------
   for (const session of Array.isArray(ccSessions) ? ccSessions : []) {
     if (session == null || typeof session !== "object") continue;
     const group = groupForDir(session.cwd, { requireDirectory: true });
@@ -146,7 +144,6 @@ export function discoverProjects({
     group.lastSeen = laterOf(group.lastSeen, session.endedAt ?? session.startedAt);
   }
 
-  // --- Name, key, and evidence ----------------------------------------------------------------
   const registry = isPlainObject(existingRegistry) ? existingRegistry : null;
   const taken = new Set(Object.keys(isPlainObject(registry?.projects) ? registry.projects : {}));
   const discovered = [];
@@ -349,8 +346,6 @@ export async function init({ root, deps = {} } = {}) {
   };
 }
 
-// --- discovery internals -------------------------------------------------------------------
-
 function newGroup(groupKey) {
   return {
     groupKey,
@@ -507,8 +502,6 @@ function lookbackStart(options) {
   return new Date(Date.now() - days * DAY_MS).toISOString();
 }
 
-// --- scaffold internals --------------------------------------------------------------------
-
 function ensureDir(dir, { created, existed, warnings }) {
   const stats = statOf(dir);
   if (stats?.isDirectory()) {
@@ -646,8 +639,6 @@ function readmeText() {
     "",
   ].join("\n");
 }
-
-// --- shared internals ----------------------------------------------------------------------
 
 // Every public function in this module promises not to throw. `attempt` is where that promise is
 // actually kept for the calls that reach the filesystem, git, or SQLite.

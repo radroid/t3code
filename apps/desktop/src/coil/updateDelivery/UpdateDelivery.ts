@@ -492,7 +492,6 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(CoilUpdateDelivery, make);
 
-// --- process helpers -------------------------------------------------------------------------
 // Kept at the bottom and deliberately small: the interesting logic above should not be interleaved
 // with spawn plumbing.
 

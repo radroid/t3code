@@ -48,8 +48,6 @@ const BUNDLE = {
 const CLEAN_DAY_FILE = "# 2026-08-10\n\nShipped the redaction gate.\n";
 const LEAKY_DAY_FILE = "# 2026-08-10\n\nKey was sk-abcdefghijklmnopqrst all along.\n";
 
-// --- harness --------------------------------------------------------------------------------------
-
 /** Runs the CLI with captured streams; returns the exit code plus everything it printed. */
 async function runCli(argv, { deps = {}, cwd = "/nonexistent" } = {}) {
   const stdout = [];
@@ -334,8 +332,6 @@ function writeBundleWithUnclassified(bundlePath, entry) {
   return bundlePath;
 }
 
-// --- usage, help and dispatch ---------------------------------------------------------------------
-
 NodeTest.test("a bare invocation prints the map of commands and exits 0", async (t) => {
   scenario(t);
   const result = await runCli([]);
@@ -482,8 +478,6 @@ NodeTest.test("dates are validated before anything is read", async (t) => {
   NodeAssert.equal(backwards.code, 2);
   NodeAssert.match(backwards.err, /before its start/u);
 });
-
-// --- collect --------------------------------------------------------------------------------------
 
 NodeTest.test(
   "collect calls lib/bundle.mjs collect(), writes the bundle and echoes its path last",
@@ -647,8 +641,6 @@ NodeTest.test(
   },
 );
 
-// --- lint -----------------------------------------------------------------------------------------
-
 NodeTest.test("lint exits 0 on a clean file and 1 on a leak", async (t) => {
   const box = scenario(t);
   const clean = await runCli(["lint", "--file", box.dayFile, "--root", box.root]);
@@ -793,8 +785,6 @@ NodeTest.test("lint on an unreadable file fails closed", async (t) => {
   NodeAssert.equal(result.code, 1);
   NodeAssert.match(result.out, /lint-unavailable/u);
 });
-
-// --- publish --------------------------------------------------------------------------------------
 
 NodeTest.test("publish commits the day file and never pushes", async (t) => {
   const box = scenario(t);
@@ -1062,8 +1052,6 @@ NodeTest.test("publish refuses when the worklog root is not a git repo", async (
   NodeAssert.match(result.err, /is not a git repository/u);
 });
 
-// --- doctor ---------------------------------------------------------------------------------------
-
 NodeTest.test("doctor exits 0 when nothing at all is installed", async (t) => {
   const box = sandbox(t);
   withEnv(t, {
@@ -1135,8 +1123,6 @@ NodeTest.test("doctor still exits 2 when a flag is misused", async (t) => {
   NodeAssert.equal(result.code, 2);
   NodeAssert.match(result.err, /Unknown flag "--roots"/u);
 });
-
-// --- init and projects ------------------------------------------------------------------------------
 
 NodeTest.test(
   "init delegates the whole job to lib/init.mjs and renders what it added",
@@ -1410,8 +1396,6 @@ NodeTest.test("projects lists the registry and anything discovered but unclassif
   NodeAssert.equal(skipped.code, 0);
   NodeAssert.doesNotMatch(skipped.out, /unclassified/u);
 });
-
-// --- extract ----------------------------------------------------------------------------------------
 
 NodeTest.test(
   "extract-queue resolves a bundle by bare filename and lists the slices",
@@ -1699,8 +1683,6 @@ NodeTest.test(
     NodeAssert.doesNotMatch(refused.err, /Re-run with --debug/u, "a bad extract is not a crash");
   },
 );
-
-// --- JSON output and failure modes ---------------------------------------------------------------
 
 NodeTest.test("--json produces parseable JSON for every command", async (t) => {
   const box = scenario(t);

@@ -1261,7 +1261,6 @@ NodeTest.describe("end to end over a fixture projects directory", () => {
       const worktreeB = "/Users/dev/.t3/worktrees/t3code/t3code-77aa11bb";
       const files = [];
 
-      // --- five genuine sessions ---
       files.push(
         writeHumanSession(projects, {
           dir: "-Users-dev-Developer-api",
@@ -1305,7 +1304,7 @@ NodeTest.describe("end to end over a fixture projects directory", () => {
         }),
       );
 
-      // --- thread-title generation: tiny, and it runs inside the thread's own worktree ---
+      // Thread-title generation: tiny, and it runs inside the thread's own worktree
       files.push(
         writeAgentSession(projects, {
           dir: "-Users-dev--t3-worktrees-t3code-t3code-8dee628e",
@@ -1333,7 +1332,7 @@ NodeTest.describe("end to end over a fixture projects directory", () => {
         }),
       );
 
-      // --- security review: long, chatty and tool-heavy, so ONLY the prefix list can catch it ---
+      // Security review: long, chatty and tool-heavy, so ONLY the prefix list can catch it
       files.push(
         writeAgentSession(projects, {
           dir: "-Users-dev-Developer-api",
@@ -1357,7 +1356,6 @@ NodeTest.describe("end to end over a fixture projects directory", () => {
         }),
       );
 
-      // --- the branch-name generator (on no list) and a provider reachability ping ---
       files.push(
         writeAgentSession(projects, {
           dir: "-Users-dev-Developer-t3code",

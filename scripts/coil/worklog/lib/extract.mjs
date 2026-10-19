@@ -25,8 +25,6 @@ import { closeDatabases, openT3Databases, readActivities, readThreadMessages } f
 /** Bump only for a breaking change to the extract file shape; an unknown version is re-extracted. */
 export const EXTRACT_SCHEMA_VERSION = 1;
 
-// --- slice budget ---------------------------------------------------------------------------
-
 // ~12 000 chars is roughly 3k tokens: enough for a Haiku subagent to see the shape of a session,
 // small enough that queueing eight of them is still cheap.
 const SLICE_MAX_CHARS = 12_000;
@@ -46,14 +44,10 @@ const COMMIT_GRACE_MS = 10 * 60_000;
 
 const DEFAULT_QUEUE_LIMIT = 8;
 
-// --- materiality ----------------------------------------------------------------------------
-
 // A session below all three bars is a stray question or an aborted start: real to the timeline,
 // worthless to a narrative, and not worth a model call.
 const MATERIAL_TOOL_ACTIVITIES = 3;
 const MATERIAL_USER_PROMPTS = 2;
-
-// --- extract payload ------------------------------------------------------------------------
 
 const EXTRACT_FIELDS = ["problem", "approach", "outcome"];
 const FIELD_MAX_CHARS = 600;
@@ -356,8 +350,6 @@ export function parseExtractPayload(text) {
   );
 }
 
-// --- extract files ------------------------------------------------------------------------------
-
 function normaliseDocument(doc, sessionKey) {
   if (!isPlainObject(doc)) return null;
   const version = Number(doc.schemaVersion ?? EXTRACT_SCHEMA_VERSION);
@@ -480,8 +472,6 @@ function writeJsonFile(file, document) {
     throw error;
   }
 }
-
-// --- materiality --------------------------------------------------------------------------------
 
 // Reads the counts the collector attached, falling back to the raw shapes both stores already
 // produce (`promptCount`/`toolUseCount` on a Claude Code session, `files` and `turnCount` on a
@@ -834,8 +824,6 @@ function loadInput(deps, candidate, warnings) {
   };
 }
 
-// --- slice rendering ----------------------------------------------------------------------------
-
 function sessionLines(session, scrub) {
   const lines = [];
   const push = (label, value) => {
@@ -978,8 +966,6 @@ function reduceRelativePaths(text) {
   return text.replace(DEEP_RELATIVE_PATH, (matched) => basenameOnly(matched) || matched);
 }
 
-// --- payload recovery ---------------------------------------------------------------------------
-
 function* jsonCandidates(text) {
   const trimmed = text.trim();
   yield trimmed;
@@ -1034,8 +1020,6 @@ function matchingBrace(text, start) {
   }
   return -1;
 }
-
-// --- small helpers ------------------------------------------------------------------------------
 
 function resolvePaths(paths) {
   if (typeof paths === "string" && paths.trim() !== "") return worklogPaths(paths);

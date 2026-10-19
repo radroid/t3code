@@ -244,8 +244,6 @@ export function isMachineSession(session) {
   return structural ? { machine: true, rule: "utility-shape" } : { machine: false, rule: null };
 }
 
-// --- internals ---------------------------------------------------------------------------------
-
 function classifySession(session, worktreeRoots, threadRoots, lookupHash) {
   const machine = isMachineSession(session);
   if (machine.machine) {

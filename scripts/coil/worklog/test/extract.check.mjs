@@ -215,8 +215,6 @@ function inputFixture(overrides = {}) {
   };
 }
 
-// --- extractPath / loadExtract ------------------------------------------------------------------
-
 NodeTest.test(
   "extractPath keeps every session in <root>/extracts as one filesystem-safe file",
   () => {
@@ -307,8 +305,6 @@ NodeTest.test("loadExtracts maps only the keys that have a usable file", () => {
   NodeAssert.equal(map.get("t3-alpha").extract.status, "shipped");
   NodeAssert.deepEqual([...loadExtracts(root, null).keys()], []);
 });
-
-// --- needsExtraction ------------------------------------------------------------------------------
 
 NodeTest.test(
   "needsExtraction clears the materiality bar on files, tool activity, or two prompts",
@@ -429,8 +425,6 @@ NodeTest.test("needsExtraction compares against the cursor, not the calendar", (
     true,
   );
 });
-
-// --- buildSlice -----------------------------------------------------------------------------------
 
 NodeTest.test("buildSlice renders every section from the session's own material", () => {
   const slice = buildSlice(sessionFixture(), { ...inputFixture(), homeDir: HOME });
@@ -628,8 +622,6 @@ NodeTest.test("buildSlice falls back to a Claude Code session's own prompts", ()
   NodeAssert.ok(slice.includes("1. Set up the release relay."));
   NodeAssert.ok(slice.includes("2. Ship it."));
 });
-
-// --- queue / commitExtract ------------------------------------------------------------------------
 
 NodeTest.test("no message is ever read twice: queue -> commit -> queue queues nothing", () => {
   const root = newRoot();
@@ -835,8 +827,6 @@ NodeTest.test(
     NodeAssert.ok(slice.includes("a client"));
   },
 );
-
-// --- the default loader ---------------------------------------------------------------------------
 
 NodeTest.test("the default loader bounds a first extraction to the collected window", () => {
   const root = newRoot();
@@ -1191,8 +1181,6 @@ NodeTest.test("commitExtract accepts an omitted artifacts list as none", () => {
   });
   NodeAssert.deepEqual(document.extract.artifacts, []);
 });
-
-// --- parseExtractPayload --------------------------------------------------------------------------
 
 NodeTest.test(
   "parseExtractPayload recovers an object from every shape a subagent replies in",

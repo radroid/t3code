@@ -92,8 +92,6 @@ export function renderStatLine(bundle) {
   return parts.join(" · ");
 }
 
-// --- sections -----------------------------------------------------------------------------------
-
 function pushWarnings(lines, bundle) {
   const warnings = asArray(bundle?.warnings);
   if (warnings.length === 0) return;
@@ -376,8 +374,6 @@ function pushExtracts(lines, bundle) {
   }
   pushOverflow(lines, withExtracts.length - MAX_EXTRACTS, "extract");
 }
-
-// --- pieces -------------------------------------------------------------------------------------
 
 // An extract file is a document that WRAPS the model's answer (`{cursor, history, extract:{…}}`),
 // so the prose lives one level down. A flat object is accepted too, so a hand-written extract still

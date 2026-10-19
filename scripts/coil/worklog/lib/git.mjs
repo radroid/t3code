@@ -284,8 +284,6 @@ export function collectGit(dirs, window = {}, { run = createRunner() } = {}) {
   return { repos, warnings };
 }
 
-// --- internals -------------------------------------------------------------------------------
-
 // Same work as commitsInWindow, but it keeps the warnings that the array-shaped public contract
 // has nowhere to put. collectGit wants them; a direct caller does not.
 function readCommits(root, window = {}, run = createRunner()) {
