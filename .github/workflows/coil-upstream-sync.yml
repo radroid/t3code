@@ -107,6 +107,10 @@ jobs:
 
       - name: Merge + verify
         id: sync
+        # Upstream's web tests expect release links to pingdotgg/t3code; apps/web/vite.config.ts
+        # falls back to GITHUB_REPOSITORY, which on the fork's runners is radroid/t3code.
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: pingdotgg/t3code
         run: |
           set +e
           RUN="vp run" VERIFY="typecheck lint test" \
