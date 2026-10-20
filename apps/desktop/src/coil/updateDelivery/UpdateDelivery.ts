@@ -348,16 +348,17 @@ export const make = Effect.gen(function* () {
    * exit, and the question "did the build I was told to install actually arrive?" can only be
    * answered by the process that comes back.
    */
-  const recordHasUpdated = (target: PendingInstall) =>
-    Effect.gen(function* () {
-      yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
-      yield* fileSystem
-        .makeDirectory(environment.path.dirname(updatedMarkerPath), { recursive: true })
-        .pipe(Effect.ignore);
-      yield* fileSystem
-        .writeFileString(updatedMarkerPath, encodePendingInstall(target))
-        .pipe(Effect.ignore);
-    });
+  const recordHasUpdated = Effect.fn("coil.updateDelivery.recordHasUpdated")(function* (
+    target: PendingInstall,
+  ) {
+    yield* Ref.update(internal, (current) => ({ ...current, hasUpdatedBefore: true }));
+    yield* fileSystem
+      .makeDirectory(environment.path.dirname(updatedMarkerPath), { recursive: true })
+      .pipe(Effect.ignore);
+    yield* fileSystem
+      .writeFileString(updatedMarkerPath, encodePendingInstall(target))
+      .pipe(Effect.ignore);
+  });
 
   const restartNow = Effect.gen(function* () {
     const snapshot = yield* Ref.get(internal);
