@@ -6,6 +6,11 @@ updates) a single `coil-sync` issue with a status JSON block. This runbook is ho
 resolved: **on demand, by activating an agent**. This resolver runs only when asked — though
 `coil-ci.yml` still gates every push and PR, and `coil-weekly-verify.yml` runs on Sundays.
 
+Two kinds of conflict never reach the issue. The job keeps retired upstream workflows deleted, and
+when `pnpm-lock.yaml` is the only conflict left, it takes upstream's lockfile and re-runs the install
+(`scripts/coil/sync-upstream.sh`, `LOCKFILE_INSTALL`). Verify then runs on the result as usual. A
+lockfile conflict alongside any other conflict still escalates, and so does a failed re-resolution.
+
 The sync merges; it does not rebase (changed 2026-09-02). `main` only ever fast-forwards, so
 nothing in this process force-pushes, no worktree or tag or open PR goes stale on a sync day, and a
 sync PR is an ordinary PR you land with the merge button. The one rule that replaces all of that
