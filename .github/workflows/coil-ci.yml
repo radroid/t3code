@@ -112,7 +112,15 @@ jobs:
           cache: true
           run-install: true
 
+      # Upstream's web tests run a browser project in headless Chromium.
+      - name: Install Chromium for web browser tests
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+
       - name: Test
+        # Upstream's web tests expect release links to pingdotgg/t3code; apps/web/vite.config.ts
+        # falls back to GITHUB_REPOSITORY, which on the fork's runners is radroid/t3code.
+        env:
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: pingdotgg/t3code
         run: vp run --filter @t3tools/web test --testTimeout=120000 --hookTimeout=120000
 
   # apps/server sets `fileParallelism: false`, so its 524 test files run one at a time. Upstream

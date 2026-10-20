@@ -111,6 +111,9 @@ jobs:
           # repo) and gh's base-repo resolution ranks it above `origin`, so an un-pinned `gh pr
           # create` targets pingdotgg, where this token cannot write.
           GH_REPO: ${{ github.repository }}
+          # Upstream's web tests expect release links to pingdotgg/t3code; apps/web/vite.config.ts
+          # falls back to GITHUB_REPOSITORY, which on the fork's runners is radroid/t3code.
+          T3CODE_DESKTOP_UPDATE_REPOSITORY: pingdotgg/t3code
         with:
           # Whichever secret the install flow set is used; the empty one is ignored.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
