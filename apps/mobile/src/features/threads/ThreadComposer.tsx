@@ -80,10 +80,8 @@ import { fileRoutePathSegments } from "../files/filePath";
 import {
   ComposerActionButton,
   ComposerInlineControl,
-  ComposerToolbarButton,
   ComposerToolbarRow,
 } from "../../components/ComposerToolbar";
-import { replaceTextRange } from "@t3tools/shared/composerTrigger";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import {
   composerStripAttachments,
@@ -527,20 +525,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     onChangeDraftMessage: (text) => setComposerDraftText(composerDraftKey, text),
     onChangeSelection: composerMenu.onSelectionChange,
   });
-  // Return now submits (queues-when-busy / sends-when-idle), matching desktop
-  // Enter=submit. The newline button is the cross-platform multiline escape
-  // hatch: it inserts "\n" at the caret through the same insert-at-selection
-  // mechanism used for @file / skill tokens (replaceTextRange + selection).
-  const handleInsertNewline = useCallback(() => {
-    const result = replaceTextRange(
-      props.draftMessage,
-      composerMenu.selection.start,
-      composerMenu.selection.end,
-      "\n",
-    );
-    composerMenu.onSelectionChange({ start: result.cursor, end: result.cursor });
-    props.onChangeDraftMessage(result.text);
-  }, [composerMenu, props.draftMessage, props.onChangeDraftMessage]);
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
@@ -1159,21 +1143,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   />
                 ) : (
                   <View className="min-w-0 flex-1 flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                      <ComposerAttachmentButton
-                        supportsFiles={Boolean(
-                          props.serverConfig?.environment.capabilities.fileAttachments,
-                        )}
-                        onPickMedia={props.onPickDraftMedia}
-                        onPickFiles={props.onPickDraftFiles}
-                      />
-                      <ComposerToolbarButton
-                        accessibilityLabel="Insert line break"
-                        icon="return"
-                        onPress={handleInsertNewline}
-                        showChevron={false}
-                      />
-                    </View>
+                    <ComposerAttachmentButton
+                      supportsFiles={Boolean(
+                        props.serverConfig?.environment.capabilities.fileAttachments,
+                      )}
+                      onPickMedia={props.onPickDraftMedia}
+                      onPickFiles={props.onPickDraftFiles}
+                    />
                     <View className="min-w-0 shrink">
                       <ComposerInlineControl
                         accessibilityLabel="Model and reasoning settings"

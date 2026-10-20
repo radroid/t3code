@@ -98,7 +98,6 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly onComposerPasteText?: (event: NativePasteTextEvent) => void;
   readonly onComposerFocus?: () => void;
   readonly onComposerBlur?: () => void;
-  readonly onComposerSubmit?: () => void;
 }
 
 const NativeView = requireNativeView<NativeComposerEditorProps>(NATIVE_MODULE_NAME);
@@ -124,7 +123,6 @@ export function ComposerEditor({
   onPasteText,
   onFocus,
   onBlur,
-  onSubmit,
   contentInsetVertical = 0,
   ...props
 }: ComposerEditorProps) {
@@ -362,7 +360,6 @@ export function ComposerEditor({
         }}
         onComposerFocus={onFocus}
         onComposerBlur={onBlur}
-        onComposerSubmit={onSubmit === undefined ? undefined : () => onSubmit(false)}
       />
     </TextInputWrapper>
   );
