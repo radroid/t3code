@@ -327,8 +327,6 @@ export function isCountable(classification) {
   return typeof effective === "string" && effective !== "excluded";
 }
 
-// --- internals --------------------------------------------------------------------------------
-
 function emptyRegistry() {
   return { version: 1, identities: [], defaults: { ...DEFAULT_SETTINGS }, projects: {} };
 }

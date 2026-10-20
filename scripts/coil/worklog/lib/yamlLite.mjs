@@ -99,8 +99,6 @@ export function stringifyYaml(value, { comments } = {}) {
   return out.length === 0 ? "" : `${out.join("\n")}\n`;
 }
 
-// --- parsing ----------------------------------------------------------------------------------
-
 function scanLines(text) {
   const out = [];
   const raw = text.split(/\r?\n/u);
@@ -331,8 +329,6 @@ function isQuote(ch) {
 function fail(message, line) {
   throw new YamlLiteError(message, { line: line?.lineNo ?? null, snippet: line?.raw ?? "" });
 }
-
-// --- serialising ------------------------------------------------------------------------------
 
 function writeMap(obj, indent, prefix, out, comments, seen) {
   if (seen.has(obj)) {

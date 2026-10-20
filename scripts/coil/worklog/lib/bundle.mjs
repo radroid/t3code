@@ -215,8 +215,6 @@ export async function collect({
   };
 }
 
-// --- stores -------------------------------------------------------------------------------------
-
 function loadRegistry(mods, paths, warnings) {
   const loaded = attempt(
     () => mods.registry.loadRegistry(paths),
@@ -327,8 +325,6 @@ async function readClaudeCode(mods, projectsDir, window, t3, warnings) {
 
   return { sessions };
 }
-
-// --- project resolution -------------------------------------------------------------------------
 
 /**
  * Maps a directory to a registry project, inventing an entry when nothing matches.
@@ -486,8 +482,6 @@ function mainCheckout(repo) {
   // A bare repo's common dir IS the repo — there is no checkout above it to attribute work to.
   return NodePath.basename(common) === ".git" ? NodePath.dirname(common) : null;
 }
-
-// --- sessions -----------------------------------------------------------------------------------
 
 function buildThreadSession({
   mods,
@@ -912,8 +906,6 @@ function clamp(value, low, high) {
   return Math.min(Math.max(value, low), high);
 }
 
-// --- git ----------------------------------------------------------------------------------------
-
 function collectRepos({ mods, projects, window, identities, warnings }) {
   const dirs = [];
   const owners = new Map();
@@ -982,8 +974,6 @@ function containingOwner(mods, owners, root, warnings) {
   }
   return null;
 }
-
-// --- rollups ------------------------------------------------------------------------------------
 
 function rollUp({ contributions, git, projects, range, window, blockOptions, nowMs }) {
   const perProject = new Map();
@@ -1212,8 +1202,6 @@ function newStats() {
 function newDayBucket() {
   return { stats: newStats(), files: new Set(), sessionKeys: [], repoKeys: new Set() };
 }
-
-// --- helpers ------------------------------------------------------------------------------------
 
 function resolveDeps(deps) {
   const source = isObject(deps) ? deps : {};

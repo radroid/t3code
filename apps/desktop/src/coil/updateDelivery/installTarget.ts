@@ -43,7 +43,8 @@ export function describeRefusal(refusal: InstallRefusal): string {
     case "not-a-bundle":
       return `Could not find the enclosing .app for ${refusal.execPath}, so there is nothing safe to replace.`;
     // Reworded for the rename in #71, not softened. This refusal fires exactly once per user, on
-    // the first build after "T3 Code (Alpha)" became "T3 Coil (Alpha)", and the old wording read
+    // the first build after a rename ("T3 Code (Alpha)" → "T3 Coil (Alpha)", then upstream's Alpha →
+    // Beta made it "T3 Coil (Beta)"), and the old wording read
     // as a fault: it explains a mechanism and leaves the reader with nothing to do. The check
     // itself is unchanged and still the only thing standing between a rename and two installed
     // apps, so the message tells them the one safe way through instead of hiding the refusal.
@@ -113,7 +114,7 @@ export function resolveMacInstallTarget(args: {
   const appName = posixBasename(appBundlePath);
 
   // `resolveDesktopProductName` returns `desktopPackageJson.productName`, which is
-  // "T3 Coil (Alpha)" on this fork — not "T3 Code". The shell installer records what happens when
+  // "T3 Coil (Beta)" on this fork — not "T3 Code". The shell installer records what happens when
   // this is computed rather than read: it "always claimed T3 Code.app — an app that does not
   // exist — while a real install replaced T3 Code (Alpha).app" (its wording, from before #71
   // renamed the app). Comparing the two names is what stops a rename from quietly producing two

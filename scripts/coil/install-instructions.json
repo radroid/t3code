@@ -16,7 +16,7 @@
     "reach into the desktop app's package.json at render time — and render-release-notes.test.ts",
     "asserts the two agree, so the rename in #71 turns this from silent drift into a failing test."
   ],
-  "appBundleName": "T3 Coil (Alpha)",
+  "appBundleName": "T3 Coil (Beta)",
   "appBundleNameOrigin": "apps/desktop/package.json → productName",
   "downloadPageUrl": "https://coil.curlycloud.dev/download",
   "platforms": [

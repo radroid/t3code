@@ -97,8 +97,6 @@ function defaultRegistry(root) {
   ].join("\n");
 }
 
-// --- fixture builders ---------------------------------------------------------------------------
-
 function thread(overrides = {}) {
   return {
     baseDir: "/fake/t3",
@@ -188,8 +186,6 @@ function commit(overrides = {}) {
     ...overrides,
   };
 }
-
-// --- dependency fakes ---------------------------------------------------------------------------
 
 function fakeT3Db({
   projects = [],
@@ -373,8 +369,6 @@ async function collectFixture(t, options = {}) {
 
   return { bundle, root, gitCalls: gitFake.calls };
 }
-
-// --- shape --------------------------------------------------------------------------------------
 
 NodeTest.test("the bundle carries every field §7 promises", async (t) => {
   const { bundle } = await collectFixture(t);
@@ -568,8 +562,6 @@ NodeTest.test(
     NodeAssert.equal(bundle.stats.sessions, 2);
   },
 );
-
-// --- time ---------------------------------------------------------------------------------------
 
 NodeTest.test("parallel sessions do not double-count active time", async (t) => {
   const root = tempRoot(t);
@@ -804,8 +796,6 @@ NodeTest.test(
   },
 );
 
-// --- dedup --------------------------------------------------------------------------------------
-
 NodeTest.test(
   "a t3code-driven session is excluded from the counts but kept as auditable evidence",
   async (t) => {
@@ -870,8 +860,6 @@ NodeTest.test("the prompt-hash rung links a session that never ran in a worktree
   });
   NodeAssert.equal(bundle.stats.sessions, 0);
 });
-
-// --- classification -----------------------------------------------------------------------------
 
 NodeTest.test("an unregistered project is flagged as unclassified and still counted", async (t) => {
   const root = tempRoot(t);
@@ -983,8 +971,6 @@ NodeTest.test("a session whose project cannot be resolved is still counted", asy
   // The summary must still show it, or the model sees a session count it cannot reconcile.
   NodeAssert.ok(renderSummary(bundle).includes("## Sessions outside the project list (1)"));
 });
-
-// --- ranges -------------------------------------------------------------------------------------
 
 NodeTest.test("byDay sums back to the range totals across two days", async (t) => {
   const root = tempRoot(t);
@@ -1135,8 +1121,6 @@ NodeTest.test(
   },
 );
 
-// --- degradation --------------------------------------------------------------------------------
-
 NodeTest.test("includeGit:false skips git entirely", async (t) => {
   const root = tempRoot(t);
   const { bundle, gitCalls } = await collectFixture(t, {
@@ -1282,8 +1266,6 @@ NodeTest.test("warnings from the underlying readers are surfaced once", async (t
   NodeAssert.equal(new Set(bundle.warnings).size, bundle.warnings.length);
 });
 
-// --- extraction ---------------------------------------------------------------------------------
-
 NodeTest.test("extraction is queued only for material sessions with new material", async (t) => {
   const root = tempRoot(t);
   const paths = writeRegistry(root, defaultRegistry(root));
@@ -1410,8 +1392,6 @@ NodeTest.test("an extract about another day never lands in this day's bundle", a
   NodeAssert.ok(!summary.includes("tomorrow's outcome"));
   NodeAssert.ok(!summary.includes("last week's outcome"));
 });
-
-// --- summary ------------------------------------------------------------------------------------
 
 NodeTest.test("the summary digests the bundle without running away", async (t) => {
   const root = tempRoot(t);

@@ -364,8 +364,6 @@ export function basenameOnly(p) {
   return base === "" ? normalised : base;
 }
 
-// --- context ------------------------------------------------------------------------------------
-
 function buildContext(options) {
   const home = resolveHome(options?.homeDir);
   const termPatterns = buildTermPatterns(alwaysRedactOf(options?.redaction));
@@ -475,8 +473,6 @@ function buildExtraPatterns(entries) {
   }
   return patterns;
 }
-
-// --- candidate collection -----------------------------------------------------------------------
 
 function collectCandidates(text, context) {
   const candidates = [];
@@ -639,8 +635,6 @@ function candidate(rule, start, end, mask) {
   };
 }
 
-// --- link exemption -------------------------------------------------------------------------------
-
 function allUrlSpans(text) {
   const spans = [];
   eachMatch(URL_PATTERN, text, (match) => {
@@ -669,8 +663,6 @@ function isPublicCodeHost(host) {
   if (host === "") return false;
   return PUBLIC_CODE_HOSTS.some((known) => host === known || host.endsWith(`.${known}`));
 }
-
-// --- suppression ----------------------------------------------------------------------------------
 
 // Higher-precedence rules are placed first, so anything they already cover is dropped rather than
 // reported twice. Containment is the only test: a warning that *contains* an error (a branch name
@@ -716,8 +708,6 @@ function mergeSpans(spans) {
 function rank(rule) {
   return PRECEDENCE.get(rule) ?? RULES.length;
 }
-
-// --- findings ---------------------------------------------------------------------------------------
 
 function toFinding(text, lineStarts, item, maskSpans) {
   const lineIndex = lineIndexAt(lineStarts, item.start);
@@ -813,8 +803,6 @@ function describeError(error, options) {
   }
 }
 
-// --- redaction --------------------------------------------------------------------------------------
-
 function reducePaths(text, home) {
   let out = text;
   if (typeof home === "string" && home.length >= 4 && home.includes("/")) {
@@ -870,8 +858,6 @@ function replaceTerms(text, redaction) {
   }
   return out;
 }
-
-// --- regex plumbing ------------------------------------------------------------------------------------
 
 // Every scan clones its pattern: a module-level /g regex carries `lastIndex` between calls, which
 // would make the gate's results depend on what it looked at previously.
@@ -939,8 +925,6 @@ function groupSpan(match, group) {
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
-
-// --- text plumbing ----------------------------------------------------------------------------------------
 
 function lineStartsOf(text) {
   const starts = [0];

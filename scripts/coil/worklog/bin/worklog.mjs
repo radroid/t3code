@@ -251,8 +251,6 @@ export function commandCatalogue() {
   }));
 }
 
-// --- dispatch -----------------------------------------------------------------------------------
-
 async function dispatch(argv, ctx) {
   const [first, ...rest] = argv;
 
@@ -309,8 +307,6 @@ function requireFlags(command, parsed) {
     }
   }
 }
-
-// --- argument parsing ---------------------------------------------------------------------------
 
 // Hand-rolled on purpose (zero dependencies), so the rules are stated once, here:
 //   --flag value, --flag=value, and boolean flags that take neither.
@@ -449,8 +445,6 @@ function validFlagsHint(specs) {
     .map((name) => `--${name}`)
     .join(", ")}.`;
 }
-
-// --- doctor -------------------------------------------------------------------------------------
 
 async function runDoctor(ctx) {
   const paths = worklogPaths(ctx.flags.root);
@@ -636,8 +630,6 @@ function gitConfig(ctx, cwd, key) {
   return value === "" ? null : value;
 }
 
-// --- init ---------------------------------------------------------------------------------------
-
 async function runInit(ctx) {
   const paths = worklogPaths(ctx.flags.root);
   const lines = [`worklog init → ${tildify(paths.root)}`, ""];
@@ -743,8 +735,6 @@ async function runInit(ctx) {
   };
 }
 
-// --- projects -----------------------------------------------------------------------------------
-
 async function runProjects(ctx) {
   const paths = worklogPaths(ctx.flags.root);
   const loaded = loadRegistry(paths);
@@ -804,8 +794,6 @@ async function runProjects(ctx) {
 
   return { code: EXIT.ok, lines, json: { projects: entries, unclassified }, warnings };
 }
-
-// --- collect ------------------------------------------------------------------------------------
 
 async function runCollect(ctx) {
   const paths = worklogPaths(ctx.flags.root);
@@ -874,8 +862,6 @@ async function runCollect(ctx) {
     warnings,
   };
 }
-
-// --- extract ------------------------------------------------------------------------------------
 
 async function runExtractQueue(ctx) {
   const paths = worklogPaths(ctx.flags.root);
@@ -988,8 +974,6 @@ async function runExtractCommit(ctx) {
 
   return { code: EXIT.ok, lines, json: { session: sessionKey, path, cursor }, warnings: [] };
 }
-
-// --- lint ---------------------------------------------------------------------------------------
 
 async function runLint(ctx) {
   const paths = worklogPaths(ctx.flags.root);
@@ -1113,8 +1097,6 @@ function validateAllow(allow, command) {
   }
   return ids;
 }
-
-// --- publish ------------------------------------------------------------------------------------
 
 /**
  * Resolve what `publish` is being asked to commit. A range report is as much a deliverable as a day
@@ -1343,8 +1325,6 @@ async function runPublish(ctx) {
   };
 }
 
-// --- help ---------------------------------------------------------------------------------------
-
 async function runHelp(ctx) {
   const requested = ctx.positionals?.[0];
   if (requested === undefined) return { code: EXIT.ok, lines: generalUsage(), json: helpJson() };
@@ -1406,8 +1386,6 @@ function generalUsage() {
   );
   return lines;
 }
-
-// --- context, output and failure ------------------------------------------------------------------
 
 function createContext(io, deps) {
   const stdout =
@@ -1537,8 +1515,6 @@ function finish(ctx, code) {
   }
   return code;
 }
-
-// --- shared helpers -------------------------------------------------------------------------------
 
 // bundle/summary/extract are loaded on demand so `worklog lint` and `worklog doctor` never pay to
 // open node:sqlite. Tests inject them through ctx.deps under the same names.

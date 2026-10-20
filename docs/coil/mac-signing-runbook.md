@@ -169,7 +169,8 @@ One deliberate non-change, and one that has since changed:
   hazard this note used to warn about is real and was accepted rather than avoided: the updater
   refuses an install when the `.app` name in the dmg differs from the installed one, so the first
   renamed build has to be installed by hand, once. `describeRefusal` says exactly that now instead
-  of reading like a fault.
+  of reading like a fault. The same happened again when upstream's Alpha → Beta rename (#20032)
+  made it `T3 Coil (Beta)` in the 2026-10-17 sync.
 
 Since it lands in the same release as the signing change, the two identity changes cost **one**
 round of prompts between them, not two. `scripts/coil/mac-signature.test.ts` asserts every build path

@@ -44,6 +44,7 @@ const layerElectronApp = (calls: ElectronAppCalls) =>
     name: Effect.succeed("T3 Code"),
     systemLocale: Effect.succeed("en-US"),
     whenReady: Effect.void,
+    requestSingleInstanceLock: Effect.succeed(true),
     quit: Effect.void,
     exit: () => Effect.void,
     relaunch: () => Effect.void,
@@ -220,12 +221,10 @@ describe("DesktopAppIdentity", () => {
         // "T3 Coil" here while the legacy-userData assertions above still say "T3 Code".
         // Not an inconsistency: this one is computed from APP_BASE_NAME and follows the
         // rename, that one names a directory already on disk and must not.
-        assert.deepEqual(calls.setName, ["T3 Coil Alpha"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Coil (Alpha)");
+        assert.deepEqual(calls.setName, ["T3 Coil Beta"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Coil (Beta)");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
-        // Packaged: the bundle's own icon stands, so a custom one the user
-        // attached survives.
         assert.deepEqual(calls.setDockIcon, []);
       }),
       {
@@ -241,7 +240,7 @@ describe("DesktopAppIdentity", () => {
   });
 
   it.effect.each([
-    { stage: "Alpha", environment: {} },
+    { stage: "Beta", environment: {} },
     {
       stage: "Nightly",
       environment: { appVersion: "0.0.43-nightly.20260929.2428" },
@@ -265,7 +264,6 @@ describe("DesktopAppIdentity", () => {
         const runtimeName = calls.setName[0];
         assert.isDefined(runtimeName);
         assert.equal(runtimeName, `T3 Coil ${stage}`);
-        // RFC 9110's token grammar, after Electron removes ASCII spaces.
         assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
         assert.equal(calls.setAboutPanelOptions[0]?.applicationName, `T3 Coil (${stage})`);
       }),
@@ -285,8 +283,6 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        // Electron shows a generic icon for an unpackaged run, which is the
-        // reason this call exists at all.
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);
       }),
       {

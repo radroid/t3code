@@ -97,20 +97,19 @@ const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.
  * `hdiutil detach`: the spawn failed with "Service not found: effect/Scope" and the failure was
  * swallowed, leaving the dmg attached and the temp mount point un-removable.
  */
-const runCapturing = (bin: string, args: readonly string[]) =>
-  Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const child = yield* spawner.spawn(ChildProcess.make(bin, [...args]));
-    const [stdout, stderr, exitCode] = yield* Effect.all(
-      [
-        collectStreamAsString(child.stdout),
-        collectStreamAsString(child.stderr),
-        child.exitCode.pipe(Effect.map(Number)),
-      ],
-      { concurrency: "unbounded" },
-    );
-    return { output: `${stdout}\n${stderr}`, exitCode } as const;
-  }).pipe(Effect.scoped);
+const runCapturing = Effect.fn("runCapturing")(function* (bin: string, args: readonly string[]) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const child = yield* spawner.spawn(ChildProcess.make(bin, [...args]));
+  const [stdout, stderr, exitCode] = yield* Effect.all(
+    [
+      collectStreamAsString(child.stdout),
+      collectStreamAsString(child.stderr),
+      child.exitCode.pipe(Effect.map(Number)),
+    ],
+    { concurrency: "unbounded" },
+  );
+  return { output: `${stdout}\n${stderr}`, exitCode } as const;
+}, Effect.scoped);
 
 /**
  * Mount a dmg read-only and hand the caller the `.app` inside it.
@@ -125,45 +124,44 @@ const runCapturing = (bin: string, args: readonly string[]) =>
  * The detach is a release action, so a failed verification still unmounts — a dmg left attached
  * poisons the next attach to the same mount point.
  */
-const withMountedDmg = <A, E, R>(
+const withMountedDmg = Effect.fn("withMountedDmg")(function* <A, E, R>(
   dmgPath: string,
   use: (appPath: string) => Effect.Effect<A, E, R>,
-) =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const mountPoint = yield* fs.makeTempDirectoryScoped({ prefix: "coil-verify-sig-" });
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const mountPoint = yield* fs.makeTempDirectoryScoped({ prefix: "coil-verify-sig-" });
 
-    yield* Effect.acquireRelease(
-      runCapturing("hdiutil", [
-        "attach",
-        dmgPath,
-        "-nobrowse",
-        "-readonly",
-        "-quiet",
-        "-mountpoint",
-        mountPoint,
-      ]),
-      () =>
-        runCapturing("hdiutil", ["detach", mountPoint, "-force"]).pipe(
-          // Never blanket-ignored. A failed detach leaves the image attached, which poisons the
-          // next attach to the same mount point — and the temp directory's own removal then fails
-          // with EBUSY, reporting a mounting problem as a filesystem one. catchCause, not
-          // catchError: the failure that actually happened here was a defect.
-          Effect.catchCause((cause) =>
-            Effect.logWarning(`[mac-signature] could not detach ${mountPoint}: ${cause}`),
-          ),
+  yield* Effect.acquireRelease(
+    runCapturing("hdiutil", [
+      "attach",
+      dmgPath,
+      "-nobrowse",
+      "-readonly",
+      "-quiet",
+      "-mountpoint",
+      mountPoint,
+    ]),
+    () =>
+      runCapturing("hdiutil", ["detach", mountPoint, "-force"]).pipe(
+        // Never blanket-ignored. A failed detach leaves the image attached, which poisons the
+        // next attach to the same mount point — and the temp directory's own removal then fails
+        // with EBUSY, reporting a mounting problem as a filesystem one. catchCause, not
+        // catchError: the failure that actually happened here was a defect.
+        Effect.catchCause((cause) =>
+          Effect.logWarning(`[mac-signature] could not detach ${mountPoint}: ${cause}`),
         ),
-    );
+      ),
+  );
 
-    const entries = yield* fs.readDirectory(mountPoint);
-    const appEntry = entries.find((entry) => entry.endsWith(".app"));
-    if (appEntry === undefined) {
-      return yield* new MacAppNotFoundInDmgError({ dmgPath, mountPoint });
-    }
+  const entries = yield* fs.readDirectory(mountPoint);
+  const appEntry = entries.find((entry) => entry.endsWith(".app"));
+  if (appEntry === undefined) {
+    return yield* new MacAppNotFoundInDmgError({ dmgPath, mountPoint });
+  }
 
-    return yield* use(path.join(mountPoint, appEntry));
-  }).pipe(Effect.scoped);
+  return yield* use(path.join(mountPoint, appEntry));
+}, Effect.scoped);
 
 /** Everything codesign has to say about one bundle, reduced to a verdict. */
 export const inspectMacSignature = Effect.fn("inspectMacSignature")(function* (

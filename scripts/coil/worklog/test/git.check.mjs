@@ -19,8 +19,6 @@ import {
   remoteNameWithOwner,
 } from "../lib/git.mjs";
 
-// --- harness ------------------------------------------------------------------------------------
-
 const GIT_AVAILABLE = (() => {
   try {
     const probe = NodeChildProcess.spawnSync("git", ["--version"], { encoding: "utf8" });
@@ -247,8 +245,6 @@ function windowCommits(dir, identities = []) {
   );
 }
 
-// --- createRunner -------------------------------------------------------------------------------
-
 NodeTest.test("createRunner captures stdout on success", () => {
   const run = createRunner();
   const result = run(process.execPath, ["-e", "process.stdout.write('hello')"]);
@@ -298,8 +294,6 @@ NodeTest.test("createRunner passes the injected environment to the child", () =>
   // The variable must not have leaked into this process.
   NodeAssert.equal(process.env.WORKLOG_TEST_TOKEN, undefined);
 });
-
-// --- canonicalRepo ------------------------------------------------------------------------------
 
 NodeTest.test("canonicalRepo collapses every worktree of one repo onto a single key", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
@@ -354,8 +348,6 @@ NodeTest.test("canonicalRepo falls back to <root>/.git when the common-dir looku
   });
 });
 
-// --- remoteNameWithOwner ------------------------------------------------------------------------
-
 NodeTest.test("remoteNameWithOwner parses every remote URL form git emits", () => {
   const cases = [
     ["git@github.com:radroid/t3code.git\n", "radroid/t3code"],
@@ -399,8 +391,6 @@ NodeTest.test("remoteNameWithOwner returns null when there is no origin, and nev
     false,
   );
 });
-
-// --- commitsInWindow ----------------------------------------------------------------------------
 
 NodeTest.test("commitsInWindow returns in-window commits in chronological order", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");
@@ -612,8 +602,6 @@ NodeTest.test("commitsInWindow with an open window returns the whole history", (
   NodeAssert.equal(all.length, 9);
   NodeAssert.ok(subjectsOf(all).includes("before the window"));
 });
-
-// --- mergedPrs ----------------------------------------------------------------------------------
 
 const PR_PAYLOAD = JSON.stringify([
   {
@@ -911,8 +899,6 @@ NodeTest.test("mergedPrs with an open window omits the search qualifier", () => 
   NodeAssert.deepEqual(warnings, []);
   NodeAssert.equal(run.calls[0].args.includes("--search"), false);
 });
-
-// --- collectGit ---------------------------------------------------------------------------------
 
 NodeTest.test("collectGit visits each repo once no matter how many worktrees are listed", (t) => {
   if (!GIT_AVAILABLE) return t.skip("git is not available");

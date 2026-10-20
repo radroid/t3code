@@ -13,7 +13,7 @@
  * design doc and coil-release.yml.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDownIcon, ChevronUpIcon, CircleFadingArrowUpIcon } from "lucide-react";
 import type { CoilUpdateBridge, CoilUpdateState } from "@t3tools/contracts";
 
@@ -102,21 +102,17 @@ export function CoilUpdateToast() {
     };
   }, []);
 
-  const view = useMemo(
-    () =>
-      selectUpdateToastView({
-        status: state.status,
-        dismissedShortSha,
-        isElectron: updateBridge() !== undefined,
-        // Read here rather than inside the selector so the copy stays a pure function of its
-        // input, matching `now`.
-        platform: typeof navigator === "undefined" ? "" : navigator.platform,
-        hasUpdatedBefore: state.hasUpdatedBefore,
-        autoRestart,
-        now,
-      }),
-    [state, dismissedShortSha, autoRestart, now],
-  );
+  const view = selectUpdateToastView({
+    status: state.status,
+    dismissedShortSha,
+    isElectron: updateBridge() !== undefined,
+    // Read here rather than inside the selector so the copy stays a pure function of its
+    // input, matching `now`.
+    platform: typeof navigator === "undefined" ? "" : navigator.platform,
+    hasUpdatedBefore: state.hasUpdatedBefore,
+    autoRestart,
+    now,
+  });
 
   // Depends on the boolean, not on the view: the interval is torn down and rebuilt only when the
   // toast appears or disappears, not on every tick it causes.
@@ -135,9 +131,9 @@ export function CoilUpdateToast() {
   // not re-render on every thread change.
   const threadShells = useThreadShells(autoRestart !== undefined);
   const primaryEnvironment = usePrimaryEnvironment();
-  const progressingThreadCount = useMemo(
-    () => countProgressingThreads(threadShells, primaryEnvironment?.environmentId ?? null),
-    [threadShells, primaryEnvironment],
+  const progressingThreadCount = countProgressingThreads(
+    threadShells,
+    primaryEnvironment?.environmentId ?? null,
   );
 
   useEffect(() => {
@@ -147,6 +143,7 @@ export function CoilUpdateToast() {
     // Clear the arm before dispatching. `restartNow` tears the app down asynchronously, and a
     // re-render in that window would otherwise fire a second restart at a bundle already being
     // swapped — the exact double-click the main process is single-flight to survive.
+    // oxlint-disable-next-line react/set-state-in-effect -- The arm must clear before the restart is dispatched, and the idle signal it waits on is only known after render.
     setAutoRestart(undefined);
     void updateBridge()?.restartNow();
   }, [autoRestart, progressingThreadCount]);
@@ -167,6 +164,7 @@ export function CoilUpdateToast() {
 
     const payload = toastPayload(view, {
       onRestart: () => {
+        // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The effect is keyed on `viewKey`, the view's content; the view object itself is fresh every render.
         if (!shouldSendRestart(view)) return;
         void updateBridge()?.restartNow();
       },
