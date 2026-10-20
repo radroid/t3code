@@ -1,7 +1,8 @@
 # coil daily upstream sync — see docs/superpowers/specs/2026-07-23-fork-upstream-sync-design.md
 # (A4, and its 2026-09-02 amendment). Merges pingdotgg/t3code into the fork's `main`, verifies,
-# and fast-forwards `main` when green. On conflict or red verification it pushes nothing and
-# escalates via a `coil-sync` issue.
+# and fast-forwards `main` when green, recording the sync as a merged PR that lists what changed
+# for a user of the app. On conflict or red verification it pushes nothing and escalates via a
+# `coil-sync` issue.
 #
 # The sync MERGES; it does not rebase. `main` only ever moves forward, so nothing here
 # force-pushes and no worktree, tag, open PR or in-flight branch is invalidated by a sync.
@@ -22,6 +23,7 @@ on:
 permissions:
   contents: write
   issues: write
+  pull-requests: write
 
 concurrency:
   group: coil-upstream-sync
@@ -117,10 +119,40 @@ jobs:
             scripts/coil/sync-upstream.sh
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
-      - name: Push (clean + not dry-run)
+      - name: Show what changed
+        if: steps.sync.outputs.code == '0'
+        # The same text is the sync PR's body below; on a dry run, the run summary is the only
+        # place to read it. A failure here only costs the PR, never the sync.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          node scripts/coil/upstream-changes.ts origin/main | tee "$RUNNER_TEMP/what-changed.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Land (clean + not dry-run)
         id: push
         if: steps.sync.outputs.code == '0' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # See the escalation step: un-pinned gh resolves to the parent repo.
+          GH_REPO: ${{ github.repository }}
         run: |
+          # The PR is opened first, then `main` gets the same plain push as always: GitHub marks a
+          # PR merged once its head commit is on its base, so `main` gains no extra "Merge pull
+          # request" commit. The PR is best-effort; if any part of it fails, the sync lands anyway.
+          # The branch is not `coil/sync-**`, which coil-ci.yml runs on, because this commit is
+          # already verified.
+          BRANCH="coil/upstream-$(git rev-parse --short=10 HEAD^2)"
+          PR=""
+          if [[ -s "$RUNNER_TEMP/what-changed.md" ]] && git push origin "HEAD:refs/heads/$BRANCH"; then
+            PR="$(gh pr create --base main --head "$BRANCH" --title "$(git log -1 --format=%s)" \
+              --body-file "$RUNNER_TEMP/what-changed.md")" || PR=""
+          fi
+          if [[ -n "$PR" ]]; then
+            echo "::notice::recorded this sync as $PR"
+          else
+            echo "::warning::could not open the sync PR; landing without one"
+          fi
+
           # A plain push. The merge commit sits on top of the `main` this job checked out, so this
           # is a fast-forward; there is no lease to take and nothing to overwrite. If someone else
           # advanced `main` mid-run the push is simply rejected and the next run merges again.
@@ -144,6 +176,21 @@ jobs:
               echo 'T3X_PUSH_EOF'
             } >> "$GITHUB_OUTPUT"
             echo "::error::push to origin main failed (exit $CODE); escalating"
+          fi
+
+          if [[ -n "$PR" && "$CODE" -ne 0 ]]; then
+            gh pr close "$PR" --delete-branch --comment "The push to \`main\` failed, so this sync did not land. See the \`coil-sync\` issue." || true
+          elif [[ -n "$PR" ]]; then
+            # Deleting the head of a PR GitHub has not yet marked merged would close it unmerged.
+            for _ in $(seq 1 12); do
+              if [[ "$(gh pr view "$PR" --json state --jq .state)" == "MERGED" ]]; then
+                git push origin --delete "$BRANCH" || true
+                break
+              fi
+              sleep 5
+            done
+          elif git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            git push origin --delete "$BRANCH" || true
           fi
 
       - name: Report clean no-op
