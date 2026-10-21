@@ -25,7 +25,7 @@ see the notes at the top of [`SEAMS.md`](SEAMS.md).
 | `coil-ci.yml`            | Every PR; pushes to `main` and `coil/sync-**` | Typecheck, lint and tests. The merge gate.                                                     |
 | `coil-release.yml`       | After `coil-ci` passes on `main`; manually    | Builds macOS arm64 and Windows x64, publishes a GitHub release, notifies the relay.            |
 | `coil-deploy-home.yml`   | Pushes to `main` that touch `apps/coil-home/` | Deploys the download site.                                                                     |
-| `coil-upstream-sync.yml` | Daily, 08:00 UTC                              | Merges `upstream/main`. On a conflict or red verify, opens a `coil-sync` issue.                |
+| `coil-upstream-sync.yml` | Daily, 08:00 UTC                              | Merges `upstream/main` as a PR listing what users get. A failure opens a `coil-sync` issue.    |
 | `coil-sync-resolve.yml`  | `@claude resolve` on that issue; manually     | Replays the merge with an agent and opens a sync PR. See the [runbook](sync-agent-runbook.md). |
 | `coil-weekly-verify.yml` | Sundays                                       | Full verify of `main`.                                                                         |
 | `windows-tests.yml`      | Manually                                      | Upstream's Windows test lane.                                                                  |

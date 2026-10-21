@@ -154,11 +154,13 @@ jobs:
                after a `--` separator or they are silently ignored. Fix the fork's code until
                all three steps pass.
             5. Push the branch: `git push -u origin HEAD`.
-            6. Open a PR into `main` with `gh pr create`, title "coil: resolve upstream sync
-               (run ${{ github.run_id }})". In the body summarise: the upstream range merged,
-               each conflicted file and how you resolved it, anything upstream absorbed, and the
-               typecheck/lint/test results. End the body with this instruction to the human who
-               lands it, verbatim (it is a YAML block scalar here, so copy it exactly as written):
+            6. Open a PR into `main` with `gh pr create`, titled like the daily job's syncs:
+               "chore(coil): merge upstream/main <upstream short sha> (<N> commits)". Start the
+               body with the unedited output of `node scripts/coil/upstream-changes.ts
+               origin/main`, the list of what this update changes for a user of the app. Below
+               it, summarise: each conflicted file and how you resolved it, anything upstream
+               absorbed, and the typecheck/lint/test results. End the body with this instruction
+               to the human who lands it, verbatim (it is a YAML block scalar here, so copy it exactly as written):
                Land with a merge commit, and set the subject, or the release changelog will read
                `Merge pull request #N` for a whole upstream range:
                `gh pr merge <n> -R radroid/t3code --merge --subject "chore(coil): merge

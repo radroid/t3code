@@ -161,7 +161,10 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    routine feature work. And the timeout flags are required (see the section above); they must
    not follow a `--` separator or they are silently ignored.
 
-7. **When green:** push the branch and open a PR into `main` (`gh pr create`). A human reviews
+7. **When green:** push the branch and open a PR into `main` (`gh pr create`). Title it
+   `chore(coil): merge upstream/main <sha> (N commits)` and start the body with the output of
+   `node scripts/coil/upstream-changes.ts origin/main`, the same "What changed for you" list the
+   daily job's PRs carry, which is what tells the user what their update changed. A human reviews
    and **lands it with a merge commit — see
    [Landing a sync PR](#landing-a-sync-pr-merge-commit-never-squash).** To undo a landed sync,
    `git revert -m 1 <merge sha>` — but that leaves the merge in `main`'s ancestry, so the sync will
