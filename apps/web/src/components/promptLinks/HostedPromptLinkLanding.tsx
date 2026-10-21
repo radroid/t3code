@@ -155,7 +155,7 @@ function HostedPromptLinkLanding({
           </Button>
         ) : null}
         <Button variant="ghost" render={<a href={DESKTOP_DOWNLOAD_URL} />}>
-          Get {APP_DISPLAY_NAME}
+          Get T3 Code
         </Button>
       </div>
       <label className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">

@@ -243,5 +243,5 @@ Two bugs found by testing the gate rather than trusting it, both recorded in its
   now a fixture test, along with a hand-written asar that pins the header offset arithmetic.
 
 ```sh
-node scripts/coil/verify-desktop-bundle.mjs --verify-app release/mac-arm64/"T3 Coil (Beta).app"
+node scripts/coil/verify-desktop-bundle.mjs --verify-app release/mac-arm64/"T3 Code (Beta).app"
 ```

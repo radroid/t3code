@@ -198,7 +198,7 @@ const FIRST_UPDATE_PERMISSION_NOTE =
  * deleted my app" — which is exactly how it was read the first time it ran.
  */
 const WINDOWS_INSTALL_NOTE =
-  "T3 Coil will close, install the update, and reopen itself. This usually takes a few minutes, and the window and Start-menu shortcut are unavailable until it finishes.";
+  "T3 Code will close, install the update, and reopen itself. This usually takes a few minutes, and the window and Start-menu shortcut are unavailable until it finishes.";
 
 function plural(count: number): string {
   return count === 1 ? "change" : "changes";
@@ -264,7 +264,7 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
         return {
           kind: "armed",
           title: "Restarting when work finishes",
-          description: "T3 Coil will restart once nothing is running. You can keep working.",
+          description: "T3 Code will restart once nothing is running. You can keep working.",
           actionLabel: "Restart now",
           cancelLabel: "Cancel",
           shortSha: input.status.shortSha,
@@ -287,7 +287,7 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
         description:
           (isWindowsPlatform(input.platform)
             ? WINDOWS_INSTALL_NOTE
-            : "Restart to update T3 Coil.") +
+            : "Restart to update T3 Code.") +
           (expired ? TIMED_OUT_NOTE : "") +
           // Gated on macOS, not merely on "first update". App Management is a macOS concept —
           // every Windows and Linux user was being told to expect a dialog their OS never shows.
@@ -346,7 +346,7 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
         kind: "install-failed",
         title: "Update did not apply",
         description:
-          `T3 Coil restarted to install ${input.status.expectedVersion} but came back as ` +
+          `T3 Code restarted to install ${input.status.expectedVersion} but came back as ` +
           `${actual === undefined ? "a build that reports no commit" : actual}. ` +
           "The previous version is still installed and still works.",
         reportUrl: buildInstallFailureReportUrl({

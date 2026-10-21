@@ -545,10 +545,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("switches desktop packaging product names to nightly for nightly builds", () => {
-    // "T3 Coil (Beta)" is the fork's productName (#71); "T3 Code (Nightly)" is upstream's own
-    // literal in resolveDesktopProductName, which the fork never reaches — nothing here builds a
-    // -nightly.<d>.<d> version — and so deliberately does not rename.
-    assert.equal(resolveDesktopProductName("0.1.0"), "T3 Coil (Beta)");
+    assert.equal(resolveDesktopProductName("0.1.0"), "T3 Code (Beta)");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
   });
 
@@ -981,11 +978,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "**/*.map",
       ]);
       assert.deepStrictEqual(mac.dmg, {
-        // Upstream #6201 added this block; its title is built from
-        // `resolveDesktopProductName`, which the fork's rename (#71) moved to
-        // "T3 Coil (Beta)" — the same one-word substitution already made on that
-        // function's own assertion above. Everything else here is upstream's.
-        title: "T3 Coil (Beta) 1.2.3 Installer",
+        title: "T3 Code (Beta) 1.2.3 Installer",
         background: "dmg/dmg-background-latest.png",
         window: { width: 640, height: 432 },
         contents: [

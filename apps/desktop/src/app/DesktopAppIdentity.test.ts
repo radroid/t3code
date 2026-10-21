@@ -218,11 +218,8 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         yield* identity.configure;
 
-        // "T3 Coil" here while the legacy-userData assertions above still say "T3 Code".
-        // Not an inconsistency: this one is computed from APP_BASE_NAME and follows the
-        // rename, that one names a directory already on disk and must not.
-        assert.deepEqual(calls.setName, ["T3 Coil Beta"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Coil (Beta)");
+        assert.deepEqual(calls.setName, ["T3 Code Beta"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Code (Beta)");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, []);
@@ -263,9 +260,9 @@ describe("DesktopAppIdentity", () => {
 
         const runtimeName = calls.setName[0];
         assert.isDefined(runtimeName);
-        assert.equal(runtimeName, `T3 Coil ${stage}`);
+        assert.equal(runtimeName, `T3 Code ${stage}`);
         assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, `T3 Coil (${stage})`);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, `T3 Code (${stage})`);
       }),
       { calls, environment },
     );

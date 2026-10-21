@@ -164,13 +164,12 @@ One deliberate non-change, and one that has since changed:
 - **User data does not move.** `~/Library/Application Support/t3code` comes from a hardcoded
   `userDataDirName`, not from the bundle id or the app name — threads, settings and sessions are
   untouched. This held through #70 and again through #71.
-- **`productName` no longer stays `T3 Code (Alpha)`.** It became `T3 Coil (Alpha)` in #71, along
-  with the bundle id (`dev.curlycloud.t3coil`) and the certificate (`T3 Coil Code Signing`). The
-  hazard this note used to warn about is real and was accepted rather than avoided: the updater
-  refuses an install when the `.app` name in the dmg differs from the installed one, so the first
-  renamed build has to be installed by hand, once. `describeRefusal` says exactly that now instead
-  of reading like a fault. The same happened again when upstream's Alpha → Beta rename (#20032)
-  made it `T3 Coil (Beta)` in the 2026-10-17 sync.
+- **`productName` follows upstream again.** #71 renamed it `T3 Coil`; the 2026-10-21 change put
+  it back to upstream's `T3 Code (Beta)`. The bundle id (`dev.curlycloud.t3coil`) and the
+  certificate (`T3 Coil Code Signing`) kept their names, since renaming either costs another round
+  of macOS prompts and users never see them. Every name change hits the updater's refusal: it will
+  not install a dmg whose `.app` name differs from the installed one, so the first renamed build is
+  installed by hand, once. `describeRefusal` says so.
 
 Since it lands in the same release as the signing change, the two identity changes cost **one**
 round of prompts between them, not two. `scripts/coil/mac-signature.test.ts` asserts every build path

@@ -1,15 +1,17 @@
-# Coil fork
+# The fork
 
 `radroid/t3code` tracks `pingdotgg/t3code`, merges upstream every day, and ships its own desktop
-build called Coil. Everything here is fork-owned. Everything outside `docs/coil/` is upstream's
-unless [`SEAMS.md`](SEAMS.md) lists it.
+build of T3 Code. `coil` is only the label for fork-owned paths, workflows and commit scopes.
+Everything here is fork-owned. Everything outside `docs/coil/` is upstream's unless
+[`SEAMS.md`](SEAMS.md) lists it.
 
 ## What the fork carries
 
 - **Update delivery.** The desktop app gets a "new build" toast from `infra/coil-update-relay`,
   because upstream's updater points at upstream's releases.
-- **Its own name and bundle id** (#70, #71), so Coil and upstream's T3 Code can be installed side
-  by side.
+- **Its own bundle id** (#70), so a fork build and upstream's Nightly can be installed side by side
+  without sharing macOS permissions. The app keeps upstream's name; the fork's "T3 Coil" name (#71)
+  was retired on 2026-10-21 because it kept conflicting with upstream syncs.
 - **Clone and source-control errors** that name the cause: auth, not found, timeout, and Azure
   DevOps authorization codes.
 - **Backend heap headroom** and a **smaller desktop bundle** (`scripts/coil/desktop-file-exclusions.mjs`).

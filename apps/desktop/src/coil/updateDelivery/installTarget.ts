@@ -36,16 +36,15 @@ export function describeRefusal(refusal: InstallRefusal): string {
   switch (refusal.kind) {
     case "translocated":
       return (
-        "T3 Coil is running from a randomised read-only copy created by macOS App Translocation, " +
+        "T3 Code is running from a randomised read-only copy created by macOS App Translocation, " +
         "so it cannot update itself. Move the app to /Applications once, reopen it, and updates " +
         "will work from then on."
       );
     case "not-a-bundle":
       return `Could not find the enclosing .app for ${refusal.execPath}, so there is nothing safe to replace.`;
-    // Reworded for the rename in #71, not softened. This refusal fires exactly once per user, on
-    // the first build after a rename ("T3 Code (Alpha)" → "T3 Coil (Alpha)", then upstream's Alpha →
-    // Beta made it "T3 Coil (Beta)"), and the old wording read
-    // as a fault: it explains a mechanism and leaves the reader with nothing to do. The check
+    // This refusal fires exactly once per user, on the first build after the app's name changes
+    // (upstream's Alpha → Beta, or the fork dropping "T3 Coil" for "T3 Code"). Worded as a next
+    // step rather than a fault, because a mechanism-only message leaves the reader stuck. The check
     // itself is unchanged and still the only thing standing between a rename and two installed
     // apps, so the message tells them the one safe way through instead of hiding the refusal.
     case "name-mismatch":
@@ -113,12 +112,10 @@ export function resolveMacInstallTarget(args: {
 
   const appName = posixBasename(appBundlePath);
 
-  // `resolveDesktopProductName` returns `desktopPackageJson.productName`, which is
-  // "T3 Coil (Beta)" on this fork — not "T3 Code". The shell installer records what happens when
-  // this is computed rather than read: it "always claimed T3 Code.app — an app that does not
-  // exist — while a real install replaced T3 Code (Alpha).app" (its wording, from before #71
-  // renamed the app). Comparing the two names is what stops a rename from quietly producing two
-  // installed apps — which is exactly what it is doing for #71's own rename.
+  // The bundle name carries a stage label ("T3 Code (Beta)") and has changed with renames, so it is
+  // read from the dmg, never computed. The old shell installer computed it and "always claimed
+  // T3 Code.app — an app that does not exist — while a real install replaced T3 Code (Alpha).app".
+  // Comparing the two names is what stops a rename from quietly producing two installed apps.
   if (appName !== args.incomingAppName) {
     return {
       kind: "refused",
