@@ -55,7 +55,7 @@ export function loadInstructions(repoRoot) {
 export function desktopProductName(repoRoot) {
   const file = NodePath.join(repoRoot, "apps/desktop/package.json");
   const pkg = JSON.parse(NodeFS.readFileSync(file, "utf8"));
-  return pkg.productName ?? "T3 Coil";
+  return pkg.productName ?? "T3 Code";
 }
 
 /**

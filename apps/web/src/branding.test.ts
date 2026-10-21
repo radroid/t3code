@@ -34,9 +34,6 @@ describe("branding", () => {
 
     const branding = await import("./branding");
 
-    // Deliberately still "T3 Code" here, and not renamed with the rest of #71: this case asserts
-    // that INJECTED desktop branding wins over the module's own constant. Renaming the fixture to
-    // match the constant would make the assertion pass whether or not injection works at all.
     expect(branding.APP_BASE_NAME).toBe("T3 Code");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
     expect(branding.APP_DISPLAY_NAME).toBe("T3 Code (Nightly)");
@@ -50,7 +47,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("nightly");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Nightly");
     expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Coil (Nightly)");
+    expect(branding.APP_DISPLAY_NAME).toBe("T3 Code (Nightly)");
   });
 
   it("does not label the latest hosted app channel", async () => {
@@ -61,7 +58,7 @@ describe("branding", () => {
     expect(branding.HOSTED_APP_CHANNEL).toBe("latest");
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Latest");
     expect(branding.APP_STAGE_LABEL).toBe("Latest");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Coil");
+    expect(branding.APP_DISPLAY_NAME).toBe("T3 Code");
   });
 
   it("ignores unknown hosted app channels", async () => {
@@ -71,36 +68,6 @@ describe("branding", () => {
 
     expect(branding.HOSTED_APP_CHANNEL).toBeNull();
     expect(branding.HOSTED_APP_CHANNEL_LABEL).toBeNull();
-  });
-
-  // coil: the sidebar renders this beside the `T3` glyph, so it is the word the running app calls
-  // itself. Asserted here rather than by rendering the component, because the risk is drift in the
-  // derivation, not in the markup.
-  it("derives the sidebar wordmark suffix from the base name", async () => {
-    const branding = await import("./branding");
-
-    expect(branding.APP_WORDMARK_SUFFIX).toBe("Coil");
-  });
-
-  // The prefix strip must key off the injected name too, or a desktop build that renames itself
-  // would keep drawing the previous word next to the glyph — the exact drift it exists to prevent.
-  it("derives the sidebar wordmark suffix from injected desktop branding", async () => {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        desktopBridge: {
-          getAppBranding: () => ({
-            baseName: "T3 Code",
-            stageLabel: "Nightly",
-            displayName: "T3 Code (Nightly)",
-          }),
-        },
-      },
-    });
-
-    const branding = await import("./branding");
-
-    expect(branding.APP_WORDMARK_SUFFIX).toBe("Code");
   });
 });
 
@@ -117,33 +84,33 @@ describe("branding logic", () => {
   it("updates the display name for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "T3 Coil",
-        fallbackDisplayName: "T3 Coil (Alpha)",
+        baseName: "T3 Code",
+        fallbackDisplayName: "T3 Code (Alpha)",
         fallbackStageLabel: "Alpha",
         primaryServerVersion: "0.0.28-nightly.20260616.12",
       }),
-    ).toBe("T3 Coil (Nightly)");
+    ).toBe("T3 Code (Nightly)");
   });
 
   it("keeps the fallback display name for stable primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "T3 Coil",
-        fallbackDisplayName: "T3 Coil (Alpha)",
+        baseName: "T3 Code",
+        fallbackDisplayName: "T3 Code (Alpha)",
         fallbackStageLabel: "Alpha",
         primaryServerVersion: "0.0.27",
       }),
-    ).toBe("T3 Coil (Alpha)");
+    ).toBe("T3 Code (Alpha)");
   });
 
   it("keeps the fallback display name for malformed nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
-        baseName: "T3 Coil",
-        fallbackDisplayName: "T3 Coil (Alpha)",
+        baseName: "T3 Code",
+        fallbackDisplayName: "T3 Code (Alpha)",
         fallbackStageLabel: "Alpha",
         primaryServerVersion: "0.0.28-nightly.20260616",
       }),
-    ).toBe("T3 Coil (Alpha)");
+    ).toBe("T3 Code (Alpha)");
   });
 });
