@@ -464,7 +464,11 @@ export const make = Effect.gen(function* () {
                   new SourceControlRepositoryError({
                     operation: "cloneRepository",
                     provider: sshError.provider,
-                    detail: `${sshError.detail} Cloning over HTTPS instead also failed: ${httpsError.detail}`,
+                    // The fork's clone diagnostics often name both failures in the same sentence.
+                    detail:
+                      httpsError.detail === sshError.detail
+                        ? `${sshError.detail} Cloning over HTTPS instead failed the same way.`
+                        : `${sshError.detail} Cloning over HTTPS instead also failed: ${httpsError.detail}`,
                     cause: httpsError.cause,
                   }),
               ),

@@ -335,7 +335,7 @@ it.effect("reports both failures when the HTTPS retry fails too", () =>
     assert.strictEqual(urls.length, 2);
     assert.strictEqual(
       error.detail,
-      "git@github.com: Permission denied (publickey). Cloning over HTTPS instead also failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+      'Git could not authenticate to GitHub. Run "gh auth login" then "gh auth setup-git" on the machine running T3 Code, or clone over SSH with a key it can use. Cloning over HTTPS instead failed the same way.',
     );
   }),
 );
