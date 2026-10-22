@@ -10,7 +10,6 @@ import type {
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer, webFrame, webUtils } from "electron";
 
-import { createClerkOAuthCancel } from "./clerkOAuthCancel.ts";
 import * as IpcChannels from "./ipc/channels.ts";
 import { mergeLegacyLocalStorage } from "./legacyLocalStorageMerge.ts";
 
@@ -31,8 +30,7 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
   );
 }
 
-const clerkOAuthCancel = createClerkOAuthCancel();
-exposeClerkBridge({ passkeys: true, wrapOAuthOpen: clerkOAuthCancel.wrapOpen });
+exposeClerkBridge({ passkeys: true });
 
 // Runs before any app script reads localStorage. See DesktopLegacyLocalStorage.
 try {
@@ -253,9 +251,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.QUIT_SHORTCUT_CHANNEL, wrappedListener);
     };
   },
-  isClerkOAuthPending: clerkOAuthCancel.isPending,
-  onClerkOAuthPendingChange: clerkOAuthCancel.onPendingChange,
-  cancelClerkOAuth: clerkOAuthCancel.cancel,
   // coil: fork-owned update delivery.
   coilUpdate: {
     getState: () => ipcRenderer.invoke(IpcChannels.COIL_UPDATE_GET_STATE_CHANNEL),
