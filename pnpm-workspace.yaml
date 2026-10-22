@@ -287,11 +287,19 @@ overrides:
   "@tailwindcss/oxide": "catalog:"
   "@tailwindcss/vite": "catalog:"
   "@types/node": "catalog:"
-  # t3x: transitive security pins. Each key is major- or parent-scoped so it can never cross a
+  # t3x: security pins. Each key is major- or parent-scoped so it can never cross a
   # major. `dbus-next>xml2js` is parent-scoped because dbus-next's ^0.4 range has no patched
   # release. Drop a pin once upstream's own lockfile resolves past it; see docs/coil/SEAMS.md.
   "dbus-next>xml2js": ^0.6.2
+  "dompurify@3": ^3.4.17
+  "hono@4": ^4.13.11
+  "http-cache-semantics@4": ^4.3.0
+  "ip-address@10": ^10.7.4
   "path-to-regexp@6": ^6.3.0
+  "proxy-addr@2": ^2.0.8
+  "seroval@1": ^1.6.3
+  "shell-quote@1": ^1.11.0
+  "smol-toml@1": ^1.9.0
   "valibot@1": ^1.4.2
   effect: "catalog:"
   # OpenCode 2's protocol and schema packages hard-pin an exact Effect version as a
