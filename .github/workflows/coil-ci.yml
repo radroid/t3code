@@ -93,6 +93,12 @@ jobs:
       - name: Install browser secret helper build libraries
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
 
+      # Electron downloads its binary on first import. Without this, two desktop test files can
+      # start that download together and collide ("File exists"), failing whichever loses.
+      # Upstream's ci.yml runs the same step before its tests.
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
       # `@t3tools/monorepo` is the root package; its `test` script is `vp run -r test`.
       - name: Test
         run: vp run --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000

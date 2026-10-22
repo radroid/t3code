@@ -217,11 +217,14 @@ fi
 # for an upstream CPU-bound test here. 120s is the highest any package configures
 # (apps/server), so it never LOWERS a package's own budget. --hookTimeout is NOT implied by
 # --testTimeout: a beforeAll/beforeEach carries its own budget.
+# ensure:electron runs first so parallel desktop test files do not race Electron's first-import
+# download.
 # Keep in sync with `.github/workflows/coil-ci.yml`.
 TEST_FLAGS="--testTimeout=120000 --hookTimeout=120000"
 for script in $VERIFY; do
   if [[ "$script" == "test" ]]; then
     commands=(
+      "$RUN --filter @t3tools/desktop ensure:electron"
       "$RUN --filter !@t3tools/monorepo --filter !@t3tools/web test $TEST_FLAGS"
       "$RUN --filter @t3tools/web test $TEST_FLAGS"
     )
