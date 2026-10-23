@@ -685,7 +685,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "CLAUDE_CONFIG_DIR path",
         description:
-          "Isolated config directory for this instance, so a second Claude account stays separate. Leave empty to use Claude Code's own default. Do not enter ~/.claude — pointing CLAUDE_CONFIG_DIR at the default directory is not the same as leaving this empty and stops the account being identified.",
+          "Isolated config directory for this instance, so a second Claude account stays separate. Leave empty to use Claude Code's own default. Do not enter ~/.claude: pointing CLAUDE_CONFIG_DIR at the default directory is not the same as leaving this empty and stops the account being identified.",
         providerSettingsForm: { placeholder: "e.g. ~/.claude-personal", clearWhenEmpty: "omit" },
       }),
     ),

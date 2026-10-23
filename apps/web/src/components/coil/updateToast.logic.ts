@@ -147,7 +147,7 @@ export function buildInstallFailureReportUrl(input: {
     "",
     `Platform: \`${input.platform}\` \`${input.arch}\``,
     "",
-    "_Filed from the in-app update toast. Build identity only — no logs or paths._",
+    "_Filed from the in-app update toast. Build identity only, no logs or paths._",
   ].join("\n");
 
   const query = new URLSearchParams({
@@ -184,7 +184,7 @@ export function buildInstallFailureReportUrl(input: {
  * is the kind of thing a user needs to understand once and then recognise.
  */
 const FIRST_UPDATE_PERMISSION_NOTE =
-  " macOS asks once for App Management — a dialog saying the app wants access to data from other apps. Allow it: updating means replacing the app in /Applications, and these builds carry no Apple team identifier for macOS to match it against. It will not ask again.";
+  " macOS asks once for App Management (a dialog saying the app wants access to data from other apps). Allow it: updating means replacing the app in /Applications, and these builds carry no Apple team identifier for macOS to match it against. It will not ask again.";
 
 /**
  * Windows is not offered a "Restart", because it is not one.
