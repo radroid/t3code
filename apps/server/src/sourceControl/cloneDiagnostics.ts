@@ -151,7 +151,7 @@ const ON_SERVER = "the machine running T3 Code";
 function credentialHint(provider: SourceControlProviderInfo | null): string {
   switch (provider?.kind) {
     case "bitbucket":
-      return `Bitbucket needs an app password or repository access token in git's credential helper on ${ON_SERVER} — the T3CODE_BITBUCKET_* variables only authenticate Bitbucket's API, not git.`;
+      return `Bitbucket needs an app password or repository access token in git's credential helper on ${ON_SERVER}. The T3CODE_BITBUCKET_* variables only authenticate Bitbucket's API, not git.`;
     case "github":
       return `Run "gh auth login" then "gh auth setup-git" on ${ON_SERVER}, or clone over SSH with a key it can use.`;
     case "gitlab":
@@ -159,7 +159,7 @@ function credentialHint(provider: SourceControlProviderInfo | null): string {
     case "azure-devops":
       return `Azure DevOps needs a personal access token in git's credential helper on ${ON_SERVER}.`;
     default:
-      return `Store its credentials in git's credential helper on ${ON_SERVER} — cloning once from a terminal there will prompt and remember them.`;
+      return `Store its credentials in git's credential helper on ${ON_SERVER}. Cloning once from a terminal there will prompt and remember them.`;
   }
 }
 
