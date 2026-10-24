@@ -21,7 +21,6 @@ import {
   type SourceControlRepositoryInfo,
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
@@ -32,14 +31,14 @@ import {
 } from "../project/gitCloneProgress.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { describeGitCloneFailure, NON_INTERACTIVE_GIT_ENV } from "./cloneDiagnostics.ts";
-import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { cloneUrlForProtocol, cloneUrlProtocol } from "@t3tools/shared/cloneUrl";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isGitCommandError = Schema.is(GitCommandError);
-const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
 
 export class SourceControlRepositoryService extends Context.Service<
   SourceControlRepositoryService,
@@ -98,11 +97,9 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
           operation,
           provider,
           detail:
-            isSourceControlProviderError(cause) &&
-            cause.provider === "bitbucket" &&
-            isBitbucketRepositoryLocatorError(cause.cause)
-              ? BitbucketApi.BitbucketRepositoryLocatorError.detail
-              : "The source control operation could not be completed.",
+            (isSourceControlProviderError(cause)
+              ? SourceControlProvider.userFacingSourceControlDetail(cause.cause)
+              : undefined) ?? "The source control operation could not be completed.",
           cause,
         }),
   );
@@ -122,7 +119,7 @@ function resolveCloneProvider(input: SourceControlCloneRepositoryInput): SourceC
     return SourceControlProviderKind.make("unknown");
   }
   return (
-    detectSourceControlProviderFromRemoteUrl(remoteUrl)?.kind ??
+    sourceControlDefinitions.recognizeRemote(remoteUrl)?.kind ??
     SourceControlProviderKind.make("unknown")
   );
 }
@@ -436,7 +433,7 @@ export const make = Effect.gen(function* () {
                 stderrTail.length > 0
                   ? describeGitCloneFailure({
                       stderr: stderrTail.join("\n"),
-                      provider: detectSourceControlProviderFromRemoteUrl(cloneUrl),
+                      provider: sourceControlDefinitions.recognizeRemote(cloneUrl),
                     })
                   : (cause.detail ?? "The repository could not be cloned."),
               cause,
