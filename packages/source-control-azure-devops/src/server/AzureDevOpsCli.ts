@@ -9,6 +9,7 @@ import {
   TrimmedNonEmptyString,
   type SourceControlRepositoryVisibility,
   type VcsError,
+  type VcsProcessExitFailureKind,
 } from "@t3tools/contracts";
 
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
@@ -350,6 +351,28 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
   );
 }
 
+const classifyAzFailure = (stderr: string): VcsProcessExitFailureKind | null => {
+  const normalized = stderr.toLowerCase();
+  // Azure DevOps phrases authorization failures as "is not authorized" and stamps them with
+  // TF400813 / VS30063 / "Client authentication required", none of which contain the generic
+  // "unauthorized" substring, so they would otherwise lose the `az devops login` hint.
+  if (
+    normalized.includes("is not authorized") ||
+    normalized.includes("tf400813") ||
+    normalized.includes("vs30063") ||
+    normalized.includes("client authentication required")
+  ) {
+    return "authentication";
+  }
+  if (normalized.includes("az devops login") || /please run '?az login'?/.test(normalized)) {
+    return "authentication";
+  }
+  return normalized.includes("pull request") &&
+    (normalized.includes("not found") || normalized.includes("does not exist"))
+    ? "not-found"
+    : null;
+};
+
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const { process } = yield* SourceControlHost.SourceControlHost;
@@ -361,6 +384,8 @@ export const make = Effect.gen(function* () {
         command: "az",
         args: input.args,
         cwd: input.cwd,
+        classifyFailure: classifyAzFailure,
+        notFoundDetail: "Pull request not found.",
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
       })

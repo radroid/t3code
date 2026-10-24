@@ -70,7 +70,20 @@ describe("AzureDevOpsCli.layer", () => {
       assert.strictEqual(result.headSha, "a".repeat(40));
       assert.strictEqual(result.state, "open");
       assert.deepStrictEqual(result.updatedAt._tag, Option.some(1)._tag);
-      assert.deepStrictEqual(mockRun.mock.calls.at(-1)?.[0], {
+      const { classifyFailure, ...call } = mockRun.mock.calls.at(-1)?.[0] ?? {};
+      assert.strictEqual(
+        classifyFailure?.("Please run az login to setup account."),
+        "authentication",
+      );
+      assert.strictEqual(
+        classifyFailure?.("Please run 'az login' to setup account."),
+        "authentication",
+      );
+      assert.strictEqual(
+        classifyFailure?.("TF401180: The requested pull request was not found."),
+        "not-found",
+      );
+      assert.deepStrictEqual(call, {
         operation: "AzureDevOpsCli.execute",
         command: "az",
         args: [
@@ -86,6 +99,7 @@ describe("AzureDevOpsCli.layer", () => {
           "json",
         ],
         cwd: "/repo",
+        notFoundDetail: "Pull request not found.",
         timeoutMs: 30_000,
       });
       assert.strictEqual(result.isCrossRepository, false);
@@ -255,6 +269,52 @@ describe("AzureDevOpsCli.layer", () => {
 
       assert.instanceOf(error, AzureDevOpsCli.AzureDevOpsCliRateLimitError);
       assert.strictEqual(error.cause, cause);
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
+// Issue #122: Azure DevOps reports authorization failures with vocabulary the generic classifier
+// does not know ("is not authorized", TF400813, VS30063), so without these they fell through to
+// "command-failed" and the actionable `az devops login` hint was unreachable.
+describe("AzureDevOpsCli failure classification", () => {
+  const cases = [
+    {
+      label: "TF400813 authorization failure",
+      stderr:
+        "ERROR: TF400813: The user '11111111-2222-3333-4444-555555555555' is not authorized to access this resource.",
+      kind: "authentication",
+    },
+    {
+      label: "VS30063 authorization failure",
+      stderr: "ERROR: VS30063: You are not authorized to access https://dev.azure.com.",
+      kind: "authentication",
+    },
+    {
+      label: "anonymous-access failure",
+      stderr:
+        "ERROR: TF400813: Resource not available for anonymous access. Client authentication required.",
+      kind: "authentication",
+    },
+    {
+      label: "missing pull request",
+      stderr: "ERROR: The pull request was not found.",
+      kind: "not-found",
+    },
+    {
+      label: "ordinary failure",
+      stderr: "ERROR: failed to push some refs to 'origin'",
+      kind: null,
+    },
+  ] as const;
+
+  it.effect.each(cases)("classifies $label as $kind", ({ stderr, kind }) =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+      const az = yield* AzureDevOpsCli.AzureDevOpsCli;
+      yield* az.execute({ cwd: "/repo", args: ["repos", "pr", "list"] });
+
+      const classifyFailure = mockRun.mock.calls.at(-1)?.[0]?.classifyFailure;
+      assert.strictEqual(classifyFailure?.(stderr), kind);
     }).pipe(Effect.provide(layer)),
   );
 });

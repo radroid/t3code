@@ -94,7 +94,10 @@ retire_upstream_workflows() {
 .github/workflows/pr-vouch.yml
 .github/workflows/publish-aur.yml
 .github/workflows/release-desktop.yml
+.github/workflows/relay-preview.yml
+.github/workflows/relay-preview-cleanup.yml
 .github/workflows/release.yml
+.github/workflows/stale-needs-more-info.yml
 .github/workflows/thread-transfer-report.yml
 .github/workflows/web-preview.yml
 scripts/notify-discord-release.test.ts

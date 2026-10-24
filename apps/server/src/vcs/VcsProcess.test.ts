@@ -258,7 +258,7 @@ describe("VcsProcess.run", () => {
       }),
   );
 
-  it.effect("bounds a synthetic burst of GitHub API processes", () =>
+  it.effect("bounds a burst of processes that share a concurrency key", () =>
     Effect.gen(function* () {
       const gate = yield* Deferred.make<void>();
       const starts = yield* Queue.unbounded<number>();
@@ -294,10 +294,11 @@ describe("VcsProcess.run", () => {
       const burst = yield* Effect.all(
         Array.from({ length: 32 }, (_, index) =>
           service.run({
-            operation: `synthetic.github.${index}`,
-            command: "gh",
+            operation: `synthetic.cli.${index}`,
+            command: "host-cli",
             args: ["api", "user"],
             cwd: "/workspace",
+            concurrency: { key: "host-cli", limit: 4 },
           }),
         ),
         { concurrency: "unbounded" },
@@ -391,6 +392,30 @@ describe("VcsProcess.run", () => {
     }).pipe(provideLive),
   );
 
+  it.effect("reads a failure with the command's own classifier and names it in its terms", () =>
+    Effect.gen(function* () {
+      const fail = (input: Partial<VcsProcess.VcsProcessInput>) =>
+        run({
+          operation: "test.classify",
+          command: "node",
+          args: ["-e", "process.stderr.write('HTTP 404: 404 Not Found'); process.exit(1)"],
+          cwd: process.cwd(),
+          ...input,
+        }).pipe(Effect.flip);
+
+      expect(yield* fail({})).toMatchObject({
+        failureKind: "command-failed",
+        detail: "Process exited with a non-zero status.",
+      });
+      expect(
+        yield* fail({
+          classifyFailure: (stderr) => (stderr.includes("404") ? "not-found" : null),
+          notFoundDetail: "Merge request not found.",
+        }),
+      ).toMatchObject({ failureKind: "not-found", detail: "Merge request not found." });
+    }).pipe(provideLive),
+  );
+
   it.effect("retains spawn causes without exposing process arguments in the error message", () =>
     Effect.gen(function* () {
       const secretArgument = "--token=super-secret-token";
@@ -463,100 +488,5 @@ describe("VcsProcess.run", () => {
       expect(result.stdoutTruncated).toBe(true);
       expect(Buffer.concat(chunks).toString()).toBe("x".repeat(131072) + "\0S final\0");
     }).pipe(provideLive),
-  );
-});
-
-// Issue #122: Azure DevOps reports authorization failures with vocabulary the classifier did not
-// know ("is not authorized", TF400813, VS30063), so every one of them fell through to
-// "command-failed" and the actionable `az devops login` hint was unreachable.
-describe("VcsProcess.run non-zero exit classification", () => {
-  const classifyStderr = (command: string, stderr: string) =>
-    VcsProcess.make.pipe(
-      Effect.provideService(
-        ProcessRunner.ProcessRunner,
-        ProcessRunner.ProcessRunner.of({
-          run: () =>
-            Effect.succeed({
-              stdout: "",
-              stderr,
-              code: ChildProcessSpawner.ExitCode(1),
-              timedOut: false,
-              stdoutTruncated: false,
-              stderrTruncated: false,
-              stdoutInvalidUtf8: false,
-              stderrInvalidUtf8: false,
-            }),
-        }),
-      ),
-      Effect.flatMap((service) =>
-        service.run({ ...baseInput, command, operation: "test.classification" }),
-      ),
-      Effect.flip,
-    );
-
-  const cases = [
-    {
-      label: "Azure DevOps TF400813 authorization failure",
-      command: "az",
-      stderr:
-        "ERROR: TF400813: The user '11111111-2222-3333-4444-555555555555' is not authorized to access this resource.",
-      failureKind: "authentication",
-    },
-    {
-      label: "Azure DevOps VS30063 authorization failure",
-      command: "az",
-      stderr: "ERROR: VS30063: You are not authorized to access https://dev.azure.com.",
-      failureKind: "authentication",
-    },
-    {
-      label: "Azure DevOps anonymous-access failure",
-      command: "az",
-      stderr:
-        "ERROR: TF400813: Resource not available for anonymous access. Client authentication required.",
-      failureKind: "authentication",
-    },
-    {
-      label: "GitHub CLI logged-out control",
-      command: "gh",
-      stderr: "error: not logged in to any GitHub hosts",
-      failureKind: "authentication",
-    },
-    {
-      label: "Azure DevOps missing pull request still resolves to not-found",
-      command: "az",
-      stderr: "ERROR: The pull request was not found.",
-      failureKind: "not-found",
-    },
-    {
-      label: "ordinary git failure is not mistaken for an auth failure",
-      command: "git",
-      stderr: "error: failed to push some refs to 'origin'",
-      failureKind: "command-failed",
-    },
-  ] as const;
-
-  it.effect.each(cases)("classifies $label as $failureKind", ({ command, stderr, failureKind }) =>
-    Effect.gen(function* () {
-      const error = yield* classifyStderr(command, stderr);
-
-      expect(error).toBeInstanceOf(VcsProcessExitError);
-      expect(error).toMatchObject({ command, failureKind });
-    }),
-  );
-
-  it.effect("keeps Azure DevOps stderr out of the classified error", () =>
-    Effect.gen(function* () {
-      const stderr =
-        "ERROR: TF400813: The user 'contractor@example.com' is not authorized to access this resource.";
-      const error = yield* classifyStderr("az", stderr);
-
-      expect(error).toMatchObject({
-        detail: "Authentication failed.",
-        failureKind: "authentication",
-        stderrLength: stderr.length,
-      });
-      expect(error.message).not.toContain(stderr);
-      expect(error.message).not.toContain("contractor@example.com");
-    }),
   );
 });
