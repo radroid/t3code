@@ -1,18 +1,17 @@
 import { assert, it } from "@effect/vitest";
 
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
-
 import {
   classifyGitCloneFailure,
   describeGitCloneFailure,
   NON_INTERACTIVE_GIT_ENV,
   redactGitOutput,
 } from "./cloneDiagnostics.ts";
+import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
 
 const describeFor = (remoteUrl: string, stderr: string) =>
   describeGitCloneFailure({
     stderr,
-    provider: detectSourceControlProviderFromRemoteUrl(remoteUrl),
+    provider: sourceControlDefinitions.recognizeRemote(remoteUrl),
   });
 
 it("classifies the credential failures a non-interactive clone produces", () => {

@@ -9,9 +9,10 @@ import {
   VcsProcessTimeoutError,
 } from "@t3tools/contracts";
 
-import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as AzureDevOps from "@t3tools/source-control-azure-devops/server/AzureDevOpsSourceControlProvider";
+import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import { probeSourceControlProvider } from "@t3tools/source-control-core/server/discovery";
+
+import * as AzureDevOps from "./AzureDevOpsSourceControlProvider.ts";
 
 const processOutput = (
   stdout: string,
@@ -19,7 +20,7 @@ const processOutput = (
     readonly stderr?: string;
     readonly exitCode?: ChildProcessSpawner.ExitCode;
   },
-): VcsProcess.VcsProcessOutput => ({
+): SourceControlHost.SourceControlProcessOutput => ({
   exitCode: options?.exitCode ?? ChildProcessSpawner.ExitCode(0),
   stdout,
   stderr: options?.stderr ?? "",
@@ -28,14 +29,16 @@ const processOutput = (
 });
 
 interface CapturingProcess {
-  readonly process: VcsProcess.VcsProcess["Service"];
-  readonly calls: ReadonlyArray<VcsProcess.VcsProcessInput>;
+  readonly process: SourceControlHost.SourceControlHost["Service"]["process"];
+  readonly calls: ReadonlyArray<SourceControlHost.SourceControlProcessInput>;
 }
 
 const makeProcess = (
-  run: (input: VcsProcess.VcsProcessInput) => Effect.Effect<VcsProcess.VcsProcessOutput, VcsError>,
+  run: (
+    input: SourceControlHost.SourceControlProcessInput,
+  ) => Effect.Effect<SourceControlHost.SourceControlProcessOutput, VcsError>,
 ): CapturingProcess => {
-  const calls: VcsProcess.VcsProcessInput[] = [];
+  const calls: SourceControlHost.SourceControlProcessInput[] = [];
   return {
     calls,
     process: {
@@ -47,8 +50,10 @@ const makeProcess = (
   };
 };
 
-const isVersionCall = (input: VcsProcess.VcsProcessInput): boolean => input.args[0] === "--version";
-const isAuthCall = (input: VcsProcess.VcsProcessInput): boolean => input.args[0] === "account";
+const isVersionCall = (input: SourceControlHost.SourceControlProcessInput): boolean =>
+  input.args[0] === "--version";
+const isAuthCall = (input: SourceControlHost.SourceControlProcessInput): boolean =>
+  input.args[0] === "account";
 
 it.effect(
   "reports Azure CLI as available and still runs the auth probe when `--version` times out",

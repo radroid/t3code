@@ -12,7 +12,10 @@ Measured, not asserted: **41 upstream-owned files, +714 / -5946 lines**, against
 > `VcsProcess.ts` and `VcsProcess.test.ts` are upstream exactly again. The upstream hook is the
 > injection point the 2026-09-12 note below said did not exist. Upstream's three new workflows
 > (`relay-preview.yml`, `relay-preview-cleanup.yml`, `stale-needs-more-info.yml`) join the
-> retired list. Not remeasured otherwise.
+> retired list. Upstream also removed `detectSourceControlProviderFromRemoteUrl`: the fork's clone
+> code now asks `sourceControlDefinitions.recognizeRemote`, and the fork's Azure discovery test moved
+> into the Azure package as `AzureDevOpsDiscovery.test.ts` (fork-owned) because upstream stopped
+> exporting that module. Not remeasured otherwise.
 
 > **2026-10-22 — eight more security pins: 3 → 11, +646 → +714.** GitHub's Dependabot alerts for
 > `pnpm-lock.yaml` have not updated since the lockfile moved to pnpm 12's two-document format
