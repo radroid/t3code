@@ -139,9 +139,9 @@ it.effect(
 
       const versionCall = calls.find(isVersionCall);
       assert.ok(versionCall, "expected a `--version` probe to run");
-      // Upstream owns the budget itself, via `probeTimeoutMs` on the Azure spec (#6223).
-      // This guards the property issue #4 actually depends on: that az's budget stays
-      // clear of its ~6-8s Windows startup, rather than falling back to the 5s default.
+      // Upstream owns the budget itself, via `probeTimeoutMs` on the Azure spec. This guards
+      // the property that matters: az's budget stays clear of its ~6-8s Windows startup, rather
+      // than falling back to the 5s default.
       assert.ok(
         (versionCall.timeoutMs ?? 0) >= 15_000,
         `expected the \`--version\` probe timeout to be >= 15000ms, got ${String(versionCall.timeoutMs)}`,

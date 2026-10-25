@@ -273,8 +273,8 @@ describe("AzureDevOpsCli.layer", () => {
   );
 });
 
-// Issue #122: Azure DevOps reports authorization failures with vocabulary the generic classifier
-// does not know ("is not authorized", TF400813, VS30063), so without these they fell through to
+// Azure DevOps reports authorization failures with vocabulary the generic classifier does not
+// know ("is not authorized", TF400813, VS30063); without these they fell through to
 // "command-failed" and the actionable `az devops login` hint was unreachable.
 describe("AzureDevOpsCli failure classification", () => {
   const cases = [

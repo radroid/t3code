@@ -1,18 +1,7 @@
-// The one and only reader of T3code's `state.sqlite` for `/worklog`.
-//
-// Three rules hold this module together:
-//   1. Read-only, always. Every database is opened with `readOnly: true`; nothing here writes.
-//   2. Never load a table. The projection tables are hundreds of megabytes, so every read is a
-//      parameterised window query. Timestamps are stored as ISO-8601 strings with a trailing `Z`,
-//      which sort lexicographically, so `BETWEEN`-style string comparison is both correct and
-//      index-friendly.
-//   3. Never throw. A missing database, a drifted schema, or a corrupt JSON payload degrades to a
-//      warning and an empty result — a work log is not worth crashing over.
-//
-// Warnings are collected per call. `openT3Databases` returns them explicitly; every other reader
-// attaches them as a non-enumerable `warnings` property on the array/Map it returns, so callers
-// that want diagnostics can read `rows.warnings` while `JSON.stringify`, spreads, and iteration
-// stay completely unaffected.
+// The only reader of T3code's `state.sqlite` for `/worklog`: read-only, window queries only (ISO
+// `Z` timestamps sort lexicographically), and never throws. `openT3Databases` returns warnings;
+// other readers attach a non-enumerable `warnings` property to the returned array/Map so JSON,
+// spreads and iteration are unaffected.
 
 import * as NodeSqlite from "node:sqlite";
 import * as NodeCrypto from "node:crypto";
@@ -503,16 +492,10 @@ export function readActivities(handles, threadIds, options) {
   return withWarnings(activities, warnings);
 }
 
-// Task ids nest. A task that runs a workflow spawns children named `<parentTaskId>:wf:<n>`, and the
-// parent's cumulative counter already includes every child's tokens — measured on the real
-// database, parent `wrv3655vp` totalled 1,713,516, exactly the sum of its twelve `:wf:` children.
-// Counting both doubles a whole workflow, which is what inflated the first real reports.
-//
-// Nothing in the payload states the relationship, so it has to come out of the id: a child is the
-// parent id followed by a non-alphanumeric separator. That separator test is the entire trick —
-// `wrv3655vp:wf:1` is a textual prefix of its *sibling* `wrv3655vp:wf:10`, and only the character
-// straight after the prefix tells a child apart from an unrelated id that starts the same way.
-// `:wf:` is not hard-coded: any separator a future build picks works unchanged.
+// Workflow children are `<parentTaskId>:wf:<n>` and the parent's counter already includes their
+// tokens, so counting both doubles a workflow. A child is the parent id plus a NON-alphanumeric
+// separator: `x:wf:1` is a textual prefix of its sibling `x:wf:10`, so the next character decides.
+// The separator is not hard-coded.
 const ALPHANUMERIC = /[0-9a-z]/iu;
 
 /**

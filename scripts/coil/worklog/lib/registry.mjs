@@ -1,16 +1,7 @@
-// The project registry: which projects exist, whether they may be named, and the tuning knobs.
-//
-// This module is the only thing that knows the on-disk config shape. Two rules drive its design:
-//
-// 1. Reading never throws. A missing, unreadable or malformed config must degrade to an empty
-//    registry plus a warning, because `worklog doctor` and `worklog collect` have to keep working
-//    on a machine where the worklog repo has not been created yet.
-// 2. Privacy fails closed. An unknown project is `excluded`, an unconfirmed one is `unconfirmed`,
-//    and an unrecognised visibility degrades to `generic` — never to `public`. Everything that
-//    decides whether a name reaches a published report goes through `classify()`.
-//
-// YAML is snake_case (it is hand-edited); JS is camelCase. The translation happens here and
-// nowhere else, so no other module has to remember which side it is on.
+// The project registry, and the only module that knows the on-disk config shape. Reading never
+// throws (bad config degrades to an empty registry plus a warning, so `doctor` and `collect` work
+// before init). Privacy fails closed: every naming decision goes through `classify()`. YAML is
+// snake_case, JS camelCase, and the translation happens only here.
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -132,16 +123,10 @@ export function saveRegistry(paths, registry) {
   return file;
 }
 
-// `loadRegistry` degrades a file it cannot read into an EMPTY registry and reports it as a
-// warning, which is right for readers — a report can still be drafted. It is dangerous for
-// writers: load-then-save would turn one unreadable byte into the permanent loss of every "yes,
-// you may name this project" the human has given. Callers guard against that individually; this
-// is the backstop that does not depend on them remembering to.
-//
-// The rule is deliberately narrow. Writing a scaffold to a path with no file is how `init`
-// bootstraps, and emptying a registry that was already empty changes nothing. Only the one
-// destructive shape is refused: a file that currently names projects or identities, being
-// replaced by one that names neither.
+// `loadRegistry` turns an unreadable file into an EMPTY registry, so load-then-save would erase
+// every naming permission the human gave. This backstop refuses only that destructive shape: a
+// file that names projects or identities being replaced by one that names neither. Scaffolding a
+// missing file and re-emptying an empty one stay allowed.
 function refuseToEraseEverything(file, doc) {
   const incomingIsEmpty =
     (Array.isArray(doc.identities) ? doc.identities.length : 0) === 0 &&

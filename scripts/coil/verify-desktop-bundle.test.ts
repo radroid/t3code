@@ -5,8 +5,8 @@ import { collectRequiredPackages } from "./verify-desktop-bundle.mjs";
 const bundle = (source: string) => ({ size: source.length, read: () => Buffer.from(source) });
 
 describe("collectRequiredPackages", () => {
-  // Upstream #11410: the Electron main bundle inlines everything but its native externals, and
-  // the stage installs only those. A require left inside an inlined dependency (x11 via
+  // Upstream's Electron main bundle inlines everything but its native externals, and the stage
+  // installs only those. A require left inside an inlined dependency (x11 via
   // @crowecawcaw/xa11y, ajv via electron-updater) has no node_modules to resolve to, by design.
   it("requires only native externals from the inlined desktop main bundle", () => {
     const files = new Map([

@@ -1,13 +1,7 @@
 #!/usr/bin/env node
-// Runs the worklog suites: `node scripts/coil/worklog/test/run.mjs [name ...]`.
-//
-// The suites are `*.check.mjs`, not `*.test.mjs`, and that is load-bearing. This directory sits
-// inside the `@t3tools/scripts` workspace, whose `test` script is vitest — and vitest's default
-// include pattern matches `*.test.mjs`. It would collect these files, execute them (node:test
-// registers and runs its cases inline), find no vitest suite, and fail the package with
-// "No test suite found in file". The alternative was excluding this directory in the repo's
-// upstream-owned vite.config.ts, which would have cost the fork a new seam-ledger row for a
-// naming convention. Renaming is free.
+// Runs the worklog suites: `node scripts/coil/worklog/test/run.mjs [name ...]`. Suites are
+// `*.check.mjs` on purpose: vitest in `@t3tools/scripts` would collect `*.test.mjs` and fail with
+// "No test suite found", and excluding the dir would mean editing upstream's vite.config.ts.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";

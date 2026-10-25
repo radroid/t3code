@@ -2,11 +2,8 @@ import * as Schema from "effect/Schema";
 
 /**
  * The update manifest, as published by `.github/workflows/coil-release.yml` and rebroadcast
- * verbatim by the relay.
- *
- * The relay does not understand this shape — it parses `buildNumber` for ordering and treats
- * everything else as opaque. That means this file is the *only* definition of the contract, and
- * adding a field here never requires a relay deploy.
+ * verbatim by the relay. The relay only parses `buildNumber`, so this file is the only definition
+ * of the contract and adding a field never requires a relay deploy.
  */
 
 /** Matches `COMMIT_HASH_DISPLAY_LENGTH` in `DesktopAppIdentity.ts`. */
@@ -30,13 +27,9 @@ export type UpdateAsset = typeof UpdateAsset.Type;
 
 export const UpdateManifest = Schema.Struct({
   /**
-   * The comparison key, and the only one.
-   *
-   * 12 characters because that is what the app can read about itself: the build script writes
-   * `t3codeCommitHash` from `git rev-parse --short=12`, and `DesktopAppIdentity` truncates to
-   * `COMMIT_HASH_DISPLAY_LENGTH`. A 40-char key here would never compare equal to anything the
-   * app knows, so the app would offer the same update forever — including immediately after
-   * installing it.
+   * The only comparison key. 12 characters because that is what the app knows about itself
+   * (`t3codeCommitHash` is `git rev-parse --short=12`); a longer key would never compare equal,
+   * so the same update would be offered forever.
    */
   shortSha: ShortSha,
   /**
@@ -53,12 +46,9 @@ export const UpdateManifest = Schema.Struct({
   releaseTag: Schema.String,
   builtAt: Schema.String,
   /**
-   * Commit subjects in this build, newest first.
-   *
-   * `optionalKey`, and it must stay that way: a client running this build can be offered a
-   * manifest published *before* the field existed, and a required field would fail the decode —
-   * which this pipeline treats as "no update", silently withholding a real one. The same reason
-   * `runUrl` is optional.
+   * Commit subjects in this build, newest first. Must stay `optionalKey` (as must `runUrl`):
+   * manifests published before the field existed would otherwise fail to decode, which this
+   * pipeline treats as "no update", silently withholding a real one.
    */
   changes: Schema.optionalKey(Schema.Array(Schema.String)),
   /** The workflow run that produced this build. Built from `run_id`, never `run_number`. */

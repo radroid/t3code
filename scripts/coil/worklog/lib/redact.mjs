@@ -1,20 +1,7 @@
-// The privacy hard gate: the last thing between a draft work log and a public post.
-//
-// Two jobs live here because they share one catalogue of "shapes we do not publish":
-//
-//   lintText / lintFile — read a finished report and report what must not ship. Blocking.
-//   redactSlice         — scrub a transcript slice on its way to disk or to a subagent.
-//
-// The asymmetry that decides every judgement call below: a false negative is unrecoverable (a
-// client name, once posted, stays posted) while a false positive costs one edit. So everything
-// unknown fails closed — a project the registry cannot vouch for is treated as private, an
-// unreadable file is an error finding rather than a silent pass, and an internal failure
-// withholds the slice instead of passing it through.
-//
-// The counterweight is noise: a gate a human learns to ignore is a gate that is off. That is why
-// a match inside a higher-priority rule's span is dropped, why links to public code hosts are
-// exempt from the path-shape rules, and why every finding carries a hint that says what to write
-// instead.
+// The privacy gate before a public post: `lintText`/`lintFile` block a report, `redactSlice` scrubs
+// transcript slices. A leak is unrecoverable, so unknowns fail closed (unknown project is private,
+// unreadable file is a finding). A noisy gate gets ignored, so nested matches are dropped, public
+// code-host links are exempt, and every finding says what to write instead.
 
 import * as NodeFS from "node:fs";
 
@@ -431,11 +418,9 @@ function nonPublicProjectTerms(registry) {
   return terms.filter((term) => typeof term === "string" && term.trim().length >= MIN_PROJECT_TERM);
 }
 
-// Every term is matched as a substring, whether or not it looks like a word. `northwind` fires
-// inside `northwindretail-prod`, which is exactly how a client name reaches a public post; word
-// boundaries used to let that through. The cost is a false positive the human edits away, and
-// `reference/privacy.md` documents the behaviour so the list is curated against what happens.
-// Internal whitespace matches any run of it, so a term split across a line wrap still matches.
+// Terms match as substrings, not words: `northwind` must fire inside `northwindretail-prod`, and
+// the false positive is the accepted cost (see `reference/privacy.md`). Internal whitespace matches
+// any run of it, so a term split across a line wrap still matches.
 function buildTermPatterns(terms) {
   const patterns = [];
   const seen = new Set();

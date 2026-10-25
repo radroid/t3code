@@ -1,46 +1,14 @@
 /**
- * Reading a macOS code signature, and deciding whether it is the kind that keeps TCC grants.
- *
- * Issue #70: the fork's desktop builds were ad-hoc signed, so `codesign` derived each bundle's
- * DESIGNATED REQUIREMENT from the binary's cdhash. TCC (the permissions database) stores that
- * requirement alongside the grant and re-evaluates it on every access, so a requirement that
- * changes on every build makes every update look like a brand-new app — and re-asks for Screen
- * Recording, Accessibility, Microphone, Files & Folders and Local Network from scratch.
- *
- * The fix is not "sign the app" but "sign it with a stable identity". Those are different claims,
- * and only the second one keeps the grants:
- *
- *   ad-hoc      designated => cdhash H"d48d810e…"                      <- new every build
- *   certificate designated => identifier "com.t3tools.t3code" and …    <- same every build
- *
- * So the check this file exists to express is about the SHAPE of the requirement, not the presence
- * of a signature. Everything here is pure: the codesign output is parsed, never produced, which is
- * what makes the decision testable without a 470 MB build.
+ * Reading a macOS code signature, and deciding whether it keeps TCC grants. TCC re-evaluates the
+ * designated requirement on every access, so an ad-hoc (cdhash-keyed) requirement that changes
+ * every build re-prompts every permission. Only a stable certificate identity keeps the grants.
  */
 
 /**
- * The fork's own bundle id, and the second half of the #70 fix.
- *
- * macOS stores one TCC row per `(service, client)`, where `client` is the bundle id — so the fork's
- * build and upstream's `T3 Code (Nightly)`, both `com.t3tools.t3code` and both commonly installed,
- * shared one row per permission. Whichever launched last owned the grant and the other was
- * re-prompted, which no amount of correct signing can fix. Renamed after `coil`
- * (coil.curlycloud.dev), the fork's own home, and aligned with the app's name in #71.
- *
- * Changing this costs the user one full round of permission dialogs, so it should not move again.
- * It moved twice in one week — #70 introduced it, #71 aligned it with `T3 Coil` — and #71 folded
- * the certificate rename into the same release precisely so both resets are paid at once.
- *
- * `productName` now moves WITH it (#71): the updater refuses an install when the `.app` name in
- * the dmg differs from the installed one (`resolveMacInstallTarget`), so the first renamed build
- * is installed by hand, once, and the refusal message says so. TCC does not care — grants are
- * keyed to the designated requirement, which names the bundle id and the certificate, not the
- * visible name.
- *
- * Fed to the build through `T3X_DESKTOP_APP_ID`, which `scripts/build-desktop-artifact.ts` reads.
- * `mac-signature.test.ts` asserts that hook still exists and that every build path sets it to this
- * value — an upstream sync that reverts the seam, or a workflow that forgets the variable, would
- * otherwise silently ship the old id and reset every permission again.
+ * The fork's own bundle id: TCC keys rows by bundle id, so sharing upstream's id made the two apps
+ * steal each other's grants. Changing it costs users a full round of permission dialogs, and the
+ * `.app` name moves with it. Fed through `T3X_DESKTOP_APP_ID`; `mac-signature.test.ts` asserts
+ * every build path still sets it, or a sync could silently ship the old id.
  */
 export const DESKTOP_BUNDLE_IDENTIFIER = "dev.curlycloud.t3coil";
 
@@ -48,19 +16,9 @@ export const DESKTOP_BUNDLE_IDENTIFIER = "dev.curlycloud.t3coil";
 export const DESKTOP_APP_ID_ENV_VAR = "T3X_DESKTOP_APP_ID";
 
 /**
- * The fork's self-signed code-signing identity, created by scripts/coil/setup-mac-signing.sh.
- *
- * A plain name, not a hash: `codesign` and electron-builder both look identities up by name
- * (`CSC_NAME`), and the name is what has to match between this Mac's login keychain and the
- * ephemeral keychain the release workflow builds from the p12 secret.
- *
- * Changing this name is not a code change alone. The certificate's identity is *inside* the
- * designated requirement, so a new name means a new certificate, which means every TCC grant is
- * invalidated and `docs/coil/mac-signing/designated-requirement.txt` no longer matches the one the
- * release records. The full sequence — `setup-mac-signing.sh --rotate`, re-record the requirement,
- * re-commit `certificate.pem`, re-set the two `T3X_MAC_CSC_*` secrets — is in the runbook, and it
- * has to happen on the user's Mac BEFORE this lands, or the release signs with an identity the
- * keychain does not have.
+ * The fork's self-signed identity (scripts/coil/setup-mac-signing.sh), looked up by name via
+ * `CSC_NAME`. Renaming means a new certificate, which voids every TCC grant and the recorded
+ * requirement: follow the rotation runbook on the user's Mac BEFORE this lands.
  */
 export const MAC_SIGNING_IDENTITY_NAME = "T3 Coil Code Signing";
 
@@ -106,10 +64,8 @@ export function parseCodesignDisplay(text: string): CodesignDisplay {
     .map((match) => (match[1] ?? "").trim())
     .filter((authority) => authority.length > 0);
 
-  // Two shapes, and only one of them has an `=` after the label:
-  //   Sealed Resources=none                              (nothing sealed)
-  //   Sealed Resources version=2 rules=13 files=1234     (sealed)
-  // Reading it as a plain `Label=value` field matches only the first, which reports every
+  // Sealed is `Sealed Resources version=2 ...` (no `=` after the label), unsealed is
+  // `Sealed Resources=none`. Reading it as a plain `Label=value` field would report every
   // correctly signed bundle as sealing nothing.
   const sealedMatch = /^Sealed Resources (version=.*)$/m.exec(text);
   const teamIdentifier = field("TeamIdentifier");
@@ -129,16 +85,9 @@ export function parseCodesignDisplay(text: string): CodesignDisplay {
 }
 
 /**
- * Pull the requirement out of `codesign --display --requirements -`.
- *
- * Line-based rather than one regex, for two reasons the real output forces:
- *
- * - A long requirement WRAPS, so the clause continues on following lines and has to be re-joined.
- * - An ad-hoc bundle's clause is emitted as a COMMENT — `# designated => cdhash H"…"` — which is
- *   the single most important case to recognise, so the leading `#` cannot be part of the anchor.
- *
- * The clause ends at the next `<name> => …` line (codesign prints several) or at a bare field line
- * such as `Executable=…`, whichever comes first.
+ * Pull the requirement out of `codesign --display --requirements -`. Line-based because long
+ * requirements wrap, and an ad-hoc clause is printed as a comment (`# designated => cdhash ...`).
+ * The clause ends at the next `<name> => ...` line or a bare field line like `Executable=...`.
  */
 export function parseDesignatedRequirement(text: string): string | undefined {
   const lines = text.split("\n");
@@ -166,12 +115,9 @@ export function normalizeRequirement(requirement: string): string {
 }
 
 /**
- * Is this requirement keyed to the binary's hash rather than to a certificate?
- *
- * `cdhash H"…"` is what codesign falls back to when there is no certificate to name. It is the
- * whole bug: the hash changes whenever a single byte of the app changes, so the grant is voided by
- * the next build. An ad-hoc bundle's requirement is the bare form; a signed bundle's requirement
- * names an identifier and a certificate.
+ * Is this requirement keyed to the binary's hash rather than to a certificate? `cdhash H"..."` is
+ * codesign's fallback without a certificate, and it changes whenever any byte of the app does, so
+ * the grant is voided by the next build.
  */
 export function isCdhashKeyedRequirement(requirement: string): boolean {
   return /\bcdhash\s+H"/i.test(requirement);
@@ -202,12 +148,9 @@ export interface MacSignatureVerdict {
 }
 
 /**
- * Judge a parsed signature against what a TCC-stable release has to look like.
- *
- * `unsigned` and `unstable` are kept apart deliberately. Unsigned is the state the fork shipped in
- * before #70 and is what a build with no signing secret still produces — a caller may allow it.
- * Unstable means the artifact IS signed but the requirement moved, which no caller should allow,
- * because it is indistinguishable from the bug at the point where the user notices it.
+ * Judge a parsed signature against what a TCC-stable release has to look like. `unsigned` (no
+ * signing secret) is something a caller may allow; `unstable` (signed, but the requirement moved)
+ * is never allowed, because the user sees it exactly as the original bug.
  */
 export function evaluateMacSignature(input: {
   readonly display: CodesignDisplay;

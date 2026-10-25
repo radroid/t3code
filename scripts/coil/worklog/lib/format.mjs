@@ -1,10 +1,6 @@
-// Dates, durations, and number formatting for the /worklog collector.
-//
-// Everything day-shaped here is LOCAL time and calendar arithmetic — `new Date(y, m - 1, d)`,
-// never `start + 86_400_000`. A worklog day is the day the human lived, so on the two DST
-// transitions a day is 23 or 25 hours long and must still be exactly one calendar day. The
-// stores we read (T3code SQLite, Claude Code JSONL) both stamp in UTC ISO, so the conversion
-// happens here, once.
+// Dates, durations, and number formatting for the /worklog collector. Day math is LOCAL calendar
+// arithmetic (`new Date(y, m - 1, d)`, never `start + 86_400_000`), so a 23 or 25 hour DST day is
+// still one day. Both stores stamp UTC ISO, and the conversion happens here, once.
 
 const MS_PER_SECOND = 1000;
 const MS_PER_MINUTE = 60_000;

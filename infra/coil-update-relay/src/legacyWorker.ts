@@ -1,44 +1,8 @@
 /**
- * The `t3x-update-relay` hostname, after #71 moved the real relay to `coil-update-relay`.
- *
- * This exists because `DEFAULT_RELAY_URL` is compiled into the app. Every build ever shipped has
- * `https://t3x-update-relay.businesses.workers.dev` baked in, the env override that could point
- * them elsewhere is never set on a normal install (a `.app` launched from Finder inherits
- * launchd's environment, not a shell's), and an app that stops finding its relay has no remaining
- * channel through which to be told. So this hostname has to keep answering for as long as any
- * build that predates the rename is still running — which is indefinitely, and certainly longer
- * than it will feel necessary.
- *
- * ## Why a proxy and not a redirect
- *
- * The obvious shim is a 301/307 to the new host. It is the wrong one here, and the reason is
- * specific rather than stylistic: `relayClient.ts` does not use `fetch`. It goes through Effect's
- * `HttpClient`, and it classifies any non-2xx response as `bad-status` on BOTH tiers — the
- * `/latest` poll and the long-lived `/events` stream. Whether that client transparently follows a
- * redirect, and whether it does so on a `text/event-stream` response it intends to keep open, is
- * not a property that can be tested against builds that are already installed on other people's
- * machines. Being wrong about it does not degrade those builds, it strands them, permanently and
- * without a symptom — which is the exact failure this whole file exists to prevent.
- *
- * A pass-through has no such question attached. From the client's side the bytes, the status and
- * the streaming behaviour are what they were before the rename, because they are literally the
- * upstream response.
- *
- * ## Why it forwards every method and path
- *
- * Including `/notify`, which only the release workflow calls. The workflow is *supposed* to post
- * to the new host, but that target lives in a repo variable rather than in this repository, so
- * "supposed to" is an assumption about a value nobody here can see. Forwarding it costs one line
- * and makes the shim correct whichever host the workflow was pointed at. The HMAC signature
- * covers the body and the timestamp, not the hostname, so it survives the hop unchanged.
- *
- * ## Why `UpdateChannel` is still exported
- *
- * It is unreachable from here — nothing below touches the binding. It stays because this Worker is
- * deployed OVER the existing `t3x-update-relay`, which already has the Durable Object class in its
- * migration history. Dropping the export would make the deploy an implicit class deletion, which
- * Cloudflare rejects without an explicit `deleted_classes` migration; keeping it makes the cutover
- * a plain code deploy, and makes rolling back to the real relay a plain code deploy too.
+ * The old `t3x-update-relay` hostname, kept answering forever because every shipped build has it
+ * compiled in. A proxy, not a redirect: whether installed clients' HttpClient follows redirects on
+ * SSE is untestable, and being wrong strands them. Every path (even `/notify`) is forwarded, and
+ * `UpdateChannel` stays exported so the deploy is not a Durable Object class deletion.
  */
 
 export { UpdateChannel } from "./UpdateChannel.ts";
@@ -62,12 +26,9 @@ export function rewriteToUpstream(requestUrl: string): string {
 }
 
 /**
- * The forwarded request: the upstream's origin, the caller's everything else.
- *
- * The `host` header is reset alongside the URL. It does not affect routing here — the service
- * binding dispatches by binding, not by hostname — but `new Request(newUrl, oldRequest)` copies
- * headers verbatim, and a request whose URL and `host` disagree is the kind of detail that reads as
- * a bug to whoever debugs the next thing.
+ * The forwarded request: the upstream's origin, the caller's everything else. `host` is reset
+ * alongside the URL even though the service binding ignores it, because `new Request` copies
+ * headers verbatim and a URL that disagrees with `host` reads as a bug to whoever debugs next.
  */
 export function buildUpstreamRequest(request: Request): Request {
   const forwarded = new Request(rewriteToUpstream(request.url), request);

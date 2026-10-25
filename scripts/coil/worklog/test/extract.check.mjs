@@ -1,10 +1,6 @@
-// Tests for lib/extract.mjs — the incremental extraction cache.
-//
-// The assertion this file exists for is the no-double-read invariant: queue -> commit -> queue
-// again must queue nothing and must not even ask for the session's material a second time. Close
-// behind it are the two properties that keep the cost and the risk bounded — the materiality bar
-// (in both directions) and the guarantee that no tool result and no absolute path survives into a
-// slice. Every fixture is synthetic; the real ~/.t3 and ~/.claude are never touched.
+// Tests for lib/extract.mjs. The key invariant is no double read: queue, commit, queue again must
+// queue nothing and not re-request the session's material. Also covered: the materiality bar both
+// ways, and no tool result or absolute path reaching a slice. Fixtures never touch real data.
 
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";

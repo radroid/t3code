@@ -26,13 +26,9 @@ function channel(env: Env): DurableObjectStub {
 }
 
 /**
- * Read paths are open on purpose.
- *
- * This fork is a public repository, so "main moved to <sha>, here is the artifact" is already
- * public. Adding subscriber tokens would buy no confidentiality and would cost every client a
- * provisioning step and us a revocation story. The write path is authenticated because *that* is
- * where the leverage is: forging a notify would restart every installed app into an artifact of
- * the attacker's choosing.
+ * Read paths are open on purpose: the repo is public, so the payload already is, and subscriber
+ * tokens would buy no confidentiality. The write path is authenticated because a forged notify
+ * would restart every installed app into an artifact of the attacker's choosing.
  */
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -91,11 +87,10 @@ async function handleNotify(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  // Guarded because a Durable Object stub can throw for reasons that are nobody's bug — a
-  // storage-flush stall or an object reset mid-request. Unguarded, that surfaces to the caller
-  // as Cloudflare's bare `error code: 1101` page, which is what build 20's release run got:
-  // thirty seconds of hang, an opaque 500, and no way to tell that the publish had in fact
-  // durably applied. A 503 with a reason gives the workflow's retry loop something to act on.
+  // A Durable Object stub can throw for reasons that are nobody's bug (a storage-flush stall, an
+  // object reset mid-request). Unguarded, that surfaces as Cloudflare's opaque `error code: 1101`
+  // 500 even when the publish durably applied; a 503 with a reason gives the workflow's retry
+  // loop something to act on.
   let response: Response;
   try {
     response = await channel(env).fetch("https://channel/internal/publish", {

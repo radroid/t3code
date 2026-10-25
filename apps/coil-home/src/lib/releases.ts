@@ -1,19 +1,8 @@
 /*
- * Downloads come from the fork's update relay, not GitHub's releases API.
- *
- * This used to be forced. Every fork release was published as a GitHub *pre-release*, and
- * `api.github.com/repos/radroid/t3code/releases/latest` — which upstream's marketing site uses —
- * skips pre-releases and 404'd for this repo. Releases now carry a real Latest pointer, so that
- * API would answer.
- *
- * The relay is still the right source, for the reason that outlives the 404: it serves the same
- * manifest the desktop app's updater consumes, so the site and the app agree on what "latest"
- * means by construction rather than by coincidence.
+ * Downloads come from the fork's update relay, not GitHub's releases API: it serves the same
+ * manifest the desktop app's updater consumes, so the site and the app agree on "latest". Unlike
+ * the desktop app, this page is fetched fresh, so it can point straight at the renamed relay.
  */
-// Moved to the renamed relay by #71. Safe to move here, unlike in the desktop app: this page is
-// fetched fresh on every visit, so it has no old copies of itself in the field. The old hostname
-// still answers — it proxies to this one for builds that predate the rename — but pointing the
-// site through a shim it does not need would just add a hop.
 const MANIFEST_URL = "https://coil-update-relay.businesses.workers.dev/latest";
 const CACHE_KEY = "coil-latest-manifest";
 

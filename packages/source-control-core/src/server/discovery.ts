@@ -58,10 +58,7 @@ export type SourceControlApiDiscoverySpec = SourceControlDiscoverySpecBase & {
 export type SourceControlManagedCliDiscoverySpec = SourceControlDiscoverySpecBase & {
   readonly type: "managed-cli";
   readonly probe: (cwd: string) => Effect.Effect<SourceControlProviderDiscoveryItem>;
-  /**
-   * `null` when the integration holds nothing for the remote, which includes its CLI not being
-   * installed. A failure means it could not tell, and the registry does not keep that answer.
-   */
+  /** Null includes missing CLIs. Failure means unknown and must not be cached by the registry. */
   readonly refineUnknownRemote: (input: {
     readonly cwd: string;
     readonly context: SourceControlProvider.SourceControlProviderContext;
@@ -218,12 +215,10 @@ function probeCli(input: {
           }) satisfies DiscoveryProbeResult,
       ),
       Effect.catch((cause) => {
-        // Only a genuine spawn failure (e.g. ENOENT) means the CLI is absent, so
-        // that is the sole case that reports "missing" and shows the install hint.
-        // Any other failure (timeout, non-zero exit, etc.) means the CLI is present
-        // but the version probe was slow/noisy; keep it "available" so
-        // `probeSourceControlProvider` still runs the fast `account show` auth
-        // probe instead of short-circuiting to the install hint. (issue #4)
+        // Only a genuine spawn failure (e.g. ENOENT) means the CLI is absent. Any other failure
+        // (timeout, non-zero exit) keeps it "available" so `probeSourceControlProvider` still
+        // runs the fast `account show` auth probe instead of short-circuiting to the install
+        // hint.
         const status = cause._tag === "VcsProcessSpawnError" ? "missing" : "available";
         return Effect.succeed({
           kind: input.spec.kind,
@@ -308,10 +303,7 @@ export function probeSourceControlProvider(input: {
 
 const isVcsProcessSpawnError = Schema.is(VcsProcessSpawnError);
 
-/**
- * A hosting CLI that is not installed claims no remote. The spawner checks the cwd before the
- * executable, so only the executable's own ENOENT comes from `ChildProcess`.
- */
+/** The spawner checks cwd first, so ChildProcess NotFound identifies the executable. */
 export function isMissingExecutable(error: unknown): boolean {
   return (
     isVcsProcessSpawnError(error) &&
@@ -375,8 +367,7 @@ export const refineUnknownRemoteProvider = Effect.fn("refineUnknownRemoteProvide
     const results = yield* Effect.forEach(input.specs, (spec) =>
       refineWithSpec({ ...input, spec }).pipe(Effect.result),
     );
-    // A claim reached after another integration could not answer is not settled: that one might
-    // have claimed the host first.
+    // An earlier integration that could not answer might have claimed this host.
     let settled = true;
     for (const result of results) {
       if (Result.isFailure(result)) settled = false;

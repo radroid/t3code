@@ -1,12 +1,6 @@
-// Tests for lib/bundle.mjs and lib/summary.mjs.
-//
-// Every store is injected: the T3code readers and the Claude Code scanner are fakes, git is a fake
-// that records what it was asked for, and the only real filesystem in play is a mkdtemp worklog
-// repo. The suite therefore never opens the user's databases, never shells out, and never touches
-// ~/.t3 or ~/.claude. Run with: node --test scripts/coil/worklog/test/bundle.test.mjs
-//
-// The registry and the dedup ladder are deliberately NOT faked — a real config/projects.yaml and
-// the real `linkSessions` are what make these assertions mean anything.
+// Tests for lib/bundle.mjs and lib/summary.mjs. Stores and git are injected fakes and the only real
+// filesystem is a mkdtemp worklog repo, so nothing touches ~/.t3 or ~/.claude. The registry and
+// `linkSessions` dedup are deliberately real; they are what make these assertions meaningful.
 
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";

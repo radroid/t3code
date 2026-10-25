@@ -1,22 +1,8 @@
 /*
- * Renders the body of a coil GitHub release from scripts/coil/install-instructions.json.
- *
- * The release workflow used to carry this text inline, which made the release body the only
- * place the install steps existed — and the download page pointed at "the release notes" without
- * linking them, so a first-time reader could go from the landing page to an app macOS calls
- * damaged having never seen a release note. Both surfaces now render the same file (issue #72);
- * the other renderer is apps/coil-home/src/lib/install.ts.
- *
- * Usage:
- *   node scripts/coil/render-release-notes.mjs --sha <full> [--short-sha <short>] [--repo-root <dir>]
- *
- * Writes markdown to stdout. It reads one JSON file and formats strings — no network, nothing
- * from the environment but the arguments — so the release workflow can treat a non-zero exit as
- * a bug in this file rather than as a reason to lose a build.
- *
- * `.mjs`, not `.ts`, on purpose: the publish job has no `setup-node` step, so it runs on whatever
- * Node the runner image ships. Type stripping needs 22.18+, and a release is far too expensive to
- * risk on a runner-image bump. Its sibling build-update-manifest.mjs is `.mjs` for the same reason.
+ * Renders a coil release body from scripts/coil/install-instructions.json, the same file
+ * apps/coil-home/src/lib/install.ts renders. Pure (no network or env), so a non-zero exit is a bug
+ * here. `.mjs` because the publish job runs on the runner image's Node with no type stripping.
+ * Usage: node scripts/coil/render-release-notes.mjs --sha <full> [--short-sha <short>] [--repo-root <dir>]
  */
 
 import * as NodeFS from "node:fs";
@@ -43,12 +29,8 @@ export function loadInstructions(repoRoot) {
 }
 
 /**
- * The bundle name electron-builder actually produces, per resolveDesktopProductName in
- * scripts/build-desktop-artifact.ts. Read from disk so the test compares the cached copy in the
- * JSON against the real thing rather than against another copy of the same string.
- *
- * Only the test calls this. The publish job's checkout is sparse (`/scripts`, `/package.json`),
- * so apps/desktop/package.json is not even present when the notes are rendered.
+ * The bundle name electron-builder produces (resolveDesktopProductName). Test-only: the publish
+ * job's sparse checkout has no apps/desktop/package.json.
  *
  * @param {string} repoRoot
  */
@@ -59,10 +41,8 @@ export function desktopProductName(repoRoot) {
 }
 
 /**
- * Substitutes into a command template: `{app}` is the bundle name, `{file}` the asset the reader
- * downloaded. An unresolved placeholder throws rather than shipping — a half-substituted command
- * still looks copy-pasteable, and the error it produces in a terminal reads like the reader's
- * mistake rather than ours.
+ * Fills `{app}` (bundle name) and `{file}` (downloaded asset). Unresolved placeholders throw: a
+ * half-substituted command looks copy-pasteable and its error reads like the reader's mistake.
  *
  * @param {string} template
  * @param {{ app: string, file: string }} values

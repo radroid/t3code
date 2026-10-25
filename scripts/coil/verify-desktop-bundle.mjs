@@ -1,51 +1,8 @@
 /*
- * Fails a release whose packaged app is missing a package its own bundles require.
- *
- * Issue #53. The fork excludes roughly half the asar (see scripts/coil/desktop-file-exclusions.mjs),
- * and the failure mode of getting one of those globs wrong is the worst kind: a MODULE_NOT_FOUND
- * thrown by a shipped app, on a code path that may not run until a user signs in, days after the
- * release went green. Every fork seam gets a compensating control that a sync cannot quietly defeat —
- * this is that control for the packaging seam, and it is deliberately the same shape as
- * verify-mac-signature.ts: a step that reads the artifact about to be published and refuses it,
- * rather than a test that reads the source that produced it.
- *
- * WHAT IT CHECKS. Every bare module specifier imported by the packaged first-party bundles
- * (`apps/desktop/dist-electron/*.cjs`, `apps/server/dist/**`) must still resolve to a package with
- * loadable files in the shipped app. Package-level granularity is not a shortcut — it is exactly the
- * granularity of the risk, because every fork exclusion removes a whole package or a file type,
- * never an individual entry point.
- *
- * EVERY LAYER OF THE APP, WHICH IS THE POINT ON WINDOWS. The Windows artifact ships the server tree
- * as a separate `resources/server.asar` sidecar (plus its `.unpacked` sibling for natives) so the
- * NSIS installer extracts a handful of archives instead of thousands of files; `app.asar` holds only
- * the Electron main-process bundle. A checker that read only `app.asar` would verify a fraction of
- * the app and could not fail on the rest — which happened: the 2026-08-14 sync imported that split
- * and this gate red-flagged `node-pty` as unresolvable when it had merely moved into the sidecar
- * (issue #102). So the view merges `app.asar`, `app.asar.unpacked/`, and any sibling `server.asar`
- * (+ `.unpacked`) before anything is checked, and additionally requires that every entry in
- * FIRST_PARTY_BUNDLE_DIRS contributed at least one scanned bundle — a layer this checker cannot see
- * fails the release instead of silently passing it.
- *
- * ANY MISSING IMPORT FAILS, and an earlier draft of this file got that wrong in a way worth recording.
- * It split findings into "a fork glob removed this" (error) and "missing for some other reason"
- * (warning), reasoning that the fork should not fail releases over pre-existing gaps. A negative test —
- * building with a deliberately over-broad `!**\/node_modules/effect/**\/*` — went green: `effect` was
- * correctly detected as missing, but attribution compares against the exclusion list in
- * desktop-file-exclusions.mjs, and the bad glob had been injected through the environment instead. It
- * was filed as "pre-existing" and the release passed with a bundle that cannot start.
- *
- * The lesson is that attribution is a property of the *message*, not of the *severity*. A packaged app
- * that imports a package it does not contain is broken whoever broke it, so every one of them fails the
- * release; `findExcludingGlob()` only decides whether the error can name the glob to fix. The
- * false-positive class that motivated the split is handled where it belongs, by blanking comments below.
- *
- * WHAT IT DOES NOT CHECK. A package present but whose specific subpath was excluded, and a specifier
- * assembled at runtime from pieces that never appear whole. The first cannot happen while every fork
- * glob is whole-package or `*.map`; the second is the reachability closure's known blind spot,
- * documented in desktop-bundle-reachability.mjs.
- *
- * `.mjs` for the same reason as its siblings here: CI runs it on the runner image's Node, with no
- * `setup-node` step in front of it.
+ * Fails a release whose packaged app is missing a package its own bundles require, guarding the
+ * fork's asar exclusions. Merges every layer (`app.asar`, `.unpacked`, Windows' `server.asar`) and
+ * fails if a FIRST_PARTY_BUNDLE_DIRS entry went unscanned. ANY missing import fails, whoever
+ * removed it; attribution only names the glob. `.mjs`: CI runs it without `setup-node`.
  */
 
 import * as NodeFS from "node:fs";
@@ -75,18 +32,9 @@ const RUNTIME_PROVIDED = new Set(["electron"]);
 const BUNDLED_WORKSPACE_PREFIXES = ["@t3tools/"];
 
 /*
- * Imports the shipped app can never reach, so their absence is not a break.
- *
- * The server bundle imports these behind Bun-runtime detection (`typeof Bun !== "undefined"` in
- * server.ts's HttpServerLive, `process.versions.bun !== undefined` in persistence/Layers/Sqlite.ts),
- * and the shipped desktop app always runs the server under Node via ELECTRON_RUN_AS_NODE — the Bun
- * branch cannot execute. Upstream agrees by construction: its Windows server.asar sidecar stages
- * only the CLI's runtime external dependencies, which exclude both (that omission is what surfaced
- * this list — release run 31839839479). The macOS artifact carries them incidentally, because its
- * staging installs the full production dependency set.
- *
- * If the shipped server ever runs under Bun, this list is wrong and the failure is a MODULE_NOT_FOUND
- * at startup on the Bun path — re-check both guard sites before growing or trusting it.
+ * Imports the shipped app never reaches: the server imports these only behind Bun detection
+ * (server.ts HttpServerLive, persistence/Layers/Sqlite.ts), and desktop always runs it under Node.
+ * If the shipped server ever runs under Bun this list is wrong: re-check both guard sites first.
  */
 const UNREACHABLE_IN_SHIPPED_RUNTIME = new Set(["@effect/platform-bun", "@effect/sql-sqlite-bun"]);
 
@@ -97,10 +45,8 @@ const UNREACHABLE_IN_SHIPPED_RUNTIME = new Set(["@effect/platform-bun", "@effect
  */
 
 /**
- * Parses an asar into a path -> file view. An asar is a 16-byte pickle preamble, a JSON directory
- * listing, then concatenated contents; the listing is all this needs, so there is no extraction step
- * and no @electron/asar dependency.
- *
+ * Parses an asar (16-byte pickle preamble, JSON listing, contents) into a path -> file view from
+ * the listing alone, so there is no extraction step and no @electron/asar dependency.
  * @param {string} asarPath
  * @returns {Map<string, PackagedFile>}
  */
@@ -242,16 +188,8 @@ export function isPackagedSpecifier(specifier) {
 }
 
 /**
- * The packages the packaged first-party bundles import, with the bundle that imports each.
- *
- * Only `import` edges count, not the string-mention edges the reachability closure also follows. A
- * mention is evidence for *keeping* a package; it is not evidence that its absence breaks anything,
- * and treating it as such would fail on every package name that appears in an error message.
- *
- * Comments are blanked first. Without that, `@noble/hashes`'s bundled JSDoc — which contains
- * `* import { hmac } from '@noble/hashes/hmac';` inside an `@example` — reads as a real import of a
- * package that was never installed, and the gate fails a perfectly good build.
- *
+ * Packages the first-party bundles import, by `import` edges only (a mention is no evidence of
+ * breakage). Comments are blanked first so a bundled JSDoc `@example` import cannot fail a build.
  * @param {Map<string, PackagedFile>} files
  * @returns {Map<string, string>} package name -> first bundle path that imports it
  */
@@ -269,13 +207,10 @@ export function collectRequiredPackages(files) {
     } catch {
       continue;
     }
-    // Both layers are inlined bundles that keep only native externals on disk, and since
-    // upstream #11410 the stage installs ONLY those (scripts/lib/desktop-external-packages.ts
-    // for the Electron main, scripts/lib/cli-external-packages.ts for the server). Anything else
-    // a bundle still names — a `require("x11")` left inside an inlined dependency, or a
-    // `from "effect"` in embedded prose the comment scanner did not blank — has no node_modules
-    // presence by construction. That is upstream's bundling decision, not a fork exclusion, so
-    // only a layer's externals can be missing and only they are required here.
+    // Upstream's stage installs ONLY each layer's native externals (desktop-external-packages.ts
+    // for the Electron main, cli-external-packages.ts for the server), so anything else a bundle
+    // names has no node_modules presence by construction. That is upstream's bundling decision,
+    // not a fork exclusion, so only externals are required here.
     const isExternal = filePath.startsWith("apps/desktop/dist-electron/")
       ? isDesktopRuntimeExternalDependency
       : isRuntimeExternalCliDependency;
@@ -290,11 +225,7 @@ export function collectRequiredPackages(files) {
 }
 
 /**
- * Whether a package still has something loadable in the shipped app.
- *
- * A `package.json` alone is not enough: excluding `foo/**\/*` while a stray manifest survives leaves
- * a package Node can find and cannot load, which is a worse failure than a missing one.
- *
+ * Whether a package still has something loadable; a surviving `package.json` alone does not count.
  * @param {Map<string, PackagedFile>} files
  * @param {string} name
  * @returns {{ present: boolean, manifest: boolean, loadableFiles: number }}
@@ -326,19 +257,9 @@ function defaultAttributionGlobs() {
 }
 
 /**
- * Whether one of the fork's own exclusion globs is what removed a package.
- *
- * Every fork glob has the shape `!**\/node_modules/<name>/**\/*`, so attribution is a prefix
- * comparison rather than a glob engine. A trailing `*` in the package-name position is honoured
- * because upstream's own entry uses one (`@anthropic-ai/claude-agent-sdk-*`).
- *
- * The default set is the fork's own list PLUS anything passed through the environment for this build.
- * Both matter: the list is what a maintainer edits, and the environment is what the build actually used,
- * so consulting only the former misattributes an ad-hoc glob as "nothing here removed it".
- *
- * @param {string} name
- * @param {readonly string[]} [globs]
- * @returns {string | undefined} The glob responsible, if any.
+ * The fork exclusion glob that removed a package, if any. Every glob is
+ * `!**\/node_modules/<name>/**\/*`, so this is a prefix compare honouring a trailing `*` (upstream's
+ * claude-agent-sdk entry). Defaults add this build's env globs, or an ad-hoc glob goes unattributed.
  */
 export function findExcludingGlob(name, globs = defaultAttributionGlobs()) {
   for (const glob of globs) {
@@ -353,16 +274,7 @@ export function findExcludingGlob(name, globs = defaultAttributionGlobs()) {
 
 /**
  * @param {string} asarPath
- * @returns {{
- *   ok: boolean,
- *   checked: number,
- *   missing: { name: string, importedBy: string, glob: string | undefined }[],
- *   sidecars: string[],
- *   uncoveredBundleDirs: string[],
- *   totalBytes: number,
- *   totalFiles: number,
- *   mapBytes: number,
- * }}
+ * @returns {import("./verify-desktop-bundle.d.mts").VerifyResult}
  */
 export function verifyPackagedApp(asarPath) {
   const files = readPackagedFiles(asarPath);
@@ -459,19 +371,9 @@ function formatMiB(bytes) {
 }
 
 /**
- * Whether this module was run directly, rather than imported.
- *
- * `import.meta.url === `file://${process.argv[1]}`` is the idiom this replaces, and it is broken on
- * Windows. `process.argv[1]` is a native path there (`D:\a\...`), so the template produces
- * `file://D:\a\...` while `import.meta.url` is `file:///D:/a/...` — drive letter after three
- * slashes, forward separators. They never match, so a Windows CLI run silently executed nothing,
- * exited 0, and printed no output.
- *
- * That is how it reached production: on macOS and Linux the idiom works, because an absolute POSIX
- * path already begins with `/`. Both CI callers of these scripts are `set -euo pipefail`, and
- * neither could see the difference between "verified" and "did nothing" — one release failed on the
- * empty stdout, the other passed a check that had not run. `pathToFileURL` is what Node provides for
- * exactly this, and it is correct on every platform.
+ * Whether this module was run directly, rather than imported. Comparing against
+ * `file://${process.argv[1]}` never matches on Windows (native `D:\` path), so the CLI silently did
+ * nothing and exited 0. `pathToFileURL` is correct on every platform.
  */
 function isEntryPoint() {
   const entry = process.argv[1];

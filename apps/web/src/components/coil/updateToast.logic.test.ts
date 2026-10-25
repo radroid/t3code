@@ -438,9 +438,8 @@ describe("shouldSendRestart", () => {
 
 describe("the toast's clock", () => {
   it("keeps ticking on a ready toast with nothing armed", () => {
-    // #127: the age was pinned to renderer mount, so a build offered overnight still read "built
-    // just now" — and since the app is usually launched BEFORE the build exists, the pinned clock
-    // made the age negative, which the skew clamp turns into exactly that string.
+    // The age was once pinned to renderer mount, so an overnight build read "built just now"
+    // (the app usually launches before the build exists, and the skew clamp hid the negative age).
     expect(shouldTickClock(selectUpdateToastView(input()))).toBe(true);
   });
 

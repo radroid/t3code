@@ -1,20 +1,7 @@
-// Bootstrap for the worklog repo and discovery of the projects that belong in it —
-// docs/coil/worklog-design.md §2 and §4.
-//
-// Three rules shape this module:
-//
-// 1. Nothing here is ever auto-confirmed. Discovery proposes; only a human promotes. Every
-//    proposed entry is `confirmed: false`, which `registry.classify()` reads as "treated as
-//    private", so a project discovered at 2am cannot name itself in tomorrow's report.
-// 2. A human edit always wins. Re-running `init` may add a project or a root; it may never
-//    change a `visibility`, a `confirmed`, or a `display_name` that is already written down.
-// 3. Everything degrades. A missing database, an absent `git`, an unreadable transcript, a
-//    directory that turns out to be a file — each becomes a warning and an emptier result,
-//    never an exception out of a public function.
-//
-// Repo identity comes from `git.canonicalRepo`, whose key is the realpath of the repo's common
-// `.git` directory. That is what makes the three t3code worktrees on this machine collapse into a
-// single project instead of three lookalikes.
+// Bootstrap of the worklog repo and project discovery (docs/coil/worklog-design.md §2, §4).
+// Nothing is auto-confirmed (`confirmed: false` is treated as private), re-running never changes a
+// human-written `visibility`/`confirmed`/`display_name`, and failures degrade to warnings. Repo
+// identity is `git.canonicalRepo`, so worktrees of one repo collapse into a single project.
 
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -198,13 +185,9 @@ export const DEFAULT_SCRATCH_ROOTS = Object.freeze([
 ]);
 
 /**
- * True for a directory that must never become a project root. A session's cwd is sometimes the home
- * directory or a scratch dir, and either one is worse than useless as a project: `matchProjectByRoot`
- * resolves by path containment, so an entry rooted at `~` would silently claim every other project's
- * sessions — and an unconfirmed entry counts toward the totals, so the misattribution is invisible.
- *
- * `scratchRoots` is a parameter rather than a constant because the tests build their fixtures in
- * exactly the directories production wants to ignore.
+ * True for a dir that must never become a project root (home, scratch): `matchProjectByRoot`
+ * matches by containment, so a root at `~` would silently claim every other project's sessions.
+ * `scratchRoots` is a parameter because the tests build fixtures in exactly those directories.
  */
 function isUnprojectableRoot(path, scratchRoots) {
   const resolved = realPath(NodePath.resolve(path));

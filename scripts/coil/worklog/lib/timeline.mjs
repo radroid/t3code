@@ -1,16 +1,7 @@
-// Interval and activity-block math behind the two headline numbers in the worklog design (§5):
-//
-//   active time   — the union of activity blocks across every session. Parallel sessions must NOT
-//                   double-count, so this is bounded by wall clock. "How long was I at the desk."
-//   agent runtime — Σ per-span durations, overlaps counted twice. Sessions genuinely run in
-//                   parallel, so this legitimately exceeds a day. "How much machine time I directed."
-//
-// An inflated stat is worse than no stat, so every function here is deliberately conservative:
-// unparseable input is ignored rather than guessed at, reversed intervals contribute nothing, and
-// `activeTimeline` is hard-bounded by its window.
-//
-// Pure functions, no I/O, no dependencies. Day boundaries are always LOCAL — `new Date(y, m-1, d)`
-// — because a "day" in a work log is the day the human lived, not a UTC slice.
+// Interval math for the design's two headline numbers (§5): active time is the union of activity
+// blocks (bounded by wall clock); agent runtime sums spans, overlaps included. Conservative:
+// unparseable or reversed input contributes nothing. Pure, and days are LOCAL
+// (`new Date(y, m-1, d)`) because a work-log day is the one the human lived.
 
 const MINUTE_MS = 60_000;
 const DEFAULT_GAP_MS = 30 * MINUTE_MS;

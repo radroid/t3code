@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 // Assembles coil-latest.json from the per-platform asset descriptors each build leg uploaded.
-//
-// This runs in the `publish` job, which `needs: [build]` — so it only runs when EVERY matrix leg
-// succeeded. That is deliberate: a half-platform release would give Windows users a toast pointing
-// at an asset that does not exist.
-//
-// Deliberately .mjs, matching scripts/clean-tsgo-backups.mjs. It is glue that runs once in CI with
-// no imports from the workspace, so it does not need to participate in typecheck.
+// Runs in `publish` (`needs: [build]`), so only when EVERY leg succeeded: a half-platform release
+// would point Windows users at an asset that does not exist. `.mjs` because it is one-shot CI
+// glue with no workspace imports, so it stays out of typecheck.
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";

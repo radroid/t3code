@@ -1,17 +1,10 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off - A one-shot CLI that only reads `git log` output.
 /**
- * Lists what an upstream sync brought in, for someone who uses T3 Code rather than builds it.
- *
- * Upstream lands each PR as one commit titled as a plain-language conventional commit
- * (`fix(web): new threads no longer spike CPU (#123)`), so dropping the dev-only types and grouping
- * the rest is enough to say what an update changed. Nothing here summarises or calls a model.
- *
- * Usage, from a sync branch with `upstream` fetched:
+ * Lists what an upstream sync brought in, for users rather than builders, by dropping dev-only
+ * conventional-commit types and grouping the rest (no model involved). Every sync PR body starts
+ * with this output. Usage, from a sync branch with `upstream` fetched:
  *   node scripts/coil/upstream-changes.ts [<fork main before the sync>]   # default origin/main
- *
- * Writes markdown to stdout. Every sync PR's body starts with it, so whatever reads merged sync
- * PRs can tell the user what their update changed.
  */
 
 import * as NodeChildProcess from "node:child_process";

@@ -1,25 +1,15 @@
 /**
- * The relay is deliberately almost schema-blind.
- *
- * It authenticates the sender, orders payloads, and rebroadcasts them verbatim. It does *not*
- * understand the manifest — asset URLs, checksums, platform keys and commit hashes are opaque
- * passthrough. The desktop client owns that schema.
- *
- * That is not laziness. If the relay parsed the manifest, every manifest change would need a
- * relay deploy in lockstep with an app release, and a relay running older code would start
- * rejecting valid payloads. The one field it must understand is `buildNumber`, because ordering
- * cannot be delegated to a client that only ever sees one payload at a time.
+ * The relay is deliberately almost schema-blind: it authenticates, orders and rebroadcasts the
+ * manifest verbatim, so manifest changes never need a lockstep relay deploy. The one field it
+ * must understand is `buildNumber`, because clients only ever see one payload and cannot order.
  */
 
 /** The smallest shape the relay needs to do its job. Everything else rides along untouched. */
 export interface NotificationEnvelope {
   /**
-   * Monotonic across releases. Sourced from the release workflow's run number.
-   *
-   * Not the commit hash, and not a timestamp. The hash cannot answer "is this newer" at all, and
-   * on this fork it especially cannot: `main` is force-pushed by the sync playbook, so a released
-   * commit may not even be an ancestor of `main`. Timestamps lose to clock skew between two
-   * runners racing to notify.
+   * Monotonic across releases, sourced from the release workflow's run number. Not the commit
+   * hash (`main` is force-pushed, so a released commit may not be an ancestor) and not a
+   * timestamp (clock skew between two runners racing to notify).
    */
   readonly buildNumber: number;
 }
@@ -72,13 +62,9 @@ export function parseNotification(rawBody: string): NotificationParseResult {
 }
 
 /**
- * Strictly greater, never equal.
- *
- * Equal means a retry of a notify we already accepted — re-broadcasting it would wake every
- * connected app for nothing. Lower means an out-of-order arrival, which is the case that
- * actually matters: the release matrix has two legs, and a slow Windows leg from run N can land
- * after run N+1's macOS leg. Accepting it would push every client *backwards* onto an older
- * build, which looks exactly like a successful update and is the hardest failure here to notice.
+ * Strictly greater, never equal. Equal is a retry and would wake every app for nothing. Lower is
+ * an out-of-order arrival (a slow Windows leg from run N landing after run N+1's macOS leg), and
+ * accepting it would silently push every client backwards onto an older build.
  */
 export function supersedes(incoming: number, current: number | null): boolean {
   if (current === null) return true;

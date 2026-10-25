@@ -97,16 +97,10 @@ export function decideUpdateAction(
     return { kind: "skip", reason: "already-running-this-build" };
   }
 
-  // No counter means no way to order, and "cannot order" must not silently mean "accept".
-  //
-  // Only builds from `coil-release.yml` carry `-coil.<n>`; anything built locally (a hand-run
-  // `build:desktop`) is a bare `0.0.31`. Treating a missing
-  // counter as "no floor" let such a build install ANY announced release over itself — including
-  // one cut from an older commit than the one it was built from. That downgrade reports success,
-  // looks identical to a real update, and is only undone by the next release.
-  //
-  // Refusing instead costs a locally built app its automatic updates until a released build is
-  // installed once. That is a visible, explainable state; a silent downgrade is not.
+  // No counter means no way to order, and "cannot order" must not silently mean "accept". Only
+  // `coil-release.yml` builds carry `-coil.<n>`; treating a local build as "no floor" let it
+  // install a release cut from an older commit, a silent downgrade that reports success. Refusing
+  // costs a local build its automatic updates until a released build is installed once.
   if (installed.buildNumber === undefined) {
     return { kind: "skip", reason: "unknown-own-build-number" };
   }

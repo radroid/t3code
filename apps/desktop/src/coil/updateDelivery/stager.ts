@@ -1,14 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The ~470 MB download is hashed incrementally as it streams; Effect Crypto only digests a whole buffer.
 /**
- * Getting the announced build onto this disk, swap-ready, before the user is told anything.
- *
- * The user chose "pre-download quietly, click = instant restart". That only holds if everything
- * expensive happens here: the ~470 MB download, the checksum, the dmg mount, the full bundle copy
- * and the recursive de-quarantine. What remains for the click is a delete and a rename.
- *
- * Nothing in this file is silent about failure. Every abandoned attempt returns a
- * `StagingError` the service turns into a visible `failed` state — the 103-minute outage in
- * issue #41 was invisible precisely because the failing path had no way to speak.
+ * Getting the announced build onto this disk, swap-ready, before the user is told anything, so the
+ * click is only a delete and a rename. Every abandoned attempt returns a `StagingError` that the
+ * service shows as `failed`: a failing path that cannot speak makes an outage invisible.
  */
 
 import * as NodeCrypto from "node:crypto";
@@ -102,17 +96,10 @@ const runOptionalXattr = (command: Command, step: StagingError["step"]) =>
     : runCommand(command, step);
 
 /**
- * Free bytes, parsed out of `df -Pk`.
- *
- * `-P` is the point: it forces the POSIX output format, which guarantees one line per filesystem
- * and a fixed column order. Without it, a long device name wraps onto its own line and the
- * "available" column moves — a misparse that would let a download start on a disk that cannot
- * hold it.
- *
- * Exported for its test. Returns `undefined` for anything it does not fully recognise, and the
- * caller treats that as "skip the check": being unable to measure free space is not evidence that
- * there is none, and refusing an update over an unreadable `df` would be worse than the disk
- * filling up.
+ * Free bytes, parsed out of `df -Pk`. `-P` forces one line per filesystem and fixed columns, so a
+ * long device name cannot shift the "available" column. Returns `undefined` for anything
+ * unrecognised, and the caller then skips the check: an unreadable `df` is not evidence of a full
+ * disk.
  */
 export function parseDfAvailableBytes(output: string): number | undefined {
   const lines = output.trim().split("\n");
@@ -133,30 +120,17 @@ const freeBytesOn = Effect.fn("coil.updateDelivery.freeBytes")(function* (path: 
 }, Effect.scoped);
 
 /**
- * Following redirects is load-bearing here, not defensive hygiene.
- *
- * A GitHub release asset URL (`/releases/download/<tag>/<file>`) ALWAYS answers 302 with a signed,
- * short-lived `release-assets.githubusercontent.com` location. The bytes are never served from
- * github.com. The desktop app provides `NodeHttpClient.layerUndici` (main.ts), and undici does not
- * follow redirects unless asked — so every update attempt died on the status check in
- * `downloadAsset` with "HTTP 302 for https://github.com/...", which reads like a GitHub fault
- * rather than a client that stopped one hop early.
- *
- * Named and exported so the redirect hop is covered by a test: inlining the `.pipe(...)` made the
- * one thing that broke the whole update path invisible to the suite.
+ * Following redirects is load-bearing: GitHub release asset URLs always answer 302 to a signed
+ * `release-assets.githubusercontent.com` location, and undici does not follow redirects unless
+ * asked. Exported so the redirect hop stays covered by a test.
  */
 export const assetDownloadClient = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
   client.pipe(HttpClient.followRedirects());
 
 /**
- * Download the asset, hashing as the bytes arrive.
- *
- * One pass, not two. Re-reading 470 MB from disk to checksum it doubles the I/O for no benefit,
- * and on this machine — which runs at 95 percent full — the download is already the expensive part.
- *
- * Writes to `<name>.part` and renames only after the checksum matches, so a crash mid-download can
- * never leave a file that looks complete. `selectStagingSweep` deletes `.part` files
- * unconditionally on the next run: their bytes were never verified, so they cannot be resumed.
+ * Download the asset, hashing as the bytes arrive (one pass, not a 470 MB re-read). Writes to
+ * `<name>.part` and renames only after the checksum matches, so a crash cannot leave a file that
+ * looks complete; `selectStagingSweep` deletes `.part` files since they cannot be resumed.
  */
 const downloadAsset = Effect.fn("coil.updateDelivery.download")(function* (args: {
   readonly asset: UpdateAsset;
@@ -249,12 +223,8 @@ function shortShaFromName(name: string): string | undefined {
 }
 
 /**
- * Stage a build so the click is a rename.
- *
- * macOS only mounts and copies; Windows stops at the verified installer, because an NSIS installer
- * cannot be "pre-applied" — it needs the app's own files, so it can only run after the app quits.
- * That asymmetry is real and the design says so: macOS restarts itself, Windows is restarted *by*
- * the installer.
+ * Stage a build so the click is a rename. macOS mounts and copies; Windows stops at the verified
+ * installer, because NSIS needs the app's own files and can only run after the app quits.
  */
 export const stageUpdate = Effect.fn("coil.updateDelivery.stage")(function* (args: {
   readonly manifest: UpdateManifest;

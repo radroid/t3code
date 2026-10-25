@@ -15,15 +15,9 @@ import {
 } from "./mac-signature.ts";
 
 /**
- * Both fixtures are verbatim `codesign` output, captured on 2026-08-11 from:
- *
- *   codesign --display --verbose=4 "/Applications/T3 Code (Alpha).app"   (the shipped fork build)
- *   codesign --display --verbose=4 <a bundle signed with a real certificate>
- *
- * Real output, not a hand-written approximation, because every bug this parser can have lives in
- * the difference between the two shapes — `Signature=adhoc` versus `Signature size=…`,
- * `Sealed Resources=none` versus `Sealed Resources version=…`, a requirement printed as a comment
- * versus one printed as a clause.
+ * Verbatim `codesign --display --verbose=4` output from the shipped ad-hoc fork build and from a
+ * certificate-signed bundle. Keep them real: every parser bug lives in the difference between the
+ * two shapes (`Signature=adhoc`, `Sealed Resources=none`, a requirement printed as a comment).
  */
 const ADHOC_DISPLAY = `Executable=/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)
 Identifier=Electron
@@ -244,14 +238,9 @@ describe("normalizeRequirement", () => {
 });
 
 /**
- * The bundle id has to agree in three places, and nothing at runtime would notice if it stopped.
- *
- * `scripts/build-desktop-artifact.ts` is upstream-owned and carries only the escape hatch — an
- * upstream sync that reverts that one line leaves every fork build silently claiming
- * `com.t3tools.t3code` again, which puts it back to sharing one TCC row with upstream's nightly.
- * Equally, a build path that forgets to SET the variable ships the same regression. Both are cheap
- * to assert here and expensive to notice in the wild: the symptom is permission dialogs, days later,
- * on a machine that is not CI.
+ * The bundle id has to agree in three places, and nothing at runtime notices if it stops. An
+ * upstream sync reverting the `build-desktop-artifact.ts` hook, or a build path forgetting the
+ * variable, silently ships `com.t3tools.t3code` and shares TCC rows with upstream's nightly again.
  */
 it.layer(NodeServices.layer)("the fork's bundle id agrees everywhere", (it) => {
   const readRepoFile = (...segments: readonly string[]) =>

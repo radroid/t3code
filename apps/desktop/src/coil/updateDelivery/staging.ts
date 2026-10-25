@@ -57,14 +57,9 @@ export function checkDiskSpace(args: {
 }
 
 /**
- * Everything in the staging directory that is not the current target.
- *
- * Runs on startup as well as after a successful install, because the case that matters is the one
- * where no install ever completed: the app crashed, or the user quit mid-stage, and nothing ran
- * the cleanup path.
- *
- * Partial downloads are always swept, including one for the current target — a `.part` file from a
- * previous run cannot be resumed, because its bytes were never checksummed.
+ * Everything in the staging directory that is not the current target. Runs on startup too, because
+ * the case that matters is a crash or quit mid-stage where no cleanup ran. `.part` files are always
+ * swept, even for the current target: their bytes were never checksummed, so they cannot resume.
  */
 export function selectStagingSweep(args: {
   readonly entries: readonly StagedEntry[];
