@@ -1,16 +1,7 @@
-// A deliberately small, strict YAML subset — enough for the two `/worklog` config files and
-// nothing more.
-//
-// The point is not to be a YAML implementation. It is to be a *round-trippable* one with zero
-// dependencies: `parseYaml(stringifyYaml(x))` deep-equals `x` for every shape we support, so a
-// config file a human edits and a config file the tool rewrites converge on the same text. Every
-// feature outside that guarantee (anchors, flow collections, multiline scalars, sequences of maps)
-// is rejected by name and by line number rather than half-implemented, because a YAML file that
-// silently parses to something other than what it looks like is worse than one that fails loudly.
-//
-// The one deliberate extension beyond "block YAML only": the empty flow tokens `{}` and `[]` are
-// accepted, because they are the only way to write an empty map or an empty sequence and still
-// tell the two apart on the way back in. Non-empty flow collections stay rejected.
+// A small, strict YAML subset for the two `/worklog` config files, with zero dependencies.
+// `parseYaml(stringifyYaml(x))` deep-equals `x` for every supported shape; anything else (anchors,
+// flow collections, multiline scalars, sequences of maps) is rejected by line, never half-parsed.
+// Only the empty `{}` and `[]` flow tokens are allowed, so empty maps and lists stay distinct.
 
 // Bare scalars starting with any of these are ambiguous with YAML syntax we either reject or use
 // structurally, so the writer always quotes them.

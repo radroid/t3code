@@ -1,46 +1,8 @@
 /*
- * Decides which packages in a staged desktop build are actually loadable at runtime.
- *
- * Issue #53. The desktop release bundle ships every production dependency of `apps/server` and
- * `apps/desktop`, transitively. Some of those trees exist only to be *bundled* by a client build —
- * `@clerk/clerk-js` is pulled in by `@clerk/electron/react`, which only `apps/web` imports, and
- * `apps/web` is compiled to `dist/client/assets/*.js` long before the artifact is staged. A bundled
- * import leaves nothing behind for Node to resolve, so those packages sit in the asar as dead
- * weight: shipped to every user, on every update, forever.
- *
- * "Dead weight" is an easy claim to make and an expensive one to get wrong. A package excluded from
- * the asar that something *does* require at runtime produces MODULE_NOT_FOUND in a shipped app, on
- * a code path that may not run until a user signs in. So this file does not guess. It reads the
- * built bundles the artifact actually loads, collects the module specifiers in them, resolves each
- * against the staged `node_modules`, and repeats over the resolved packages until the set stops
- * growing. What the closure never reaches, nothing can require.
- *
- * TWO KINDS OF EDGE, because one is not enough.
- *
- *   `import`  — a literal specifier: `require("x")`, `import … from "x"`, `import("x")`.
- *   `mention` — any string literal whose leading segment names an installed package.
- *
- * The second exists because of `playwright-core`, and it is worth stating plainly since it is the
- * trap this whole file is built around. `PlaywrightInjectedRuntime.ts` does
- * `require.resolve(PLAYWRIGHT_PACKAGE_SPECIFIER)` where the specifier is a `const`. After bundling
- * there is no literal left inside the `require.resolve()` call — the argument is a variable — so an
- * import-edge scanner reports `playwright-core` (11.9 MiB) as unreachable and anyone who trusts it
- * breaks the preview browser. The string `"playwright-core/package.json"` is still *in* the bundle,
- * though, and that is the signal `mention` edges pick up.
- *
- * So `mention` deliberately over-matches: a package named in a comment or an error message counts.
- * Being wrong that way keeps a package in the bundle, which costs bytes. Being wrong the other way
- * ships a broken app. When a package is reachable ONLY by mention, this file reports where the
- * mention was, because that is a question for a human and not for a regex.
- *
- * REMAINING BLIND SPOT: a specifier assembled at runtime out of pieces that never appear whole
- * (`require("play" + "wright-core")`, or a name read from a config file). Those sites are counted
- * and reported rather than ignored, because the honest answer to "is the closure complete?" is "it
- * is, apart from these N sites, which a human has looked at". A new dynamic site in a newly-added
- * package is a reason to re-check the exclusion list, not noise.
- *
- * `.mjs` for the same reason as its siblings here: CI runs it on the runner image's Node, with no
- * `setup-node` step in front of it.
+ * Decides which staged desktop-build packages are loadable at runtime, by closing over the
+ * specifiers in the built bundles. `import` edges are literal specifiers; `mention` edges (any
+ * string naming a package) deliberately over-match so playwright-core's `const` specifier survives.
+ * Runtime-assembled specifiers are counted and reported. `.mjs`: CI runs it without `setup-node`.
  */
 
 import * as NodeFS from "node:fs";
@@ -62,16 +24,9 @@ const SCANNED_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts"
 const RUNTIME_PROVIDED = new Set(["electron"]);
 
 /**
- * Matches the specifier in `require("x")`, `import … from "x"`, `import("x")`, `require.resolve("x")`.
- *
- * Written against the *shapes* rather than a grammar: bundlers emit all of these forms and
- * minifiers drop whitespace unpredictably. It over-matches — a specifier inside a comment counts —
- * which is the correct direction to be wrong in.
- *
- * A member call is not an import, though: upstream's macOS helpers embed JXA scripts as strings and
- * those call `ObjC.import("AppKit")`, `ObjC.import("CoreGraphics")`, `ObjC.import("unistd")` —
- * framework names Node could never resolve. Release run 34734448410 failed on exactly those three.
- * Hence the lookbehind: `import(` and `require(` count only when they are not a property of something.
+ * Matches `require("x")`, `import ... from "x"`, `import("x")` and `require.resolve("x")` by shape,
+ * since minifiers vary; over-matching is the safe direction. The lookbehind skips member calls like
+ * JXA's `ObjC.import("AppKit")`, framework names Node could never resolve.
  */
 const IMPORT_PATTERNS = [
   /(?<![.\w$])require\(\s*["']([^"'\n]+)["']\s*\)/g,
@@ -147,10 +102,7 @@ function regexLiteralCanStartAt(source, index) {
 }
 
 /**
- * Index just past the regex literal (and its flags) that starts at `index`. The body is left in
- * place; only the scanner's position moves, so a quote inside a character class cannot open a
- * string.
- *
+ * Index just past the regex literal and flags at `index`, so a quote in a class opens no string.
  * @param {string} source
  * @param {number} index
  * @returns {number}
@@ -180,23 +132,8 @@ function skipRegexLiteral(source, index) {
 }
 
 /**
- * Blanks out comments, leaving everything else byte-for-byte in place.
- *
- * The reachability closure WANTS to read comments — over-matching there keeps a package in the
- * bundle, which is the safe direction. A release gate is the opposite: `scripts/coil/verify-desktop-bundle.mjs`
- * would fail a perfectly good build because `@noble/hashes`'s bundled JSDoc contains
- * `* import { hmac } from '@noble/hashes/hmac';` inside an `@example` block. That is a comment, not an
- * import, and blocking a release over it is worse than useless.
- *
- * Replacing comment bytes with spaces rather than deleting them keeps every character offset intact,
- * so a match's index still points at the right place in the original file.
- *
- * Regex literals have to be recognised too, or a `'` inside one — Effect's bash completions do
- * `s.replace(/'/g, "'\\''")` — opens a string that never closes and every comment after it is left
- * standing, which is how the @noble/hashes @example came back in release run 34734448410. Whether a
- * `/` starts a regex or divides is decided the way tokenizers do: by what the previous significant
- * token was.
- *
+ * Blanks comments with spaces (offsets intact) for the release gate, where a JSDoc `@example`
+ * import must not fail a build. Regex literals are tracked so a `'` in one opens no runaway string.
  * @param {string} source
  * @returns {string}
  */
@@ -332,15 +269,9 @@ export function collectSpecifiers(source) {
 }
 
 /**
- * Resolves a package name the way Node does — walk `node_modules` up the directory chain — but
- * stopping at `rootDir`, so a stray hit in the developer's own tree cannot pass for a staged
- * dependency. Returns the *real* path: pnpm's layout is a forest of symlinks into `.pnpm`, and two
- * links to one directory are one package.
- *
- * @param {string} fromDir
- * @param {string} name
- * @param {string} rootDir
- * @returns {string | undefined}
+ * Resolves a package like Node (walking `node_modules` upward) but stops at `rootDir`, so the
+ * developer's own tree cannot pass for a staged dependency. Returns the real path, since pnpm's
+ * symlinks into `.pnpm` mean two links to one directory are one package.
  */
 export function resolvePackageDir(fromDir, name, rootDir) {
   let current = NodePath.resolve(fromDir);
@@ -413,18 +344,9 @@ function readPackageIdentity(packageDir) {
 }
 
 /**
- * Every package physically present in a staged `node_modules`, keyed by its real directory.
- *
- * Reads `node_modules/.pnpm` when it exists — that is where pnpm puts the one real copy of each
- * package — and also walks the top level, so the same function describes an npm-shaped tree.
- *
- * Sizes are summed from `stat().size`, NOT from `du`. This matters more than it sounds: `du` reports
- * *allocated* blocks, so on a 4 KiB-block filesystem a package of 3,684 tiny files (`core-js`)
- * measures ~15 MB of disk while holding 1.25 MiB of content. Issue #53's original size table was
- * measured with `du` and overstates every many-small-files package by up to an order of magnitude.
- *
- * @param {string} rootDir
- * @returns {Map<string, { name: string, version: string, dir: string, bytes: number, files: number }>}
+ * Every package physically present in a staged `node_modules` (`.pnpm` plus the top level), keyed
+ * by real directory. Sizes sum `stat().size`, NOT `du`: `du` counts allocated blocks and overstates
+ * many-small-files packages (`core-js`) by up to an order of magnitude.
  */
 export function collectInstalledPackages(rootDir) {
   /** @type {Map<string, { name: string, version: string, dir: string, bytes: number, files: number }>} */
@@ -492,22 +414,15 @@ export function collectInstalledPackages(rootDir) {
 }
 
 /**
- * @typedef {object} Reached
- * @property {string} name
- * @property {string} version
- * @property {string} dir
- * @property {"import" | "mention"} via How the closure first arrived here.
- * @property {string} from The package (or entry directory) that named it.
+ * `via` is how the closure first arrived; `from` is the package (or entry directory) that named it.
+ * @typedef {{ name: string, version: string, dir: string, via: "import" | "mention",
+ *   from: string }} Reached
  */
 
 /**
  * @param {string} rootDir
  * @param {readonly string[]} entryDirs Directories holding the built bundles the artifact loads.
- * @returns {{
- *   reachable: Map<string, Reached>,
- *   dynamicSites: number,
- *   entryFiles: number,
- * }}
+ * @returns {{ reachable: Map<string, Reached>, dynamicSites: number, entryFiles: number }}
  */
 export function computeReachablePackages(rootDir, entryDirs) {
   /** @type {Map<string, Reached>} */
@@ -613,13 +528,9 @@ export function analyzeStage(rootDir, entryDirs) {
 }
 
 /**
- * Default entry directories: every tree of first-party code the packaged app can load.
- *
- * `apps/server/dist` includes `dist/client`, the compiled web renderer, on purpose. Those files
- * cannot resolve from `node_modules` in a browser context, so scanning them can only ever *add*
- * reachable packages — the safe direction. `dist/` (electron-builder's own output) is deliberately
- * absent: it holds a second copy of the whole tree, and walking it would mark every package
- * reachable from itself.
+ * Every tree of first-party code the packaged app can load. `dist/client` (the web renderer) can
+ * only add reachable packages, the safe direction. electron-builder's `dist/` is excluded: its
+ * second copy of the tree would mark every package reachable from itself.
  */
 export const DEFAULT_ENTRY_DIRS = ["apps/desktop/dist-electron", "apps/server/dist"];
 
@@ -630,19 +541,9 @@ function formatBytes(bytes) {
 }
 
 /**
- * Whether this module was run directly, rather than imported.
- *
- * `import.meta.url === `file://${process.argv[1]}`` is the idiom this replaces, and it is broken on
- * Windows. `process.argv[1]` is a native path there (`D:\a\...`), so the template produces
- * `file://D:\a\...` while `import.meta.url` is `file:///D:/a/...` — drive letter after three
- * slashes, forward separators. They never match, so a Windows CLI run silently executed nothing,
- * exited 0, and printed no output.
- *
- * That is how it reached production: on macOS and Linux the idiom works, because an absolute POSIX
- * path already begins with `/`. Both CI callers of these scripts are `set -euo pipefail`, and
- * neither could see the difference between "verified" and "did nothing" — one release failed on the
- * empty stdout, the other passed a check that had not run. `pathToFileURL` is what Node provides for
- * exactly this, and it is correct on every platform.
+ * Whether this module was run directly, rather than imported. Comparing against
+ * `file://${process.argv[1]}` never matches on Windows (native `D:\` path), so the CLI silently did
+ * nothing and exited 0. `pathToFileURL` is correct on every platform.
  */
 function isEntryPoint() {
   const entry = process.argv[1];

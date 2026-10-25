@@ -35,15 +35,9 @@ import {
 } from "./verify-desktop-bundle.mjs";
 
 /*
- * Issue #53. These three files decide what does and does not reach a user's disk, and the expensive
- * failure is silent: an over-broad glob ships MODULE_NOT_FOUND on a path that may not run until
- * someone signs in. The tests below are grouped by the question each answers —
- *
- *   - does the closure see the edges it has to see (the playwright-core trap)?
- *   - is the exclusion list still the shape the upstream hook can consume, and does it still avoid
- *     every package the main process loads?
- *   - does the release gate fail every missing import, whether or not a fork glob can be blamed?
- *   - do all three build paths still agree, after a sync?
+ * These three files decide what reaches a user's disk, and an over-broad glob fails silently with
+ * MODULE_NOT_FOUND on a path that may not run until someone signs in. Groups below cover closure
+ * edges, the exclusion list's shape, the release gate, and build paths agreeing after a sync.
  */
 
 describe("packageNameFromSpecifier", () => {
@@ -112,12 +106,9 @@ describe("collectSpecifiers", () => {
   });
 
   /*
-   * THE playwright-core TRAP, which is the whole reason mention edges exist.
-   *
-   * PlaywrightInjectedRuntime.ts does `require.resolve(PLAYWRIGHT_PACKAGE_SPECIFIER)` where the
-   * specifier is a `const`. After bundling there is no literal inside the call, so an import-edge
-   * scanner calls playwright-core (10.2 MiB) dead and anyone who trusts it breaks the preview
-   * browser. The string survives in the bundle; that is the signal.
+   * THE playwright-core TRAP, the reason mention edges exist: its `require.resolve()` takes a
+   * `const`, so after bundling no literal remains in the call and an import-edge scanner calls it
+   * dead. The string survives in the bundle; that is the signal.
    */
   it("catches a package named only by a string constant, as playwright-core is", () => {
     const source = `
@@ -416,17 +407,9 @@ describe("inspectPackagePresence", () => {
 });
 
 /*
- * The packaging seam has to agree in two places, and nothing at runtime would notice if it stopped.
- *
- * `scripts/build-desktop-artifact.ts` is upstream-owned and hot. An upstream sync that reverts its one
- * added expression leaves every release packaging the unfiltered 189.66 MiB bundle again — green,
- * shipped, and twice the size it should be. A release workflow that forgets to SET the variables ships
- * the same regression. Both are cheap to assert here and invisible in the wild.
- *
- * Two places rather than three because #92 retired the local desktop autobuild: `coil-release.yml` is
- * now the only path that builds a shipping artifact. If a local build path is ever reintroduced, it has
- * to set both variables or it will produce an artifact materially unlike the one users get — add a case
- * here when that happens.
+ * The packaging seam has to agree in two places, and nothing at runtime notices if it stops. A sync
+ * reverting upstream's `build-desktop-artifact.ts` hook, or a workflow not setting the variables,
+ * silently ships the unfiltered bundle. `coil-release.yml` is the only shipping build path.
  */
 it.layer(NodeServices.layer)("the packaging seam agrees everywhere", (it) => {
   const readRepoFile = (...segments: readonly string[]) =>
@@ -492,11 +475,9 @@ it.layer(NodeServices.layer)("the packaging seam agrees everywhere", (it) => {
   );
 
   /*
-   * #92 retired scripts/coil/auto-build-desktop.sh, so the release workflow is the only path that
-   * builds a shipping artifact and the only place these variables have to be set. This asserts that
-   * premise rather than trusting it: if a second build path returns, it will package an artifact
-   * roughly twice the size of the one users receive unless it sets both variables too, and the
-   * failure is invisible — a green build of the wrong bundle.
+   * The release workflow is the only path that builds a shipping artifact. Assert that premise: a
+   * returning second build path that skips the variables would silently ship a bundle roughly
+   * twice the size users receive.
    */
   it.effect("has no second build path that could package a different bundle", () =>
     Effect.gen(function* () {
@@ -514,17 +495,9 @@ it.layer(NodeServices.layer)("the packaging seam agrees everywhere", (it) => {
 });
 
 /*
- * End-to-end over a real asar, built here rather than mocked.
- *
- * These exist because of a bug that a unit test could not have caught. An earlier draft classified a
- * missing package as an error only when the fork's own list named the glob, and warned otherwise. A
- * negative test — a real build with a deliberately over-broad `!**\/node_modules/effect/**\/*` passed
- * through the environment — produced a bundle that cannot start, and the gate went GREEN: `effect` was
- * detected as missing but attributed to nobody, so it warned. Severity must not depend on attribution.
- *
- * Writing an actual archive also exercises the header arithmetic, which is the part of that file most
- * able to be quietly wrong: file offsets are relative to `8 + <the leading size word>`, and getting it
- * wrong reads misaligned bytes that still parse as plausible JavaScript.
+ * End-to-end over a real asar, built here rather than mocked. Severity must not depend on
+ * attribution: a missing package fails even when no fork glob names it. Writing a real archive
+ * also exercises the header offset arithmetic, whose bugs still parse as plausible JavaScript.
  */
 describe("verifyPackagedApp over a real asar", () => {
   /** Writes a minimal but format-correct asar: [4][8+n+pad][4+n+pad][n][json][pad][contents]. */
@@ -591,9 +564,9 @@ describe("verifyPackagedApp over a real asar", () => {
     });
   });
 
-  // The regression. `node-pty` is a CLI external named by no glob at all, so the old code warned
-  // and passed. (Since upstream #11410 only a layer's native externals can be missing — anything
-  // else is inlined — so the fixture has to name one of those.)
+  // The regression: `node-pty` is a CLI external named by no glob, so the old code warned and
+  // passed. Only a layer's native externals can be missing (the rest is inlined), so the fixture
+  // has to name one of those.
   it("FAILS a missing import even when no glob can be blamed for it", () => {
     withTempDir((dir) => {
       const asarPath = writeAsar(dir, {
@@ -658,11 +631,9 @@ describe("verifyPackagedApp over a real asar", () => {
   });
 
   /*
-   * The 2026-08-14 regression (issue #102). Upstream moved the Windows server tree out of app.asar
-   * into a resources/server.asar sidecar: node-pty (mentioned by main.cjs's embedded WSL scripts)
-   * stopped resolving from app.asar and the gate went red on a shippable build — and, worse, the
-   * server bundles silently stopped being scanned at all. The sidecar is part of the shipped app;
-   * the view must include it.
+   * Upstream moved the Windows server tree into a resources/server.asar sidecar, so node-pty
+   * stopped resolving from app.asar and server bundles silently went unscanned. The sidecar is part
+   * of the shipped app; the view must include it.
    */
   it("resolves imports from a sibling server.asar sidecar and scans its bundles", () => {
     withTempDir((dir) => {
@@ -720,20 +691,9 @@ describe("verifyPackagedApp over a real asar", () => {
 });
 
 /*
- * The regression that broke two releases: all three of these scripts are also CLIs, and their
- * entry-point guard was `import.meta.url === `file://${process.argv[1]}``. That is false on Windows,
- * where `process.argv[1]` is a native path — so `node <script>` parsed, ran nothing, wrote nothing,
- * and exited 0.
- *
- * The failure mode is what makes it worth a test rather than a comment. Both CI callers run under
- * `set -euo pipefail` and neither could tell "did the work" from "did nothing": the exclusions call
- * failed the release on empty stdout, and the bundle verification passed a check that never
- * executed. Exit code 0 is the wrong signal for both.
- *
- * These assert the shape that broke — invoked as a CLI, the script must actually do something — for
- * whichever platform the suite runs on. They cannot themselves run on Windows (this fork has no
- * Windows CI runner), so the correctness argument for that platform stays with `pathToFileURL`,
- * which is what Node provides for exactly this conversion.
+ * All three scripts are also CLIs, and a `file://${process.argv[1]}` entry guard ran nothing and
+ * exited 0 on Windows, which `set -euo pipefail` CI could not tell from success. These assert a
+ * CLI run does something; with no Windows runner, `pathToFileURL` carries that platform.
  */
 describe("the scripts still work when invoked as CLIs", () => {
   const scriptDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -769,19 +729,9 @@ describe("the scripts still work when invoked as CLIs", () => {
 });
 
 /*
- * The fork ships exactly one update surface: its own toast. Upstream's electron-updater turns
- * itself on the moment `app-update.yml` is in the bundle, and electron-builder writes that file
- * whenever a publish config is resolved — so "no publish config" IS the mechanism, and it is worth
- * one test.
- *
- * The release workflow tried to get there with `GITHUB_REPOSITORY: ""`, which cannot work: Actions
- * refuses to let a workflow set a `GITHUB_`-prefixed variable, so the build read the runner's real
- * value and every build to date shipped a live feed pointing at radroid/t3code. It went unnoticed
- * because the step meant to catch it searched the wrong directory and could never fail.
- *
- * `T3CODE_DESKTOP_UPDATE_REPOSITORY` is the fork's own hook, is read FIRST, and is not reserved.
- * Asserted here rather than in build-desktop-artifact.test.ts, which is upstream's file — the
- * function is exported, so the fork can pin fork behaviour without spending a seam row.
+ * The fork's only update surface is its own toast: electron-updater activates whenever
+ * `app-update.yml` is bundled, so "no publish config" IS the mechanism. `GITHUB_REPOSITORY: ""`
+ * cannot work (Actions reserves `GITHUB_`), hence the fork's `T3CODE_DESKTOP_UPDATE_REPOSITORY`.
  */
 describe("the fork ships no update feed", () => {
   const withEnv = (env: Record<string, string>) =>

@@ -1,16 +1,8 @@
 /**
- * Deciding when a push connection that *looks* alive is actually dead.
- *
- * This is the most important reliability rule in update delivery, and it is deliberately pure so
- * it can be tested without a socket.
- *
- * The motivating failure is not "the connection errored" — that case is easy and self-announcing.
- * It is the connection that survives laptop sleep, or a NAT rebind, or a Tailscale route change,
- * and comes back with the socket open, no error event, and no bytes ever again. A
- * reconnect-on-error ladder never fires for it. The app simply stops hearing about updates, for an
- * unbounded length of time, while reporting itself connected.
- *
- * This fork has already lived that failure once: issue #41, 103 minutes dark, silent throughout.
+ * Deciding when a push connection that *looks* alive is actually dead, kept pure so it is testable
+ * without a socket. The failure that matters is the socket that survives sleep, a NAT rebind or a
+ * route change with no error and no bytes ever again: reconnect-on-error never fires, and the app
+ * stops hearing about updates indefinitely while reporting itself connected.
  */
 
 /** Server sends `: ping` at this interval. Must match `HEARTBEAT_INTERVAL_MS` in the relay. */
@@ -66,21 +58,13 @@ export function assessConnection(args: {
  * lockstep, turning a blip into a thundering herd against a single Durable Object.
  */
 export function reconnectDelayMs(attempt: number, random: () => number): number {
-  const exponential = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** Math.max(0, attempt), RECONNECT_MAX_DELAY_MS);
+  const exponential = Math.min(
+    RECONNECT_BASE_DELAY_MS * 2 ** Math.max(0, attempt),
+    RECONNECT_MAX_DELAY_MS,
+  );
   return Math.round(exponential * random());
 }
 
-/**
- * Every one of these re-reads `/latest` rather than trusting the stream.
- *
- * `power-resume` and `network-online` earn their place for the same reason the watchdog does:
- * after a sleep the stream may already be a corpse nobody has noticed, and waiting out the
- * watchdog to discover that is time spent knowingly stale. Being told by the OS that the world
- * changed beats inferring it from silence.
- *
- * There is no variant that trusts the stream instead, which is why this is a list rather than a
- * predicate — if a trigger is worth waking for, it is worth reconciling for.
- */
 /**
  * A stream that lasted this long was working, whatever ended it.
  *
@@ -93,20 +77,21 @@ export const HEALTHY_STREAM_MS = 60_000;
 export const MAX_BACKOFF_ATTEMPT = 16;
 
 /**
- * The next backoff attempt, decided by how long the last connection lasted — **not** by why it
- * ended.
- *
- * `stream-closed` is both the healthy case and the pathological one. The relay caps every
- * connection at fifteen minutes, so a clean close is what a working subscriber sees four times an
- * hour; a relay that accepts a connection and drops it immediately reports exactly the same thing.
- * Resetting on the reason treats those as equivalent and turns the second into a one-second hot
- * loop against a single Durable Object — from every installed app at once.
+ * The next backoff attempt, decided by how long the last connection lasted, **not** by why it
+ * ended. The relay closes every connection at fifteen minutes, so `stream-closed` is also what an
+ * instant drop reports; resetting on the reason would hot-loop every installed app against a
+ * single Durable Object.
  */
 export function nextBackoffAttempt(attempt: number, lastedMs: number): number {
   if (lastedMs >= HEALTHY_STREAM_MS) return 0;
   return Math.min(attempt + 1, MAX_BACKOFF_ATTEMPT);
 }
 
+/**
+ * Every trigger except `push` re-reads `/latest` rather than trusting the stream. `power-resume`
+ * and `network-online` exist because after a sleep the stream may already be dead unnoticed, and
+ * being told by the OS beats waiting out the watchdog.
+ */
 export type ReconciliationTrigger =
   /**
    * A frame arrived on the open stream. The only trigger that does NOT re-read `/latest` — the

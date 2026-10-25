@@ -1,11 +1,6 @@
-// Tests for lib/init.mjs — worklog-repo scaffolding and project discovery.
-//
-// HOME is moved to a temp directory for the whole file, and the three WORKLOG_* overrides point at
-// paths that do not exist, so a bug that falls back to a default cannot reach the user's real
-// ~/.t3, ~/.claude, or ~/Developer/worklog. Every T3code database is a fixture built here; every
-// git repo is a throwaway in mkdtemp with the developer's global config switched off.
-//
-// Run with: node --test scripts/coil/worklog/test/init.test.mjs
+// Tests for lib/init.mjs. HOME and the three WORKLOG_* overrides point at temp or nonexistent
+// paths so a default fallback can never reach the real ~/.t3, ~/.claude or ~/Developer/worklog.
+// Git repos are mkdtemp throwaways with global config off.
 
 import * as NodeTest from "node:test";
 import * as NodeAssert from "node:assert/strict";
@@ -36,11 +31,9 @@ process.env.WORKLOG_ROOT = NodePath.join(SANDBOX_HOME, "worklog-default");
 process.env.WORKLOG_T3_BASE_DIRS = NodePath.join(SANDBOX_HOME, "no-such-t3");
 process.env.WORKLOG_CLAUDE_PROJECTS = NodePath.join(SANDBOX_HOME, "no-such-claude");
 
-// The default scratch roots cover every mkdtemp target, so showing that the scratch rule is not a
-// blanket off switch needs one throwaway directory that lives outside all of them. `/var/tmp` is the
-// standard persistent temp tree on macOS and Linux, and `tmpdir()` is `/var/folders/…` or `/tmp`, so
-// the two never overlap. Null on a platform where that does not hold; the one test that needs it
-// skips rather than pretending.
+// The default scratch roots cover every mkdtemp target, so proving the scratch rule is not a
+// blanket off switch needs a dir outside them: `/var/tmp` never overlaps `tmpdir()`. Null where
+// that does not hold, and the one test that needs it skips.
 const OUTSIDE_SCRATCH = (() => {
   for (const base of ["/var/tmp"]) {
     let dir;

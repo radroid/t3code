@@ -1,15 +1,8 @@
 /**
- * A minimal Server-Sent Events frame parser.
- *
- * Hand-rolled on purpose. There is no `EventSource` in the Electron main process: Node's global is
- * Stability-1 behind `--experimental-eventsource`, and a packaged Electron app cannot pass Node CLI
- * flags because the `nodeOptions` fuse is disabled. The alternative is an npm dependency that would
- * have to be threaded through `resolveDesktopRuntimeDependencies` into the staged production
- * install — and if that threading is ever missed, development works and the packaged app throws
- * `ERR_MODULE_NOT_FOUND` at runtime. This file is ~60 lines and cannot fail that way.
- *
- * It implements only what the relay sends: `event:`, `data:`, and `:` comments. No `id:`, no
- * `retry:`, no multi-line data reassembly beyond the spec's newline join.
+ * A minimal Server-Sent Events parser for what the relay sends (`event:`, `data:`, `:` comments).
+ * Hand-rolled: Electron's main process has no usable `EventSource` (Node's needs a CLI flag the
+ * disabled `nodeOptions` fuse blocks), and an npm dependency missed in the staged production
+ * install would only fail with `ERR_MODULE_NOT_FOUND` in the packaged app.
  */
 
 export interface SseEvent {

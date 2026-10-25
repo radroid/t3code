@@ -27,7 +27,7 @@ export interface VerifyResult {
     readonly importedBy: string;
     readonly glob: string | undefined;
   }[];
-  /** Sibling `server.asar` sidecars merged into the view (the Windows server tree since #102). */
+  /** Sibling `server.asar` sidecars merged into the view (the Windows server tree). */
   readonly sidecars: readonly string[];
   /**
    * FIRST_PARTY_BUNDLE_DIRS entries that contributed no scanned bundle in any packaged layer.

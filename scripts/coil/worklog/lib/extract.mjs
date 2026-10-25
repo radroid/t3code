@@ -1,18 +1,7 @@
-// The incremental extraction cache — the reason a second /worklog run over the same day is free.
-//
-// One invariant justifies every line below: NO MESSAGE IS EVER READ TWICE. Each session owns one
-// extract file holding a read cursor, and a session is only handed to a model when it has events
-// strictly newer than that cursor *and* enough substance to be worth the tokens. Re-running a day
-// that has already been extracted queues nothing, writes nothing, and costs nothing.
-//
-// The other half of the job is the slice: the only text from a session that ever reaches a model.
-// It carries prompts, assistant text, tool `detail` lines, file basenames and commit subjects —
-// never a tool result, and never a string that has not been through `redactSlice`. Tool output is
-// where secrets, file contents and command stdout live, so the safe list here is a whitelist: a
-// field that is not read on purpose cannot leak by accident.
-//
-// Everything is read-only toward the user's data. The only writes are inside the worklog repo:
-// the slices under `.worklog-tmp/slices/`, and the extract files under `extracts/`.
+// The incremental extraction cache. Invariant: no message is read twice; each session's extract
+// holds a cursor, and only newer, material events are queued. The slice is the only session text a
+// model sees: a whitelist of prompts, assistant text, tool `detail`, basenames and commit subjects,
+// all via `redactSlice`, never tool output. Writes stay in the worklog repo.
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -583,14 +572,9 @@ function identityOf(session, sessionKey) {
 }
 
 /**
- * The default source of new material for a slice. Without this, `queue()` is a fully general
- * machine with nothing plugged into it: every slice came out holding file names and nothing else,
- * because only an injected `deps.loadInput` ever supplied prompts or activity.
- *
- * Opens the T3 databases once per `queue()` call and only when a T3code session actually needs
- * them. Claude Code sessions are served from the bundle, which already carries their first and last
- * prompt — re-reading a transcript to recover text the collector has in hand would be a second full
- * scan for nothing.
+ * The default slice input; without it only an injected `deps.loadInput` supplies prompts. Opens the
+ * T3 databases once per `queue()` and only when a T3code session needs them. Claude Code sessions
+ * come from the bundle, which already has their prompts, avoiding a second transcript scan.
  */
 function createDefaultLoadInput(bundle, warnings) {
   let handles = null;
@@ -721,11 +705,9 @@ function createDefaultLoadInput(bundle, warnings) {
 const NO_WINDOW = { startMs: null, endMs: null };
 
 /**
- * The local window the bundle was collected for, as epoch ms. `collect()` emits local day keys
- * (`range.from`/`range.to`), so the bounds are rebuilt through the same calendar helper the
- * collector used — a day key must never be parsed as an instant, since `2026-08-10` parses as UTC
- * midnight and every day boundary in this feature is local. Explicit `startIso`/`endIso` fields
- * win when a caller already has resolved bounds.
+ * The bundle's local window as epoch ms, rebuilt from `range.from`/`range.to` with the collector's
+ * calendar helper: a day key must never be parsed as an instant (`2026-08-10` parses as UTC
+ * midnight). Explicit `startIso`/`endIso` fields win when present.
  */
 function bundleWindow(bundle) {
   const range = isPlainObject(bundle?.range) ? bundle.range : {};

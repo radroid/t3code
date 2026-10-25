@@ -114,20 +114,15 @@ const WSL_FORWARDED_ENV_NAMES = [
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
-// Give the backend a predictable V8 old-space ceiling instead of inheriting the
-// default. This is headroom for transient heap spikes (large diffs, big file
-// reads) so a memory-constrained host is less likely to push the backend into a
-// GC-thrash / stall while it is busy — part of the robustness work for issue
-// #21. It is a ceiling, not a reservation, so it does not raise steady-state
-// memory use (the backend's normal RSS is well under this).
+// Headroom for transient heap spikes (large diffs, big file reads) so a
+// memory-constrained host is less likely to stall the backend in GC. It is a
+// ceiling, not a reservation, so it does not raise steady-state memory use.
 const DESKTOP_BACKEND_MAX_OLD_SPACE_MB = 4096;
 const DESKTOP_BACKEND_MAX_OLD_SPACE_FLAG = `--max-old-space-size=${DESKTOP_BACKEND_MAX_OLD_SPACE_MB}`;
 
-// Append our heap-headroom flag to any NODE_OPTIONS already exported (by the
-// user or the dev-runner) rather than replacing it. If an explicit
-// --max-old-space-size is already present we leave it untouched so an operator
-// can override the ceiling. Electron-run-as-node honours the NODE_OPTIONS
-// safelist, which includes --max-old-space-size.
+// Append to any existing NODE_OPTIONS rather than replacing it, and leave an
+// explicit --max-old-space-size alone so an operator can override the ceiling.
+// Electron-run-as-node honours it through the NODE_OPTIONS safelist.
 const backendNodeOptions = (existing: string | undefined): string => {
   const trimmed = existing?.trim() ?? "";
   if (trimmed.includes("--max-old-space-size")) {

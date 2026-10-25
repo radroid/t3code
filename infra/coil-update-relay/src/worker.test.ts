@@ -1,11 +1,9 @@
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-// The entry module re-exports the Durable Object class (wrangler requires that), which drags in
-// `cloudflare:workers` — a runtime-only module that does not exist under node. The class itself
-// is irrelevant here: these tests exercise the Worker's routing shell, not the channel — the
-// stand-in only has to be extendable, and its one member exists because an empty class is a lint
-// error.
+// The entry module re-exports the Durable Object class, which drags in the runtime-only
+// `cloudflare:workers`. These tests exercise the routing shell, not the channel, so the stand-in
+// only has to be extendable (its one member exists because an empty class is a lint error).
 vi.mock("cloudflare:workers", () => ({
   DurableObject: class {
     protected readonly ctx = undefined;

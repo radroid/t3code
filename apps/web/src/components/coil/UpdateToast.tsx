@@ -1,16 +1,7 @@
 /**
- * The fork's update toast.
- *
- * Renders nothing itself — it drives `toastManager`, like every other notification in this app, so
- * the update lands in the same stack the user already reads instead of inventing a second place to
- * look. All of the decisions about *what* to show live in `updateToast.logic.ts`; this file is the
- * subscription and the toast calls.
- *
- * There is exactly one update surface in a fork build. Upstream's two — the sidebar pill and
- * `desktopUpdate.toast.tsx` — are both silenced by building with
- * `T3CODE_DESKTOP_UPDATE_REPOSITORY: "disabled"` (a `GITHUB_REPOSITORY` override cannot work in
- * Actions), which packages no `app-update.yml`, which makes electron-updater self-disable. See the
- * design doc and coil-release.yml.
+ * The fork's update toast. Drives `toastManager` so updates land in the usual stack; decisions
+ * live in `updateToast.logic.ts`. It is the only update surface: fork builds set
+ * `T3CODE_DESKTOP_UPDATE_REPOSITORY: "disabled"`, which makes electron-updater self-disable.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -33,13 +24,9 @@ import {
 } from "./updateToast.logic";
 
 /**
- * How often a visible toast re-reads the clock.
- *
- * Coarse on purpose. It feeds the build age and the armed view's ceiling, and a minute is enough
- * for both — `formatBuiltAgo`'s finest bucket is a minute, and the ceiling is two hours. A tick
- * that does not move the age bucket produces an identical `viewKey` and so writes no toast payload;
- * it costs one render of this component, which renders nothing. Runs only while a toast is up:
- * an idle app should not wake for this.
+ * How often a visible toast re-reads the clock. A minute matches `formatBuiltAgo`'s finest bucket
+ * and the two-hour armed ceiling, and a tick that does not change `viewKey` writes no payload.
+ * Runs only while a toast is up: an idle app should not wake for this.
  */
 const CLOCK_TICK_MS = 60_000;
 
@@ -199,14 +186,9 @@ export function CoilUpdateToast() {
 }
 
 /**
- * The build age, pinned to the toast's top-right just inside the close orb.
- *
- * Rendered from `leadingIcon` because that is the only slot whose ReactNode this fork controls that
- * renders inside the card, and `Toast.Root` is positioned, so an absolute child anchors to the card
- * rather than to the icon cell. `right-7` clears the orb, which overhangs the corner.
- *
- * Renders nothing without an age, and renders plain text without a run url — an underlined link
- * that goes nowhere is worse than no link.
+ * The build age, pinned top-right inside the close orb. Rendered from `leadingIcon`, the only
+ * fork-controlled slot inside the card; `Toast.Root` is positioned so it anchors to the card, and
+ * `right-7` clears the orb. Plain text without a run url: a link to nowhere is worse than none.
  */
 function BuiltAgo({
   builtAgo,
@@ -245,14 +227,9 @@ function BuiltAgo({
 }
 
 /**
- * The body: the sentence, then the changelog behind a disclosure.
- *
- * Built here rather than through the toast's `expandableContent`, because that path renders its
- * trigger from `ui/toast.tsx` — a pristine upstream file this fork has never edited, and restyling
- * it there would change every other toast and open a new sync seam for two cosmetic lines.
- *
- * Everything here is phrasing content (spans, a button, svgs). `Toast.Description` renders a `<p>`,
- * so a `<ul>` or `<div>` would be hoisted out by the parser and break the layout.
+ * The body: the sentence, then the changelog behind a disclosure. Not `expandableContent`, whose
+ * trigger lives in upstream's `ui/toast.tsx` and would change every toast. Phrasing content only:
+ * `Toast.Description` renders a `<p>`, so a `<ul>` or `<div>` would be hoisted out by the parser.
  */
 function UpdateToastBody({
   description,
@@ -310,13 +287,9 @@ export function toastPayload(
     readonly onDismiss: (shortSha: string) => void;
   },
 ) {
-  // `timeout: 0` on every variant. An update that quietly times out is an update the user never
-  // learns about, and a failure that times out is issue #41's silence all over again.
-  //
-  // Built through `stackedThreadToast` rather than by hand: `actionVariant` and `onClose` are read
-  // off `toast.data`, not off the top level, so passing them directly is accepted by the types and
-  // then ignored at render — the dismiss would never register and the button would render with the
-  // wrong variant.
+  // `timeout: 0` on every variant: an update or failure that quietly times out is never seen.
+  // Built through `stackedThreadToast` because `actionVariant` and `onClose` are read off
+  // `toast.data`; passed at the top level they type-check but are ignored at render.
   if (view.kind === "ready") {
     return stackedThreadToast({
       type: "info",

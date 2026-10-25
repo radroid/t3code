@@ -1,13 +1,7 @@
 /**
- * The contract between the fork's update-delivery service (desktop main) and its toast (renderer).
- *
- * Fork-owned, and deliberately in its own file: `ipc.ts` is an upstream file this fork already
- * edits, and every line added there is a line a future upstream sync can conflict on. `ipc.ts`
- * imports one type from here and adds one optional bridge member — see `docs/coil/SEAMS.md`.
- *
- * These are plain interfaces rather than `Schema` structs, matching `DesktopBridge`'s other
- * members. The values cross `contextBridge`, which structured-clones them; the validation that
- * matters happens where the data enters the process, on the manifest the relay serves.
+ * Contract between the fork's update-delivery service (desktop main) and its toast (renderer),
+ * kept out of the upstream `ipc.ts` to minimise sync conflicts (see `docs/coil/SEAMS.md`). Plain
+ * interfaces, not Schema: values cross `contextBridge` and are validated at the relay manifest.
  */
 
 /** What a build looks like to the renderer. Enough to name it and no more. */
@@ -18,13 +12,9 @@ export interface CoilUpdateBuild {
 }
 
 /**
- * Where delivery has got to, for exactly one announced build.
- *
- * `staging` is a real state that the toast deliberately renders as nothing — see
- * `apps/web/src/components/coil/updateToast.logic.ts`. It is in the contract anyway because
- * "downloading" and "idle" are different things to log, and because the renderer needs to
- * distinguish "no update" from "an update you cannot act on yet" when it decides whether a
- * `restartNow` call is worth sending.
+ * Where delivery has got to, for exactly one announced build. The toast renders `staging` as
+ * nothing, but it stays in the contract so logs distinguish downloading from idle, and so the
+ * renderer can tell "no update" from "not actionable yet" before sending `restartNow`.
  */
 export type CoilUpdateStatus =
   | { readonly kind: "idle" }

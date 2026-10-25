@@ -1,11 +1,8 @@
 /**
  * The fork's update-delivery service: relay in, staged bundle out, one restart on the click.
- *
- * The three-tier ladder the design specifies lives here, and the ordering of the tiers is the
- * point. Push tells you within seconds; the watchdog notices a connection that is open but dead;
- * the floor poll is the tier that still works when both of the others have quietly stopped
- * working. Every tier ends in the same place — read `/latest`, decide, stage — so there is no path
- * that can drift into believing something the others do not.
+ * Three tiers: push, a watchdog for connections that are open but dead, and a floor poll for when
+ * both quietly stop. Every tier ends the same way (read `/latest`, decide, stage), so no tier can
+ * drift into believing something the others do not.
  */
 
 import * as Clock from "effect/Clock";
@@ -84,12 +81,8 @@ const externalState = (internal: Internal): CoilUpdateState => ({
 });
 
 /**
- * Everything the service needs after construction.
- *
- * Captured once and baked into the returned effects, so `CoilUpdateDelivery` presents a
- * requirement-free interface. Without this the renderer-facing IPC methods would each have to
- * carry `HttpClient | ChildProcessSpawner | ElectronApp | …` in their context, and every caller
- * would have to know how this feature installs software.
+ * Everything the service needs after construction, captured once so `CoilUpdateDelivery` stays
+ * requirement-free and IPC callers need not know how this feature installs software.
  */
 type DeliveryServices =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -137,12 +130,9 @@ export const make = Effect.gen(function* () {
     : undefined;
 
   /**
-   * Did the install the last process started actually happen?
-   *
-   * Compared here rather than trusted, because the install runs after this process is gone: on
+   * Did the install the last process started actually happen? Compared rather than trusted: on
    * Windows an NSIS installer that fails partway leaves the previous build in place and nothing
-   * anywhere says so. `installCommands.ts` describes exactly this check; it had never been built,
-   * so every install was assumed to have worked.
+   * says so.
    */
   const verificationStatus: CoilUpdateStatus | undefined =
     pendingInstall === undefined
@@ -196,12 +186,9 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * The download and everything after it, run on its own fiber.
-   *
-   * Forked rather than awaited by the caller, because the caller is usually inside the SSE read
-   * loop. Blocking there for a 470 MB download would stop the loop consuming heartbeats, and the
-   * watchdog — which keys on bytes reaching the parser — would declare a perfectly healthy
-   * connection stalled fifty seconds into the download it is itself performing.
+   * The download and everything after it, forked because the caller is usually the SSE read loop.
+   * Blocking it for a 470 MB download would stop heartbeats reaching the parser, and the watchdog
+   * would declare a healthy connection stalled mid-download.
    */
   const stageAndAnnounce = Effect.fn("coil.updateDelivery.stageAndAnnounce")(function* (
     manifest: UpdateManifest,
@@ -262,14 +249,9 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Everything funnels through here, from every tier.
-   *
-   * Single-flight, and genuinely so: two tiers announcing the SAME build within a second of each
-   * other is the normal case, not an edge case — the push arrives and the reconcile that follows a
-   * reconnect finds the same manifest. That one returns early. A DIFFERENT, newer build interrupts
-   * the download in flight rather than starting a second one beside it: two concurrent 470 MB
-   * downloads would be worse than either, and finishing the older one would leave the user a
-   * `ready` toast for a build that is already behind.
+   * Single-flight entry point for every tier. The same build announced twice (push, then the
+   * reconnect reconcile) is the normal case and returns early. A newer build interrupts the
+   * download in flight rather than running a second 470 MB download or finishing a stale one.
    */
   const considerManifest = Effect.fn("coil.updateDelivery.consider")(function* (
     manifest: UpdateManifest,
@@ -532,14 +514,9 @@ const spawnAwaited = Effect.fn("coil.updateDelivery.spawnAwaited")(function* (
 }, Effect.scoped);
 
 /**
- * Spawned into a scope that is never closed, on purpose.
- *
- * The NSIS installer has to outlive this process: it needs the app's own files, so the app quits
- * and the installer relaunches it. `spawner.spawn` normally ties the child's life to a scope, and
- * closing that scope would tear down the very installer we just started. So the scope is made by
- * hand and left open — this process is about to call `app.exit`, at which point a `detached` child
- * is reparented by the OS and survives. Awaiting the child instead would deadlock: it is waiting
- * for us to quit.
+ * Spawned into a scope that is never closed, on purpose: the NSIS installer must outlive this
+ * process, and closing the scope would kill it. The app then calls `app.exit` and the `detached`
+ * child is reparented by the OS. Awaiting the child would deadlock, since it waits for us to quit.
  */
 const spawnDetached = Effect.fn("coil.updateDelivery.spawnDetached")(function* (
   bin: string,

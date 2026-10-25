@@ -1,17 +1,7 @@
-// The CLI is the only module a human types at, so these tests drive it exactly the way a human
-// (or the skill) does: through `main(argv, io, deps)`.
-//
-// Nothing here reads the user's real data. Every test builds a throwaway worklog repo under
-// `mkdtemp`, points HOME and the three WORKLOG_* overrides at it, injects a fake shell runner in
-// place of git/gh, and hands the CLI fake modules. A test that shells out or opens `~/.t3` is a
-// test that would fail on somebody else's machine — and a read-only guarantee is only worth
-// anything if the suite proves it.
-//
-// The fakes are injected under the REAL module names — `bundle`, `summary`, `extract`, `init` —
-// because `loadModule(ctx, name)` prefers `ctx.deps[name]` and otherwise imports `../lib/<name>.mjs`.
-// That is deliberate: these tests are the contract between the CLI and its libraries, so a library
-// that renames or reshapes an export must break here rather than in a user's terminal. The CLI has
-// no fallbacks left — a module that does not answer is a crash (exit 3), not a quiet degradation.
+// Drives the CLI as a human or the skill does, via `main(argv, io, deps)`, against a mkdtemp repo
+// with HOME, WORKLOG_* and the shell runner faked. Fakes use the REAL module names because
+// `loadModule` prefers `ctx.deps[name]`: these tests are the CLI/library contract, so a reshaped
+// export must break here. The CLI has no fallbacks (a missing module is exit 3).
 
 import * as NodeAssert from "node:assert/strict";
 import * as NodeChildProcess from "node:child_process";

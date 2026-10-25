@@ -1,26 +1,8 @@
 #!/usr/bin/env node
-// The /worklog command line: one entry point, one subcommand table, zero dependencies.
-//
-// This file is deliberately thin. Everything that knows about SQLite, transcripts, git, time
-// clustering or redaction lives in ../lib; the job here is to turn argv into a call, turn a
-// result into either prose or JSON, and turn a failure into an exit code a script can trust.
-//
-// Three rules shape the code below:
-//
-//   1. Argument handling never guesses. An unknown flag, a malformed date, an unusable value —
-//      all stop with exit 2 and a message that lists what was actually allowed. A collector that
-//      quietly reports the wrong day is worse than one that refuses to start.
-//   2. Missing evidence is a warning, never a failure. No database, no `gh`, no network, no
-//      worklog repo yet: every command still finishes and says what it could not see. `doctor`
-//      takes this furthest — it is a report, so it exits 0 even when nothing is installed.
-//   3. Refusing is not crashing. Exit 1 means "I did the check and the answer is no" (lint found
-//      something, publish would not commit). Exit 3 is reserved for the bugs, and only `--debug`
-//      prints a stack, because a stack trace in a user's terminal is a bug report nobody filed.
-//
-// `collect`, `extract-queue`, `extract-commit` and `init` delegate to ../lib/bundle.mjs,
-// ../lib/summary.mjs, ../lib/extract.mjs and ../lib/init.mjs. Those are imported lazily (see
-// loadModule) for one reason: a CLI whose `doctor` cannot run because an unrelated sibling module
-// failed to parse is a CLI that cannot diagnose itself.
+// The /worklog CLI: thin argv-to-lib glue. Bad arguments exit 2 listing what was allowed; missing
+// evidence is a warning, never a failure (`doctor` always exits 0); exit 1 is a refusal and exit 3
+// a bug (stack only with `--debug`). Libraries load lazily (see loadModule) so `doctor` still runs
+// when an unrelated sibling module fails to parse.
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -308,11 +290,9 @@ function requireFlags(command, parsed) {
   }
 }
 
-// Hand-rolled on purpose (zero dependencies), so the rules are stated once, here:
-//   --flag value, --flag=value, and boolean flags that take neither.
-//   -h / --help anywhere wins, even after an invalid flag value.
-//   A value that starts with a dash must use --flag=value, so a missing value cannot silently
-//   swallow the next flag.
+// Hand-rolled (zero deps): --flag value, --flag=value, and boolean flags. -h/--help anywhere wins,
+// even after an invalid value. A value starting with a dash needs --flag=value, so a missing value
+// cannot silently swallow the next flag.
 function parseArgs(argv, command) {
   const specs = { ...GLOBAL_FLAGS, ...command.flags };
   const flags = {};
@@ -1023,12 +1003,9 @@ function lintContext(paths) {
   const warnings = [];
   const hasRegistry = NodeFS.existsSync(paths.projectsYaml);
 
-  // Absent and unreadable are different states, and only one of them is safe to continue from.
-  // An absent registry is the pre-`init` state: nothing has been classified yet, so the
-  // project-name rules have nothing to say and a warning is honest. A registry that is THERE but
-  // cannot be parsed means the gate cannot evaluate its own rules — and a gate that cannot
-  // evaluate must refuse, because failing open here silently disarmed private-project and
-  // private-branch and let `publish` commit. One tab in a hand edit is enough to reach it.
+  // An absent registry is the pre-`init` state, so a warning is honest. A registry that exists but
+  // will not parse means the gate cannot evaluate its own rules and must refuse: failing open here
+  // silently disarmed private-project and private-branch checks and let `publish` commit.
   if (!hasRegistry) {
     warnings.push(
       `No project registry at ${tildify(paths.projectsYaml)} — the project-name rules were not applied.`,
@@ -1260,12 +1237,9 @@ async function runPublish(ctx) {
     });
   }
 
-  // One question, two answers: whether anything changed, and which paths the commit may name.
-  // It has to be the resolved file list rather than `staged`, because `git commit -- <pathspec>`
-  // is fatal on a pathspec git has never heard of, and `extracts/` is an empty directory until the
-  // first extract lands — `git add` tolerates that, `git commit` does not. `-z` keeps a path with
-  // a space or a non-ASCII byte intact (git would otherwise quote it), and `--no-renames` lists
-  // both sides of a rename so the deletion cannot be left behind.
+  // The resolved file list, not `staged`: `git commit -- <pathspec>` is fatal on a path git has
+  // never seen (`extracts/` is empty until the first extract). `-z` keeps unusual paths unquoted,
+  // and `--no-renames` lists both sides of a rename so the deletion is not left behind.
   const diff = ctx.run(
     "git",
     ["diff", "--cached", "--name-only", "--no-renames", "-z", "--", ...staged],

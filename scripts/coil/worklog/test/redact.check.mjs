@@ -1,9 +1,6 @@
-// Tests for lib/redact.mjs — the privacy gate.
-//
-// Two properties matter more than the rest and are asserted repeatedly: a clean report produces
-// nothing at all (a noisy gate is an ignored gate), and a finding's excerpt never carries the
-// secret it flagged (the gate must not become the leak). Every path here is synthetic; the real
-// ~/.t3 and ~/.claude are never read.
+// Tests for lib/redact.mjs. Two properties are asserted repeatedly: a clean report produces no
+// findings (a noisy gate gets ignored), and an excerpt never carries the secret it flagged. Every
+// path is synthetic; the real ~/.t3 and ~/.claude are never read.
 
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";

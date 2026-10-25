@@ -1,31 +1,7 @@
-// The evidence bundle — the deterministic half of /worklog (design §7).
-//
-// `collect()` reads T3code's SQLite projections, Claude Code's JSONL transcripts and git/`gh`, and
-// emits ONE JSON object describing a range of days. The model never touches the raw stores; it
-// reads `renderSummary()` of this object. Four invariants are what make the numbers trustworthy:
-//
-//   1. Parallel work is never double-counted. Active time is the union of blocks over the MERGED
-//      event stream (§5), so two sessions running at once cost one hour, not two.
-//   2. The same work is never counted twice across stores. T3code drives Claude Code, so a linked
-//      session stays in the bundle carrying `excluded` and contributes nothing to any total (§6).
-//   3. Nothing is dropped. A private or unclassified project still appears, with its classification
-//      attached, because the model has to know it was touched for the stats to add up. Only a
-//      project the human explicitly set `include: false` on is left out of the totals.
-//   4. Per-day numbers sum to the range totals. Durations are clipped into each day; counts are
-//      attributed to the day the thing started, clamped into the window. (The one exception is
-//      `filesTouched`, which is a distinct count and therefore cannot sum — see `byDay` below.)
-//
-// Two numbers are honest only because they are qualified in the data rather than in prose:
-//
-//   * `agentRuntimeMs` excludes the stretches a turn spent BLOCKED ON THE HUMAN — see
-//     `humanWaits` — and the subtracted total ships beside it as `awaitingInputMs` so the
-//     correction is auditable instead of invisible.
-//   * `files`/`filesTouched` come from turn checkpoints, which upstream computes as a diff between
-//     workspace SNAPSHOTS, so they are an upper bound and say so: `filesApproximate`.
-//
-// Every collector is wrapped: a missing database, a corrupt payload, an absent `gh` or a dead
-// network becomes a warning and an empty result. The only thing `collect` throws for is an
-// unparseable `--from`/`--to`, which is a usage error the CLI must surface rather than paper over.
+// The evidence bundle (design §7): `collect()` reads T3code SQLite, Claude Code JSONL and git/`gh`
+// into one JSON object. Parallel work is unioned, not double-counted (§5); linked sessions are
+// `excluded` from totals (§6); nothing is dropped; per-day numbers sum to range totals (except
+// `filesTouched`). Collectors degrade to warnings; only a bad `--from`/`--to` throws.
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -327,12 +303,9 @@ async function readClaudeCode(mods, projectsDir, window, t3, warnings) {
 }
 
 /**
- * Maps a directory to a registry project, inventing an entry when nothing matches.
- *
- * A worktree is the hard case: `~/.t3/worktrees/t3code/<id>` shares no path prefix with the
- * registered `~/Developer/t3code`, so a direct root match fails and the session would look like a
- * brand-new project every time. `canonicalRepo` sees through it — a linked worktree's
- * `--git-common-dir` IS the main checkout's `.git`, so its parent is the registered root.
+ * Maps a directory to a registry project, inventing an entry when nothing matches. A worktree
+ * shares no path prefix with its registered checkout, so `canonicalRepo` resolves it through
+ * `--git-common-dir`, whose parent is the registered root.
  */
 function createProjectIndex({ mods, registry, run, includeGit, warnings }) {
   const known = new Set(Object.keys(isObject(registry?.projects) ? registry.projects : {}));
@@ -510,11 +483,9 @@ function buildThreadSession({
   // that were merely still open — no in-window event means no work today.
   if (stamps.length === 0) return null;
 
-  // Agent runtime is turn wall-clock, and a turn that stopped to ask a question keeps running while
-  // the human is asleep — so the raw span bills hours of waiting as "machine time I directed". Each
-  // turn's span is therefore SPLIT around the stretches it spent blocked, and the removed pieces
-  // ship as `awaitingInputMs`. Splitting rather than subtracting a scalar is what keeps the
-  // per-day clipping in `rollUp` honest: both halves are still intervals.
+  // A turn blocked on a question keeps its wall clock running, so each span is SPLIT around its
+  // human waits and the removed pieces ship as `awaitingInputMs`. Splitting (not subtracting a
+  // scalar) keeps the per-day clipping in `rollUp` honest: both halves are still intervals.
   const activitiesByTurn = groupBy(activities, (activity) => activity.turnId);
   const spans = [];
   const waitSpans = [];
@@ -729,11 +700,9 @@ function finishSession({
     excluded,
   };
 
-  // The §8 decision — cursor, materiality bar and the "already told by its T3code thread" rule —
-  // belongs to lib/extract.mjs, which also owns the file format. Asking it here is what keeps the
-  // queue the collector advertises identical to the one `worklog extract-queue` actually builds.
-  // It is asked with the ON-DISK extract, not the one the bundle publishes: `queue()` re-reads the
-  // file itself, so answering from a withheld extract would advertise a queue nobody would build.
+  // lib/extract.mjs owns the §8 queue decision, so asking it keeps this advertised queue identical
+  // to what `worklog extract-queue` builds. Ask with the ON-DISK extract, not the published one:
+  // `queue()` re-reads the file itself, so a withheld extract would advertise a phantom queue.
   const verdict = attempt(
     () => needsExtractionOf(session, cached.onDisk),
     () => ({ needed: false }),
@@ -754,19 +723,10 @@ function finishSession({
 }
 
 /**
- * The stored extract for a session as `{ onDisk, extract, withheld }`. `loadExtract` treats an
- * unusable file as absent — the safe reading, since one wasted extraction beats trusting a cursor
- * we cannot parse — but it does so silently, and a file that exists yet will not load is worth
- * saying out loud.
- *
- * `extract` is the one the bundle publishes and is null unless the file is demonstrably ABOUT this
- * window. An extract is per session, not per day: run `/worklog` for today and then for yesterday
- * and the session's one extract — written about today — would otherwise be attached under
- * yesterday's date, putting the wrong day's work in a dated report.
- *
- * It is WITHHELD rather than flagged because a flag only helps a reader that checks it, and every
- * renderer downstream would have to opt in; a null cannot be misread. `onDisk` is kept so the
- * cursor still drives `needsExtraction`.
+ * The stored extract as `{ onDisk, extract, withheld }`, warning on a file that exists but won't
+ * load. `extract` is null unless the file is about this window (extracts are per session, not per
+ * day), and is withheld rather than flagged because a null cannot be misread downstream. `onDisk`
+ * still drives `needsExtraction`.
  */
 function readExtract(paths, key, window, warnings) {
   const onDisk = attempt(
@@ -819,21 +779,10 @@ function readExtract(paths, key, window, warnings) {
 }
 
 /**
- * Human-wait intervals inside ONE turn, clamped to that turn's own span. A `null` end means the
- * turn is still blocked; `splitAroundWaits` turns that into "nothing ran after this point".
- *
- * Pairing is positional, not by `payload.requestId`: `readActivities` deliberately does not surface
- * the request id, and across every turn in the real store the two kinds strictly alternate (a turn
- * can only have one question outstanding), so "the next resolve closes the open request" IS the id
- * pairing. Two rules were checked against real data rather than guessed:
- *
- *   * A request with no resolve stays open to the end of the turn. During a wait the only activity
- *     a turn emits is a single `context-window.updated` a few ms later — there is never evidence of
- *     the agent resuming — so an unanswered question really did block the turn until it ended or
- *     was interrupted (three such turns sat blocked ~12 h before the human interrupted them).
- *   * A resolve with nothing open answers a question asked BEFORE the window, whose `requested` row
- *     the window query never returned. It opens at the end of the previous wait (the turn's start,
- *     the first time), which can only ever reach back to material the window already clips off.
+ * Human-wait intervals inside ONE turn, clamped to its span; a `null` end means still blocked.
+ * Pairing is positional (requests and resolves strictly alternate in real data). A request with no
+ * resolve blocks to the turn's end; a resolve with nothing open answers a pre-window request and
+ * opens at the previous wait's end (or the turn's start).
  */
 function humanWaits(activities, spanStart, spanEnd) {
   const waits = [];
@@ -1169,11 +1118,9 @@ function rollUp({ contributions, git, projects, range, window, blockOptions, now
       activeMs: totals.activeMs,
       agentRuntimeMs: totals.agentRuntimeMs,
       awaitingInputMs: totals.awaitingInputMs,
-      // Every `filesTouched` in this bundle — range, per project, per day — is an upper bound when
-      // this is true. Upstream derives a turn's file list by diffing workspace SNAPSHOTS
-      // (apps/server/src/orchestration/Layers/CheckpointReactor.ts), so a branch switch, a `git
-      // pull` or a rebase landing between turns is indistinguishable from work the session did.
-      // The stored diff carries no provenance, so this cannot be corrected — only declared.
+      // When true, every `filesTouched` here is an upper bound: upstream diffs workspace SNAPSHOTS
+      // (CheckpointReactor.ts), so a branch switch, pull or rebase between turns looks like session
+      // work. The stored diff carries no provenance, so this can only be declared, not corrected.
       filesTouchedApproximate: filesApproximate,
       activeBlocks: merged.blocks,
     },
@@ -1300,11 +1247,8 @@ function sumMs(pieces) {
 
 /**
  * Sums churn per path. Checkpoint paths are already repo-relative; absolute ones are reduced.
- *
- * The input is a per-turn diff of workspace SNAPSHOTS, so summing it inflates both the file count
- * and the per-file churn by whatever else touched the tree between two turns. Nothing in the stored
- * payload distinguishes the two, so the totals travel flagged (`filesApproximate`) rather than
- * cleaned — see `stats.filesTouchedApproximate`.
+ * Snapshot diffs inflate counts by whatever else touched the tree between turns, and nothing in the
+ * payload tells them apart, so totals travel flagged (`filesApproximate`) rather than cleaned.
  */
 function mergeFiles(files, root) {
   const byPath = new Map();

@@ -1,15 +1,7 @@
-// The compact markdown digest of an evidence bundle — the ONLY thing the model reads by default.
-//
-// The bundle is megabytes; this is a few hundred lines. Everything here is a budgeting decision:
-// what does a writer need in order to know which work mattered, and nothing more. Each section is
-// capped and reports what it dropped, because a silently truncated summary would have the model
-// confidently writing about a day it only half saw.
-//
-// Nothing is redacted here. The summary is written to a gitignored temp dir and read by the model,
-// which needs the private project's real name to decide it must NOT be named. Redaction happens at
-// the other end of the pipeline, in `worklog lint`. Two rules still hold: paths are rendered
-// repo-relative (or `~`-shortened), and tool OUTPUT never appears — only titles, counts and the
-// short `detail` labels the collector already vetted.
+// The compact markdown digest of a bundle, the only thing the model reads by default. Each section
+// is capped and reports what it dropped, so the model never writes about a day it half saw. No
+// redaction here (the model needs private names to know not to use them; `worklog lint` redacts),
+// but paths are repo-relative or `~`-shortened and tool OUTPUT never appears.
 
 import { formatDuration, formatHours, formatNumber, pluralize } from "./format.mjs";
 import { tildify } from "./paths.mjs";

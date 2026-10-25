@@ -1,16 +1,7 @@
-// Reads Claude Code's transcripts: ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl.
-//
-// Two constraints shape every function here.
-//
-// 1. Volume. There are hundreds of these files and a busy one is ~1 MB, so nothing is ever read
-//    whole: files are prefiltered on mtime (a file with in-window activity must have been written
-//    at or after the window opened) and then streamed a line at a time. A single day's window
-//    typically survives the prefilter with a handful of files.
-// 2. Read-only, never-throw. This walks the user's real home directory. Every public function
-//    degrades a missing directory, an unreadable file, or a half-written line into a warning.
-//
-// The directory name is a lossy encoding of the cwd (both `/` and `.` become `-`), so paths are
-// always read off the records themselves and never decoded from the directory name.
+// Reads Claude Code's transcripts: ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl. Files are
+// many and large, so they are prefiltered on mtime and streamed line by line. This walks the real
+// home dir, so every public function degrades errors into warnings. The dir name encodes the cwd
+// lossily (`/` and `.` both become `-`), so paths come from the records, never the dir name.
 
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
@@ -25,14 +16,9 @@ const PROMPT_HASH_PREFIX_LIMIT = 400;
 
 const JSONL_SUFFIX = ".jsonl";
 
-// Text Claude Code wraps around slash-command expansions and harness-injected context. These
-// records are real user turns — the work that follows one is genuinely the agent responding — but
-// the text is machinery, not something a human wrote about their day.
-//
-// The list is closed rather than a generic `^<tag>` match so that a real prompt about markup ("fix
-// <header> on the landing page") is never mistaken for machinery. It covers every wrapper present
-// in this user's 475 transcripts; `<task-notification>` is the most common of them by far and also
-// the most dangerous to keep, because its body is a block of absolute temp paths.
+// Wrappers Claude Code puts around slash-command expansions and injected context: real user turns,
+// but machine text. The list is closed (not `^<tag>`) so a real prompt about markup is never
+// dropped. `<task-notification>` matters most: its body is a block of absolute temp paths.
 const WRAPPER_PREFIXES = [
   "<system-reminder>",
   "<task-notification>",
@@ -180,13 +166,9 @@ export function linkSessions(sessions, options = {}) {
 }
 
 /**
- * Prompts that a machine sends on the user's behalf. Each one opens a real Claude Code session in a
- * real workspace, so nothing structural distinguishes it from work — but counting them is what took
- * a 13-thread day to "43 sessions" the first time this ran. Grounded in the code that sends them:
- *   - the two title prompts: apps/server/src/textGeneration/TextGenerationPrompts.ts
- *   - the security-review prompts: the security-guidance plugin's hooks/llm.py
- *   - "Say hi in one word.": a provider reachability probe
- * Matched against the session's first prompt, case-insensitively, as a prefix.
+ * First prompts a machine sends on the user's behalf (title generation in TextGenerationPrompts.ts,
+ * security-review hooks, a "Say hi in one word." reachability probe). They open real sessions, so
+ * only the prompt tells them apart. Matched case-insensitively as a prefix.
  */
 export const MACHINE_PROMPT_PREFIXES = Object.freeze([
   "generate a title that will help the user recognize this t3 code thread",
@@ -203,13 +185,9 @@ export const MACHINE_PROMPT_PREFIXES = Object.freeze([
 ]);
 
 /**
- * A system-prompt-shaped directive: short, one line, second person, imperative, full stop. Every
- * T3code text-generation call opens with one, and the literal list above cannot keep up on its own
- * — it already missed a phrasing from an older build that is still sitting in August's history.
- *
- * Deliberately narrow, because a human could plausibly type "You generate the report and I'll
- * review it.": the caller additionally requires a session of at most two prompts, and a person who
- * opens like that keeps talking.
+ * A system-prompt-shaped directive (short, one line, second person, imperative), which every T3code
+ * text-generation call opens with; it catches phrasings the literal list above misses. Narrow on
+ * purpose: the caller also requires a session of at most two prompts, since a human keeps talking.
  */
 const MACHINE_DIRECTIVE =
   /^you (?:write|generate|are|produce|create|summarise|summarize|extract|classify)\b[^\n?]{0,110}\.$/iu;

@@ -3,16 +3,9 @@ import type { SourceControlProviderInfo } from "@t3tools/contracts";
 import { transportSafeSourceControlErrorValue } from "@t3tools/source-control-core/server/SourceControlProvider";
 
 /**
- * Environment for git commands the user has no console or window to answer.
- *
- * A credential helper (Git Credential Manager, ssh-askpass) that decides to
- * prompt blocks the subprocess until its timeout, because the server spawning
- * it has nowhere to draw the prompt — and on a remote or headless server the
- * user could not answer it anyway. Refusing the prompt turns that hang into a
- * non-zero exit `classifyGitCloneFailure` can name.
- *
- * `GitVcsDriverCore` applies the same set to background status refreshes under
- * its own private constant; upstreaming this module should collapse the two.
+ * Environment for git commands the user has no console to answer. A prompting credential helper
+ * would block until timeout (and a remote user could not answer anyway); refusing turns the hang
+ * into an exit `classifyGitCloneFailure` can name. `GitVcsDriverCore` has a private duplicate.
  */
 export const NON_INTERACTIVE_GIT_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",

@@ -7,12 +7,9 @@ import * as Schedule from "effect/Schedule";
 import { parseNotification, supersedes } from "./notification.ts";
 
 /**
- * One global broadcast channel.
- *
- * There is exactly one instance of this object (the Worker always addresses it by the same name),
- * because there is exactly one thing to say: which build is current. No per-subscriber state, no
- * identity, no fan-out topology — the payload is public information, so every connected client
- * gets the same bytes.
+ * One global broadcast channel: the Worker always addresses it by the same name, because there is
+ * exactly one thing to say (which build is current). The payload is public, so there is no
+ * per-subscriber state and every connected client gets the same bytes.
  */
 
 /** Interval between `: ping` comments. The client's watchdog is derived from this. */
@@ -20,14 +17,9 @@ export const HEARTBEAT_INTERVAL_MS = 20_000;
 const HEARTBEAT_INTERVAL = Duration.millis(HEARTBEAT_INTERVAL_MS);
 
 /**
- * Streams are closed after this long and clients reconnect.
- *
- * Hibernation only exists for WebSockets. An SSE response is a stream the Durable Object must
- * hold open, so every connected app pins this object in memory, and DO duration bills on wall
- * time rather than CPU. Uncapped, a handful of always-on desktop apps would keep it resident
- * forever. Capping the stream turns "connected" into a repeating 15-minute cycle instead, which
- * bounds the cost — and costs nothing in latency, because the client reconnects immediately and
- * replays the current payload on connect.
+ * Streams are closed after this long and clients reconnect. Hibernation only exists for
+ * WebSockets, so every open SSE stream pins this object in memory and DO duration bills on wall
+ * time. Capping it bounds the cost at no latency, since clients reconnect and get a replay.
  */
 export const STREAM_LIFETIME_MS = 15 * 60_000;
 const STREAM_LIFETIME = Duration.millis(STREAM_LIFETIME_MS);
@@ -155,11 +147,9 @@ export class UpdateChannel extends DurableObject {
 
     const stream = new ReadableStream<Uint8Array>({
       start: async (controller) => {
-        // A comment frame every HEARTBEAT_INTERVAL. Its only job is to put bytes on the wire so
-        // that a dead-but-open connection becomes observable to the client's watchdog — the
-        // failure mode that produced a 103-minute silent outage on this fork once already.
-        //
-        // Racing the loop against a sleep gives the lifetime cap for free: whichever finishes
+        // A comment frame every HEARTBEAT_INTERVAL makes a dead-but-open connection observable
+        // to the client's watchdog (this fork once had a 103-minute silent outage from exactly
+        // that). Racing the loop against a sleep enforces the lifetime cap: whichever finishes
         // first ends the fiber, and `ensuring` tears the subscriber down either way.
         const heartbeat = Effect.suspend(() => {
           const current = subscriber;

@@ -53,11 +53,9 @@ describe("decideUpdateAction", () => {
   });
 
   it("refuses to act when this build carries no release counter", () => {
-    // Changed deliberately on 2026-08-07; it previously acted. `buildNumber` comes from the app's
-    // own version, and only `coil-release.yml` writes `-coil.<n>` — so `undefined` does not mean
-    // "first run", it means "this app was built locally". Treating that as "no floor" let a
-    // locally built app install ANY announced release over itself, including one cut from an
-    // OLDER commit than the one it was built from: a silent downgrade that reports success.
+    // `buildNumber` is undefined only for locally built apps (only `coil-release.yml` writes
+    // `-coil.<n>`), so it must not mean "no floor": that let a local build silently install a
+    // release cut from an older commit over itself.
     const decision = decideUpdateAction(MANIFEST, installed({ buildNumber: undefined }));
     expect(decision).toEqual({ kind: "skip", reason: "unknown-own-build-number" });
   });
@@ -89,7 +87,10 @@ describe("decideUpdateAction", () => {
   it("skips an older build rather than downgrading", () => {
     // The out-of-order case: a slow Windows leg from run 19 announced after run 25 has landed.
     // "Different from mine" would accept it and quietly move the user backwards.
-    const decision = decideUpdateAction({ ...MANIFEST, buildNumber: 19 }, installed({ buildNumber: 25 }));
+    const decision = decideUpdateAction(
+      { ...MANIFEST, buildNumber: 19 },
+      installed({ buildNumber: 25 }),
+    );
     expect(decision).toEqual({ kind: "skip", reason: "not-newer" });
   });
 

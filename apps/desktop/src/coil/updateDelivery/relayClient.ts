@@ -1,12 +1,7 @@
 /**
- * Talking to the relay: one poll, and one long-lived stream.
- *
- * The relay serves the manifest verbatim — `t3x-release.yml` POSTs `t3x-latest.json` to `/notify`,
- * `/latest` re-serves that same body, and `/events` frames it as `event: update`. So both tiers
- * decode with the same schema, and a manifest that fails to decode is dropped in both.
- *
- * There is no `EventSource` in Electron's main process, so the stream is an `HttpClient` response
- * body fed through `parseSseChunk`.
+ * Talking to the relay: one poll, and one long-lived stream. `/latest` and `/events` serve the same
+ * manifest body, so both tiers decode with one schema. There is no `EventSource` in Electron's
+ * main process, so the stream is an `HttpClient` response body fed through `parseSseChunk`.
  */
 
 import * as Clock from "effect/Clock";
@@ -76,17 +71,10 @@ export const fetchLatestManifest = Effect.fn("coil.updateDelivery.fetchLatest")(
 });
 
 /**
- * Hold a stream open, handing every decodable `update` frame to `onManifest`.
- *
- * Never returns successfully: a stream that ends is a `stream-closed` failure, because from the
- * caller's point of view "the server closed cleanly after fifteen minutes" and "the socket died"
- * need the same response — reconnect and reconcile against `/latest`. Distinguishing them would
- * only create a path where one of the two silently stops retrying.
- *
- * The watchdog runs off ANY byte, including the relay's `: ping` comment. Without the heartbeat, a
- * genuinely quiet channel and a dead socket look identical; with it, silence is diagnostic. This
- * is the failure the design calls out as the real one — not a connection that drops, which is
- * loud, but a connection that stays open and delivers nothing.
+ * Hold a stream open, handing every decodable `update` frame to `onManifest`. Never succeeds: a
+ * clean close and a dead socket both fail as `stream-closed` so they get the same reconnect. The
+ * watchdog runs off ANY byte, including the relay's `: ping`, which is what makes silence
+ * diagnostic of a connection that stays open and delivers nothing.
  */
 export const streamRelayEvents = Effect.fn("coil.updateDelivery.stream")(function* (args: {
   readonly eventsUrl: string;

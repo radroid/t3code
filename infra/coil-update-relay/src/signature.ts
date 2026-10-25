@@ -1,10 +1,7 @@
 /**
- * Sender authentication for `POST /notify`.
- *
- * The *payload* is public — this fork is a public repo, so "main moved to <sha>" is already
- * visible to anyone. Nothing here protects confidentiality. What it protects is the ability to
- * make every installed app restart into an attacker-chosen artifact, which is why the write path
- * is authenticated and the read paths are not.
+ * Sender authentication for `POST /notify`. The payload is public, so this protects no
+ * confidentiality; it protects against making every installed app restart into an
+ * attacker-chosen artifact, which is why only the write path is authenticated.
  */
 
 const SIGNATURE_PREFIX = "sha256=";
@@ -38,13 +35,9 @@ export function describeSignatureFailure(failure: SignatureFailure): string {
 }
 
 /**
- * The signed material is `<timestamp>.<body>`.
- *
- * The timestamp is a separate header rather than a field inside the manifest, because the
- * manifest's own `builtAt` is *build* time. Uploading the artifacts routinely takes minutes, so a
- * skew window anchored on `builtAt` would either reject every real notify or be so wide it stops
- * bounding anything. Binding the timestamp into the signature is also what stops it being
- * rewritten in transit to refresh a captured request.
+ * The signed material is `<timestamp>.<body>`. The timestamp is a separate header because the
+ * manifest's `builtAt` is build time, and uploads take minutes, so a skew window on it would be
+ * useless. Signing the timestamp stops it being rewritten to refresh a captured request.
  */
 export function signingMaterial(timestamp: string, rawBody: string): string {
   return `${timestamp}.${rawBody}`;

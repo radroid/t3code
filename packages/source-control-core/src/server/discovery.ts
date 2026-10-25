@@ -215,12 +215,10 @@ function probeCli(input: {
           }) satisfies DiscoveryProbeResult,
       ),
       Effect.catch((cause) => {
-        // Only a genuine spawn failure (e.g. ENOENT) means the CLI is absent, so
-        // that is the sole case that reports "missing" and shows the install hint.
-        // Any other failure (timeout, non-zero exit, etc.) means the CLI is present
-        // but the version probe was slow/noisy; keep it "available" so
-        // `probeSourceControlProvider` still runs the fast `account show` auth
-        // probe instead of short-circuiting to the install hint. (issue #4)
+        // Only a genuine spawn failure (e.g. ENOENT) means the CLI is absent. Any other failure
+        // (timeout, non-zero exit) keeps it "available" so `probeSourceControlProvider` still
+        // runs the fast `account show` auth probe instead of short-circuiting to the install
+        // hint.
         const status = cause._tag === "VcsProcessSpawnError" ? "missing" : "available";
         return Effect.succeed({
           kind: input.spec.kind,

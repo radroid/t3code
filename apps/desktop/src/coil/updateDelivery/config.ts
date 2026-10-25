@@ -1,11 +1,7 @@
 /**
  * Where the running app looks for update announcements, and what it believes it already is.
- *
- * Both answers have to come from somewhere that survives packaging. Neither can come from
- * `process.env`: a `.app` launched from Finder inherits `launchd`'s environment, not a shell's,
- * so an env var set in a terminal is simply absent at runtime. That is the same trap that made
- * `T3CODE_DISABLE_AUTO_UPDATE` unusable as a delivery mechanism — see the design doc's provenance
- * table. Env vars here are a development convenience only, and the packaged path never needs one.
+ * Neither can come from `process.env`: a `.app` launched from Finder inherits `launchd`'s
+ * environment, not a shell's. Env vars here are a development convenience only.
  */
 
 import * as Option from "effect/Option";
@@ -14,19 +10,10 @@ import * as Schema from "effect/Schema";
 import { SHORT_SHA_LENGTH } from "./manifest.ts";
 
 /**
- * The fork's relay, deployed from `infra/coil-update-relay/`.
- *
- * Hardcoded rather than injected at build time. It is a public URL that serves public release
- * metadata, it is stable across every build, and baking it in through the packaged `package.json`
- * would mean editing `scripts/build-desktop-artifact.ts` — an upstream file this fork does not
- * touch, and a seam row that buys nothing.
- *
- * Being hardcoded is also why the #71 rename could not simply move it. Every build shipped before
- * this line changed has the OLD hostname compiled in, cannot be reconfigured (the override below
- * is never set on a normal install), and has no other channel through which to be told. So the old
- * hostname was not renamed — it stays deployed, permanently, as a pass-through to this one. See
- * `infra/coil-update-relay/src/legacyWorker.ts`. Changing this constant is safe precisely because
- * that file exists; changing it without one would be a silent, unrecoverable strand.
+ * The fork's relay, deployed from `infra/coil-update-relay/`. Hardcoded, so every shipped build
+ * keeps its hostname forever. A retired hostname must stay deployed as a pass-through (see
+ * `infra/coil-update-relay/src/legacyWorker.ts`); changing this without one silently strands
+ * every older install.
  */
 export const DEFAULT_RELAY_URL = "https://coil-update-relay.businesses.workers.dev";
 
@@ -61,31 +48,17 @@ export function resolveRelayUrl(
 }
 
 /**
- * Marker recording that this install has applied at least one update through this path.
- *
- * A file rather than a field in memory, because the fact it records survives exactly one event:
- * the restart it is about. An in-memory flag set just before `app.exit` is gone by the time the
- * new build asks the question, so the first-update App Management note — meant to be shown once —
- * would be shown on every single update instead, which is how a warning becomes wallpaper.
- *
- * A file rather than `DesktopClientSettings`, because that is an upstream-owned persisted schema
- * and this is one bit that only the fork cares about.
+ * Marker recording that this install has applied at least one update through this path. A file,
+ * because an in-memory flag set before `app.exit` is gone when the new build asks (so the
+ * once-only App Management note would show on every update), and not `DesktopClientSettings`,
+ * because that is an upstream-owned schema.
  */
 export const UPDATED_MARKER_NAME = ".t3x-has-updated";
 
 /**
- * What the marker records about the install that is about to happen.
- *
- * The marker used to be written empty, which made it answer only "has this app ever updated?".
- * `installCommands.ts` documents a second job for it — "the target is recorded before quitting and
- * compared against `t3codeCommitHash` when the app comes back" — and that half was never built, so
- * a silently failed install was indistinguishable from a successful one. On Windows the app is
- * gone for minutes during the install, so "did that work?" is not a question the user can answer
- * by looking.
- *
- * Written before quitting, read once on the next boot, then cleared. Only the target is stored:
- * the running build reports its own identity, and comparing two values written at different times
- * by different processes is the entire point.
+ * The target of the install about to happen: written before quitting, read once on the next boot,
+ * then cleared. The new build reports its own identity, so comparing the two catches a silently
+ * failed install (on Windows the app is gone for minutes, so the user cannot tell by looking).
  */
 export const PendingInstall = Schema.Struct({
   shortSha: Schema.String,
@@ -116,23 +89,10 @@ export function encodePendingInstall(target: PendingInstall): string {
 }
 
 /**
- * The build counter of the running app, read out of its own version string.
- *
- * `coil-release.yml` builds `<base>-coil.<counter>` and `build-update-manifest.mjs` asserts that
- * the manifest's `buildNumber` is that same number, so parsing it back out here is reading the
- * value the release wrote — not re-deriving it. An upstream build (`0.0.31`, no suffix) yields
- * `undefined`, which `decideUpdateAction` treats as "no floor", so the first fork build installs.
- *
- * Both suffixes, because this function is asked about two different version strings. The obvious
- * one is the running app's own, and for a `-t3x.` build that is answered by the `-t3x.`-only code
- * it shipped with — this branch never runs there. The one that matters is the version the app is
- * asked to *compare against* around the cutover: a build carrying this code can still be offered,
- * or be preceded by, a `-t3x.` release. Returning `undefined` for those would erase the floor
- * entirely and make a genuinely older build look installable.
- *
- * Note the numbers stay comparable across the rename by construction, not by luck: the counter is
- * `github.run_number + 100` precisely so `-coil.101` outranks `-t3x.26`. Nothing here compares the
- * suffixes themselves, which is fortunate — `coil` sorts before `t3x`.
+ * The build counter from a `-coil.<n>` or `-t3x.<n>` version suffix. Both suffixes, because around
+ * the rename a build can be compared against a `-t3x.` release and `undefined` would erase the
+ * floor. Counters stay ordered because `coil-release.yml` uses `github.run_number + 100`; never
+ * compare the suffixes themselves (`coil` sorts before `t3x`).
  */
 export function parseBuildNumber(version: string): number | undefined {
   const match = /-(?:coil|t3x)\.(\d+)$/u.exec(version.trim());
@@ -143,11 +103,8 @@ export function parseBuildNumber(version: string): number | undefined {
 
 /**
  * The commit of the running app, from the `t3codeCommitHash` that
- * `scripts/build-desktop-artifact.ts` writes into the packaged `package.json`.
- *
- * Read here rather than through `DesktopAppIdentity`, which computes the same value but does not
- * expose it on its service interface. Adding an accessor there would put an upstream file that the
- * fork does not currently edit into the seam ledger, to reach a field this can parse itself.
+ * `scripts/build-desktop-artifact.ts` writes into the packaged `package.json`. Parsed here because
+ * `DesktopAppIdentity` does not expose it, and adding an accessor would mean editing upstream.
  */
 export function readEmbeddedCommitHash(packageJsonText: string): string | undefined {
   let parsed: unknown;

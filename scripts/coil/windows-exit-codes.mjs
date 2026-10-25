@@ -1,39 +1,14 @@
 /*
- * Turns a Windows fatal exit status into something a human can act on, and decides whether it is
- * worth retrying.
- *
- * Issue #47: `pnpm dist:desktop:win:x64` intermittently died with
- *
- *   [3] @t3tools/desktop#build: node scripts/build-preview-annotation-css.mjs   FAILED (exit code: -1073741502)
- *
- * and an immediate re-run succeeded. `-1073741502` is `0xC0000142`, STATUS_DLL_INIT_FAILED — a
- * Windows *process startup* condition, not an error our code raised. Nothing in that line says so,
- * which sends whoever reads it looking for a bug in a script that is fine.
- *
- * THE FORM MATTERS. vp prints the signed 32-bit decimal, because that is what Node reports for a
- * child's status. The hex spelling appears nowhere in the output. The release workflow's original
- * classifier grepped for `0xC0000142|0xC0000005|STATUS_DLL_INIT_FAILED|Access violation` — none of
- * which the observed log contains — so the retry it was written to trigger could never have fired.
- * That is the bug this file exists to fix, and it is why every spelling is matched here rather
- * than whichever one seemed natural.
- *
- * Retryable and not-retryable are both worth naming. A status that means "the machine was under
- * pressure when this process started" deserves another attempt; one that means "this program
- * corrupted its own heap" does not, and quietly retrying it three times only makes the eventual
- * failure slower and more confusing.
- *
- * `.mjs` for the same reason as its siblings here: the workflow runs it on the runner image's
- * Node, with no `setup-node` step in front of it.
+ * Names a Windows fatal exit status and decides whether a retry is worth it. vp prints the signed
+ * 32-bit decimal (`-1073741502`, not `0xC0000142`), so every spelling is matched: a hex-only grep
+ * never fires. Startup-pressure statuses retry; self-corruption ones fail fast. `.mjs` because the
+ * workflow runs it on the runner image's Node with no `setup-node` step.
  */
 
 /**
- * @typedef {object} WindowsStatus
- * @property {string} name       NTSTATUS symbol, as documented by Microsoft.
- * @property {number} unsigned   The value as an unsigned 32-bit integer.
- * @property {number} signed     The same value as Node reports it — signed 32-bit.
- * @property {boolean} transient Whether another attempt is reasonable.
- * @property {string} meaning    What actually happened, in a sentence.
- * @property {string} advice     What to do about it.
+ * `signed` is the value as Node reports it; `transient` means another attempt is reasonable.
+ * @typedef {{ name: string, unsigned: number, signed: number, transient: boolean,
+ *   meaning: string, advice: string }} WindowsStatus
  */
 
 /** @type {readonly WindowsStatus[]} */
@@ -117,12 +92,8 @@ export function describeWindowsExitCode(code) {
 }
 
 /**
- * Every status named anywhere in a build log, in table order.
- *
- * Matching is deliberately generous — signed decimal, unsigned decimal, hex, and the NTSTATUS
- * name — because which one appears depends on who printed it. vp prints signed decimal; Windows
- * dialogs print hex; a crash dump prints the name.
- *
+ * Every status named anywhere in a build log, in table order. Matches every spelling, since vp
+ * prints signed decimal, Windows dialogs print hex and crash dumps print the name.
  * @param {string} logText
  * @returns {readonly WindowsStatus[]}
  */

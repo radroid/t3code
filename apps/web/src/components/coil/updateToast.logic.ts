@@ -1,10 +1,7 @@
 /**
- * What the update toast shows, as a pure function of the delivery state.
- *
- * Split from the component in the style of `ProviderUpdateLaunchNotification.logic.ts`, so the
- * state machine can be tested without rendering. The interesting cases here are the ones where
- * showing nothing is correct — a toast that appears while an update is merely downloading trains
- * people to ignore it.
+ * What the update toast shows, as a pure function of the delivery state, so the state machine is
+ * testable without rendering. The interesting cases are where showing nothing is correct: a toast
+ * that appears while an update is merely downloading trains people to ignore it.
  */
 
 import type { CoilUpdateStatus } from "@t3tools/contracts";
@@ -23,13 +20,9 @@ import { isMacPlatform, isWindowsPlatform } from "../../lib/utils.ts";
 export type UpdateDeliveryStatus = CoilUpdateStatus;
 
 /**
- * How long an armed auto-restart is allowed to wait for the app to go quiet.
- *
- * There has to be a ceiling. Idleness is derived from each thread's run status (see
- * `countProgressingThreads`), and a run status can wedge in an active state.
- *
- * Without this, an armed restart against one wedged thread waits forever while the user believes
- * the update is handled. That is issue #41's failure mode — a silent nothing — not a new one.
+ * How long an armed auto-restart may wait for the app to go quiet. Idleness comes from each
+ * thread's run status (see `countProgressingThreads`), which can wedge active; without a ceiling
+ * one wedged thread makes the restart wait forever while the user believes it is handled.
  */
 export const AUTO_RESTART_CEILING_MS = 2 * 60 * 60 * 1000;
 
@@ -118,16 +111,9 @@ export type UpdateToastView =
 const FORK_ISSUES_NEW_URL = "https://github.com/radroid/t3code/issues/new";
 
 /**
- * A pre-filled issue, opened for review rather than filed automatically.
- *
- * Deliberately a link and not a `gh issue create`. The repo is public, so anything posted here is
- * world-readable, and an app that files publicly from the user's account without showing them the
- * text first is doing something they cannot take back. A link also means no dependency on `gh`
- * being installed and authenticated, and no chance of an install that fails on every launch
- * opening an issue on every launch.
- *
- * Build identity only. The failing step's message can embed local filesystem paths — on Windows
- * those contain the username — and none of that is needed to identify which update broke.
+ * A pre-filled issue, opened for review rather than filed automatically: the repo is public, so
+ * the user must see the text before it posts, and this avoids depending on `gh`. Build identity
+ * only, since the failing step's message can embed local paths that contain the username.
  */
 export function buildInstallFailureReportUrl(input: {
   readonly expectedShortSha: string;
@@ -159,43 +145,18 @@ export function buildInstallFailureReportUrl(input: {
 }
 
 /**
- * macOS refuses to let one app modify another's bundle unless both are signed by the same
- * development team, and installing an update is exactly that modification — the swap in
- * `installCommands.ts` replaces the bundle in /Applications. These builds *are* signed, but with a
- * self-signed certificate carrying no team identifier, so there is no team for macOS to match and
- * the App Management dialog is raised the first time an update lands.
- *
- * Asked once. The grant keys to the app's designated requirement, stable since #70/PR #85, so
- * allowing it survives later updates — confirmed 2026-08-12 across builds 102 to 105.
- *
- * **This note used to say the builds were unsigned, and to expect screen-recording and automation
- * prompts. All three were wrong**, and expensively so: PR #85 fixed the signing without updating
- * this string, so it kept promising the symptom of a bug that no longer existed — while naming two
- * services the app never requests. There is no `desktopCapturer`, `getDisplayMedia`, `osascript` or
- * Apple Event use anywhere in `apps/desktop/src`. The one dialog users actually see was never
- * either of them, and the wrong wording sent the diagnosis after the signature rather than the
- * missing team.
- *
- * `NSUpdateSecurityPolicy` is not an escape hatch — its `AllowProcesses` map is keyed *by team
- * identifier*, so it needs precisely the thing this build lacks. Retiring the dialog for good means
- * a paid Developer ID, which would also retire the quarantine step on the download page.
- *
- * Shown once, on the first update only. Repeating it every time would make it wallpaper, and it
- * is the kind of thing a user needs to understand once and then recognise.
+ * macOS raises App Management when one app modifies another's bundle without a shared team id;
+ * these builds are self-signed with none, so the first update triggers it. The grant keys to the
+ * stable designated requirement, so it is shown on the first update only (repeating it would
+ * make it wallpaper). Only a paid Developer ID would retire the dialog.
  */
 const FIRST_UPDATE_PERMISSION_NOTE =
   " macOS asks once for App Management (a dialog saying the app wants access to data from other apps). Allow it: updating means replacing the app in /Applications, and these builds carry no Apple team identifier for macOS to match it against. It will not ask again.";
 
 /**
- * Windows is not offered a "Restart", because it is not one.
- *
- * On macOS the click is a delete and a rename — staging already did everything expensive, so
- * "Restart" is honest. On Windows the click hands off to a silent NSIS installer that unpacks
- * several hundred MB while Defender scans every file of an unsigned build, and the app is GONE for
- * the duration: no window, and a Start-menu shortcut that reports the app does not exist.
- *
- * Presenting those two as the same one-word action is what turns an ordinary wait into "the update
- * deleted my app" — which is exactly how it was read the first time it ran.
+ * Windows is not offered a "Restart", because it is not one: the click hands off to a silent NSIS
+ * installer, and the app is gone (no window, a broken Start-menu shortcut) while Defender scans
+ * the unsigned build. Calling that "Restart" made users read the wait as "the update deleted it".
  */
 const WINDOWS_INSTALL_NOTE =
   "T3 Code will close, install the update, and reopen itself. This usually takes a few minutes, and the window and Start-menu shortcut are unavailable until it finishes.";
@@ -209,14 +170,9 @@ const TIMED_OUT_NOTE =
   " Something has been running for a while, so the automatic restart stood down.";
 
 /**
- * The build's age, in the toast's voice.
- *
- * Coarse on purpose: the exact second a build was produced is never the question. "just now"
- * rather than "0 min ago" because a build that finished seconds ago is the common case — the whole
- * point of this pipeline is that a merge reaches you quickly.
- *
- * A negative age means the builder's clock ran ahead of this machine's. Clamped to "just now"
- * rather than rendering "in 3 minutes", which reads as a bug in the app rather than clock skew.
+ * The build's age, coarse on purpose. "just now" rather than "0 min ago" because a build seconds
+ * old is the common case. A negative age (builder clock ahead) clamps to "just now", since
+ * "in 3 minutes" reads as an app bug rather than clock skew.
  */
 export function formatBuiltAgo(builtAt: string, now: number): string | undefined {
   const built = Date.parse(builtAt);
@@ -365,13 +321,9 @@ export function selectUpdateToastView(input: UpdateToastInput): UpdateToastView 
 }
 
 /**
- * Whether a Restart click should be forwarded to the main process.
- *
- * `__root.tsx` renders per window, so two open windows mean two toasts and two possible clicks
- * racing on one bundle. The main process is single-flight regardless — this just avoids sending
- * a request that is guaranteed to be refused.
- *
- * `armed` is included because that view keeps a "Restart now" escape hatch.
+ * Whether a Restart click should be forwarded to the main process. `__root.tsx` renders per
+ * window, so two windows race two clicks; main is single-flight anyway, this just skips a request
+ * that would be refused. `armed` is included because that view keeps a "Restart now" button.
  */
 export function shouldSendRestart(view: UpdateToastView): boolean {
   return view.kind === "ready" || view.kind === "armed";
@@ -383,17 +335,9 @@ export function shouldArmAutoRestart(view: UpdateToastView): boolean {
 }
 
 /**
- * Whether the toast's clock should keep ticking.
- *
- * Two consumers, one cadence. `ready` renders a build age that has to advance while the toast sits
- * on screen — pinned to whenever the renderer mounted, it reads "built just now" on a build that
- * landed eight hours ago, which is worse than showing nothing. `armed` needs a render to notice its
- * ceiling has passed, or the stand-down waits for a user interaction that may never come. A minute
- * serves both: it is the finest bucket `formatBuiltAgo` has, and the ceiling has two hours of slack.
- *
- * Keyed on the view rather than on the raw status, so the clock stops whenever the toast is off
- * screen. A dismissed build still reports `ready` from the main process, and waking once a minute
- * for a toast nobody can see is exactly the cost this predicate exists to avoid.
+ * Whether the toast's clock should keep ticking: `ready` shows a build age that must advance, and
+ * `armed` needs a render to notice its ceiling passed. Keyed on the view, not the raw status,
+ * because a dismissed build still reports `ready` and waking for an invisible toast is waste.
  */
 export function shouldTickClock(view: UpdateToastView): boolean {
   return view.kind === "ready" || view.kind === "armed";
@@ -411,19 +355,9 @@ export interface ProgressCandidateThread {
 }
 
 /**
- * How many threads are still working.
- *
- * A thread is working while its run is active, or while its runtime is parked at `idle`: v2 parks
- * it there when background work (a subagent, a monitor) will wake the agent again, and a restart
- * would kill that work. Upstream's sidebar and working shelf read `idle` the same way. The ceiling
- * covers the case where a run status wedges.
- *
- * Scoped to the primary environment. Restarting the desktop app tears down the server it hosts,
- * so remote-environment threads are not at risk from the restart and must not be able to block it
- * forever.
- *
- * Archived and explicitly-settled threads are excluded: a thread the user has put away should not
- * hold the app hostage because its last turn was never marked finished.
+ * Threads still working: an active run, or a runtime parked at `idle` (background work will wake
+ * the agent, as upstream's sidebar reads it). Primary environment only, since a restart does not
+ * touch remote threads. Archived and settled threads are excluded so they cannot block forever.
  */
 export function countProgressingThreads(
   threads: readonly ProgressCandidateThread[],
@@ -440,12 +374,9 @@ export function countProgressingThreads(
 }
 
 /**
- * Whether the main process should fire an armed restart now.
- *
- * Kept pure and separate from the view so the decision can be tested against thread snapshots
- * without a renderer. `progressingThreadCount` counts only the local primary environment:
- * restarting the desktop app tears down the server it hosts, so remote-environment threads are not
- * at risk and must not be able to block the restart forever.
+ * Whether the main process should fire an armed restart now. Kept pure so it is testable against
+ * thread snapshots; `progressingThreadCount` covers only the primary environment, because remote
+ * threads are not at risk from the restart and must not block it forever.
  */
 export function shouldAutoRestartNow(params: {
   readonly armed: AutoRestartArmed | undefined;

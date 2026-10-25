@@ -1,11 +1,6 @@
 /*
- * Types for render-release-notes.mjs.
- *
- * Hand-written because the implementation is `.mjs` (see the header comment there — the publish
- * job runs on the runner image's Node, with no `setup-node` step, so it must not depend on type
- * stripping) and this package's tsconfig does not set `allowJs`. Without this file the test
- * imports it as `any` and `tsgo --noEmit` fails on the implicit type.
- *
+ * Types for render-release-notes.mjs, hand-written because the implementation must stay `.mjs`
+ * (the publish job runs without type stripping) and this tsconfig does not set `allowJs`.
  * These shapes describe scripts/coil/install-instructions.json.
  */
 

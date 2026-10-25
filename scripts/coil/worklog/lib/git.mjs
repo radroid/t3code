@@ -1,10 +1,6 @@
-// Git and `gh` evidence for the /worklog collector — see docs/coil/worklog-design.md §3.
-//
-// T3code persists nothing about commits or pull requests, so the only source of truth is the
-// working machine. Every shell call goes through an injected runner: that keeps the test suite
-// offline, and it keeps this module honest about the fact that all of it is best-effort. Nothing
-// here throws — a missing repo, an absent `gh`, or a dead network degrades to a warning, because a
-// work log that refuses to render because GitHub was unreachable is worse than one with a gap.
+// Git and `gh` evidence for the /worklog collector (docs/coil/worklog-design.md §3). T3code
+// stores nothing about commits or PRs, so this reads the machine. Shell calls go through an
+// injected runner to keep tests offline, and nothing throws: failures degrade to warnings.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -20,25 +16,15 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// `--since`/`--until` filter on COMMITTER date, but the log reports AUTHOR date (%aI) because that
-// is when the work happened. The two routinely differ by days — squash-merges stamp the committer
-// date at merge time, cherry-picks and local rebases copy commits, and this fork's history before
-// 2026-09-02 was force-rebased daily. The git-level bounds therefore exist only to prune traversal;
-// the exact window test runs in JS against %aI.
-//
-// The two pads are deliberately different sizes. Every one of those operations moves the committer
-// date FORWARD, so an in-window commit can surface far past `end` (hence the generous upper pad) but
-// essentially never before `start` (hence the small lower one, which only absorbs clock skew and
-// timezone slop). Bounding the upper end at all is a trade: a commit re-committed more than a month
-// after the day it was authored is missed, which is far cheaper than letting a report for an old day
-// walk all of history.
+// `--since`/`--until` filter on COMMITTER date but the work happened at AUTHOR date (%aI), and
+// rebases, cherry-picks and squash-merges push the committer date FORWARD. So git bounds only prune
+// (small lower pad for skew, generous upper pad) and the exact window test runs in JS on %aI. A
+// commit re-committed over a month later is missed, which beats walking all of history.
 const SINCE_SKEW_PAD_MS = 2 * DAY_MS;
 const UNTIL_REBASE_PAD_MS = 30 * DAY_MS;
 
-// `--all` means every ref under refs/, and on a T3code-managed repo that is a trap: T3 writes a
-// checkpoint commit per turn under refs/t3/, and this fork carries 337 of them. Including that
-// namespace made a single day's `--numstat` output 49.7 MB against 102 KB without it — past the
-// 16 MB buffer, so the whole call failed and the day silently reported zero commits. Notes and the
+// `--all` would include refs/t3/ (one T3 checkpoint commit per turn), which can push a day's
+// `--numstat` past the 16 MB buffer and make the whole call fail as zero commits. Notes and the
 // stash are excluded for the same reason: machine-generated, never the user's work.
 const EXCLUDED_REF_GLOBS = ["refs/t3/*", "refs/notes/*", "refs/stash"];
 
@@ -480,22 +466,10 @@ function matchesIdentity(commit, identities) {
   );
 }
 
-// Two commits are the same piece of work when a rebase or cherry-pick copied one into the other,
-// and `--all` reaches both. Deduping by SHA cannot see that: a copy keeps the author, the AUTHOR
-// date and the subject, and changes exactly the SHA and the committer date. Before 2026-09-02 this
-// fork made that the normal case rather than an edge — every sync replayed ~90 patches onto
-// upstream while the pre-sync recovery tag kept the originals reachable, so a sync day counted
-// almost all of its commits and their churn twice. Syncs merge now and copy nothing, but a tag on
-// pre-sync history still reaches both copies, and cherry-picks still make the shape, so the dedup
-// stays.
-//
-// The knowing cost: two genuinely distinct commits by one author, in the same second, with the
-// same subject collapse into one. That shape is a scripted loop, not a person, and undercounting
-// it is far cheaper than the several-fold overcount it prevents.
-//
-// NUL joins the three fields because git cannot store one in a name, an address or a subject, so
-// no value can spell another tuple's key. A space could: "Version 2" + 100 + "x" joins to the same
-// string as "Version" + 2 + "100 x".
+// A rebase or cherry-pick copy keeps author, AUTHOR date and subject but not the SHA, and `--all`
+// reaches both copies, so dedup is by that tuple. Cost: distinct same-second commits with one
+// author and subject collapse (a scripted loop, cheaper than a several-fold overcount). NUL joins
+// the fields because git cannot store one in them, so no value can spell another tuple's key.
 function patchIdentity(commit) {
   const who = normalizeIdentity(commit.authorEmail) || normalizeIdentity(commit.author);
   return `${who}\0${commit.atMs}\0${commit.subject}`;
@@ -507,11 +481,9 @@ function mergeBranches(commit, branches) {
   }
 }
 
-// The GitHub logins hiding in an `identities` list, in the three forms it can carry them: the
-// explicit `@login` that `githubLoginIdentity` writes, a bare login, and a noreply address — whose
-// local part IS the login, which is why a registry seeded only from `git config user.email`
-// already knows it. A one-word git author name that is not the user's login is the hazard here;
-// it costs the PR count, never the commit count, and `@login` is the way out of it.
+// GitHub logins in an `identities` list: an explicit `@login`, a bare login, or a noreply address
+// (whose local part is the login). A one-word git author name that is not the user's login is the
+// hazard; it costs the PR count, never the commit count, and `@login` is the way out.
 function loginsFrom(identities) {
   const logins = new Set();
   for (const identity of Array.isArray(identities) ? identities : []) {

@@ -62,16 +62,10 @@ import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-// coil fork seam (issue #70). An env escape hatch, not a changed default, so upstream's own
-// assertions on this value keep passing and an unset environment builds exactly what upstream does.
-//
-// macOS stores one TCC permission row per (service, bundle id). This fork's build and upstream's
-// nightly are frequently installed side by side and shared `com.t3tools.t3code`, so whichever
-// launched last owned the Screen Recording / Accessibility / Files & Folders grants and the other
-// was re-prompted. A distinct id for the fork is the only fix — the two apps are otherwise the same
-// app to macOS. Set by .github/workflows/coil-release.yml; scripts/coil/verify-mac-signature.ts
-// fails any artifact whose signing identifier is not the expected one, so an unset variable cannot
-// ship silently.
+// coil fork seam: an env escape hatch, so unset builds exactly what upstream does. macOS keys TCC
+// grants by bundle id, so sharing upstream's id made side-by-side installs re-prompt each other.
+// Set by coil-release.yml; scripts/coil/verify-mac-signature.ts fails any
+// artifact with the wrong identifier, so an unset variable cannot ship silently.
 const DESKTOP_APP_ID = process.env.T3X_DESKTOP_APP_ID?.trim() || "com.t3tools.t3code";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
@@ -984,22 +978,10 @@ interface StagePackageJson {
 
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
-// coil fork seam (issue #53). An env escape hatch, not a changed default — the same shape as
-// T3X_DESKTOP_APP_ID above, and for the same reason.
-//
-// Upstream's build-desktop-artifact.test.ts asserts this array deep-equals exactly its one entry, so
-// adding globs in place would mean editing that assertion too. That is not merely a line count: the
-// fork's list is 67 globs and grows, so an inline list makes every future size fix an edit to an
-// upstream TEST — a file that already carries a fork row from #71 and is resolved by hand at every
-// sync. Read through the environment instead, an unset environment packages precisely what upstream
-// packages, upstream's assertion keeps passing untouched, and the list stays fork-owned.
-//
-// That list (~half the packaged asar: third-party source maps, Clerk's browser SDK, and the shiki tree
-// only the bundled web client uses) lives in scripts/coil/desktop-file-exclusions.mjs, which explains
-// every entry and is unit-tested. .github/workflows/coil-release.yml sets the variable from it; since
-// #92 retired the local autobuild that is the only path that builds a shipping artifact. The
-// compensating control is scripts/coil/verify-desktop-bundle.mjs, which fails a release whose packaged
-// app is missing something its own bundles import.
+// coil fork seam, the same env escape hatch as T3X_DESKTOP_APP_ID: upstream's test asserts this
+// array exactly, so an unset environment must package what upstream does. The fork list lives in
+// scripts/coil/desktop-file-exclusions.mjs (set by coil-release.yml), and
+// scripts/coil/verify-desktop-bundle.mjs fails a release missing something its bundles import.
 const coilExtraFileExclusions = (process.env.T3X_DESKTOP_FILE_EXCLUSIONS ?? "")
   .split(",")
   .map((glob) => glob.trim())

@@ -14,19 +14,10 @@ export interface Command {
 }
 
 /**
- * macOS staging: mount, copy beside the target, de-quarantine, unmount.
- *
- * All of it runs in the BACKGROUND, before the user is offered a restart. If any of this happened
- * after the click, "the click is an instant restart" would be false — a 470 MB copy plus a
- * recursive xattr walk over tens of thousands of files is tens of seconds with the UI stuck.
- *
- * Two traps encoded here:
- *
- * - The mount point is under `$TMPDIR`, not `/Volumes`. Mounting under `/Volumes` from inside the
- *   app raises the macOS "access files on a removable volume" prompt, which a background step has
- *   no way to answer.
- * - The copy destination must NOT already exist. BSD `cp -R src.app dst.app` copies *into*
- *   `dst.app` when it exists, nesting the new build inside the old one and exiting 0.
+ * macOS staging (mount, copy beside the target, de-quarantine, unmount), all run in the
+ * background before a restart is offered so the click stays instant. Mount under `$TMPDIR`, not
+ * `/Volumes` (that raises a removable-volume prompt nobody can answer). The copy destination must
+ * not exist: BSD `cp -R src.app dst.app` nests into an existing `dst.app` and still exits 0.
  */
 export function macStagingCommands(args: {
   readonly dmgPath: string;
@@ -45,12 +36,9 @@ export function macStagingCommands(args: {
 }
 
 /**
- * Split out because `sourceAppPath` is not knowable until the dmg is mounted.
- *
- * The `.app` name inside the dmg must be READ, never computed — `resolveMacInstallTarget` refuses
- * an install when the mounted name differs from the installed one, and that check is worthless if
- * both sides come from the same guess. So the caller attaches, lists the mount point, and only
- * then can build the copy step.
+ * Split out because `sourceAppPath` is not knowable until the dmg is mounted. The `.app` name must
+ * be read from the mount, never computed: `resolveMacInstallTarget` refuses a name mismatch, and
+ * that check is worthless if both sides come from the same guess.
  */
 export function macAttachCommands(args: {
   readonly dmgPath: string;
@@ -88,12 +76,8 @@ export function macDetachCommand(mountPoint: string): Command {
 }
 
 /**
- * The swap, run on the click. Everything expensive already happened.
- *
- * Delete-then-rename, in that order and no other. Renaming onto an existing bundle does not
- * replace it, and copying before the delete is what nests one app inside another. The window where
- * nothing is installed is a single rename long — and the alternative, deleting after a failed
- * copy, leaves the user with no app at all.
+ * The swap, run on the click. Delete-then-rename, in that order only: renaming onto an existing
+ * bundle does not replace it, and copying before the delete nests one app inside another.
  */
 export function macSwapCommands(args: {
   readonly targetAppPath: string;
@@ -106,30 +90,19 @@ export function macSwapCommands(args: {
 }
 
 /**
- * Windows install. A completely different shape, and the design has to say so.
- *
- * The NSIS installer needs the app's own files, so the app cannot wait for it to finish — a silent
- * install that hits a running app is the documented cause of installers that hang forever with no
- * UI. The only sequence that works is: spawn detached, quit immediately, let the installer relaunch.
- *
- * That means `DesktopLifecycle.relaunch` is the wrong primitive here. macOS restarts itself;
- * Windows is restarted *by* the installer.
- *
- * `/S` alone installs silently and does not start the app afterwards, which would leave the user
- * staring at a closed app wondering what happened. `--force-run` is what electron-updater's own
- * NsisUpdater passes, alongside `--updated`.
+ * Windows install: spawn detached, quit immediately, let the installer relaunch. NSIS needs the
+ * app's own files and a silent install that hits a running app hangs forever, so
+ * `DesktopLifecycle.relaunch` is the wrong primitive. `/S` alone does not restart the app;
+ * `--force-run` (with `--updated`) is what electron-updater's NsisUpdater passes.
  */
 export function windowsInstallCommand(installerPath: string): Command {
   return { bin: installerPath, args: ["/S", "--force-run", "--updated"], detached: true };
 }
 
 /**
- * Windows verification happens on the NEXT startup, not in-process.
- *
- * By the time the installer has done anything, this process is gone — there is nobody left to
- * check. So the target is recorded before quitting and compared against `t3codeCommitHash` when
- * the app comes back. Without this, a silently failed install is indistinguishable from a
- * successful one, which is exactly issue #47's complaint.
+ * Windows verification happens on the next startup: by the time the installer runs, this process
+ * is gone. The target is recorded before quitting and compared against `t3codeCommitHash` on
+ * return, otherwise a silently failed install looks like a successful one.
  */
 export function verifyPostInstall(args: {
   readonly expectedShortSha: string;

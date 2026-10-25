@@ -1,13 +1,7 @@
 /**
- * Resolving *what* to replace, and refusing when replacing it would silently do the wrong thing.
- *
- * Every rejection here maps to a failure that otherwise reports success. That is the whole reason
- * this is a separate, pure, heavily-tested module rather than three lines inside the installer.
- *
- * No `node:path` import: the repo routes filesystem paths through Effect's `Path` service, and
- * pulling that in would make this module effectful for what is entirely string arithmetic. These
- * paths are always POSIX — the bundle-walking logic below is macOS-only by construction — so two
- * local helpers are both sufficient and cheaper than a service dependency.
+ * Resolving *what* to replace, and refusing when replacing it would silently do the wrong thing:
+ * every rejection maps to a failure that otherwise reports success. No `node:path`: these paths
+ * are always POSIX (macOS-only), and Effect's `Path` service would make string math effectful.
  */
 
 function posixDirname(path: string): string {
@@ -42,11 +36,9 @@ export function describeRefusal(refusal: InstallRefusal): string {
       );
     case "not-a-bundle":
       return `Could not find the enclosing .app for ${refusal.execPath}, so there is nothing safe to replace.`;
-    // This refusal fires exactly once per user, on the first build after the app's name changes
-    // (upstream's Alpha → Beta, or the fork dropping "T3 Coil" for "T3 Code"). Worded as a next
-    // step rather than a fault, because a mechanism-only message leaves the reader stuck. The check
-    // itself is unchanged and still the only thing standing between a rename and two installed
-    // apps, so the message tells them the one safe way through instead of hiding the refusal.
+    // Fires once per user, on the first build after the app is renamed. Worded as the one safe next
+    // step rather than a fault, because the check is all that stops a rename leaving two installed
+    // apps.
     case "name-mismatch":
       return (
         `The downloaded build is named "${refusal.incoming}" but the running app is ` +
@@ -60,15 +52,9 @@ export function describeRefusal(refusal: InstallRefusal): string {
 
 /**
  * macOS runs a quarantined app from a randomised read-only mount under
- * `/private/var/folders/.../AppTranslocation/<UUID>/d/...` rather than from where the user put it.
- *
- * This is the sharpest trap in the whole feature. `DesktopLifecycle.relaunch` re-execs
- * `process.execPath`; under translocation that points into the read-only snapshot. An installer
- * that wrote to /Applications anyway would then relaunch the *old* translocated bundle, and the
- * post-install check would pass because it verified the wrong process. Silent success, wrong
- * result — the precise failure shape of issue #47.
- *
- * The first launch after a manual dmg drag is exactly this case, so it is common, not exotic.
+ * `/private/var/folders/.../AppTranslocation/<UUID>/d/...`. Relaunching `process.execPath` there
+ * brings back the old bundle while post-install checks pass against the wrong process. Common:
+ * the first launch after a manual dmg drag is exactly this case.
  */
 export function isTranslocatedPath(execPath: string): boolean {
   return execPath.includes("/AppTranslocation/");
@@ -88,13 +74,9 @@ export function findEnclosingAppBundle(execPath: string): string | undefined {
 }
 
 /**
- * Resolve the bundle to replace from the running executable.
- *
- * Deliberately never hardcodes `/Applications`. The existing shell installer does, and its own
- * dry-run warns about the consequence: a real install "would create a NEW app and leave whatever
- * you currently run untouched". Moving that logic in-process removes the human who reads the
- * warning, so the path has to come from the process itself. Real cases this covers:
- * `~/Applications`, a second copy, a root-owned `/Applications` under MDM, a read-only volume.
+ * Resolve the bundle to replace from the running executable, never a hardcoded `/Applications`:
+ * that would install a NEW app and leave the running one untouched for `~/Applications`, a second
+ * copy, an MDM root-owned `/Applications`, or a read-only volume.
  */
 export function resolveMacInstallTarget(args: {
   readonly execPath: string;

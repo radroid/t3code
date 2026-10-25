@@ -5,27 +5,10 @@ import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as DesktopShutdown from "../../app/DesktopShutdown.ts";
 
 /**
- * Restarting into a freshly installed build.
- *
- * This deliberately does **not** call `DesktopLifecycle.relaunch`, even though that exists and does
- * almost this. Two differences make it unusable here, and both are load-bearing:
- *
- * 1. **Its shutdown wait is unbounded.** `requestDesktopShutdownAndWait` awaits a bare `Deferred`
- *    that resolves only once every backend has stopped, and `DesktopBackendManager.closeRun` takes
- *    a no-timeout branch when given no options. A wedged PTY drain, an SSH tunnel, or a `wsl.exe`
- *    backend that never returns means the relaunch never fires — the app sits on "Restarting…"
- *    indefinitely. That is issue #41 reached through a different door: an app that is dark, for an
- *    unbounded time, with no error anywhere.
- *
- * 2. **It re-execs `process.execPath`.** Under macOS App Translocation that points into a
- *    randomised read-only snapshot, so the app would come back on the OLD build while
- *    post-install verification passed against the wrong process. `installTarget.ts` refuses
- *    translocated paths before we ever get here, but the exec path still has to come from the
- *    install target rather than from the running process.
- *
- * Editing `DesktopLifecycle.ts` to add a timeout was the other option. It would have added seam
- * row 36 to a ledger whose own tripwire asks for re-isolation first, on a file the fork does not
- * currently touch — so this restart path lives here instead.
+ * Restarting into a freshly installed build, deliberately without `DesktopLifecycle.relaunch`. Its
+ * shutdown wait is unbounded (a wedged backend leaves the app on "Restarting…" forever), and it
+ * re-execs `process.execPath`, which under App Translocation would come back on the old build.
+ * The exec path must come from the install target, not the running process.
  */
 
 /**
@@ -40,15 +23,9 @@ export const SHUTDOWN_GRACE = Duration.seconds(10);
 export type RestartOutcome = "graceful" | "forced-after-timeout";
 
 /**
- * Quit and come back on the new build.
- *
- * Ordering is the point of this function:
- *
- * 1. Ask for shutdown and wait, bounded.
- * 2. Arm the relaunch — immediately before exiting, never earlier. `app.relaunch()` registers
- *    intent for the *next* quit, so arming it before a wait that might fail would leave the app
- *    alive with a booby-trapped Cmd-Q that silently resurrects it later.
- * 3. Exit, whether or not the shutdown finished.
+ * Quit and come back on the new build: request shutdown and wait (bounded), then arm the relaunch
+ * immediately before exiting, then exit regardless. `app.relaunch()` arms the *next* quit, so
+ * arming it before a wait that might fail leaves a Cmd-Q that silently resurrects the app.
  */
 export const restartIntoInstalledBuild = Effect.fn("coil.updateDelivery.restart")(function* (args: {
   readonly execPath: string;

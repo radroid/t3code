@@ -1,10 +1,6 @@
-// Every filesystem location the /worklog collector touches is derived here.
-//
-// One reason this is a module and not a scattering of string literals: the whole pipeline is
-// read-only toward the user's data, and the cheapest way to keep it that way under test is for
-// a test to move HOME (plus the three WORKLOG_* overrides) to a temp directory and have every
-// other module follow automatically. Nothing below caches, so an override set mid-process is
-// honoured by the next call.
+// Every filesystem location the /worklog collector touches is derived here, so a test can move
+// HOME (plus the three WORKLOG_* overrides) to a temp dir and every module follows, keeping the
+// pipeline read-only toward user data. Nothing caches, so a mid-process override is honoured.
 
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";

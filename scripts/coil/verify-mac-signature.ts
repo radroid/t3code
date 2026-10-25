@@ -1,22 +1,9 @@
 #!/usr/bin/env node
 /**
- * Fail a build that would re-ask the user for every macOS permission.
- *
- * Issue #70. electron-builder does NOT fail when it cannot find a signing identity — it logs
- * `skipped macOS application code signing` as a warning and produces an ad-hoc bundle. That is the
- * failure mode worth spending a script on: the release goes green, the dmg installs, and the bug
- * reappears three days later as "the permission prompts are back", with nothing in the log anyone
- * would think to re-read.
- *
- * So the claim "this release keeps its permissions" is made machine-checkable here, against the
- * artifact that is actually shipped — the .app inside the .dmg, not the staging copy.
- *
- * Usage:
- *   node scripts/coil/verify-mac-signature.ts --artifact release/T3-Code-0.0.33-arm64.dmg \
- *     --expect-requirement-file docs/coil/mac-signing/designated-requirement.txt
- *   node scripts/coil/verify-mac-signature.ts --artifact "/Applications/T3 Code (Alpha).app" \
- *     --write-requirement-file docs/coil/mac-signing/designated-requirement.txt
- *   node scripts/coil/verify-mac-signature.ts --artifact … --allow-unsigned   # warn, don't fail
+ * Fail a build that would re-ask the user for every macOS permission. electron-builder only warns
+ * when no signing identity is found and ships an ad-hoc bundle, so this checks the shipped .app
+ * (inside the .dmg). Flags: --artifact <dmg|app>, --expect-requirement-file <f> or
+ * --write-requirement-file <f>, and --allow-unsigned to warn instead of fail.
  */
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -88,14 +75,9 @@ const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.
   );
 
 /**
- * `codesign` writes its report to STDERR, so both streams are collected and concatenated. Reading
- * stdout alone yields "" — which parses as an unsigned bundle and would fail every signed build.
- *
- * Self-scoping (`Effect.scoped` at the end), not relying on an ambient scope. Spawning acquires a
- * scoped resource, and one of the callers below is a RELEASE action — where no ambient scope is
- * available any more. That combination is how the first version of this file silently skipped its
- * `hdiutil detach`: the spawn failed with "Service not found: effect/Scope" and the failure was
- * swallowed, leaving the dmg attached and the temp mount point un-removable.
+ * `codesign` reports on STDERR, so both streams are collected; stdout alone parses as unsigned.
+ * Self-scoping (`Effect.scoped`) because a caller runs this in a release action, where there is
+ * no ambient scope: without it the spawn fails silently and the dmg is never detached.
  */
 const runCapturing = Effect.fn("runCapturing")(function* (bin: string, args: readonly string[]) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -112,17 +94,9 @@ const runCapturing = Effect.fn("runCapturing")(function* (bin: string, args: rea
 }, Effect.scoped);
 
 /**
- * Mount a dmg read-only and hand the caller the `.app` inside it.
- *
- * Two things are deliberate, and both are inherited from
- * apps/desktop/src/coil/updateDelivery/installCommands.ts, where they were learned the hard way:
- *
- * - The mount point lives under $TMPDIR, never /Volumes. Mounting under /Volumes raises the macOS
- *   "access files on a removable volume" prompt, which a CI step cannot answer.
- * - `-readonly`: verification must never be able to modify the artifact it is verifying.
- *
- * The detach is a release action, so a failed verification still unmounts — a dmg left attached
- * poisons the next attach to the same mount point.
+ * Mount a dmg `-readonly` under $TMPDIR (never /Volumes, whose removable-volume prompt CI cannot
+ * answer) and hand the caller the `.app` inside, as installCommands.ts does. The detach is a
+ * release action, so a failed verification still unmounts and cannot poison the next attach.
  */
 const withMountedDmg = Effect.fn("withMountedDmg")(function* <A, E, R>(
   dmgPath: string,
