@@ -56,6 +56,7 @@ export function CoilUpdateToast() {
   const [now, setNow] = useState(() => Date.now());
   const toastId = useRef<ToastId | undefined>(undefined);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Subscribes to the desktop bridge's update state, an external source with no React store.
   useEffect(() => {
     const bridge = updateBridge();
     if (bridge === undefined) return;
@@ -104,6 +105,7 @@ export function CoilUpdateToast() {
   // Depends on the boolean, not on the view: the interval is torn down and rebuilt only when the
   // toast appears or disappears, not on every tick it causes.
   const clockTicks = shouldTickClock(view);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Re-reads the clock once a minute only while a toast is visible; the interval is cleared when it hides.
   useEffect(() => {
     if (!clockTicks) return;
     const timer = setInterval(() => {
@@ -123,6 +125,7 @@ export function CoilUpdateToast() {
     primaryEnvironment?.environmentId ?? null,
   );
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- The idle signal comes from thread shells read during render, so the armed restart can only fire after it.
   useEffect(() => {
     if (!shouldAutoRestartNow({ armed: autoRestart, progressingThreadCount, now: Date.now() })) {
       return;
@@ -140,6 +143,7 @@ export function CoilUpdateToast() {
   // of the root route — which is most of them.
   const viewKey = JSON.stringify(view);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Mirrors the view into toastManager, an imperative store outside React, keyed on the view's content.
   useEffect(() => {
     if (view.kind === "hidden") {
       if (toastId.current !== undefined) {
