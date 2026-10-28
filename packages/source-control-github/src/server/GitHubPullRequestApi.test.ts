@@ -21,6 +21,14 @@ import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSour
 import * as GitHubPullRequestApi from "./GitHubPullRequestApi.ts";
 import * as GitHubPullRequestProvider from "./GitHubPullRequestProvider.ts";
 import { KnownWorkflowRuns } from "./gitHubConditionalChecks.ts";
+import * as GitHubAppAccess from "./GitHubAppAccess.ts";
+import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
+
+const appSignedOut = Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
+  enabled: false,
+  token: () => Effect.succeedNone,
+  invalidate: () => Effect.void,
+});
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -112,6 +120,7 @@ const mockApi = Layer.succeed(
   GitHubRest.GitHubRest.of({
     rest: (input) => mockedExecute({ kind: "rest", ...input }),
     credential: (host) => mockedCredential(host),
+    appCredential: () => Effect.succeedNone,
   }),
 );
 
@@ -167,8 +176,10 @@ const mockHttp = Layer.succeed(
 
 const layer = it.layer(
   GitHubPullRequestApi.layer.pipe(
+    Layer.provideMerge(GitHubAppAccess.layer),
     Layer.provideMerge(mockApi),
     Layer.provideMerge(GitHubRequestPolicy.layer),
+    Layer.provideMerge(appSignedOut),
     Layer.provideMerge(GitHubQuota.layer),
     Layer.provideMerge(SourceControlRateLimit.layer),
     Layer.provideMerge(mockHttp),
@@ -176,6 +187,8 @@ const layer = it.layer(
       Layer.succeed(GitHubCredentials.GitHubCredentials, {
         get: (host) =>
           Effect.map(mockedCredential(host), (held) => ({ ...held, host, source: "gh" as const })),
+        saved: () => Effect.succeedNone,
+        fingerprint: (host, token) => Effect.succeed(`${host}:${token}`),
         invalidate: () => Effect.void,
       }),
     ),
@@ -623,6 +636,8 @@ it.effect(
               source: "gh" as const,
               fingerprint: `${host}:${activeToken.length}${activeToken.at(-1)}`,
             })),
+          saved: () => Effect.succeedNone,
+          fingerprint: (host, token) => Effect.succeed(`${host}:${token}`),
           invalidate: () => Effect.void,
         }),
       );
@@ -648,8 +663,9 @@ it.effect(
       );
       const cli = yield* GitHubPullRequestApi.make.pipe(
         Effect.provide(
-          GitHubRest.layer.pipe(
-            Layer.provideMerge(Layer.mergeAll(credentials, http)),
+          GitHubAppAccess.layer.pipe(
+            Layer.provideMerge(GitHubRest.layer),
+            Layer.provideMerge(Layer.mergeAll(credentials, http, appSignedOut)),
             Layer.provideMerge(GitHubQuota.layer),
             Layer.provideMerge(SourceControlRateLimit.layer),
             Layer.merge(TestSourceControlHost.layer()),
@@ -694,6 +710,76 @@ it.effect(
 );
 
 layer("GitHubPullRequestApi.layer", (it) => {
+  it.effect.each(["mixed", "merges", "unavailable"] as const)(
+    "reads stats only for displayed non-merge commits (%s)",
+    (kind) =>
+      Effect.gen(function* () {
+        const oids = kind === "merges" ? ["merge"] : ["regular", "merge"];
+        mockedExecute.mockReturnValueOnce(
+          Effect.succeed(
+            output(
+              encodeJson({
+                data: {
+                  repository: {
+                    pullRequest: {
+                      author: null,
+                      comments: { nodes: [], pageInfo: lastPage },
+                      reviews: { nodes: [], pageInfo: lastPage },
+                      commits: {
+                        nodes: oids.map((oid) => ({
+                          commit: {
+                            id: "node-" + oid,
+                            oid,
+                            messageHeadline: oid,
+                            committedDate: "2026-07-05T00:00:00Z",
+                            parents: { totalCount: oid === "merge" ? 2 : 1 },
+                            authors: { nodes: [] },
+                          },
+                        })),
+                      },
+                    },
+                  },
+                },
+              }),
+            ),
+          ),
+        );
+        if (kind === "unavailable") {
+          mockedExecute.mockReturnValueOnce(Effect.succeed(output("{}", false, false, {}, 503)));
+        } else if (kind !== "merges") {
+          mockedExecute.mockReturnValueOnce(
+            Effect.succeed(
+              output(
+                encodeJson({
+                  data: {
+                    nodes: [{ __typename: "Commit", oid: "regular", additions: 18, deletions: 7 }],
+                  },
+                }),
+              ),
+            ),
+          );
+        }
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        const activity = yield* cli.getPullRequestActivity(pullRequestInput);
+        expect(activity.commits.map((commit) => commit.oid)).toEqual(oids);
+        expect(activity.commits.find((commit) => commit.oid === "merge")).not.toHaveProperty(
+          "additions",
+        );
+        expect(activity.commits.find((commit) => commit.oid === "merge")).not.toHaveProperty(
+          "deletions",
+        );
+        if (kind === "mixed") {
+          expect(activity.commits[0]).toMatchObject({ additions: 18, deletions: 7 });
+        } else if (kind === "unavailable") {
+          expect(activity.commits[0]).not.toHaveProperty("additions");
+        }
+        expect(variablesOf("PullRequestCommitStats")).toEqual(
+          kind === "merges" ? [] : [{ ids: ["node-regular"] }],
+        );
+        expect(mockedExecute).toHaveBeenCalledTimes(kind === "merges" ? 1 : 2);
+      }),
+  );
+
   it.effect("loads the complete hover card with one GraphQL request", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(

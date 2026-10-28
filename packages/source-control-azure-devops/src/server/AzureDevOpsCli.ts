@@ -411,8 +411,8 @@ export const make = Effect.gen(function* () {
 
   return AzureDevOpsCli.of({
     execute,
-    listPullRequests: (input) =>
-      executeJson({
+    listPullRequests: Effect.fn("AzureDevOpsCli.listPullRequests")(function (input) {
+      return executeJson({
         cwd: input.cwd,
         args: [
           "repos",
@@ -450,9 +450,10 @@ export const make = Effect.gen(function* () {
                 }),
               ),
         ),
-      ),
-    getPullRequest: (input) =>
-      executeJson({
+      );
+    }),
+    getPullRequest: Effect.fn("AzureDevOpsCli.getPullRequest")(function (input) {
+      return executeJson({
         cwd: input.cwd,
         args: [
           "repos",
@@ -484,9 +485,10 @@ export const make = Effect.gen(function* () {
             }),
           ),
         ),
-      ),
-    getRepositoryCloneUrls: (input) =>
-      executeJson({
+      );
+    }),
+    getRepositoryCloneUrls: Effect.fn("AzureDevOpsCli.getRepositoryCloneUrls")(function (input) {
+      return executeJson({
         cwd: input.cwd,
         args: ["repos", "show", "--detect", "true", "--repository", input.repository],
       }).pipe(
@@ -500,8 +502,9 @@ export const make = Effect.gen(function* () {
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
-      ),
-    createRepository: (input) => {
+      );
+    }),
+    createRepository: Effect.fn("AzureDevOpsCli.createRepository")(function (input) {
       const repository = parseRepositorySpecifier(input.repository);
       // Project/organization permissions control visibility; `az repos create` has no flag.
       return executeJson({
@@ -522,9 +525,9 @@ export const make = Effect.gen(function* () {
         ),
         Effect.map(normalizeRepositoryCloneUrls),
       );
-    },
-    createPullRequest: (input) =>
-      execute({
+    }),
+    createPullRequest: Effect.fn("AzureDevOpsCli.createPullRequest")(function (input) {
+      return execute({
         cwd: input.cwd,
         args: [
           "repos",
@@ -542,9 +545,10 @@ export const make = Effect.gen(function* () {
           "--description",
           `@${input.bodyFile}`,
         ],
-      }).pipe(Effect.asVoid),
-    getDefaultBranch: (input) =>
-      executeJson({
+      }).pipe(Effect.asVoid);
+    }),
+    getDefaultBranch: Effect.fn("AzureDevOpsCli.getDefaultBranch")(function (input) {
+      return executeJson({
         cwd: input.cwd,
         args: ["repos", "show", "--detect", "true"],
       }).pipe(
@@ -553,9 +557,10 @@ export const make = Effect.gen(function* () {
           decodeAzureDevOpsJson(raw, RawAzureDevOpsRepositorySchema, "getDefaultBranch", input.cwd),
         ),
         Effect.map((repo) => normalizeDefaultBranch(repo.defaultBranch)),
-      ),
-    checkoutPullRequest: (input) =>
-      execute({
+      );
+    }),
+    checkoutPullRequest: Effect.fn("AzureDevOpsCli.checkoutPullRequest")(function (input) {
+      return execute({
         cwd: input.cwd,
         args: [
           "repos",
@@ -569,7 +574,8 @@ export const make = Effect.gen(function* () {
           "--remote-name",
           input.remoteName ?? "origin",
         ],
-      }).pipe(Effect.asVoid),
+      }).pipe(Effect.asVoid);
+    }),
   });
 });
 

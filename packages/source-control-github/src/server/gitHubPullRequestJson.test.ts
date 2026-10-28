@@ -7,7 +7,6 @@ import {
   buildReviewerRequest,
   pullRequestLookup,
   toPullRequestWatchFingerprint,
-  decodePullRequestDetailJson,
   decodePullRequestFilesJson,
   decodePullRequestStacksJson,
   LenientPullRequestList,
@@ -128,9 +127,6 @@ const reviewCommit = ({ commit: { authors, ...commit } }: Json) => ({
   commit: {
     messageHeadline: "",
     committedDate: "",
-    additions: 0,
-    deletions: 0,
-    parents: { totalCount: 1 },
     ...commit,
     authors: {
       nodes: nodesIn(authors).map((author) => ({
@@ -450,6 +446,8 @@ describe("pull request detail decoding", () => {
               nodes: ((raw["commits"] ?? []) as ReadonlyArray<Record<string, unknown>>).map(
                 ({ authors, ...commit }) => ({
                   commit: {
+                    id: "commit-id",
+                    parents: { totalCount: 1 },
                     ...commit,
                     authors: {
                       nodes: ((authors ?? []) as ReadonlyArray<Record<string, unknown>>).map(
@@ -487,27 +485,12 @@ describe("pull request detail decoding", () => {
     expect(detail.checksState).toBe("pending");
   });
 
-  it("reads an auto-merge request and strategy, its null as off and its absence as neither", () => {
+  it("reads an auto-merge request and strategy, and its null as off", () => {
     expect(detailOf([], { autoMergeRequest: { mergeMethod: "SQUASH" } })).toMatchObject({
       autoMergeEnabled: true,
       autoMergeMethod: "squash",
     });
     expect(detailOf([], { autoMergeRequest: null }).autoMergeEnabled).toBe(false);
-    expect(
-      expectSuccess(
-        decodePullRequestDetailJson(
-          JSON.stringify({
-            number: 7,
-            title: "Detail",
-            url: "https://github.com/pingdotgg/t3code/pull/7",
-            headRefName: "feat/detail",
-            baseRefName: "main",
-            createdAt: "2026-07-01T00:00:00Z",
-            updatedAt: "2026-07-05T00:00:00Z",
-          }),
-        ),
-      ).autoMergeEnabled,
-    ).toBeUndefined();
   });
 
   it("shows a re-running check once, as the run that is happening now", () => {
@@ -638,25 +621,27 @@ describe("review thread decoding", () => {
       },
     });
 
-  it("omits misleading line counts from merge commits", () => {
+  it("selects stats only for non-merge activity commits", () => {
     const result = expectSuccess(
-      decodeReviewThreadsJson(
+      decodePullRequestActivityJson(
         JSON.stringify({
           data: {
             repository: {
               pullRequest: {
-                reviewThreads: { totalCount: 0, nodes: [] },
+                author: null,
+                comments: { nodes: [], pageInfo: LAST_PAGE },
+                reviews: { nodes: [], pageInfo: LAST_PAGE },
                 commits: {
-                  nodes: [
-                    {
-                      commit: {
-                        oid: "merge123",
-                        additions: 36_858,
-                        deletions: 12_928,
-                        parents: { totalCount: 2 },
-                      },
+                  nodes: [1, 2].map((parents) => ({
+                    commit: {
+                      id: "commit-" + parents,
+                      oid: "sha-" + parents,
+                      messageHeadline: "Commit",
+                      committedDate: "2026-07-05T00:00:00Z",
+                      parents: { totalCount: parents },
+                      authors: { nodes: [] },
                     },
-                  ],
+                  })),
                 },
               },
             },
@@ -664,8 +649,8 @@ describe("review thread decoding", () => {
         }),
       ),
     );
-
-    expect([...result.commitStats]).toEqual([]);
+    expect(result.nonMergeCommitIds).toEqual(["commit-1"]);
+    expect(result.commits?.map((commit) => commit.oid)).toEqual(["sha-1", "sha-2"]);
   });
 
   it("decodes the newest commits off the same connection, oldest to newest", () => {

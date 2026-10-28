@@ -239,6 +239,7 @@ export const make = Effect.gen(function* () {
       threadSnooze: true,
       environmentThemes: true,
       usageLimitSources: true,
+      providerWorkspaceSnapshotsOnDemand: true,
       usagePriceOverrides: true,
       usageModelAliases: true,
       threadPinning: true,
@@ -254,9 +255,11 @@ export const make = Effect.gen(function* () {
       threadPullRequestLinking: true,
       serverResolvedCommandContext: true,
       threadStop: true,
+      ...(hostPlatform === "win32" ? {} : { localServerStop: true }),
       environmentIcon: true,
       projectCloneTracking: true,
       ignoredFileListing: true,
+      triage: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
@@ -264,6 +267,9 @@ export const make = Effect.gen(function* () {
         : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       serverBrowser: true,
+      peerLinks: true,
+      mcpModeLimitHeader: true,
+      linkFence: true,
     },
   };
 

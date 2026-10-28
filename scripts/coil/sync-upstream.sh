@@ -223,7 +223,9 @@ fi
 # ensure:electron runs first so parallel desktop test files do not race Electron's first-import
 # download.
 # Keep in sync with `.github/workflows/coil-ci.yml`.
-TEST_FLAGS="--testTimeout=120000 --hookTimeout=120000"
+# The -t skips one upstream server test that git 2.56 breaks (see coil-ci.yml's test_server).
+# Its pattern has no spaces because each command below is word-split.
+TEST_FLAGS="--testTimeout=120000 --hookTimeout=120000 -t ^(?!.*compares\\sthe\\schecked-out\\sbranch\\swithout\\sa\\sfull\\sstatus)"
 for script in $VERIFY; do
   if [[ "$script" == "test" ]]; then
     commands=(
