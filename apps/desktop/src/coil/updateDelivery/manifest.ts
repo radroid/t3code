@@ -57,7 +57,6 @@ export const UpdateManifest = Schema.Struct({
 });
 export type UpdateManifest = typeof UpdateManifest.Type;
 
-export const decodeUpdateManifest = Schema.decodeUnknownEffect(UpdateManifest);
 export const decodeUpdateManifestJson = Schema.decodeEffect(Schema.fromJsonString(UpdateManifest));
 
 export function findAssetForPlatform(

@@ -13,6 +13,8 @@
         ".coderabbit.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
       ],
+      // coil: only retired upstream workflows ran this (scripts/coil/sync-upstream.sh).
+      "ignore": [".github/scripts/mirror-play-apk.cjs"],
       "vite": { "entry": [".github/**/*.test.cjs"] },
       "vitest": { "entry": [".github/**/*.test.cjs"] },
     },
@@ -39,7 +41,16 @@
       // The `t3` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
       // knip run beside it in check:changed must not report.
-      "ignore": ["npm-launcher/**", ".knip-test-*/**"],
+      // coil: worklog runs by path, and the rest only ran from retired upstream workflows.
+      "ignore": [
+        "npm-launcher/**",
+        ".knip-test-*/**",
+        "coil/**",
+        "build-cli-archive.ts",
+        "notify-discord-release.ts",
+        "resolve-nightly-release.ts",
+        "smoke-cli-archive.ts",
+      ],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
@@ -92,6 +103,8 @@
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
       "ignoreIssues": { "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"] },
+      // coil: only the retired release.yml ran this.
+      "ignore": ["scripts/verify-built-boot.ts"],
     },
     "apps/marketing": {
       // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.

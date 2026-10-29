@@ -93,7 +93,7 @@ type DeliveryServices =
   | FileSystem.FileSystem
   | HttpClient.HttpClient;
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const electronWindow = yield* ElectronWindow.ElectronWindow;

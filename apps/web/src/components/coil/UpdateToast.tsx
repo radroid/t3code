@@ -282,7 +282,7 @@ function UpdateToastBody({
   );
 }
 
-export function toastPayload(
+function toastPayload(
   view: Exclude<UpdateToastView, { kind: "hidden" }>,
   handlers: {
     readonly onRestart: () => void;
