@@ -71,6 +71,8 @@ it("keeps a retired workflow deleted when upstream modifies it", () => {
     NodeFS.writeFileSync(fixture.workflow, "name: upstream-ci-v2\n");
     NodeFS.writeFileSync(NodePath.join(fixture.upstream, "upstream.txt"), "new\n");
     commit(fixture.upstream, "modify retired workflow");
+    const hook = NodePath.join(fixture.fork, ".git", "hooks", "pre-commit");
+    NodeFS.writeFileSync(hook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 
     const result = runSync(fixture.fork);
 
