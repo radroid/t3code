@@ -26,7 +26,7 @@ export const WATCHDOG_TIMEOUT_MS = SERVER_HEARTBEAT_INTERVAL_MS * 2.5;
 export const FLOOR_POLL_INTERVAL_MS = 15 * 60_000;
 
 /** Reconnect backoff. Capped low because the relay closes streams every 15 min by design. */
-export const RECONNECT_BASE_DELAY_MS = 1_000;
+const RECONNECT_BASE_DELAY_MS = 1_000;
 export const RECONNECT_MAX_DELAY_MS = 60_000;
 
 export type ConnectionVerdict =

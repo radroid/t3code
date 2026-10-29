@@ -115,7 +115,7 @@ const FORK_ISSUES_NEW_URL = "https://github.com/radroid/t3code/issues/new";
  * the user must see the text before it posts, and this avoids depending on `gh`. Build identity
  * only, since the failing step's message can embed local paths that contain the username.
  */
-export function buildInstallFailureReportUrl(input: {
+function buildInstallFailureReportUrl(input: {
   readonly expectedShortSha: string;
   readonly expectedVersion: string;
   readonly actualShortSha: string | undefined;

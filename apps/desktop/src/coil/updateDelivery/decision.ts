@@ -19,7 +19,7 @@ import {
  * fails during a build. It must never be treated as a commit hash — an app that believes its own
  * commit is "unknown" differs from every real manifest and would update on every payload, forever.
  */
-export const UNKNOWN_COMMIT_HASH = "unknown";
+const UNKNOWN_COMMIT_HASH = "unknown";
 
 export interface InstalledBuild {
   /** From `DesktopAppIdentity`. Absent for any build that has no embedded hash. */

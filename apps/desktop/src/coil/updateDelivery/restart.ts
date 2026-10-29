@@ -18,7 +18,7 @@ import * as DesktopShutdown from "../../app/DesktopShutdown.ts";
  * enough that a hung one costs the user ten seconds rather than their whole session. The relaunch
  * is armed before the timer starts, so a forced exit still comes back up.
  */
-export const SHUTDOWN_GRACE = Duration.seconds(10);
+const SHUTDOWN_GRACE = Duration.seconds(10);
 
 export type RestartOutcome = "graceful" | "forced-after-timeout";
 
