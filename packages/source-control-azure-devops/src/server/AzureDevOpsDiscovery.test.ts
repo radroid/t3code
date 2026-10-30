@@ -90,10 +90,10 @@ it.effect(
 );
 
 it.effect(
-  "reports Azure CLI as missing and skips the auth probe when `--version` cannot spawn",
+  "reports Azure CLI as missing, ignoring a signed-in auth probe, when `--version` cannot spawn",
   () =>
     Effect.gen(function* () {
-      const { process, calls } = makeProcess((input) => {
+      const { process } = makeProcess((input) => {
         if (isVersionCall(input)) {
           return Effect.fail(
             new VcsProcessSpawnError({
@@ -115,8 +115,6 @@ it.effect(
 
       assert.strictEqual(item.status, "missing");
       assert.strictEqual(item.auth.status, "unknown");
-      assert.strictEqual(calls.length, 1);
-      assert.strictEqual(calls[0]?.args[0], "--version");
     }),
 );
 

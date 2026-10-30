@@ -186,3 +186,33 @@ it("escalates a lockfile conflict that comes with any other conflict", () => {
     NodeFS.rmSync(fixture.root, { recursive: true, force: true });
   }
 });
+
+it("installs before verify only when the merge changed dependencies", () => {
+  for (const [file, installs] of [
+    ["pnpm-lock.yaml", true],
+    ["packages/new/package.json", true],
+    ["shared.txt", false],
+  ] as const) {
+    const fixture = makeFixture();
+    try {
+      NodeFS.mkdirSync(NodePath.dirname(NodePath.join(fixture.upstream, file)), {
+        recursive: true,
+      });
+      NodeFS.writeFileSync(NodePath.join(fixture.upstream, file), "upstream\n");
+      commit(fixture.upstream, `upstream changes ${file}`);
+      const marker = NodePath.join(fixture.root, "installed");
+
+      const result = runSync(fixture.fork, {
+        SKIP_VERIFY: "0",
+        RUN: "true",
+        VERIFY: "typecheck",
+        DEPS_INSTALL: `touch ${marker}`,
+      });
+
+      assert.strictEqual(result.status, 0, result.stderr);
+      assert.strictEqual(NodeFS.existsSync(marker), installs, file);
+    } finally {
+      NodeFS.rmSync(fixture.root, { recursive: true, force: true });
+    }
+  }
+});

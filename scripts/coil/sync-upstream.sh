@@ -30,6 +30,7 @@
 #   SKIP_VERIFY=1     merge only, skip verification (used by callers that verify separately)
 #   LOCKFILE_INSTALL  command that re-resolves pnpm-lock.yaml when it is the only conflict
 #                     (default: "vp i -- --no-frozen-lockfile --yes")
+#   DEPS_INSTALL      command run before verify when the merge changed dependencies (default: "vp i")
 #
 set -uo pipefail
 
@@ -42,6 +43,7 @@ STATUS_FILE="${STATUS_FILE:-./coil-sync-status.json}"
 SKIP_VERIFY="${SKIP_VERIFY:-0}"
 # CI defaults pnpm to --frozen-lockfile, which would refuse the very re-resolution this is for.
 LOCKFILE_INSTALL="${LOCKFILE_INSTALL:-vp i -- --no-frozen-lockfile --yes}"
+DEPS_INSTALL="${DEPS_INSTALL:-vp i}"
 
 # --- json status helper (no jq dependency) ----------------------------------
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$1"; }
@@ -87,6 +89,7 @@ retire_upstream_workflows() {
 .github/workflows/issue-labels.yml
 .github/workflows/mobile-android-apk.yml
 .github/workflows/mobile-eas-preview.yml
+.github/workflows/mobile-eas-preview-fork.yml
 .github/workflows/mobile-eas-production.yml
 .github/workflows/mobile-fingerprint-check.yml
 .github/workflows/mobile-showcase-screenshots.yml
@@ -209,6 +212,18 @@ if [[ "$SKIP_VERIFY" == 1 ]]; then
   echo "→ SKIP_VERIFY set; merge clean, leaving verification to caller"
   write_status daily merged "merge clean; verification skipped"
   exit 0
+fi
+
+# The caller installed against the pre-merge tree, so a cleanly merged lockfile or a new
+# workspace package would otherwise verify against missing node_modules.
+if ! git diff --quiet "$LOCAL_HEAD" HEAD -- pnpm-lock.yaml pnpm-workspace.yaml package.json '**/package.json'; then
+  echo "→ the merge changed dependencies; installing: $DEPS_INSTALL"
+  if ! bash -c "$DEPS_INSTALL"; then
+    FAILING_STEP="install"
+    fail "verification step 'install' failed"
+    write_status daily verify-failed "merge clean but 'install' failed"
+    exit 30
+  fi
 fi
 
 # Each verify script is one `$RUN <script>`, except `test`, which runs the web suite on its own
