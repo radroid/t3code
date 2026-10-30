@@ -449,11 +449,12 @@ it.effect.each([
       ),
     );
 
+    // The fork's clone diagnostics (#98) state a network failure without echoing git's line.
     assert.strictEqual(
       error.detail,
       unquoted
-        ? `fatal: ${remote} not valid: is this a git repository?`
-        : `fatal: unable to access '${remote}${token === "abc@secret" ? "/" : ""}': Could not resolve host: github.com`,
+        ? `Git could not clone from GitHub: fatal: ${remote} not valid: is this a git repository?`
+        : "Git could not reach GitHub. Check the URL and the network on the machine running T3 Code.",
     );
   }),
 );
