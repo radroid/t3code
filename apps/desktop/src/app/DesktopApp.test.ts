@@ -22,6 +22,7 @@ vi.mock("../ipc/DesktopIpcHandlers.ts", () => ({
 vi.mock("../updates/DesktopRemoteUpdates.ts", () => ({ listen: Effect.void }));
 vi.mock("./DesktopStartupRecovery.ts", () => ({ listen: Effect.void }));
 
+import * as CoilUpdateDelivery from "../coil/updateDelivery/UpdateDelivery.ts";
 import * as DesktopApp from "./DesktopApp.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
@@ -189,6 +190,7 @@ it.effect(
         Effect.provide(
           Layer.mergeAll(
             Layer.mock(BrowserImport.BrowserImport, {}),
+            Layer.mock(CoilUpdateDelivery.CoilUpdateDelivery, {}),
             Layer.mock(DesktopBackendConfiguration.DesktopBackendConfiguration, {}),
             Layer.mock(DesktopCliCommand.DesktopCliCommand, {}),
             Layer.mock(DesktopClientSettings.DesktopClientSettings, {}),
