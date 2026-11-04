@@ -82,7 +82,8 @@ const CLONE_ENV = {
   // credential-manager prompts that would hang without a tty.
   ...NON_INTERACTIVE_GIT_ENV,
   GIT_PROGRESS_DELAY: "0",
-  LC_ALL: "C",
+  // English progress without overriding LC_CTYPE, which a global post-checkout hook inherits.
+  LANGUAGE: "C",
 } satisfies NodeJS.ProcessEnv;
 
 function mapRepositoryError(operation: string, provider: SourceControlProviderKind) {

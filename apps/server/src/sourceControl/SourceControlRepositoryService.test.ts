@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as NodePath from "@effect/platform-node/NodePath";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -116,7 +117,7 @@ function layer(input: {
         Layer.provide(Layer.succeed(FileSystem.FileSystem, input.fileSystem)),
         Layer.provideMerge(NodePath.layer),
       )
-    : layerService.pipe(Layer.provideMerge(NodeServices.layer));
+    : layerService.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 }
 
 const lookupFailingWith = (cause: unknown, detail: string) =>
@@ -209,7 +210,7 @@ it.effect("clones a looked-up repository after creating missing parent directori
         }),
       ),
     );
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each(["--bare", "source.git"])(
@@ -243,7 +244,7 @@ it.effect.each(["--bare", "source.git"])(
               prefix: "t3-clone-options-config-",
             }),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -307,7 +308,7 @@ it.effect("reports clone progress from git's stderr and keeps its error text on 
     assert.strictEqual(error.provider, "github");
     assert.include(error.detail, "could not reach GitHub");
     assert.notInclude(error.message, "s3c@ret");
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 function rejectingSsh(
@@ -356,7 +357,7 @@ const cloneInTemporaryDirectory = (
         destinationPath: path.join(parent, "t3code"),
       });
     }).pipe(Effect.provide(layer({ git }).pipe(Layer.orDie)));
-  }).pipe(Effect.provide(NodeServices.layer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect("retries a clone over HTTPS when the SSH login is refused", () =>
   Effect.gen(function* () {
@@ -382,6 +383,25 @@ it.effect("reports both failures when the HTTPS retry fails too", () =>
       error.detail,
       'Git could not authenticate to GitHub. Run "gh auth login" then "gh auth setup-git" on the machine running T3 Code, or clone over SSH with a key it can use. Cloning over HTTPS instead failed the same way.',
     );
+  }),
+);
+
+it.effect.each([
+  "git@ssh.dev.azure.com:v3/Fabrikam/Project1/fab_repo",
+  "ssh://user:pa@rt@ssh.dev.azure.com/v3/Fabrikam/Project1/fab_repo",
+  "ssh://us%40er:pa%40ss@ssh.dev.azure.com/v3/Fabrikam/Project1/fab_repo",
+])("retries Azure SSH URL %s using its HTTPS host and repository path", (remoteUrl) =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const result = yield* cloneInTemporaryDirectory(rejectingSsh(urls, false), {
+      remoteUrl,
+    });
+
+    assert.deepStrictEqual(urls, [
+      remoteUrl,
+      "https://dev.azure.com/Fabrikam/Project1/_git/fab_repo",
+    ]);
+    assert.strictEqual(result.remoteUrl, "https://dev.azure.com/Fabrikam/Project1/_git/fab_repo");
   }),
 );
 
@@ -487,7 +507,7 @@ it.effect("strips embedded credentials from the remote URL it reports", () =>
     );
     assert.equal(result.remoteUrl, "https://github.com/octocat/t3code.git");
     assert.equal(result.cloneUrl, "https://user:s3cret@github.com/octocat/t3code.git");
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("discards only a directory git wrote to", () =>
@@ -518,7 +538,7 @@ it.effect("discards only a directory git wrote to", () =>
     assert.deepStrictEqual(yield* fs.readDirectory(partial), []);
     assert.deepStrictEqual(yield* fs.readDirectory(foreign), ["notes.txt"]);
     assert.strictEqual(yield* fs.readFileString(replaced), "not a directory");
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("redacts query tokens and userinfo containing '@' from reported URLs", () =>
@@ -539,7 +559,7 @@ it.effect("redacts query tokens and userinfo containing '@' from reported URLs",
       });
       assert.equal(nested.remoteUrl, "https://github.com/octocat/t3code.git");
     }).pipe(Effect.provide(layer({})));
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("preserves destination probe failures instead of treating them as missing paths", () => {
@@ -711,7 +731,7 @@ it.effect("clones without an interactive credential prompt it has nowhere to dra
           GIT_ASKPASS: "",
           GIT_PROGRESS_DELAY: "0",
           GIT_TERMINAL_PROMPT: "0",
-          LC_ALL: "C",
+          LANGUAGE: "C",
           SSH_ASKPASS: "",
           SSH_ASKPASS_REQUIRE: "never",
         },
