@@ -516,6 +516,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     const backendExposure = yield* serverExposure.backendConfig;
+    const env = yield* HostProcess.Environment;
 
     const bootstrap = {
       mode: "desktop" as const,
@@ -553,7 +554,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
-        NODE_OPTIONS: backendNodeOptions(process.env.NODE_OPTIONS),
+        NODE_OPTIONS: backendNodeOptions(env.NODE_OPTIONS),
         T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
       },

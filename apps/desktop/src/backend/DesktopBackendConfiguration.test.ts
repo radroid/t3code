@@ -317,32 +317,28 @@ describe("DesktopBackendConfiguration", () => {
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
   it.effect("resolvePrimary sets a bare heap flag when NODE_OPTIONS is unset", () => {
-    const previous = process.env.NODE_OPTIONS;
-    delete process.env.NODE_OPTIONS;
     return withHarness(
       Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
         const config = yield* configuration.resolvePrimary;
         assert.equal(config.env.NODE_OPTIONS, "--max-old-space-size=4096");
       }),
-    ).pipe(Effect.ensuring(Effect.sync(() => restoreEnv("NODE_OPTIONS", previous))));
+    ).pipe(Effect.provideService(HostProcess.Environment, {}));
   });
 
   it.effect("resolvePrimary appends heap headroom to an existing NODE_OPTIONS", () => {
-    const previous = process.env.NODE_OPTIONS;
-    process.env.NODE_OPTIONS = "--enable-source-maps";
     return withHarness(
       Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
         const config = yield* configuration.resolvePrimary;
         assert.equal(config.env.NODE_OPTIONS, "--enable-source-maps --max-old-space-size=4096");
       }),
-    ).pipe(Effect.ensuring(Effect.sync(() => restoreEnv("NODE_OPTIONS", previous))));
+    ).pipe(
+      Effect.provideService(HostProcess.Environment, { NODE_OPTIONS: "--enable-source-maps" }),
+    );
   });
 
   it.effect("resolvePrimary preserves an explicit NODE_OPTIONS heap setting", () => {
-    const previous = process.env.NODE_OPTIONS;
-    process.env.NODE_OPTIONS = "--max-old-space-size=1024";
     return withHarness(
       Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
@@ -350,7 +346,9 @@ describe("DesktopBackendConfiguration", () => {
         // An operator override wins; we do not append a second, conflicting flag.
         assert.equal(config.env.NODE_OPTIONS, "--max-old-space-size=1024");
       }),
-    ).pipe(Effect.ensuring(Effect.sync(() => restoreEnv("NODE_OPTIONS", previous))));
+    ).pipe(
+      Effect.provideService(HostProcess.Environment, { NODE_OPTIONS: "--max-old-space-size=1024" }),
+    );
   });
 
   it.effect("resolveWsl pins a default-tracking run to the concrete default distro", () =>
