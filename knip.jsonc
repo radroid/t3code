@@ -12,6 +12,7 @@
         // CodeRabbit loads its configuration by filename.
         ".coderabbit.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
+        ".github/scripts/pr-limits.cjs",
       ],
       // coil: only retired upstream workflows ran this (scripts/coil/sync-upstream.sh).
       "ignore": [".github/scripts/mirror-play-apk.cjs"],
