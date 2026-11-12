@@ -186,15 +186,17 @@ it.effect("explains a hosting CLI whose version probe failed instead of advising
     };
     const authDetail = (name: string) => Option.getOrElse(item(name).auth.detail, () => "");
 
+    // coil: a slow or broken CLI stays "available" so its auth probe still runs (issue #4).
     assert.notInclude(item("slow").installHint, "Install slow.");
     assert.include(item("slow").installHint, "timed out after 5000ms");
-    assert.strictEqual(authDetail("slow"), item("slow").installHint);
+    assert.strictEqual(item("slow").status, "available");
 
     assert.notInclude(item("broken").installHint, "Install broken.");
     assert.include(item("broken").installHint, "exited with status 1");
-    assert.strictEqual(authDetail("broken"), item("broken").installHint);
+    assert.strictEqual(item("broken").status, "available");
 
     assert.strictEqual(item("absent").installHint, "Install absent.");
+    assert.strictEqual(authDetail("absent"), "Install absent.");
   }).pipe(
     Effect.provide(
       SourceControlDiscovery.layer.pipe(

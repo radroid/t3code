@@ -1999,7 +1999,8 @@ it.effect("explains a slow fj instead of advising an install when tea is absent"
     assert.strictEqual(spec.type, "managed-cli");
     if (spec.type !== "managed-cli") return;
     const result = yield* spec.probe("/repo");
-    assert.strictEqual(result.status, "missing");
+    // coil: a slow CLI stays "available" so its auth probe still runs (issue #4).
+    assert.strictEqual(result.status, "available");
     assert.strictEqual(result.executable, "fj");
     assert.include(result.installHint, "`fj version` timed out");
     assert.notInclude(result.installHint, "Install");
