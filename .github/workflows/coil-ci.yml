@@ -103,10 +103,17 @@ jobs:
       - name: Test
         run: vp run --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000
 
+  # Split in two because one headless Chromium running all ~585 web files on these runners lost its
+  # page late in the run in 5 of 6 runs on 2026-11-13 (`Browser connection was closed`), with no
+  # test failing.
   test_web:
-    name: Test Web
+    name: Test Web ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -127,7 +134,7 @@ jobs:
         # falls back to GITHUB_REPOSITORY, which on the fork's runners is radroid/t3code.
         env:
           T3CODE_DESKTOP_UPDATE_REPOSITORY: pingdotgg/t3code
-        run: vp run --filter @t3tools/web test --testTimeout=120000 --hookTimeout=120000
+        run: vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }} --testTimeout=120000 --hookTimeout=120000
 
   # apps/server sets `fileParallelism: false`, so its 524 test files run one at a time. Upstream
   # shards them six ways by recorded duration (apps/server/src/testUtils/weightedShardSequencer.ts).

@@ -87,6 +87,7 @@ retire_upstream_workflows() {
 .github/workflows/desktop-macos-preview.yml
 .github/workflows/desktop-macos-preview-publish.yml
 .github/workflows/issue-labels.yml
+.github/workflows/issue-vouch.yml
 .github/workflows/mobile-android-apk.yml
 .github/workflows/mobile-eas-preview.yml
 .github/workflows/mobile-eas-preview-fork.yml
@@ -231,7 +232,8 @@ fi
 # mobile and desktop on one ubuntu-latest runner, `MessagesTimeline.test.tsx` blows the 30s its
 # `beforeAll` pins in-file (3 of 3 runs at the 2026-10-08 sync), and `--hookTimeout` cannot
 # override an in-file value. `@t3tools/monorepo` is the root package, whose `test` is
-# `vp run -r test` and would re-run web.
+# `vp run -r test` and would re-run web. Web runs as two shards so each gets a fresh headless
+# Chromium, which lost its page late in one full run (see coil-ci.yml's test_web).
 # --testTimeout because apps/web pins 15s (tuned for upstream's blacksmith runners), too tight
 # for an upstream CPU-bound test here. 120s is the highest any package configures
 # (apps/server), so it never LOWERS a package's own budget. --hookTimeout is NOT implied by
@@ -247,7 +249,8 @@ for script in $VERIFY; do
     commands=(
       "$RUN --filter @t3tools/desktop ensure:electron"
       "$RUN --filter !@t3tools/monorepo --filter !@t3tools/web test $TEST_FLAGS"
-      "$RUN --filter @t3tools/web test $TEST_FLAGS"
+      "$RUN --filter @t3tools/web test --shard 1/2 $TEST_FLAGS"
+      "$RUN --filter @t3tools/web test --shard 2/2 $TEST_FLAGS"
     )
   else
     commands=("$RUN $script")
