@@ -87,6 +87,7 @@ retire_upstream_workflows() {
 .github/workflows/desktop-macos-preview.yml
 .github/workflows/desktop-macos-preview-publish.yml
 .github/workflows/issue-labels.yml
+.github/workflows/issue-vouch.yml
 .github/workflows/mobile-android-apk.yml
 .github/workflows/mobile-eas-preview.yml
 .github/workflows/mobile-eas-preview-fork.yml
