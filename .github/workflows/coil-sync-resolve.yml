@@ -146,7 +146,8 @@ jobs:
             4. Verify: run `vp run typecheck`, `vp run lint`, then the tests in two runs, web
                last and alone:
                `vp run --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000`
-               then `vp run --filter @t3tools/web test --testTimeout=120000 --hookTimeout=120000`.
+               then `vp run --filter @t3tools/web test --shard 1/2 --testTimeout=120000 --hookTimeout=120000`
+               and the same with `--shard 2/2`.
                The timeout flags are required: apps/web pins 15s, which is too tight for this
                runner, and 120s matches the fork's CI gate without lowering any package's own
                budget. Web runs alone because a web test's in-file 30s hook budget times out

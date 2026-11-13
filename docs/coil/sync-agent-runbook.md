@@ -147,11 +147,13 @@ This is the checklist the workflow prompt mirrors — follow it if you resolve l
    note it in the PR. (The old rebase-era "dropped patch" escalation is gone; nothing can vanish
    on its own any more.)
 6. Verify: `vp run typecheck && vp run lint`, then the tests in two runs with web last and alone,
-   as `scripts/coil/sync-upstream.sh` does:
+   as `scripts/coil/sync-upstream.sh` does. Web is split in two because one headless Chromium
+   running the whole suite can lose its page late in the run:
 
    ```
    vp run --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000
-   vp run --filter @t3tools/web test --testTimeout=120000 --hookTimeout=120000
+   vp run --filter @t3tools/web test --shard 1/2 --testTimeout=120000 --hookTimeout=120000
+   vp run --filter @t3tools/web test --shard 2/2 --testTimeout=120000 --hookTimeout=120000
    ```
 
    Fix the fork's code to match upstream's new internals until green.
