@@ -241,9 +241,10 @@ fi
 # ensure:electron runs first so parallel desktop test files do not race Electron's first-import
 # download.
 # Keep in sync with `.github/workflows/coil-ci.yml`.
-# The -t skips one upstream server test that git 2.56 breaks (see coil-ci.yml's test_server).
+# The -t skips one upstream server test that git 2.56 breaks (see coil-ci.yml's test_server) and
+# one that reads the retired desktop-macos-preview-publish.yml (see coil-ci.yml's test).
 # Its pattern has no spaces because each command below is word-split.
-TEST_FLAGS="--testTimeout=120000 --hookTimeout=120000 -t ^(?!.*compares\\sthe\\schecked-out\\sbranch\\swithout\\sa\\sfull\\sstatus)"
+TEST_FLAGS="--testTimeout=120000 --hookTimeout=120000 -t ^(?!.*(compares\\sthe\\schecked-out\\sbranch\\swithout\\sa\\sfull\\sstatus|packages\\sthe\\smacOS\\spreview.s\\sPR\\sbundle\\sas\\suntrusted))"
 for script in $VERIFY; do
   if [[ "$script" == "test" ]]; then
     commands=(
