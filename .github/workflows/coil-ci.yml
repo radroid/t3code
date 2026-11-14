@@ -100,8 +100,10 @@ jobs:
         run: vp run --filter @t3tools/desktop ensure:electron
 
       # `@t3tools/monorepo` is the root package; its `test` script is `vp run -r test`.
+      # The `-t` skips upstream's test that reads desktop-macos-preview-publish.yml, which the fork
+      # retires. Keep in sync with `scripts/coil/sync-upstream.sh`.
       - name: Test
-        run: vp run --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000
+        run: vp run --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test --testTimeout=120000 --hookTimeout=120000 -t '^(?!.*packages\sthe\smacOS\spreview.s\sPR\sbundle\sas\suntrusted)'
 
   # Split in two because one headless Chromium running all ~585 web files on these runners lost its
   # page late in the run in 5 of 6 runs on 2026-11-13 (`Browser connection was closed`), with no
