@@ -149,3 +149,5 @@ export const COIL_UPDATE_STATE_CHANNEL = "coil:update-state";
 export const COIL_UPDATE_GET_STATE_CHANNEL = "coil:update-get-state";
 export const COIL_UPDATE_RESTART_CHANNEL = "coil:update-restart";
 export const COIL_UPDATE_DISMISS_CHANNEL = "coil:update-dismiss";
+
+export const START_FILE_DRAG_CHANNEL = "desktop:start-file-drag";
