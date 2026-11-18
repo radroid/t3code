@@ -1,3 +1,4 @@
+// oxlint-disable t3code/no-untranslated-copy -- fork-only copy stays English; its keys would conflict in upstream's catalogs on every sync.
 /**
  * What the update toast shows, as a pure function of the delivery state, so the state machine is
  * testable without rendering. The interesting cases are where showing nothing is correct: a toast

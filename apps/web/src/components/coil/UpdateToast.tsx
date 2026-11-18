@@ -1,3 +1,4 @@
+// oxlint-disable t3code/no-untranslated-copy -- fork-only copy stays English; its keys would conflict in upstream's catalogs on every sync.
 /**
  * The fork's update toast. Drives `toastManager` so updates land in the usual stack; decisions
  * live in `updateToast.logic.ts`. It is the only update surface: fork builds set
